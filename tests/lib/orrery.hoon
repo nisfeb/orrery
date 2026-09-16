@@ -222,4 +222,150 @@
     (expect-eq !>('sarah') !>((fresh-name:orr %sarah '')))
     (expect-eq !>('Sarah') !>((fresh-name:orr %sarah 'Sarah')))
   ==
+::
+::  ==  the fold
+::
+++  r  |=([id=@ta o=obs:orr] ^-(row:orr [id o]))
+++  mk
+  |=  [attr=@t v=json at=@da]
+  ^-  obs:orr
+  ['thing/subaru' attr v at ~ 90 ['user' ''] 'user' at | '']
+::  event time wins over arrival time: a tow receipt that arrives late
+::  and speaks of an earlier moment cannot overwrite the present
+++  test-fold-latest-at-wins
+  =/  a  (r 'a' (mk 'location' s+'Route 9' t0))
+  =/  b  (r 'b' (mk 'location' s+'shop' (add t0 ~h4)))
+  =/  c  (r 'c' (mk 'location' s+'tow truck' (add t0 ~h1)))
+  =.  seen.obs.c  (add t0 ~h6)
+  =/  w  (fold:orr ~[a b c] ~ (add t0 ~d1))
+  =/  loc=(list row:orr)  (fall (~(get by w) 'location') ~)
+  ;:  weld
+    (expect-eq !>(1) !>((lent loc)))
+    (expect-eq !>('b') !>(?~(loc '' id.i.loc)))
+  ==
+++  test-fold-as-of
+  =/  a  (r 'a' (mk 'location' s+'Route 9' t0))
+  =/  b  (r 'b' (mk 'location' s+'shop' (add t0 ~h4)))
+  =/  w  (fold:orr ~[a b] ~ (add t0 ~h1))
+  =/  loc=(list row:orr)  (fall (~(get by w) 'location') ~)
+  (expect-eq !>('a') !>(?~(loc '' id.i.loc)))
+++  test-fold-until-expires
+  =/  o=obs:orr  (mk 'status' s+'stranded' t0)
+  =.  until.o  `(add t0 ~h4)
+  ;:  weld
+    (expect-eq !>(1) !>(~(wyt by (fold:orr ~[(r 'a' o)] ~ (add t0 ~h1)))))
+    (expect-eq !>(0) !>(~(wyt by (fold:orr ~[(r 'a' o)] ~ (add t0 ~h5)))))
+  ==
+::  a null value wins its slot and clears it; a retracted row is ignored
+++  test-fold-retracted-and-null
+  =/  a  (r 'a' (mk 'status' s+'stranded' t0))
+  =/  b  (r 'b' (mk 'status' ~ (add t0 ~h4)))
+  =/  c  (r 'c' (mk 'status' s+'home' (add t0 ~h5)))
+  =.  retracted.obs.c  &
+  =/  w  (fold:orr ~[a b c] ~ (add t0 ~d1))
+  =/  st=(list row:orr)  (fall (~(get by w) 'status') ~)
+  ;:  weld
+    (expect-eq !>('b') !>(?~(st '' id.i.st)))
+    (expect-eq !>(`json`~) !>(?~(st `json`~ value.obs.i.st)))
+  ==
+++  test-fold-multi
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  a  (r 'a' (mk 'participants' (jo '{"ref":"person/me"}') t0))
+  =/  b  (r 'b' (mk 'participants' (jo '{"ref":"person/sarah"}') (add t0 ~m1)))
+  =/  c  (r 'c' (mk 'participants' (jo '{"ref":"person/me"}') (add t0 ~m2)))
+  =/  w  (fold:orr ~[a b c] multi (add t0 ~d1))
+  =/  ps=(list row:orr)  (fall (~(get by w) 'participants') ~)
+  ;:  weld
+    (expect-eq !>(2) !>((lent ps)))
+    (expect !>((lien ps |=(x=row:orr =('c' id.x)))))
+    (expect !>(!(lien ps |=(x=row:orr =('a' id.x)))))
+  ==
+++  test-status-and-timeline
+  =/  a  (r 'a' (mk 'location' s+'Route 9' t0))
+  =/  b  (r 'b' (mk 'location' s+'shop' (add t0 ~h4)))
+  =/  c  (r 'c' (mk 'status' s+'stranded' t0))
+  =.  until.obs.c  `(add t0 ~h2)
+  =/  d  (r 'd' (mk 'mood' s+'grim' t0))
+  =.  retracted.obs.d  &
+  =/  when  (add t0 ~d1)
+  =/  w  (fold:orr ~[a b c d] ~ when)
+  =/  tl  (timeline:orr ~[a b c d] w when)
+  =/  st
+    |=  id=@ta
+    ^-  @tas
+    =/  f  (skim tl |=(x=[r=row:orr status=@tas] =(id id.r.x)))
+    ?~(f %none status.i.f)
+  ;:  weld
+    (expect-eq !>(%superseded) !>((st 'a')))
+    (expect-eq !>(%live) !>((st 'b')))
+    (expect-eq !>(%expired) !>((st 'c')))
+    (expect-eq !>(%retracted) !>((st 'd')))
+    (expect-eq !>('b') !>(?~(tl '' id.r.i.tl)))
+  ==
+::
+::  ==  involved and resolve
+::
+++  test-involved
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  sit-open
+    %-  fold:orr
+    :+  ~[(r 'a' (mk 'participants' (jo '{"ref":"person/sarah"}') t0)) (r 'b' (mk 'status' s+'open' t0))]
+      multi
+    (add t0 ~d1)
+  =/  sit-closed
+    %-  fold:orr
+    :+  ~[(r 'c' (mk 'participants' (jo '{"ref":"person/sarah"}') t0)) (r 'd' (mk 'status' s+'closed' t0))]
+      multi
+    (add t0 ~d1)
+  =/  sits=(list [id=bid:orr winners=(map @t (list row:orr))])
+    ~[['situation/one' sit-open] ['situation/two' sit-closed]]
+  ;:  weld
+    (expect-eq !>(`(list bid:orr)`~['situation/one']) !>((involved:orr 'person/sarah' sits)))
+    (expect-eq !>(`(list bid:orr)`~) !>((involved:orr 'person/me' sits)))
+  ==
+++  test-resolve
+  =/  bodies=(list [id=bid:orr =body:orr])
+    :~  ['person/sarah' [%person 'Sarah' (sy ~['wife']) t0]]
+        ['place/johns-machine-shop' [%place 'John\'s Machine Shop' (sy ~['John\'s' 'the shop']) t0]]
+        ['thing/subaru' [%thing 'The Subaru' (sy ~['the car']) t0]]
+    ==
+  =/  ids
+    |=  q=@t
+    ^-  (list bid:orr)
+    (turn (resolve:orr q bodies) |=(h=[id=bid:orr =body:orr match=@tas] id.h))
+  ;:  weld
+    (expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids 'sarah')))
+    (expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids 'WIFE')))
+    (expect-eq !>(`(list bid:orr)`~['place/johns-machine-shop']) !>((ids 'john\'s')))
+    (expect-eq !>(`(list bid:orr)`~['thing/subaru']) !>((ids 'the c')))
+    (expect-eq !>(`(list bid:orr)`~) !>((ids 'zzz')))
+    (expect-eq !>(`(list bid:orr)`~) !>((ids '')))
+  ==
+::
+::  ==  actions, policy, encoders
+::
+++  test-action-rules
+  =/  auto  (auto-of:orr starter-policy:orr)
+  ;:  weld
+    (expect !>((transition-ok:orr %proposed %approved)))
+    (expect !>((transition-ok:orr %approved %done)))
+    (expect !>(!(transition-ok:orr %proposed %done)))
+    (expect !>(!(transition-ok:orr %done %approved)))
+    (expect-eq !>(%approved) !>((initial-status:orr %task auto)))
+    (expect-eq !>(%proposed) !>((initial-status:orr %message auto)))
+    (expect-eq !>(365) !>((retention-of:orr starter-policy:orr)))
+    (expect !>((push-of:orr starter-policy:orr)))
+    (expect !>((~(has in (multi-of:orr starter-schema:orr)) 'participants')))
+  ==
+++  test-encoders-roundtrip
+  =/  j=json  (en-obs:orr (r 'x' o1) %live)
+  =/  back  (de-obs:orr j t0 'http')
+  ?.  ?=(%& -.back)  (expect !>(|))
+  ;:  weld
+    (expect-eq !>(subject:o1) !>(subject.p.back))
+    (expect-eq !>(value:o1) !>(value.p.back))
+    (expect-eq !>(at:o1) !>(at.p.back))
+    (expect-eq !>('live') !>((gs:orr j 'status')))
+    (expect-eq !>('Sarah') !>((gs:orr (en-body:orr 'person/sarah' [%person 'Sarah' ~ t0]) 'name')))
+  ==
 --

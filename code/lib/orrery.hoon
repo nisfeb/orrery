@@ -367,4 +367,223 @@
   |=  [slug=@ta name=@t]
   ^-  @t
   ?:(=('' name) `@t`slug name)
+::  ==  encoders
+::
+++  en-source
+  |=  s=source
+  ^-  json
+  (pairs:enjs:format ~[['kind' s+kind.s] ['id' s+id.s]])
+++  en-time  |=(d=@da ^-(json s+(en-iso d)))
+++  en-maybe-time  |=(d=(unit @da) ^-(json ?~(d ~ (en-time u.d))))
+++  en-body
+  |=  [id=bid b=body]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id]
+      ['kind' s+kind.b]
+      ['name' s+name.b]
+      ['aliases' a+(turn ~(tap in aliases.b) |=(t=@t `json`s+t))]
+      ['created' (en-time created.b)]
+  ==
+++  en-obs
+  |=  [r=row status=@tas]
+  ^-  json
+  =/  o=obs  obs.r
+  %-  pairs:enjs:format
+  :~  ['id' s+id.r]
+      ['subject' s+subject.o]
+      ['attr' s+attr.o]
+      ['value' value.o]
+      ['at' (en-time at.o)]
+      ['until' (en-maybe-time until.o)]
+      ['conf' (numb:enjs:format conf.o)]
+      ['source' (en-source source.o)]
+      ['by' s+by.o]
+      ['seen' (en-time seen.o)]
+      ['status' s+status]
+      ['note' s+note.o]
+  ==
+++  en-action
+  |=  [id=@ta a=action]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id]
+      ['kind' s+kind.a]
+      ['title' s+title.a]
+      ['payload' payload.a]
+      ['about' a+(turn ~(tap in about.a) |=(t=@t `json`s+t))]
+      ['due' (en-maybe-time due.a)]
+      ['by' s+by.a]
+      ['proposed' (en-time proposed.a)]
+      ['status' s+status.a]
+      ['note' s+note.a]
+  ==
+::  ==  the fold: live observations to current attributes
+::
+::  +is-live: not retracted, already true at when, not yet expired
+::
+++  is-live
+  |=  [o=obs when=@da]
+  ^-  ?
+  ?&  !retracted.o
+      (lte at.o when)
+      ?~(until.o & (gth u.until.o when))
+  ==
+::  +later: a wins over b: the later at, then the later seen
+::
+++  later
+  |=  [a=row b=row]
+  ^-  ?
+  ?:  =(at.obs.a at.obs.b)  (gth seen.obs.a seen.obs.b)
+  (gth at.obs.a at.obs.b)
+++  find-value
+  |=  [rs=(list row) v=json]
+  ^-  (unit row)
+  ?~  rs  ~
+  ?:  =(value.obs.i.rs v)  `i.rs
+  $(rs t.rs)
+::  +fold: attr to its winners. A single-valued attr keeps the latest
+::  row; a multi-valued one (named in multi) keeps the latest row per
+::  distinct value. A null value on a multi attr contributes nothing.
+::
+++  fold
+  |=  [rows=(list row) multi=(set @t) when=@da]
+  ^-  (map @t (list row))
+  =/  live=(list row)  (skim rows |=(r=row (is-live obs.r when)))
+  %+  roll  live
+  |=  [r=row acc=(map @t (list row))]
+  =/  attr=@t  attr.obs.r
+  =/  cur=(list row)  (fall (~(get by acc) attr) ~)
+  ?.  (~(has in multi) attr)
+    ?~  cur  (~(put by acc) attr ~[r])
+    ?:  (later r i.cur)  (~(put by acc) attr ~[r])
+    acc
+  ?~  value.obs.r  acc
+  =/  same=(unit row)  (find-value cur value.obs.r)
+  ?~  same  (~(put by acc) attr [r cur])
+  ?.  (later r u.same)  acc
+  =/  rest=(list row)  (skip cur |=(x=row =(value.obs.x value.obs.r)))
+  (~(put by acc) attr [r rest])
+::  +status-of: what a row is, seen from when, given the winners
+::
+++  status-of
+  |=  [r=row winners=(map @t (list row)) when=@da]
+  ^-  @tas
+  ?:  retracted.obs.r  %retracted
+  ?:  ?&(?=(^ until.obs.r) (lte u.until.obs.r when))  %expired
+  ?:  (gth at.obs.r when)  %future
+  =/  w=(list row)  (fall (~(get by winners) attr.obs.r) ~)
+  ?:  (lien w |=(x=row =(id.x id.r)))  %live
+  %superseded
+::  +timeline: every row newest first, each with its status
+::
+++  timeline
+  |=  [rows=(list row) winners=(map @t (list row)) when=@da]
+  ^-  (list [r=row status=@tas])
+  =/  sorted=(list row)  (sort rows later)
+  (turn sorted |=(r=row [r (status-of r winners when)]))
+::  ==  reverse references
+::
+::  +ref-of: the body a {"ref"} value names, or ~
+::
+++  ref-of
+  |=  v=json
+  ^-  (unit bid)
+  =/  r=@t  (gs v 'ref')
+  ?:(=('' r) ~ `r)
+++  refs-in
+  |=  rs=(list row)
+  ^-  (list bid)
+  (murn rs |=(r=row (ref-of value.obs.r)))
+::  +is-closed: a situation is closed only when its status is "closed"
+::
+++  is-closed
+  |=  winners=(map @t (list row))
+  ^-  ?
+  =/  w=(list row)  (fall (~(get by winners) 'status') ~)
+  ?~  w  |
+  =(value.obs.i.w [%s 'closed'])
+::  +involved: the open situations whose participants name target
+::
+++  involved
+  |=  [target=bid sits=(list [id=bid winners=(map @t (list row))])]
+  ^-  (list bid)
+  %+  murn  sits
+  |=  [id=bid winners=(map @t (list row))]
+  ^-  (unit bid)
+  ?:  (is-closed winners)  ~
+  =/  ps=(list row)  (fall (~(get by winners) 'participants') ~)
+  ?.  (lien (refs-in ps) |=(b=bid =(b target)))  ~
+  `id
+::  ==  resolve
+::
+++  lower  |=(t=@t ^-(@t (crip (cass (trip t)))))
+::  +resolve: bodies whose name or alias equals q, then those where one
+::  starts with q, case-insensitive, at most 20
+::
+++  resolve
+  |=  [q=@t bodies=(list [id=bid =body])]
+  ^-  (list [id=bid =body match=@tas])
+  =/  lq=@t  (lower q)
+  ?:  =('' lq)  ~
+  =/  hit
+    |=  [id=bid b=body]
+    ^-  (unit [id=bid =body match=@tas])
+    =/  names=(list @t)  (turn `(list @t)`[name.b ~(tap in aliases.b)] lower)
+    ?:  (lien names |=(n=@t =(n lq)))  `[id b %exact]
+    ?:  (lien names |=(n=@t =(lq (end [3 (met 3 lq)] n))))  `[id b %prefix]
+    ~
+  =/  hits=(list [id=bid =body match=@tas])  (murn bodies hit)
+  =/  exact  (skim hits |=(h=[id=bid =body match=@tas] =(%exact match.h)))
+  =/  pref   (skim hits |=(h=[id=bid =body match=@tas] =(%prefix match.h)))
+  (scag 20 (weld exact pref))
+::  ==  actions
+::
+++  is-open  |=(a=action ^-(? |(=(%proposed status.a) =(%approved status.a))))
+::  +transition-ok: proposed to approved or dismissed; approved to done,
+::  failed or dismissed. Nothing leaves done, failed or dismissed.
+::
+++  transition-ok
+  |=  [cur=@tas want=@tas]
+  ^-  ?
+  ?+  cur  |
+    %proposed  |(=(%approved want) =(%dismissed want))
+    %approved  |(=(%done want) =(%failed want) =(%dismissed want))
+  ==
+++  initial-status
+  |=  [kind=@tas auto=(set @t)]
+  ^-  @tas
+  ?:((~(has in auto) `@t`kind) %approved %proposed)
+::  ==  schema and policy
+::
+++  multi-of      |=(schema=json ^-((set @t) (sy (strings (ga schema 'multi')))))
+++  auto-of       |=(policy=json ^-((set @t) (sy (strings (ga policy 'auto')))))
+++  retention-of  |=(policy=json ^-(@ud (fall (gn policy 'retention_days') 365)))
+++  push-of       |=(policy=json ^-(? =([%b &] (gj policy 'push'))))
+++  starter-policy
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['auto' a+~[s+'task' s+'note']]
+      ['push' b+&]
+      ['retention_days' (numb:enjs:format 365)]
+  ==
+++  starter-schema
+  ^-  json
+  =/  kind
+    |=  attrs=(list @t)
+    ^-  json
+    (pairs:enjs:format ~[['attrs' a+(turn attrs |=(t=@t `json`s+t))]])
+  %-  pairs:enjs:format
+  :~  :-  'kinds'
+      %-  pairs:enjs:format
+      :~  ['person' (kind ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes'])]
+          ['place' (kind ~['type' 'address' 'phone' 'hours' 'geo'])]
+          ['thing' (kind ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until'])]
+          ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'])]
+          ['situation' (kind ~['status' 'participants' 'location' 'started' 'ended' 'summary'])]
+          ['note' (kind ~['text'])]
+      ==
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]
+      ['actions' a+(turn ~['task' 'note' 'message' 'calendar'] |=(t=@t `json`s+t))]
+  ==
 --
