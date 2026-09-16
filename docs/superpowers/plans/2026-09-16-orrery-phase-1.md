@@ -2897,6 +2897,395 @@ If the version syncs but the bang is not `None`, a file on the ship differed fro
 
 Phase 1 is done when: 29 unit tests green with the revision pinned, `api-matrix.py` green twice, the desk at version 2 synced through the forge with a null bang, and `main` pushed. Report those four facts with the numbers you saw, and the wex desk revision the tests ran at. Do not touch `~ricsul-bilwyt`.
 
+### Task 8: The product-review amendments: a ship on a body, the self-reference guard, action history, push modes, the audit log
+
+Added 2026-09-16 after the spec was amended (spec sections 2, 3, 5 and 14). Stored shapes change, so the readers get a ladder: a `%1` body or action still loads and is lifted; new writes are `%2`.
+
+**Files:**
+- Modify: `code/lib/orrery.hoon`
+- Modify: `tests/lib/orrery.hoon`
+- Modify: `code/nex/orrery/app.hoon`
+- Modify: `scripts/api-matrix.py`
+- Modify: `code/version.json` (3)
+
+**Interfaces:**
+- Consumes: everything from Tasks 2 to 7.
+- Produces: `body` with `ship=(unit @p)`; `step`, `action` with `history=(list step)`; `body-1`, `action-1`, `stored-body-1`, `stored-action-1`; `stored-body` and `stored-action` now `%2`; `transition`, `push-mode-of`, `should-push`, `ring`, `en-step`; `push-of` removed; the writer op `set-action` carries `by`; the tree gains `/tr/log`; the API emits `ship` on bodies and `history` on actions.
+
+- [ ] **Step 1: Append the failing tests**
+
+Insert before the final `--` of `tests/lib/orrery.hoon`:
+
+```hoon
+::
+::  ── amendments: ship, history, push modes, the ring ────────────────
+::
+++  test-de-body-ship
+  =/  got  (de-body:orr (jo '{"id":"person/sarah","ship":"~sampel-palnet"}') t0)
+  =/  bad  (de-body:orr (jo '{"id":"person/sarah","ship":"sarah"}') t0)
+  ;:  weld
+    (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(?:(?=(%& -.got) ship.body.p.got ~)))
+    (expect-eq !>('ship: expected an @p such as ~sampel-palnet') !>(?:(?=(%| -.bad) p.bad 'accepted')))
+  ==
+++  test-de-obs-self-ref
+  =/  got  (de-obs:orr (jo '{"subject":"thing/subaru","attr":"location","value":{"ref":"thing/subaru"},"source":{"kind":"user"}}') t0 'http')
+  (expect-eq !>('value.ref: a body cannot refer to itself') !>(?:(?=(%| -.got) p.got 'accepted')))
+++  test-transition
+  =/  a=action:orr  [%task 'x' ~ ~ ~ 'mcp' t0 %proposed '' ~[[t0 %proposed 'mcp']]]
+  =/  b=action:orr  (transition:orr a %approved 'policy' '' (add t0 ~s1))
+  =/  c=action:orr  (transition:orr b %done 'user' 'called them' (add t0 ~h1))
+  ;:  weld
+    (expect-eq !>(%approved) !>(status.b))
+    (expect-eq !>(2) !>((lent history.b)))
+    (expect-eq !>(`step:orr`[(add t0 ~h1) %done 'user']) !>((rear history.c)))
+    (expect-eq !>('called them') !>(note.c))
+    (expect-eq !>(3) !>((lent history.c)))
+  ==
+++  test-push-modes
+  ;:  weld
+    (expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))
+    (expect-eq !>('none') !>((push-mode-of:orr (jo '{"push":"none"}'))))
+    (expect !>((should-push:orr 'all' %approved)))
+    (expect !>((should-push:orr 'proposed' %proposed)))
+    (expect !>(!(should-push:orr 'proposed' %approved)))
+    (expect !>(!(should-push:orr 'none' %proposed)))
+  ==
+++  test-ring
+  =/  one=json  (ring:orr [%a ~] (jo '{"n":1}') 2)
+  =/  two=json  (ring:orr one (jo '{"n":2}') 2)
+  =/  three=json  (ring:orr two (jo '{"n":3}') 2)
+  =/  fresh=json  (ring:orr [%o ~] (jo '{"n":9}') 5)
+  ;:  weld
+    (expect-eq !>(1) !>((lent ?:(?=([%a *] one) p.one ~))))
+    (expect-eq !>(2) !>((lent ?:(?=([%a *] three) p.three ~))))
+    (expect-eq !>(`json`(jo '{"n":2}')) !>(?:(?=([%a *] three) (snag 0 p.three) ~)))
+    (expect-eq !>(1) !>((lent ?:(?=([%a *] fresh) p.fresh ~))))
+  ==
+++  test-readers-lift
+  =/  old-body  [%1 [%person 'Sarah' (sy ~['Sarah']) t0]]
+  =/  old-act   [%1 [%task 'x' ~ ~ ~ 'mcp' t0 %approved '']]
+  ;:  weld
+    (expect-eq !>(`(unit body:orr)`[~ [%person 'Sarah' (sy ~['Sarah']) t0 ~]]) !>((read-body:orr old-body)))
+    (expect-eq !>(`(unit (list step:orr))`[~ ~[[t0 %approved 'mcp']]]) !>((bind (read-action:orr old-act) |=(a=action:orr history.a))))
+    (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
+  ==
+```
+
+Then update these existing tests in the same file, because `body` and `action` literals gain a field:
+
+- In `test-act-id-shape` the action literal becomes `[%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '' ~]`.
+- In `test-de-body-ok` add the line `(expect-eq !>(`(unit @p)`~) !>(ship.body.p.got))` inside the `;:  weld`.
+- In `test-de-action-ok` add `(expect-eq !>(`(list step:orr)`~[[~2026.9.17..3.00.00 %proposed 'mcp']]) !>(history.p.got))` inside the `;:  weld`.
+- In `test-readers` the body literal becomes `[%person 'Sarah' (sy ~['Sarah']) t0 ~]` and the stored form under test becomes `[%2 b]`; the `[%2 'nope']` refusal case becomes `[%3 'nope']`.
+- In `test-merge-body` both literals gain a trailing `~` for `ship`, and add inside the `;:  weld`: `(expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship:(merge-body:orr old new(ship `~sampel-palnet))))` and `(expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship:(merge-body:orr old(ship `~sampel-palnet) new)))`.
+- In `test-resolve` the three body literals gain a `ship`: sarah `` `~sampel-palnet ``, the other two `~`; add `(expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids '~sampel-palnet')))` inside the `;:  weld`.
+- In `test-encoders-roundtrip` the body literal becomes `[%person 'Sarah' ~ t0 ~]`.
+- In `test-action-rules` replace the line `(expect !>((push-of:orr starter-policy:orr)))` with `(expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))`.
+
+- [ ] **Step 2: Run the tests and watch the new ones fail**
+
+Copy the test file, commit, run (recipe under "Working with `~wex`"). Expected: a build failure naming an unknown arm such as `transition` or `step`.
+
+- [ ] **Step 3: Change the library**
+
+In `code/lib/orrery.hoon`:
+
+Replace the `body` and `action` types and the stored shapes with:
+
+```hoon
++$  bid     @t                                  ::  "<kind>/<slug>"
++$  body    [kind=@tas name=@t aliases=(set @t) created=@da ship=(unit @p)]
++$  body-1  [kind=@tas name=@t aliases=(set @t) created=@da]
++$  source  [kind=@t id=@t]
++$  obs
+  $:  subject=bid
+      attr=@t
+      value=json
+      at=@da                                    ::  when it became true
+      until=(unit @da)                          ::  expected end
+      conf=@ud                                  ::  0 to 100
+      =source
+      by=@t
+      seen=@da                                  ::  when the ship recorded it
+      retracted=?
+      note=@t                                   ::  why it was retracted
+  ==
+::  one status an action has held, and who set it
++$  step    [at=@da status=@tas by=@t]
++$  action
+  $:  kind=@tas
+      title=@t
+      payload=json
+      about=(set bid)
+      due=(unit @da)
+      by=@t
+      proposed=@da
+      status=@tas
+      note=@t
+      history=(list step)
+  ==
++$  action-1
+  $:  kind=@tas
+      title=@t
+      payload=json
+      about=(set bid)
+      due=(unit @da)
+      by=@t
+      proposed=@da
+      status=@tas
+      note=@t
+  ==
+::  what the grubs hold: a version head in front of each shape, so a
+::  later shape is told apart by the reader instead of clamming by luck.
+::  %1 bodies and actions are lifted by the readers; new writes are %2.
+::
++$  stored-body      [%2 =body]
++$  stored-body-1    [%1 =body-1]
++$  stored-obs       [%1 =obs]
++$  stored-action    [%2 =action]
++$  stored-action-1  [%1 =action-1]
+```
+
+In `+de-body`, replace the final line `[%& id [kind.u.pk name (sy als) now]]` with:
+
+```hoon
+  =/  sj=json  (gj jon 'ship')
+  =/  ship=(unit @p)  ?:(?=([%s *] sj) (slaw %p p.sj) ~)
+  ?:  &(?=([%s *] sj) ?=(~ ship))  [%| 'ship: expected an @p such as ~sampel-palnet']
+  [%& id [kind.u.pk name (sy als) now ship]]
+```
+
+In `+de-obs`, after the `value.ref: expected <kind>/<slug>` refusal add:
+
+```hoon
+  ?:  &(?=([%o *] value) =(subject (gs value 'ref')))
+    [%| 'value.ref: a body cannot refer to itself']
+```
+
+In `+de-action`, replace the final line with:
+
+```hoon
+  [%& `@tas`kind title payload (sy about) due by u.proposed %proposed '' ~[[u.proposed %proposed by]]]
+```
+
+Replace `+read-body` and `+read-action` with the ladders:
+
+```hoon
+++  read-body
+  |=  n=*
+  ^-  (unit body)
+  =/  r2  (mule |.(;;(stored-body n)))
+  ?:  ?=(%& -.r2)  `body.p.r2
+  =/  r1  (mule |.(;;(stored-body-1 n)))
+  ?.  ?=(%& -.r1)  ~
+  =/  b=body-1  body-1.p.r1
+  `[kind.b name.b aliases.b created.b ~]
+++  read-action
+  |=  n=*
+  ^-  (unit action)
+  =/  r2  (mule |.(;;(stored-action n)))
+  ?:  ?=(%& -.r2)  `action.p.r2
+  =/  r1  (mule |.(;;(stored-action-1 n)))
+  ?.  ?=(%& -.r1)  ~
+  =/  a=action-1  action-1.p.r1
+  `[kind.a title.a payload.a about.a due.a by.a proposed.a status.a note.a ~[[proposed.a status.a by.a]]]
+```
+
+Replace `+merge-body` with:
+
+```hoon
+++  merge-body
+  |=  [old=body new=body]
+  ^-  body
+  :*  kind.old
+      ?:(=('' name.new) name.old name.new)
+      (~(uni in aliases.old) aliases.new)
+      created.old
+      ?~(ship.new ship.old ship.new)
+  ==
+```
+
+In `+en-body` add the row `['ship' `json`?~(ship.b ~ s+(scot %p u.ship.b))]` after `created`. In `+en-action` add the row `['history' a+(turn history.a en-step)]` after `note`, and add above `+en-action`:
+
+```hoon
+++  en-step
+  |=  st=step
+  ^-  json
+  (pairs:enjs:format ~[['at' (en-time at.st)] ['status' s+status.st] ['by' s+by.st]])
+```
+
+In `+resolve`, inside `hit`, before the `names` line add a ship match:
+
+```hoon
+    =/  sh=@t  ?~(ship.b '' (scot %p u.ship.b))
+    ?:  &(!=('' sh) =(sh lq))  `[id b %exact]
+```
+
+Replace `+push-of` with these three arms, and change `starter-policy`'s row to `['push' s+'proposed']`:
+
+```hoon
+::  +push-mode-of: proposed (the default), all, or none
+::
+++  push-mode-of
+  |=  policy=json
+  ^-  @t
+  =/  m=@t  (gs policy 'push')
+  ?:(=('' m) 'proposed' m)
+++  should-push
+  |=  [mode=@t status=@tas]
+  ^-  ?
+  ?:  =('all' mode)  &
+  ?:  =('proposed' mode)  =(%proposed status)
+  |
+::  +transition: a new status with its note, appended to the history
+::
+++  transition
+  |=  [a=action want=@tas by=@t why=@t at=@da]
+  ^-  action
+  a(status want, note why, history (snoc history.a [at want by]))
+::  +ring: append to a JSON array and keep the last max entries
+::
+++  ring
+  |=  [log=json entry=json max=@ud]
+  ^-  json
+  =/  cur=(list json)  ?:(?=([%a *] log) p.log ~)
+  =/  all=(list json)  (snoc cur entry)
+  =/  n=@ud  (lent all)
+  [%a ?:((gth n max) (slag (sub n max) all) all)]
+```
+
+- [ ] **Step 4: Run the tests and watch them pass**
+
+Copy both files, commit, run. Expected: 35 `OK` lines (the 29 from before, `test-de-body-ship`, `test-de-obs-self-ref`, `test-transition`, `test-push-modes`, `test-ring`, `test-readers-lift`), no `FAILED`, no `CRASHED`, `ok=%.y`.
+
+- [ ] **Step 5: Change the nexus**
+
+In `code/nex/orrery/app.hoon`:
+
+In `+on-load` add the row `[%fall %& [/tr %log] [[/ %json] [%a ~]]]` after the `/tr/last` row.
+
+Replace `+note` with a pair that also feeds the audit ring:
+
+```hoon
+::  +note: the last writer outcome at /tr/last, and the audit ring at
+::  /tr/log (the last 500). Fiber prints reach only the raw console; a
+::  grub is readable by every tool.
+::
+++  note
+  |=  [op=@t ok=? why=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  (note-by op ok why '')
+++  note-by
+  |=  [op=@t ok=? why=@t by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  entry=json
+    %-  pairs:enjs:format
+    ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
+  ;<  ~  bind:m  (over:io (rf 0 /tr %last) [[/ %json] entry])
+  ;<  log=json  bind:m  (read-json (rf 0 /tr %log))
+  (over:io (rf 0 /tr %log) [[/ %json] (ring:orr log entry 500)])
+```
+
+In `+ensure-me` the body becomes `[%person 'me' (sy `(list @t)`~['me' 'I']) now `our]`.
+
+In `+write-body` every `` `stored-body:orr`[%1 fresh] `` and `` `stored-body:orr`[%1 merged] `` becomes `%2`. In `+do-act` the make writes `` `stored-action:orr`[%2 a] ``; in `+do-set-action` the overwrite writes `` `stored-action:orr`[%2 next] ``.
+
+In `+do-act`, replace everything from the line `=/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))` to the end of the arm with:
+
+```hoon
+  =/  auto=?  (~(has in (auto-of:orr policy)) `@t`kind.p.got)
+  =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
+  =/  id=@ta  (act-id:orr a)
+  ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))
+  ?:  ex  (pure:m |)
+  ;<  *  bind:m
+    (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%2 a]] ~])
+  ;<  ~  bind:m
+    ?.  (should-push:orr (push-mode-of:orr policy) status.a)  (pure:(fiber:fiber:nexus ,~) ~)
+    (push-soft a id)
+  ;<  ~  bind:m  (note-by 'act' & '' by.a)
+  (pure:m &)
+```
+
+Replace `+do-set-action` with:
+
+```hoon
+++  do-set-action
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  want=@t  (gs:orr jon 'status')
+  =/  why=@t  (gs:orr jon 'note')
+  =/  by=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
+  =/  road=road:tarball  (rf 0 /actions `@ta`id)
+  ;<  cur=view:nexus  bind:m  (peek:io road ~)
+  ?.  ?=([%file *] cur)  (refuse 'set-action' (cat 3 'no action ' id))
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
+  ?~  a  (refuse 'set-action' 'unreadable action')
+  ?.  (transition-ok:orr status.u.a `@tas`want)
+    (refuse 'set-action' (rap 3 'cannot go from ' status.u.a ' to ' want ~))
+  ;<  now=@da  bind:m  get-time:io
+  =/  next=action:orr  (transition:orr u.a `@tas`want by why now)
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
+  ;<  ~  bind:m  (note-by 'set-action' & '' by)
+  (pure:m &)
+```
+
+In `+serve-set-action` the op gains the actor: the `pairs` list becomes `~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')] ['by' s+(gs:orr jon 'by')]]`.
+
+Deploy with the fast loop (write-text, reload-nexus, bang `None`). Bodies and actions written by earlier tasks are `%1` grubs: after the reload, `GET /api/state` must still list them (the ladder lifts them), and `GET /api/body/person/me` shows `"ship": "~wex"` only after the next write to it, so upsert it once: `POST /api/bodies {"id":"person/me","ship":"~wex"}`.
+
+- [ ] **Step 6: Extend the gate**
+
+In `scripts/api-matrix.py`:
+
+- Every policy `PUT` body uses `'push': 'proposed'` instead of `'push': True`.
+- In section 0 after the `person/me exists` check add: `curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})`.
+- In section 1 after `me.spouse is sarah` add:
+
+```python
+code, r = curl('GET', API + '/resolve?q=%7Ewex')
+check('resolve finds me by ship', code == 200 and [x['id'] for x in r] == ['person/me'], r)
+code, d = curl('POST', API + '/bodies', {'id': 'person/sarah', 'ship': 'sarah'})
+check('a bad ship is 400', code == 400 and d.get('error', '').startswith('ship:'), (code, d))
+code, d = observe([], [obs('thing/subaru', 'location', ref('thing/subaru'), T0, USER)])
+check('a self-reference is refused per item', code == 200 and not d['observations'][0]['ok'] and 'itself' in d['observations'][0]['error'], d)
+```
+
+- In section 5 after `the task is on the open list` add:
+
+```python
+mine = [x for x in acts if x['id'] == AID]
+check('the history shows proposed then approved by policy', bool(mine) and [(h['status'], h['by']) for h in mine[0]['history']] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
+```
+
+- In section 6 after `it left the open list` add:
+
+```python
+code, allacts = curl('GET', API + '/actions?status=done')
+done = [x for x in allacts if x['id'] == AID]
+check('done is in the history with the actor', bool(done) and done[0]['history'][-1]['status'] == 'done' and done[0]['history'][-1]['by'] == 'user', done)
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+check('the audit log ends with the set-action', code == 200 and isinstance(log, list) and log[-1]['op'] == 'set-action' and log[-1]['by'] == 'user', log[-3:] if isinstance(log, list) else log)
+```
+
+Run it twice: `ALL OK` both times.
+
+- [ ] **Step 7: Version 3 through the forge, commit, push**
+
+Set `code/version.json` to `{"version": 3}`, commit, push, pull on the forge, and confirm the desk root version reads 3 with a null bang, as in Task 7 step 4.
+
+```bash
+git add code tests scripts
+git commit -m "A ship on a body, the self-reference guard, action history, push modes and the audit log; version 3"
+git push origin main
+```
+
 ---
 
 ## Self-review

@@ -1,12 +1,12 @@
 # Orrery: a model of the user's world, kept on their ship
 
-Status: draft for review. 2026-09-16.
+Status: approved 2026-09-16. Amended the same day after product review: a ship on a body, a self-reference guard, action history with actors, push modes and an audit log, and cross-ship sharing and scoped client keys pulled into v1 ahead of the MCP tools and the page.
 
 ## 1. What this is
 
 Orrery keeps a model of what is going on in one person's life: the people, places, things and situations around them, what is currently true about each, where each fact came from, and what the assistant proposes to do about it. It is a grubbery desk app in the nisfeb family, installed from `~ricsul-bilwyt` the way lattice, auspex and calendar are.
 
-The ship holds the state and its history. It runs no AI. Clients do the thinking: a local model on the client (Talon, later) triages messages, mail and calendar events into observations and submits them. A larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows. In the first release the analyst is Claude Code over MCP tools compiled into the desk, so the loop runs before any client code exists.
+The ship holds the state and its history. It runs no AI. Clients do the thinking: a local model on the client (Talon, later) triages messages, mail and calendar events into observations and submits them. A larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows. In the first release the analyst is Claude Code over the HTTP API, and then over MCP tools compiled into the desk, so the loop runs before any client code exists.
 
 The name is the instrument: a mechanical model of bodies in motion, read to know where everything is now and where it was.
 
@@ -14,7 +14,7 @@ The name is the instrument: a mechanical model of bodies in motion, read to know
 
 Everything orrery stores is one of three shapes. Everything else is a directory or a JSON grub.
 
-- A **body** is something that exists: a person, a place, a thing, an org, a situation, or a note. It has a stable id, a kind, a name and aliases. The user is the body `person/me`.
+- A **body** is something that exists: a person, a place, a thing, an org, a situation, or a note. It has a stable id, a kind, a name, aliases and, when it is a person or a thing with a ship, an @p. The user is the body `person/me`.
 - An **observation** is one claim about one body: `subject.attr = value`, with when it became true, when it is expected to stop being true, how confident the asserter was, where it came from, and who asserted it. Observations are immutable. Current state is a fold over them.
 - An **action** is something to do: a task, a note to the user, or a client-executed kind such as a message. It moves through proposed, approved, done, dismissed, failed. Tasks are actions, so the todo list is "approved tasks not yet done".
 
@@ -26,9 +26,9 @@ Extension points are deliberate and few: body kinds, attribute names, action kin
 
 A body id is `<kind>/<slug>`. A kind is lowercase ascii, digits and hyphens, at most 24 bytes. A slug is the same charset, at most 64 bytes. Examples: `person/sarah`, `thing/subaru`, `place/johns-machine-shop`, `situation/2026-09-16-breakdown`.
 
-A body carries `kind`, `name` (at most 200 bytes), `aliases` (a set of at most 32 strings of at most 100 bytes each) and `created`. Aliases are the names and handles a triager may see in text: "Sarah", "~sampel-palnet", "the shop". Everything else about a body is an observation.
+A body carries `kind`, `name` (at most 200 bytes), `aliases` (a set of at most 32 strings of at most 100 bytes each), `created` and an optional `ship`, the @p of the body when it has one. Aliases are the names and handles a triager may see in text: "Sarah", "the shop". The ship is identity, not state: resolve matches on it exactly, and a share is addressed by it (section 11). Everything else about a body is an observation.
 
-`person/me` is created on first load with the name `me` and the aliases `me`, `I` and the ship's own `@p`. The user or a client renames it.
+`person/me` is created on first load with the name `me`, the aliases `me` and `I`, and `ship` set to our own @p. The user or a client renames it.
 
 An upsert of an existing id replaces the name if one is given and unions the aliases. There is no merge of two bodies in v1: retract the observations on the duplicate and delete it.
 
@@ -42,12 +42,12 @@ An upsert of an existing id replaces the name if one is given and unions the ali
 | `at` | time | when it became true. ISO 8601 UTC on the wire. Defaults to now |
 | `until` | time or null | when it is expected to stop being true. Optional |
 | `conf` | 0 to 100 | how confident the asserter was. Defaults to 100 |
-| `source` | `{"kind", "id"}` | where it came from: `talon-dm`, `mail`, `calendar`, `user`, `model`, or any other kind. The id is opaque, at most 200 bytes, and is the only evidence kept. Never the text |
+| `source` | `{"kind", "id"}` | where it came from: `talon-dm`, `mail`, `calendar`, `user`, `model`, `ship` for one mirrored from another ship, or any other kind. The id is opaque, at most 200 bytes, and is the only evidence kept. Never the text |
 | `by` | string | who asserted it: `talon/triage`, `claude-code`, `user`. At most 64 bytes |
 | `seen` | time | when the ship recorded it. Set by the ship |
 | `status` | `live` or `retracted` | the only mutable field |
 
-A `{"ref"}` value must name an existing body. A ref-valued attribute is a relation: `spouse`, `owner`, `location`, `employer`. There is no separate relation type.
+A `{"ref"}` value must name an existing body, and never the subject itself. A ref-valued attribute is a relation: `spouse`, `owner`, `location`, `employer`. There is no separate relation type, and nothing traverses relations: a ref is a value, `involved` is one hop, and actions point at bodies while bodies never point at actions, so a contradictory pair of facts is two entries in two timelines for the analyst to notice, never a loop. A future transitive query gets a hop limit and a visited set.
 
 A `null` value clears a single-valued attribute: "no longer stranded" without pretending to know the new state.
 
@@ -68,8 +68,9 @@ Retraction sets `status` to `retracted` with a note. The grub stays. Superseded 
 | `proposed` | time | set by the ship |
 | `status` | enum | `proposed`, `approved`, `done`, `dismissed`, `failed` |
 | `note` | string | why it was dismissed or failed, at most 500 bytes |
+| `history` | list of `{at, status, by}` | every status the action has held, oldest first, with who set it: the proposer, `policy` for an automatic approval, the owner, or a client's identity |
 
-Transitions: proposed to approved or dismissed; approved to done, failed or dismissed. Failed is terminal in v1; propose again.
+Transitions: proposed to approved or dismissed; approved to done, failed or dismissed. Failed is terminal in v1; propose again. Every transition appends to `history`, so the audit question "who approved this, and when" is answered by the action itself. Under the owner cookie the actor is whatever the request says, `user` by default; under a scoped client key (section 11) the actor is the key's identity and cannot be faked.
 
 A proposal whose `kind` and `title` match an open action (proposed or approved) returns the existing id instead of making a second one. Fuzzy duplicates are the analyst's job: it reads the open actions before proposing.
 
@@ -110,7 +111,7 @@ The starter schema:
 }
 ```
 
-`policy.json` starts as `{"auto": ["task", "note"], "push": true, "retention_days": 365}`. `push` sends a notification through `/sys/push` for every new action, proposed or auto-approved. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than the retention are culled. A live observation is never culled.
+`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than the retention are culled. A live observation is never culled.
 
 ## 4. Shape of the desk
 
@@ -143,6 +144,7 @@ Repo `nisfeb/orrery`, branch `main`. The desk is hermetic: every lib and marc it
 /schema.json  /policy.json         seeded once, edits survive         [/ %json]
 /beacon/rev                        the change beacon                  [/ %json]
 /tr/last                           the last writer outcome, as json   [/ %json]
+/tr/log                            the last 500 outcomes, the audit log [/ %json]
 /ui/main.sig  /ui/requests/<id>    binds /apps/orrery, one fiber per request
 /tile.json /icon.svg /link.json /weir.json /orrery.html /orrery.js /orrery.css   replaced on every reload
 ```
@@ -205,7 +207,11 @@ Eight tools, each a `tool:tools` core, reads by absolute peek into the instance,
 | `orrery-actions` | `status` to list; `id` and `status` to transition, `note` |
 | `orrery-schema` | none to read; `schema` to replace |
 
-**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location, since `await-tool` takes an absolute source path in place of a name, so `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery. The durable fix is a small patch to `+get-app-mcp-paths` in `gub/nex/mcp.hoon` that also walks `/apps/shell.shell/desks/*/desk/code/lib/tools`, rehearsed on `~wex` and released with the dist branch. Calendar's and auspex's tools could then leave the kernel too. Phase 2 confirms the gap on `~wex` before the patch, and confirms what grants the mcp instance holds toward a desk app, since lattice's tools reach lattice through roads that exist somewhere.
+**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location, since `await-tool` takes an absolute source path in place of a name, so `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery. The durable fix is a small patch to `+get-app-mcp-paths` in `gub/nex/mcp.hoon` that also walks `/apps/shell.shell/desks/*/desk/code/lib/tools`, rehearsed on `~wex` and released with the dist branch. Calendar's and auspex's tools could then leave the kernel too. Phase 4 confirms the gap on `~wex` before the patch. Grants are not the blocker there: the mcp instance on `~wex` already holds peek, poke and make on the whole ball, which is also the honest answer to what an MCP analyst can reach today.
+
+### Where the analyst runs, and what it can see
+
+In v1 the analyst runs off the ship: Claude Code, later Talon, holding the owner's credentials for orrery's API. Over the HTTP API that is everything orrery holds and nothing else on the ship. Over the ship's MCP server it is whatever that server is granted, which today is the whole ball. Two mechanisms narrow that, and both are in v1. A scoped client key (section 11, phase 3) is the HTTP answer for a client that does not run a ship: a token bound to an identity and a scope. A share (section 11, phase 2) is the Urbit answer for an agent that does: an agent ship is a peer with a share, and it sees exactly the bodies shared with it. Which grubs reach which model is therefore a question of which key or which peer the model sits behind.
 
 ### The page, at `/apps/orrery`
 
@@ -264,20 +270,44 @@ From the lattice, auspex and calendar releases, each silent at the point of fail
 
 - **Unit**, `tests/lib/orrery.hoon`, on `~wex` with the revision pinned: id derivation is deterministic and excludes `by`; kind, slug, attr and cap validation; the single-valued fold prefers latest `at` and breaks ties on `seen`; the multi fold collects and refreshes; `until` expires; `null` clears; retracted observations are ignored; `?at` filtering; `involved`; resolve ordering; JSON round-trips for all three shapes.
 - **HTTP gate**, `scripts/api-matrix.py` against `~wex`: section 8, plus 403 for a non-owner, 400 with the field named for every cap, and the batch caps.
-- **MCP gate**, phase 2: the tools list from `tools/list` includes the eight, and the section 8 scenario from raw text through Claude Code lands the same state.
-- **Page**, phase 3: by hand on `~wex`, the scenario visible in all four views.
+- **Cross-ship gate**, phase 2, `scripts/ship-share-matrix.py` with `~wex` as host and `~feb` as peer: a body shared read-only arrives on the peer, a new observation on the host reaches the peer within one poll, an edit-mode observation from the peer lands on the host with the peer as actor, a revoke stops the flow. A read from the other ship, never a before-and-after on one.
+- **Scoped keys gate**, phase 3, added to `api-matrix.py`: a key scoped to things and tasks sees no people, cannot observe a person, can file a task, cannot propose a message, and answers 403 once revoked.
+- **MCP gate**, phase 4: the tools list from `tools/list` includes the eight, and the section 8 scenario from raw text through Claude Code lands the same state.
+- **Page**, phase 4: by hand on `~wex`, the scenario visible in all four views.
 - Never against `~ricsul-bilwyt` until all of the above pass.
 
 ## 11. Phases
 
-Each phase is installable and useful on its own.
+Each phase is installable and useful on its own. The order changed on 2026-09-16: multiplayer is the reason to be on Urbit at all, so sharing comes before the tools and the page.
 
-1. **Desk and model.** The repo laid out as section 4, `lib/orrery.hoon` with its tests, the writer, the HTTP API, install on `~wex`. Gate: the unit tests and the HTTP matrix green. About two days.
-2. **MCP and push.** The eight tools, the discovery check and the kernel patch if the gap is confirmed, the push on proposal. Gate: the MCP scenario. About one day.
-3. **The page.** Section 6's four views. Gate: the scenario visible. About one day.
-4. **Release.** `docs/releasing.md` from calendar, a catalog line in the kernel's `gub/nex/shell.hoon` beside calendar's, version bump, ricsul's forge pull, the publish. Sneagan runs the ricsul steps.
+1. **Desk and model.** The repo laid out as section 4, `lib/orrery.hoon` with its tests, the writer, the HTTP API, install on `~wex`, then the amendments of this revision (the ship on a body, the self-reference guard, action history, push modes, the audit log). Gate: the unit tests and the HTTP matrix green. About two and a half days.
+2. **Cross-ship sharing.** The minimal protocol below. Gate: the two-ship matrix. About three days.
+3. **Scoped client keys.** Below. Gate: the additions to the HTTP matrix. About one day.
+4. **MCP tools, push, and the page.** The eight tools, the discovery check and the kernel patch if the gap is confirmed, section 6's four views. Gates: the MCP scenario and the scenario visible. About two days.
+5. **Release.** `docs/releasing.md` from calendar, a catalog line in the kernel's `gub/nex/shell.hoon` beside calendar's, version bump, ricsul's forge pull, the publish. Sneagan runs the ricsul steps.
 
-Later, each with its own spec: the Talon triage client; cross-ship sharing of a body's subtree to the ship it belongs to, calendar-style; a `calendar` action kind that pokes the calendar desk app; body merge; fuzzy resolve.
+Later, each with its own spec: the Talon triage client; calendar and auspex pushing structural facts into orrery on the ship, one poke road each; a `calendar` action kind that pokes the calendar desk app; body merge; fuzzy resolve; full-text search over values (lattice's term index is the reusable piece).
+
+### Phase 2: cross-ship sharing, the minimal protocol
+
+The unit shared is a body: its `body` grub and its observations. Calendar's ship sharing is the template for every mechanism here, and its code is the starting point.
+
+- **Shares.** `shares.json` on the host maps a body id to the ships it is shared with and a mode, `read` or `edit`. Owner routes: `POST /api/share {"id", "ship", "mode"}`, `DELETE /api/share/<id>/<ship>`, `GET /api/shares`. Sharing registers a peek grant for that ship on the body's directory through the usergroup registry, one group per shared body, exactly as calendar keeps one group per shared calendar.
+- **Offer and accept.** Sharing pokes the peer's orrery inbox, `shares.sig`, which rides on the public usergroup so any ship may offer. The offer carries the host, the body id, the body's ship if it has one, the mode, and the host's instance path, since a desk app's path differs per install. The peer stores offers in `share-offers.json`; the owner accepts with `POST /api/accept {"host", "id"}`, which writes a row to `ship-remotes.json`.
+- **The mapping.** An accepted body lands locally by its ship: a body whose ship is our own @p lands on `person/me`; any other body lands under its own id, created if absent with the ship the offer names. So what Jackson's ship knows about Sarah becomes, on Sarah's ship, third-party observations on her own `person/me`, and Jackson's `person/me` becomes her `person/jackson`.
+- **Mirroring.** A follower fiber per accepted share polls the host's body directory over `/sys/ames/ships/<host>/root/...` every five minutes on a behn tick and on demand. Each observation is written locally with `source = {"kind": "ship", "id": "<host>/<oid>"}`, `by = "<host>"` and a local `seen`; the content hash makes a re-poll a no-op. Retracting a mirrored observation locally is allowed and local; the next poll does not resurrect it because the retracted grub stays.
+- **Edits back.** In `edit` mode the peer may poke the host's inbox with observations about the shared body. The host applies them through the writer with `by` set to the peer's @p from the transport, never from the payload, and refuses any subject outside the share.
+- **Revoke.** Removing a ship from `shares.json` drops the grant; the peer's next poll is refused and the row reads `revoked`.
+- **The ask grows** by `/sys/ames/ships/` (peek and poke), `/sys/ames/registry` (poke), `/sys/ames/usergroups/` (poke, peek, make) and `/sys/behn/` (the poll timer), each with calendar's wording. A ship that refuses them keeps everything else.
+- **Not in the minimal version:** sharing actions, sharing a situation's participants transitively, conflict resolution beyond "the host's copy is the host's and the mirror is a mirror", and any UI.
+
+### Phase 3: scoped client keys
+
+- `clients.json` holds one row per client: a name, an id, a salted hash of the token, the identity it acts as (`by`), a scope, when it was minted and last used. The owner mints one with `POST /api/clients {"name", "by", "scope"}` and sees the token once; `DELETE /api/clients/<id>` revokes.
+- A scope is `{"kinds": [...], "actions": [...], "write": true|false}`. `kinds` are the body kinds the client may read and, with `write`, observe; `actions` the action kinds it may propose; `write` also covers approving, dismissing and completing.
+- A request carrying `Authorization: Bearer <token>` acts under that scope: the state, body and resolve views omit bodies outside `kinds`, a body outside them is a 404, an observation on one is a 403, a proposal of a kind outside `actions` is a 403, and `by` is forced to the key's identity so the audit trail is honest.
+- `policy.json` gains `sensitive`, a list of attribute names only the owner cookie ever sees; a key never receives them, whatever its scope. A client that keeps a todo list gets `{"kinds": [], "actions": ["task"], "write": true}` and never learns a health attribute exists.
+- The owner cookie keeps full access. Keys are checked in-app, like calendar's CalDAV passwords, never by eyre.
 
 ## 12. Release and install
 
@@ -287,7 +317,7 @@ The kernel needs one line, `(published our 'orrery' 'nisfeb/orrery' 'main')` bes
 
 ## 13. Not in v1
 
-Cross-ship anything. The Talon client. Text evidence of any kind. Body merge. Fuzzy or embedding resolve. Stored indexes and a sweeper. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page.
+The Talon client. Calendar and auspex pushing into orrery. Text evidence of any kind. Body merge. Fuzzy or embedding resolve. Full-text search over values. Stored indexes and a sweeper. Transitive relation queries. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page. Sharing actions across ships.
 
 ## 14. Decisions recorded
 
@@ -297,3 +327,6 @@ Cross-ship anything. The Talon client. Text evidence of any kind. Body merge. Fu
 - One writer, with callers answering from their own precomputation. Chosen for the single poke road the MCP tools need and for the shape two shipped apps proved.
 - ISO 8601 UTC on the wire in both directions, because the readers and writers are language models and they handle it better than milliseconds.
 - `at` ordering over `seen` ordering for the fold. Late-arriving evidence about the past must not overwrite the present.
+- 2026-09-16, after product review: cross-ship sharing and scoped keys move into v1 ahead of the MCP tools and the page, because multiplayer and "which data reaches which model" are the product, and the tools and the page are cheap once the data side is right. The ship on a body is what makes a share addressable, so it landed in phase 1.
+- Nothing indexed in v1, by design: no stored index means no index races and no migration bombs. The tree is the index, and compaction keeps timelines short. The measured upgrade path is a cached attrs snapshot per body, then a reverse-ref index.
+- An @p on a body is identity, not an observation. Identity is what routing keys on; state is what changes.
