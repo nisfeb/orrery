@@ -145,7 +145,7 @@ Repo `nisfeb/orrery`, branch `main`. The desk is hermetic: every lib and marc it
 /beacon/rev                        the change beacon                  [/ %json]
 /tr/last                           the last writer outcome, as json   [/ %json]
 /tr/log                            the last 500 outcomes, the audit log [/ %json]
-/ui/main.sig  /ui/requests/<id>    binds /apps/orrery, one fiber per request
+/web.sig  /requests/<id>           binds /apps/orrery, one fiber per request
 /tile.json /icon.svg /link.json /weir.json /orrery.html /orrery.js /orrery.css   replaced on every reload
 ```
 

@@ -2281,12 +2281,25 @@ The two path segments after `/api/body` and the one after `/api/actions` are pul
   (send-err eyre-id 404 'no such route')
 ```
 
-- [ ] **Step 5: Fill `actions` in the state view**
+- [ ] **Step 5: Fill `actions` in the state view, and publish only the open situations**
 
 In `+serve-state`, after the line `;<  all=(list loaded)  bind:m  (load-bodies 1)` add:
 
 ```hoon
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+```
+
+Task 4's review found that `situations` published every situation, closed ones included, while the spec says the open ones. `sits` stays unfiltered because `involved` filters for itself; the published list is filtered. After the `=/  sits=...` binding add:
+
+```hoon
+  =/  open-sits=(list [id=bid:orr winners=(map @t (list row:orr))])
+    (skim sits |=([* winners=(map @t (list row:orr))] !(is-closed:orr winners)))
+```
+
+Replace the row `['situations' a+(turn sits |=([id=bid:orr *] `json`s+id))]` with:
+
+```hoon
+      ['situations' a+(turn open-sits |=([id=bid:orr *] `json`s+id))]
 ```
 
 and replace the row `['actions' [%a ~]]` with:
