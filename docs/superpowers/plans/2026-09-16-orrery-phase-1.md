@@ -282,7 +282,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
 ++  jo  |=(t=@t ^-(json (need (de:json:html t))))
 ++  t0  ~2026.9.16..22.05.00
 ::
-::  ── names ──────────────────────────────────────────────────────────
+::  ==  names
 ::
 ++  test-ok-kind
   ;:  weld
@@ -307,7 +307,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect-eq !>('thing/subaru') !>((make-bid:orr %thing %subaru)))
   ==
 ::
-::  ── time ───────────────────────────────────────────────────────────
+::  ==  time
 ::
 ++  test-iso-roundtrip
   =/  s=@t  '2026-09-16T22:05:00Z'
@@ -326,7 +326,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect-eq !>(`@ud`0) !>((unix-secs:orr ~1969.12.31)))
   ==
 ::
-::  ── ids ────────────────────────────────────────────────────────────
+::  ==  ids
 ::
 ++  o1
   ^-  obs:orr
@@ -338,8 +338,10 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect-eq !>(19) !>((lent id)))
   ==
 ++  test-obs-id-ignores-by-and-seen
-  =/  o2=obs:orr  o1(by 'claude-code', seen (add t0 ~h1))
-  =/  o3=obs:orr  o1(value s+'Route 10')
+  ::  o1 is an arm, so %= cannot see its faces; bind it to a leg first
+  =/  base=obs:orr  o1
+  =/  o2=obs:orr  base(by 'claude-code', seen (add t0 ~h1))
+  =/  o3=obs:orr  base(value s+'Route 10')
   ;:  weld
     (expect-eq !>((obs-id:orr o1)) !>((obs-id:orr o2)))
     (expect !>(!=((obs-id:orr o1) (obs-id:orr o3))))
@@ -349,7 +351,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '']
   (expect-eq !>(19) !>((lent (trip (act-id:orr a)))))
 ::
-::  ── decoders ───────────────────────────────────────────────────────
+::  ==  decoders
 ::
 ++  test-de-body-ok
   =/  got
@@ -418,6 +420,8 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect-eq !>('value.ref: expected <kind>/<slug>') !>((bad '{"subject":"thing/subaru","attr":"location","value":{"ref":"nowhere"},"source":{"kind":"user"}}')))
     (expect-eq !>('at: expected an ISO 8601 UTC time such as 2026-09-16T22:05:00Z') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"yesterday","source":{"kind":"user"}}')))
     (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":101,"source":{"kind":"user"}}')))
+    (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":-5,"source":{"kind":"user"}}')))
+    (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":"high","source":{"kind":"user"}}')))
     (expect-eq !>('source.kind: required') !>((bad '{"subject":"thing/subaru","attr":"location","value":1}')))
   ==
 ++  test-de-action-ok
@@ -470,7 +474,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect !>(?=([%& *] (snag 0 obs.got))))
   ==
 ::
-::  ── readers and merge ──────────────────────────────────────────────
+::  ==  readers and merge
 ::
 ++  test-readers
   =/  b=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0]
@@ -785,8 +789,9 @@ Expected: a build failure naming `/lib/orrery/hoon` as missing (a `%file-not-fou
   =/  until=(unit @da)  (gt jon 'until')
   ?:  &(?=(~ until) !=(~ (gj jon 'until')))
     [%| 'until: expected an ISO 8601 UTC time, or null']
-  =/  conf=@ud  (fall (gn jon 'conf') 100)
-  ?:  (gth conf 100)  [%| 'conf: 0 to 100']
+  =/  conf=(unit @ud)  ?.((has-key jon 'conf') `100 (gn jon 'conf'))
+  ?~  conf  [%| 'conf: 0 to 100']
+  ?:  (gth u.conf 100)  [%| 'conf: 0 to 100']
   =/  sj=json  (gj jon 'source')
   =/  sk=@t  (gs sj 'kind')
   =/  si=@t  (gs sj 'id')
@@ -795,7 +800,7 @@ Expected: a build failure naming `/lib/orrery/hoon` as missing (a `%file-not-fou
   =/  by=@t  (gs jon 'by')
   =.  by  ?:(=('' by) default-by by)
   ?:  (gth (met 3 by) max-by)  [%| 'by: over 64 bytes']
-  [%& subject attr value u.at until conf [sk si] by now | '']
+  [%& subject attr value u.at until u.conf [sk si] by now | '']
 ::  +de-action: a proposal. proposed is read from the JSON when given
 ::  (the request fiber stamps it, so its id and the writer's agree).
 ::
@@ -925,7 +930,7 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
 
 ```hoon
 ::
-::  ── the fold ───────────────────────────────────────────────────────
+::  ==  the fold
 ::
 ++  r  |=([id=@ta o=obs:orr] ^-(row:orr [id o]))
 ++  mk
@@ -1005,7 +1010,7 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
     (expect-eq !>('b') !>(?~(tl '' id.r.i.tl)))
   ==
 ::
-::  ── involved and resolve ───────────────────────────────────────────
+::  ==  involved and resolve
 ::
 ++  test-involved
   =/  multi=(set @t)  (sy ~['participants'])
@@ -1044,7 +1049,7 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
     (expect-eq !>(`(list bid:orr)`~) !>((ids '')))
   ==
 ::
-::  ── actions, policy, encoders ──────────────────────────────────────
+::  ==  actions, policy, encoders
 ::
 ++  test-action-rules
   =/  auto  (auto-of:orr starter-policy:orr)
@@ -2918,7 +2923,7 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
 
 ```hoon
 ::
-::  ── amendments: ship, history, push modes, the ring ────────────────
+::  ==  amendments: ship, history, push modes, the ring
 ::
 ++  test-de-body-ship
   =/  got  (de-body:orr (jo '{"id":"person/sarah","ship":"~sampel-palnet"}') t0)
