@@ -107,6 +107,7 @@ for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, SIT]:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')
 check('person/me exists', code == 200, (code, me))
+curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})
 for o in dictish(me).get('observations', []):
     if o['source']['id'].startswith('matrix-') and o['status'] != 'retracted':
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
@@ -114,7 +115,7 @@ code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
     if a['title'] == TITLE:
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
-curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': True, 'retention_days': 365})
+curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
 # ── 1. setup ────────────────────────────────────────────────────────
 print('1. setup')
@@ -130,6 +131,12 @@ check('setup bodies all ok', all_ok(d, 'bodies', 3), d)
 check('setup observations all ok', all_ok(d, 'observations', 3), d)
 s = state()
 check('me.spouse is sarah, read back at once', val(s, 'person/me', 'spouse') == ref('person/sarah'), attrs(s, 'person/me'))
+code, r = curl('GET', API + '/resolve?q=%7Ewex')
+check('resolve finds me by ship', code == 200 and [x['id'] for x in r] == ['person/me'], r)
+code, d = curl('POST', API + '/bodies', {'id': 'person/sarah', 'ship': 'sarah'})
+check('a bad ship is 400', code == 400 and d.get('error', '').startswith('ship:'), (code, d))
+code, d = observe([], [obs('thing/subaru', 'location', ref('thing/subaru'), T0, USER)])
+check('a self-reference is refused per item', code == 200 and not d['observations'][0]['ok'] and 'itself' in d['observations'][0]['error'], d)
 check('me.home is home', val(s, 'person/me', 'home') == ref('place/home'), attrs(s, 'person/me'))
 check('the subaru is mine', val(s, 'thing/subaru', 'owner') == ref('person/me'), attrs(s, 'thing/subaru'))
 
@@ -209,6 +216,8 @@ check('policy auto-approves a task', code == 200 and a['status'] == 'approved' a
 AID = a['id'] if code == 200 else ''
 code, acts = curl('GET', API + '/actions')
 check('the task is on the open list', code == 200 and any(x['id'] == AID for x in acts), acts)
+mine = [x for x in acts if x['id'] == AID]
+check('the history shows proposed then approved by policy', bool(mine) and [(h['status'], h['by']) for h in mine[0]['history']] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
 code, a2 = curl('POST', API + '/act', prop)
 check('a second identical proposal answers the same id', code == 200 and a2['id'] == AID and a2['existing'], a2)
 code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
@@ -227,16 +236,21 @@ code, d = curl('POST', API + f'/actions/{AID}', {'status': 'done'})
 check('the task is marked done', code == 200 and d['status'] == 'done', (code, d))
 code, acts = curl('GET', API + '/actions')
 check('it left the open list', code == 200 and not any(x['id'] == AID for x in acts), acts)
+code, allacts = curl('GET', API + '/actions?status=done')
+done = [x for x in allacts if x['id'] == AID]
+check('done is in the history with the actor', bool(done) and done[0]['history'][-1]['status'] == 'done' and done[0]['history'][-1]['by'] == 'user', done)
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+check('the audit log ends with the set-action', code == 200 and isinstance(log, list) and log[-1]['op'] == 'set-action' and log[-1]['by'] == 'user', log[-3:] if isinstance(log, list) else log)
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'approved'})
 check('done is terminal', code == 409, (code, d))
-curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': True, 'retention_days': 0})
+curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 0})
 code, d = observe([], [obs('thing/subaru', 'plate', 'ABC 123', now - timedelta(minutes=1), USER)])
 check('a write with retention 0 lands', code == 200 and all_ok(d, 'observations', 1), (code, d))
 code, bs = body('thing/subaru')
 statuses = {o['id']: o['status'] for o in bs.get('observations', [])} if code == 200 else {}
 check('superseded observations were culled', code == 200 and 'superseded' not in statuses.values(), statuses)
 check('live observations remain', code == 200 and bs['attrs']['location']['value'] == ref(SHOP) and bs['attrs']['plate']['value'] == 'ABC 123', bs.get('attrs') if code == 200 else bs)
-curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': True, 'retention_days': 365})
+curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
 # ── 7. refusals ─────────────────────────────────────────────────────
 print('7. refusals')

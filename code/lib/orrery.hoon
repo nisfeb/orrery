@@ -9,7 +9,8 @@
 ::  ==  the three shapes
 ::
 +$  bid     @t                                  ::  "<kind>/<slug>"
-+$  body    [kind=@tas name=@t aliases=(set @t) created=@da]
++$  body    [kind=@tas name=@t aliases=(set @t) created=@da ship=(unit @p)]
++$  body-1  [kind=@tas name=@t aliases=(set @t) created=@da]
 +$  source  [kind=@t id=@t]
 +$  obs
   $:  subject=bid
@@ -24,7 +25,21 @@
       retracted=?
       note=@t                                   ::  why it was retracted
   ==
+::  one status an action has held, and who set it
++$  step    [at=@da status=@tas by=@t]
 +$  action
+  $:  kind=@tas
+      title=@t
+      payload=json
+      about=(set bid)
+      due=(unit @da)
+      by=@t
+      proposed=@da
+      status=@tas
+      note=@t
+      history=(list step)
+  ==
++$  action-1
   $:  kind=@tas
       title=@t
       payload=json
@@ -36,11 +51,14 @@
       note=@t
   ==
 ::  what the grubs hold: a version head in front of each shape, so a
-::  later shape is told apart by the reader instead of clamming by luck
+::  later shape is told apart by the reader instead of clamming by luck.
+::  %1 bodies and actions are lifted by the readers; new writes are %2.
 ::
-+$  stored-body    [%1 =body]
-+$  stored-obs     [%1 =obs]
-+$  stored-action  [%1 =action]
++$  stored-body      [%2 =body]
++$  stored-body-1    [%1 =body-1]
++$  stored-obs       [%1 =obs]
++$  stored-action    [%2 =action]
++$  stored-action-1  [%1 =action-1]
 ::  an observation with the grub name it lives under
 ::
 +$  row  [id=@ta =obs]
@@ -222,7 +240,8 @@
     %o  (lte (met 3 (en:json:html v)) max-value)
     %a  |
   ==
-::  +de-body: {"id","name","aliases"}. A name '' means "not given".
+::  +de-body: {"id","name","aliases","ship"}. A name '' means "not
+::  given"; a ship names the body's own urbit.
 ::
 ++  de-body
   |=  [jon=json now=@da]
@@ -238,7 +257,10 @@
   ?.  =((lent als) (lent raw))  [%| 'aliases: every alias is a string']
   ?:  (lien als |=(a=@t |(=('' a) (gth (met 3 a) max-alias))))
     [%| 'aliases: each 1 to 100 bytes']
-  [%& id [kind.u.pk name (sy als) now]]
+  =/  sj=json  (gj jon 'ship')
+  =/  ship=(unit @p)  ?:(?=([%s *] sj) (slaw %p p.sj) ~)
+  ?:  &(?=([%s *] sj) ?=(~ ship))  [%| 'ship: expected an @p such as ~sampel-palnet']
+  [%& id [kind.u.pk name (sy als) now ship]]
 ::  +de-obs: one observation. at defaults to now, conf to 100, by to
 ::  default-by. seen is now, retracted is no.
 ::
@@ -259,6 +281,8 @@
           =(~ (parse-bid (gs value 'ref')))
       ==
     [%| 'value.ref: expected <kind>/<slug>']
+  ?:  &(?=([%o *] value) =(subject (gs value 'ref')))
+    [%| 'value.ref: a body cannot refer to itself']
   =/  at=(unit @da)  ?.((has-key jon 'at') `now (gt jon 'at'))
   ?~  at  [%| 'at: expected an ISO 8601 UTC time such as 2026-09-16T22:05:00Z']
   =/  until=(unit @da)  (gt jon 'until')
@@ -304,7 +328,7 @@
   =/  by=@t  (gs jon 'by')
   =.  by  ?:(=('' by) default-by by)
   ?:  (gth (met 3 by) max-by)  [%| 'by: over 64 bytes']
-  [%& `@tas`kind title payload (sy about) due by u.proposed %proposed '']
+  [%& `@tas`kind title payload (sy about) due by u.proposed %proposed '' ~[[u.proposed %proposed by]]]
 ::  +with-default: set a key on an object only when it is absent
 ::
 ++  with-default
@@ -338,8 +362,12 @@
 ++  read-body
   |=  n=*
   ^-  (unit body)
-  =/  r  (mule |.(;;(stored-body n)))
-  ?:(?=(%& -.r) `body.p.r ~)
+  =/  r2  (mule |.(;;(stored-body n)))
+  ?:  ?=(%& -.r2)  `body.p.r2
+  =/  r1  (mule |.(;;(stored-body-1 n)))
+  ?.  ?=(%& -.r1)  ~
+  =/  b=body-1  body-1.p.r1
+  `[kind.b name.b aliases.b created.b ~]
 ++  read-obs
   |=  n=*
   ^-  (unit obs)
@@ -348,8 +376,12 @@
 ++  read-action
   |=  n=*
   ^-  (unit action)
-  =/  r  (mule |.(;;(stored-action n)))
-  ?:(?=(%& -.r) `action.p.r ~)
+  =/  r2  (mule |.(;;(stored-action n)))
+  ?:  ?=(%& -.r2)  `action.p.r2
+  =/  r1  (mule |.(;;(stored-action-1 n)))
+  ?.  ?=(%& -.r1)  ~
+  =/  a=action-1  action-1.p.r1
+  `[kind.a title.a payload.a about.a due.a by.a proposed.a status.a note.a ~[[proposed.a status.a by.a]]]
 ::  +merge-body: an upsert onto an existing body. A name '' keeps the
 ::  old name; aliases union; created stays.
 ::
@@ -360,6 +392,7 @@
       ?:(=('' name.new) name.old name.new)
       (~(uni in aliases.old) aliases.new)
       created.old
+      ?~(ship.new ship.old ship.new)
   ==
 ::  +fresh-name: a new body with no name is named after its slug
 ::
@@ -384,6 +417,7 @@
       ['name' s+name.b]
       ['aliases' a+(turn ~(tap in aliases.b) |=(t=@t `json`s+t))]
       ['created' (en-time created.b)]
+      ['ship' `json`?~(ship.b ~ s+(scot %p u.ship.b))]
   ==
 ++  en-obs
   |=  [r=row status=@tas]
@@ -403,6 +437,10 @@
       ['status' s+status]
       ['note' s+note.o]
   ==
+++  en-step
+  |=  st=step
+  ^-  json
+  (pairs:enjs:format ~[['at' (en-time at.st)] ['status' s+status.st] ['by' s+by.st]])
 ++  en-action
   |=  [id=@ta a=action]
   ^-  json
@@ -417,6 +455,7 @@
       ['proposed' (en-time proposed.a)]
       ['status' s+status.a]
       ['note' s+note.a]
+      ['history' a+(turn history.a en-step)]
   ==
 ::  ==  the fold: live observations to current attributes
 ::
@@ -529,6 +568,8 @@
   =/  hit
     |=  [id=bid b=body]
     ^-  (unit [id=bid =body match=@tas])
+    =/  sh=@t  ?~(ship.b '' (scot %p u.ship.b))
+    ?:  &(!=('' sh) =(sh lq))  `[id b %exact]
     =/  names=(list @t)  (turn `(list @t)`[name.b ~(tap in aliases.b)] lower)
     ?:  (lien names |=(n=@t =(n lq)))  `[id b %exact]
     ?:  (lien names |=(n=@t =(lq (end [3 (met 3 lq)] n))))  `[id b %prefix]
@@ -559,12 +600,39 @@
 ++  multi-of      |=(schema=json ^-((set @t) (sy (strings (ga schema 'multi')))))
 ++  auto-of       |=(policy=json ^-((set @t) (sy (strings (ga policy 'auto')))))
 ++  retention-of  |=(policy=json ^-(@ud (fall (gn policy 'retention_days') 365)))
-++  push-of       |=(policy=json ^-(? =([%b &] (gj policy 'push'))))
+::  +push-mode-of: proposed (the default), all, or none
+::
+++  push-mode-of
+  |=  policy=json
+  ^-  @t
+  =/  m=@t  (gs policy 'push')
+  ?:(=('' m) 'proposed' m)
+++  should-push
+  |=  [mode=@t status=@tas]
+  ^-  ?
+  ?:  =('all' mode)  &
+  ?:  =('proposed' mode)  =(%proposed status)
+  |
+::  +transition: a new status with its note, appended to the history
+::
+++  transition
+  |=  [a=action want=@tas by=@t why=@t at=@da]
+  ^-  action
+  a(status want, note why, history (snoc history.a [at want by]))
+::  +ring: append to a JSON array and keep the last max entries
+::
+++  ring
+  |=  [log=json entry=json max=@ud]
+  ^-  json
+  =/  cur=(list json)  ?:(?=([%a *] log) p.log ~)
+  =/  all=(list json)  (snoc cur entry)
+  =/  n=@ud  (lent all)
+  [%a ?:((gth n max) (slag (sub n max) all) all)]
 ++  starter-policy
   ^-  json
   %-  pairs:enjs:format
   :~  ['auto' a+~[s+'task' s+'note']]
-      ['push' b+&]
+      ['push' s+'proposed']
       ['retention_days' (numb:enjs:format 365)]
   ==
 ++  starter-schema

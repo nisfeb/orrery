@@ -10,6 +10,7 @@
 ::    /schema.json  /policy.json       seeded once; edits survive a reload
 ::    /beacon/rev                      the change beacon, nested so it streams
 ::    /tr/last                         the last writer outcome, as json
+::    /tr/log                          the audit ring, the last 500 ops
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
 ::  absolute path, so every road is [%| up lane], where up is the number
@@ -54,6 +55,7 @@
           [%fall %& [/ %'policy.json'] [[/ %json] starter-policy:orr]]
           [%fall %& [/beacon %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/tr %last] [[/ %json] [%o ~]]]
+          [%fall %& [/tr %log] [[/ %json] [%a ~]]]
       ==
     ::
     ++  on-file
@@ -148,18 +150,34 @@
   ^-  form:m
   ;<  ~  bind:m  (note op | why)
   (pure:m |)
-::  +note: the last writer outcome, at /tr/last. Fiber prints reach only
-::  the raw console; a grub is readable by every tool.
+::  +note-then-no: a no-op that still leaves its reason in /tr/last
+::
+++  note-then-no
+  |=  [op=@t why=@t]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  ~  bind:m  (note op & why)
+  (pure:m |)
+::  +note: the last writer outcome at /tr/last, and the audit ring at
+::  /tr/log (the last 500). Fiber prints reach only the raw console; a
+::  grub is readable by every tool.
 ::
 ++  note
   |=  [op=@t ok=? why=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  (note-by op ok why '')
+++  note-by
+  |=  [op=@t ok=? why=@t by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  %+  over:io  (rf 0 /tr %last)
-  :-  [/ %json]
-  ^-  json
-  (pairs:enjs:format ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['at' (en-time:orr now)]])
+  =/  entry=json
+    %-  pairs:enjs:format
+    ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
+  ;<  ~  bind:m  (over:io (rf 0 /tr %last) [[/ %json] entry])
+  ;<  log=json  bind:m  (read-json (rf 0 /tr %log))
+  (over:io (rf 0 /tr %log) [[/ %json] (ring:orr log entry 500)])
 ::  +bump-beacon: the change beacon moves once per op that changed the
 ::  tree, never on a refusal or a no-op. Milliseconds since 1970, so a
 ::  browser keeps it exact.
@@ -168,9 +186,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  ms=@ud  (div (sub now ~1970.1.1) (div ~s1 1.000))
+  =/  ms=@ud  ?:((lth now ~1970.1.1) 0 (div (sub now ~1970.1.1) (div ~s1 1.000)))
   (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format ms)])
-::  +ensure-me: person/me, named "me", with the aliases me, I and our @p
+::  +ensure-me: person/me, named "me", aliased me and I, on our ship
 ::
 ++  ensure-me
   =/  m  (fiber:fiber:nexus ,?)
@@ -179,7 +197,7 @@
   ?:  ex  (pure:m |)
   ;<  our=@p  bind:m  get-our:io
   ;<  now=@da  bind:m  get-time:io
-  =/  b=body:orr  [%person 'me' (sy `(list @t)`~['me' 'I' (scot %p our)]) now]
+  =/  b=body:orr  [%person 'me' (sy `(list @t)`~['me' 'I']) now `our]
   (write-body 0 %person %me b)
 ::  +ensure-dirs: make each directory along base/segs, in order
 ::
@@ -208,15 +226,15 @@
   =/  fresh=body:orr  new(name (fresh-name:orr slug name.new))
   ;<  cur=view:nexus  bind:m  (peek:io road ~)
   ?.  ?=([%file *] cur)
-    ;<  *  bind:m  (make-gained-soft:io road |+[[[/orrery %body] `stored-body:orr`[%1 fresh]] ~])
+    ;<  *  bind:m  (make-gained-soft:io road |+[[[/orrery %body] `stored-body:orr`[%2 fresh]] ~])
     (pure:m &)
   =/  old=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.cur))
   ?~  old
-    ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%1 fresh]])
+    ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%2 fresh]])
     (pure:m &)
   =/  merged=body:orr  (merge-body:orr u.old new)
   ?:  =(merged u.old)  (pure:m |)
-  ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%1 merged]])
+  ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%2 merged]])
   (pure:m &)
 ::  +do-observe: bodies first, then observations, then compaction of
 ::  every subject written. Items that failed to decode are skipped
@@ -585,11 +603,12 @@
   ?:  (gth (met 3 why) max-note:orr)  (refuse 'retract' 'note: over 500 bytes')
   ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 0 `@ta`id)
   ?~  hit  (refuse 'retract' (cat 3 'no observation ' id))
-  ?:  retracted.obs.r.u.hit  (pure:m |)
+  ?:  retracted.obs.r.u.hit  (note-then-no 'retract' 'already retracted')
   =/  o=obs:orr  obs.r.u.hit(retracted &, note why)
   ;<  ~  bind:m
     %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
     [[/orrery %obs] `stored-obs:orr`[%1 o]]
+  ;<  ~  bind:m  (compact kind.u.hit slug.u.hit)
   ;<  ~  bind:m  (note 'retract' & '')
   (pure:m &)
 ++  do-delete-body
@@ -654,17 +673,18 @@
   ?^  missing  (refuse 'act' (cat 3 'about: no such body ' u.missing))
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  ?^  (open-twin all kind.p.got title.p.got)  (pure:m |)
-  =/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))
+  ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
+  =/  auto=?  (~(has in (auto-of:orr policy)) `@t`kind.p.got)
+  =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
   =/  id=@ta  (act-id:orr a)
   ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))
-  ?:  ex  (pure:m |)
+  ?:  ex  (note-then-no 'act' 'an action with this id exists')
   ;<  *  bind:m
-    (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%1 a]] ~])
+    (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%2 a]] ~])
   ;<  ~  bind:m
-    ?.  (push-of:orr policy)  (pure:(fiber:fiber:nexus ,~) ~)
+    ?.  (should-push:orr (push-mode-of:orr policy) status.a)  (pure:(fiber:fiber:nexus ,~) ~)
     (push-soft a id)
-  ;<  ~  bind:m  (note 'act' & '')
+  ;<  ~  bind:m  (note-by 'act' & '' by.a)
   (pure:m &)
 ::  +push-soft: a notification through /sys/push. Soft, so a refused
 ::  road never fails the writer.
@@ -679,6 +699,7 @@
   ;<  *  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title title.a ~ `'/apps/orrery' `tag]] eny]]
+  ;<  ~  bind:m  (note-by 'push' & title.a by.a)
   (pure:m ~)
 ++  do-set-action
   |=  jon=json
@@ -687,6 +708,7 @@
   =/  id=@t  (gs:orr jon 'id')
   =/  want=@t  (gs:orr jon 'status')
   =/  why=@t  (gs:orr jon 'note')
+  =/  by=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
   ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
   ;<  cur=view:nexus  bind:m  (peek:io road ~)
@@ -695,9 +717,10 @@
   ?~  a  (refuse 'set-action' 'unreadable action')
   ?.  (transition-ok:orr status.u.a `@tas`want)
     (refuse 'set-action' (rap 3 'cannot go from ' status.u.a ' to ' want ~))
-  =/  next=action:orr  u.a(status `@tas`want, note why)
-  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%1 next]])
-  ;<  ~  bind:m  (note 'set-action' & '')
+  ;<  now=@da  bind:m  get-time:io
+  =/  next=action:orr  (transition:orr u.a `@tas`want by why now)
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
+  ;<  ~  bind:m  (note-by 'set-action' & '' by)
   (pure:m &)
 ++  do-set-doc
   |=  [name=@ta op=@t jon=json]
@@ -705,6 +728,8 @@
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse op 'doc: an object is required')
+  ;<  cur=json  bind:m  (read-json (rf 0 / name))
+  ?:  =(cur doc)  (note-then-no op 'unchanged')
   ;<  ~  bind:m  (over:io (rf 0 / name) [[/ %json] doc])
   ;<  ~  bind:m  (note op & '')
   (pure:m &)
@@ -899,7 +924,7 @@
     (send-err eyre-id 409 (rap 3 'cannot go from ' status.u.a ' to ' want ~))
   =/  op=json
     %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')]]
+    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')] ['by' s+(gs:orr jon 'by')]]
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))

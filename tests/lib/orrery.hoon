@@ -74,7 +74,7 @@
   ==
 ++  test-act-id-shape
   =/  a=action:orr
-    [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '']
+    [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '' ~]
   (expect-eq !>(19) !>((lent (trip (act-id:orr a)))))
 ::
 ::  ==  decoders
@@ -91,6 +91,7 @@
     (expect-eq !>('John\'s Machine Shop') !>(name.body.p.got))
     (expect-eq !>(`(set @t)`(sy ~['John\'s' 'the shop'])) !>(aliases.body.p.got))
     (expect-eq !>(t0) !>(created.body.p.got))
+    (expect-eq !>(`(unit @p)`~) !>(ship.body.p.got))
   ==
 ++  test-de-body-refusals
   =/  bad
@@ -164,6 +165,7 @@
     (expect-eq !>(%proposed) !>(status.p.got))
     (expect-eq !>('mcp') !>(by.p.got))
     (expect-eq !>(`json`~) !>(payload.p.got))
+    (expect-eq !>(`(list step:orr)`~[[~2026.9.17..3.00.00 %proposed 'mcp']]) !>(history.p.got))
   ==
 ++  test-de-action-refusals
   =/  bad
@@ -203,22 +205,24 @@
 ::  ==  readers and merge
 ::
 ++  test-readers
-  =/  b=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0]
+  =/  b=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0 ~]
   ;:  weld
-    (expect-eq !>(`(unit body:orr)`[~ b]) !>((read-body:orr [%1 b])))
-    (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%2 'nope'])))
+    (expect-eq !>(`(unit body:orr)`[~ b]) !>((read-body:orr [%2 b])))
+    (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
     (expect-eq !>(`(unit obs:orr)`[~ o1]) !>((read-obs:orr [%1 o1])))
     (expect-eq !>(`(unit obs:orr)`~) !>((read-obs:orr 'garbage')))
   ==
 ++  test-merge-body
-  =/  old=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0]
-  =/  new=body:orr  [%person '' (sy ~['wife']) (add t0 ~d1)]
+  =/  old=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0 ~]
+  =/  new=body:orr  [%person '' (sy ~['wife']) (add t0 ~d1) ~]
   =/  got=body:orr  (merge-body:orr old new)
   ;:  weld
     (expect-eq !>('Sarah') !>(name.got))
     (expect-eq !>(`(set @t)`(sy ~['Sarah' 'wife'])) !>(aliases.got))
     (expect-eq !>(t0) !>(created.got))
     (expect-eq !>('Sarah B') !>(name:(merge-body:orr old new(name 'Sarah B'))))
+    (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship:(merge-body:orr old new(ship `~sampel-palnet))))
+    (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship:(merge-body:orr old(ship `~sampel-palnet) new)))
     (expect-eq !>('sarah') !>((fresh-name:orr %sarah '')))
     (expect-eq !>('Sarah') !>((fresh-name:orr %sarah 'Sarah')))
   ==
@@ -325,9 +329,9 @@
   ==
 ++  test-resolve
   =/  bodies=(list [id=bid:orr =body:orr])
-    :~  ['person/sarah' [%person 'Sarah' (sy ~['wife']) t0]]
-        ['place/johns-machine-shop' [%place 'John\'s Machine Shop' (sy ~['John\'s' 'the shop']) t0]]
-        ['thing/subaru' [%thing 'The Subaru' (sy ~['the car']) t0]]
+    :~  ['person/sarah' [%person 'Sarah' (sy ~['wife']) t0 `~sampel-palnet]]
+        ['place/johns-machine-shop' [%place 'John\'s Machine Shop' (sy ~['John\'s' 'the shop']) t0 ~]]
+        ['thing/subaru' [%thing 'The Subaru' (sy ~['the car']) t0 ~]]
     ==
   =/  ids
     |=  q=@t
@@ -338,6 +342,7 @@
     (expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids 'WIFE')))
     (expect-eq !>(`(list bid:orr)`~['place/johns-machine-shop']) !>((ids 'john\'s')))
     (expect-eq !>(`(list bid:orr)`~['thing/subaru']) !>((ids 'the c')))
+    (expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids '~sampel-palnet')))
     (expect-eq !>(`(list bid:orr)`~) !>((ids 'zzz')))
     (expect-eq !>(`(list bid:orr)`~) !>((ids '')))
   ==
@@ -354,7 +359,7 @@
     (expect-eq !>(%approved) !>((initial-status:orr %task auto)))
     (expect-eq !>(%proposed) !>((initial-status:orr %message auto)))
     (expect-eq !>(365) !>((retention-of:orr starter-policy:orr)))
-    (expect !>((push-of:orr starter-policy:orr)))
+    (expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))
     (expect !>((~(has in (multi-of:orr starter-schema:orr)) 'participants')))
   ==
 ++  test-encoders-roundtrip
@@ -366,6 +371,58 @@
     (expect-eq !>(value:o1) !>(value.p.back))
     (expect-eq !>(at:o1) !>(at.p.back))
     (expect-eq !>('live') !>((gs:orr j 'status')))
-    (expect-eq !>('Sarah') !>((gs:orr (en-body:orr 'person/sarah' [%person 'Sarah' ~ t0]) 'name')))
+    (expect-eq !>('Sarah') !>((gs:orr (en-body:orr 'person/sarah' [%person 'Sarah' ~ t0 ~]) 'name')))
+  ==
+::
+::  ==  amendments: ship, history, push modes, the ring
+::
+++  test-de-body-ship
+  =/  got  (de-body:orr (jo '{"id":"person/sarah","ship":"~sampel-palnet"}') t0)
+  =/  bad  (de-body:orr (jo '{"id":"person/sarah","ship":"sarah"}') t0)
+  ;:  weld
+    (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(?:(?=(%& -.got) ship.body.p.got ~)))
+    (expect-eq !>('ship: expected an @p such as ~sampel-palnet') !>(?:(?=(%| -.bad) p.bad 'accepted')))
+  ==
+++  test-de-obs-self-ref
+  =/  got  (de-obs:orr (jo '{"subject":"thing/subaru","attr":"location","value":{"ref":"thing/subaru"},"source":{"kind":"user"}}') t0 'http')
+  (expect-eq !>('value.ref: a body cannot refer to itself') !>(?:(?=(%| -.got) p.got 'accepted')))
+++  test-transition
+  =/  a=action:orr  [%task 'x' ~ ~ ~ 'mcp' t0 %proposed '' ~[[t0 %proposed 'mcp']]]
+  =/  b=action:orr  (transition:orr a %approved 'policy' '' (add t0 ~s1))
+  =/  c=action:orr  (transition:orr b %done 'user' 'called them' (add t0 ~h1))
+  ;:  weld
+    (expect-eq !>(%approved) !>(status.b))
+    (expect-eq !>(2) !>((lent history.b)))
+    (expect-eq !>(`step:orr`[(add t0 ~h1) %done 'user']) !>((rear history.c)))
+    (expect-eq !>('called them') !>(note.c))
+    (expect-eq !>(3) !>((lent history.c)))
+  ==
+++  test-push-modes
+  ;:  weld
+    (expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))
+    (expect-eq !>('none') !>((push-mode-of:orr (jo '{"push":"none"}'))))
+    (expect !>((should-push:orr 'all' %approved)))
+    (expect !>((should-push:orr 'proposed' %proposed)))
+    (expect !>(!(should-push:orr 'proposed' %approved)))
+    (expect !>(!(should-push:orr 'none' %proposed)))
+  ==
+++  test-ring
+  =/  one=json  (ring:orr [%a ~] (jo '{"n":1}') 2)
+  =/  two=json  (ring:orr one (jo '{"n":2}') 2)
+  =/  three=json  (ring:orr two (jo '{"n":3}') 2)
+  =/  fresh=json  (ring:orr [%o ~] (jo '{"n":9}') 5)
+  ;:  weld
+    (expect-eq !>(1) !>((lent ?:(?=([%a *] one) p.one ~))))
+    (expect-eq !>(2) !>((lent ?:(?=([%a *] three) p.three ~))))
+    (expect-eq !>(`json`(jo '{"n":2}')) !>(?:(?=([%a *] three) (snag 0 p.three) ~)))
+    (expect-eq !>(1) !>((lent ?:(?=([%a *] fresh) p.fresh ~))))
+  ==
+++  test-readers-lift
+  =/  old-body  [%1 [%person 'Sarah' (sy ~['Sarah']) t0]]
+  =/  old-act   [%1 [%task 'x' ~ ~ ~ 'mcp' t0 %approved '']]
+  ;:  weld
+    (expect-eq !>(`(unit body:orr)`[~ [%person 'Sarah' (sy ~['Sarah']) t0 ~]]) !>((read-body:orr old-body)))
+    (expect-eq !>(`(unit (list step:orr))`[~ ~[[t0 %approved 'mcp']]]) !>((bind (read-action:orr old-act) |=(a=action:orr history.a))))
+    (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
   ==
 --
