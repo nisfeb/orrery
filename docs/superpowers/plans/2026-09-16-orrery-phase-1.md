@@ -1908,8 +1908,8 @@ Expected: `bang: None` and children including `main.sig`, `web.sig`, `bodies`, `
 
 ```bash
 APP=/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app
-curl -s -b $CK -X POST -H 'content-type: application/json' -d "{\"action\":\"approve-weir\",\"app\":\"$APP\"}" $W/apps/grubbery/permits
-# expected: ok
+curl -s -b $CK -X POST -H 'content-type: application/json' -d "{\"action\":\"approve-weir\",\"app\":\"$APP\",\"granted\":{\"poke\":[\"/sys/bowl.sig\",\"/sys/eyre/\",\"/sys/push/\"],\"peek\":[\"/sys/link/\"],\"make\":[]}}" $W/apps/grubbery/permits
+# expected: ok. The granted object is required: the shell treats a missing one as an empty grant and sands an empty weir, answering ok both times and leaving the app jailed.
 curl -s -b $CK -X POST -H 'content-type: application/json' -d "{\"app\":\"$APP\"}" $W/apps/grubbery/permits/reload
 # expected: ok
 sleep 15
@@ -1936,18 +1936,18 @@ curl -s -o /dev/null -w '%{http_code}\n' $W/apps/orrery/api/state
 curl -s -b $CK -X POST -H 'content-type: application/json' $W/apps/orrery/api/observe -d '{
   "bodies": [{"id":"thing/subaru","name":"The Subaru","aliases":["the car","subaru"]}],
   "observations": [
-    {"subject":"thing/subaru","attr":"status","value":"broken down","at":"2026-09-16T22:00:00Z","conf":90,"source":{"kind":"talon-dm","id":"m1"},"by":"talon/triage"},
+    {"subject":"thing/subaru","attr":"status","value":"broken down","at":"2026-09-16T12:00:00Z","conf":90,"source":{"kind":"talon-dm","id":"m1"},"by":"talon/triage"},
     {"subject":"thing/nothing","attr":"status","value":"x","source":{"kind":"user","id":""}}
   ]}' | python3 -m json.tool
 ```
 
-Expected: `bodies[0]` is `{"id": "thing/subaru", "ok": true, "existing": false}`; `observations[0]` has an `id` of the form `1789596000-xxxxxxxx`, `ok: true`, `existing: false`; `observations[1]` is `{"ok": false, "error": "unknown subject thing/nothing"}`. Then:
+Expected: `bodies[0]` is `{"id": "thing/subaru", "ok": true, "existing": false}`; `observations[0]` has an `id` of the form `1789560000-xxxxxxxx`, `ok: true`, `existing: false`; `observations[1]` is `{"ok": false, "error": "unknown subject thing/nothing"}`. The observation is dated at noon UTC, in the ship's past: a state read folds at the ship's now, and an observation dated in the future is `%future`, not live. Then:
 
 ```bash
 curl -s -b $CK $W/apps/orrery/api/state | python3 -c 'import sys,json; d=json.load(sys.stdin); b=[x for x in d["bodies"] if x["id"]=="thing/subaru"][0]; print(b["attrs"])'
 ```
 
-Expected: `status` with value `broken down`, `at` `2026-09-16T22:00:00Z`, `conf` 90, `source` `{kind: talon-dm, id: m1}`, `by` `talon/triage`, and `obs` equal to the id answered above. Re-POST the same request: `existing: true` on the body and the first observation. Read the writer's last note:
+Expected: `status` with value `broken down`, `at` `2026-09-16T12:00:00Z`, `conf` 90, `source` `{kind: talon-dm, id: m1}`, `by` `talon/triage`, and `obs` equal to the id answered above. Re-POST the same request: `existing: true` on the body and the first observation. Read the writer's last note:
 
 ```bash
 curl -s -b $CK "$I/tr/last?raw=1"
@@ -2468,6 +2468,27 @@ and replace the row `['actions' [%a ~]]` with:
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ```
+
+- [ ] **Step 6b: The beacon in milliseconds, and no rev in a write answer**
+
+Task 4 found two things on the ship: a raw `@da` in `/beacon/rev` is a 128-bit number, past what a browser's `JSON.parse` keeps exactly, and the `rev` a write answer reads right after its poke is the rev before the writer applied. So the beacon carries milliseconds since 1970, and write answers carry no `rev`; the state view keeps it.
+
+Replace `+bump-beacon` with:
+
+```hoon
+::  +bump-beacon: the change beacon moves once per op that changed the
+::  tree, never on a refusal or a no-op. Milliseconds since 1970, so a
+::  browser keeps it exact.
+::
+++  bump-beacon
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  ms=@ud  (div (sub now ~1970.1.1) (div ~s1 1.000))
+  (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format ms)])
+```
+
+In `+serve-observe`, delete the line `;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))` and drop `['rev' rev]` from the final `pairs` list, which becomes `~[['bodies' a+bodies-res] ['observations' a+obs-res]]`.
 
 - [ ] **Step 7: Deploy with the fast loop and read the bang**
 

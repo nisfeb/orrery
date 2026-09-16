@@ -184,11 +184,12 @@ Batch caps: 50 bodies and 200 observations per observe. A caller that needs more
 Observe answers per item so an AI client can fix the one it got wrong:
 
 ```json
-{"rev": 42,
- "bodies": [{"id": "place/johns-machine-shop", "ok": true, "existing": false}],
+{"bodies": [{"id": "place/johns-machine-shop", "ok": true, "existing": false}],
  "observations": [{"id": "1758056400-a3f9c1d2", "ok": true, "existing": false},
                   {"ok": false, "error": "unknown subject thing/subaru"}]}
 ```
+
+A write answer carries no `rev`: the writer applies after the answer leaves, so a rev read then is the one before the write. The state view carries the rev, as milliseconds since 1970, which a browser keeps exact.
 
 Live updates: `/beacon/rev` streams through grubbery's keep-SSE the way lattice's and auspex's beacons do. A client that sees it move refetches what it shows.
 
