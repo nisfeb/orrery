@@ -58,7 +58,7 @@ tmux send-keys -t 0:2.0 -l '-test /~wex/grubbery/<rev>/tests/lib/orrery ~'; tmux
 sleep 20; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -40
 ```
 
-Count only the `OK`, `FAILED` and `CRASHED` lines between your own command echo and its verdict. A compile error in the test file or the library prints a `dep failed` or a trace instead of a verdict; the file and line are in the trace.
+Count only the `OK`, `FAILED` and `CRASHED` lines between your own command echo and its verdict. A compile error in the test file or the library prints a `dep failed` or a trace instead of a verdict; the file and line are in the trace. Two mechanics learned on the first runs: this shell aliases `cp` to `cp -i`, so copies into the mount are `\cp`; and a dojo line that starts with a dash needs `--` before it (`tmux send-keys -t 0:2.0 -l -- '-test ...'`) or tmux reads the dash as a flag. A commit that touches a library the desk compiles takes 70 to 95 seconds to print; a pane that keeps changing is working, not stuck. Two hoon facts the tests taught: `%=` (the `x(face value)` form) and a dot wing (`face.x`) work on a leg bound with `=/`, not on an arm; to reach into an arm's product use the colon form (`face:x`) or bind it to a leg first.
 
 **The fast loop for nexus code, after the desk exists (Task 4 onward).** Writing a file into the desk's code tree recompiles at once, with no commit. Then reload the instance so its long-lived fibers pick the new code up, and read `bang`:
 
@@ -1069,9 +1069,9 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
   =/  back  (de-obs:orr j t0 'http')
   ?.  ?=(%& -.back)  (expect !>(|))
   ;:  weld
-    (expect-eq !>(subject.o1) !>(subject.p.back))
-    (expect-eq !>(value.o1) !>(value.p.back))
-    (expect-eq !>(at.o1) !>(at.p.back))
+    (expect-eq !>(subject:o1) !>(subject.p.back))
+    (expect-eq !>(value:o1) !>(value.p.back))
+    (expect-eq !>(at:o1) !>(at.p.back))
     (expect-eq !>('live') !>((gs:orr j 'status')))
     (expect-eq !>('Sarah') !>((gs:orr (en-body:orr 'person/sarah' [%person 'Sarah' ~ t0]) 'name')))
   ==
