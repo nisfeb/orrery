@@ -4,5 +4,8 @@ A model of one person's world, kept on their Urbit ship as a grubbery desk app. 
 
 The ship holds the state and its history and runs no AI. Clients triage messages, mail and calendar events into observations and submit them; a larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows.
 
-- Design, under review: `docs/superpowers/specs/2026-09-16-orrery-design.md`.
+- Design: `docs/superpowers/specs/2026-09-16-orrery-design.md`. Phase 1 plan: `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`.
+- `code/` is the desk: the nexus at `code/nex/orrery/app.hoon`, the model in `code/lib/orrery.hoon`, the marcs under `code/mar`. `code/version.json` is what replicates.
+- The HTTP API lives under `/apps/orrery/api`: `state`, `body/<kind>/<slug>`, `resolve`, `observe`, `retract`, `bodies`, `act`, `actions`, `schema`, `policy`. Owner only. Spec section 6 has the table.
+- Gates, against `~wex`: `tests/lib/orrery.hoon` with `-test`, and `scripts/api-matrix.py`. Releasing: `docs/releasing.md`.
 - Family: [lattice](https://github.com/nisfeb/lattice), [auspex](https://github.com/nisfeb/auspex), [calendar](https://github.com/nisfeb/calendar), installed from `~ricsul-bilwyt` the same way.
