@@ -92,8 +92,13 @@ def obs(subject, attr, value, at, source, until=None, conf=100):
     return o
 
 
-def all_ok(d, key):
-    return isinstance(d, dict) and all(x.get('ok') for x in d.get(key, []))
+def dictish(x):
+    return x if isinstance(x, dict) else {}
+
+
+def all_ok(d, key, n):
+    items = dictish(d).get(key, [])
+    return len(items) == n and all(x.get('ok') for x in items)
 
 
 # ── 0. a clean slate ────────────────────────────────────────────────
@@ -102,11 +107,11 @@ for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, SIT]:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')
 check('person/me exists', code == 200, (code, me))
-for o in (me or {}).get('observations', []):
+for o in dictish(me).get('observations', []):
     if o['source']['id'].startswith('matrix-') and o['status'] != 'retracted':
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
 code, acts = curl('GET', API + '/actions?status=open')
-for a in acts or []:
+for a in (acts if isinstance(acts, list) else []):
     if a['title'] == TITLE:
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': True, 'retention_days': 365})
@@ -121,10 +126,12 @@ code, d = observe(
      obs('person/me', 'home', ref('place/home'), T0 - timedelta(days=1), USER),
      obs('thing/subaru', 'owner', ref('person/me'), T0 - timedelta(days=1), USER)])
 check('setup answers 200', code == 200, (code, d))
-check('setup bodies all ok', all_ok(d, 'bodies'), d)
-check('setup observations all ok', all_ok(d, 'observations'), d)
+check('setup bodies all ok', all_ok(d, 'bodies', 3), d)
+check('setup observations all ok', all_ok(d, 'observations', 3), d)
 s = state()
 check('me.spouse is sarah, read back at once', val(s, 'person/me', 'spouse') == ref('person/sarah'), attrs(s, 'person/me'))
+check('me.home is home', val(s, 'person/me', 'home') == ref('place/home'), attrs(s, 'person/me'))
+check('the subaru is mine', val(s, 'thing/subaru', 'owner') == ref('person/me'), attrs(s, 'thing/subaru'))
 
 # ── 2. message 1 ────────────────────────────────────────────────────
 print('2. message 1: "car died on route 9, stranded waiting for a tow"')
@@ -140,12 +147,16 @@ code, d = observe(
      obs(SIT, 'participants', ref('thing/subaru'), T0, src('m1')),
      obs(SIT, 'location', 'Route 9', T0, src('m1')),
      obs(SIT, 'started', iso(T0), T0, src('m1'))])
-check('message 1 lands', code == 200 and all_ok(d, 'observations'), d)
+check('message 1 lands', code == 200 and all_ok(d, 'observations', 10), d)
 s = state(iso(T0 + timedelta(minutes=5)))   # spec: the state view at 22:05, inside the until
 check('me.status is stranded', val(s, 'person/me', 'status') == 'stranded, waiting for a tow', attrs(s, 'person/me'))
-check('subaru on Route 9', val(s, 'thing/subaru', 'location') == 'Route 9')
+check('me on Route 9', val(s, 'person/me', 'location') == 'Route 9', attrs(s, 'person/me'))
+check('subaru on Route 9', val(s, 'thing/subaru', 'location') == 'Route 9', attrs(s, 'thing/subaru'))
+check('subaru is broken down', val(s, 'thing/subaru', 'status') == 'broken down', attrs(s, 'thing/subaru'))
 parts = (attrs(s, SIT) or {}).get('participants')
 check('situation has three participants', isinstance(parts, list) and len(parts) == 3, parts)
+check('the situation is on Route 9', val(s, SIT, 'location') == 'Route 9', attrs(s, SIT))
+check('the situation started at the breakdown', val(s, SIT, 'started') == iso(T0), attrs(s, SIT))
 check('situation is open', SIT in s['situations'], s['situations'])
 sarah = [b for b in s['bodies'] if b['id'] == 'person/sarah']
 check("sarah's state names the situation", bool(sarah) and SIT in sarah[0]['involved'], sarah)
@@ -158,10 +169,10 @@ code, d = observe(
     [{'id': SHOP, 'name': "John's Machine Shop", 'aliases': ["John's", 'the shop']}],
     [obs('thing/subaru', 'status', "being towed to John's Machine Shop", M2, src('m2'), None, 90),
      obs('person/me', 'status', 'riding with the tow', M2, src('m2'), UNTIL, 80)])
-check('message 2 lands', code == 200 and all_ok(d, 'observations'), d)
-RIDING = d['observations'][1]['id'] if code == 200 else ''
+check('message 2 lands', code == 200 and all_ok(d, 'observations', 2), d)
+RIDING = d['observations'][1].get('id', '') if code == 200 and len(dictish(d).get('observations', [])) > 1 else ''
 s = state()
-check('subaru is being towed', val(s, 'thing/subaru', 'status') == "being towed to John's Machine Shop")
+check('subaru is being towed', val(s, 'thing/subaru', 'status') == "being towed to John's Machine Shop", attrs(s, 'thing/subaru'))
 code, r = curl('GET', API + '/resolve?q=the%20shop')
 check('resolve finds the shop by alias', code == 200 and [x['id'] for x in r] == [SHOP], r)
 
@@ -173,17 +184,19 @@ batch = [obs('thing/subaru', 'location', ref(SHOP), M3, src('m3'), None, 95),
          obs('person/me', 'status', None, M3, src('m3')),
          obs(SIT, 'status', 'car at shop, awaiting diagnosis', M3, src('m3'))]
 code, d = observe([], batch)
-check('message 3 lands', code == 200 and all_ok(d, 'observations'), d)
+check('message 3 lands', code == 200 and all_ok(d, 'observations', 5), d)
 s = state()
 check("subaru at John's", val(s, 'thing/subaru', 'location') == ref(SHOP), attrs(s, 'thing/subaru'))
-check('me at home', val(s, 'person/me', 'location') == ref('place/home'))
+check('subaru awaits diagnosis', val(s, 'thing/subaru', 'status') == 'at the shop, awaiting diagnosis', attrs(s, 'thing/subaru'))
+check('me at home', val(s, 'person/me', 'location') == ref('place/home'), attrs(s, 'person/me'))
 check('me has no status', 'status' not in (attrs(s, 'person/me') or {}), attrs(s, 'person/me'))
-check('situation still open', SIT in s['situations'])
+check('situation still open', SIT in s['situations'], s['situations'])
 past = state(iso(T0 + timedelta(hours=1)))
 check('an hour in, the subaru was still on Route 9', val(past, 'thing/subaru', 'location') == 'Route 9', attrs(past, 'thing/subaru'))
-check('an hour in, me was stranded', val(past, 'person/me', 'status') == 'stranded, waiting for a tow')
+check('an hour in, me was stranded', val(past, 'person/me', 'status') == 'stranded, waiting for a tow', attrs(past, 'person/me'))
 code, d = observe([], batch)
-check('resubmitting message 3 changes nothing', code == 200 and all(o['ok'] and o['existing'] for o in d['observations']), d)
+check('resubmitting message 3 changes nothing',
+      code == 200 and len(d['observations']) == 5 and all(o['ok'] and o['existing'] for o in d['observations']), d)
 
 # ── 5. the analyst ──────────────────────────────────────────────────
 print('5. the analyst proposes a task')
@@ -208,7 +221,7 @@ print('6. retract, done, compact')
 code, d = curl('POST', API + '/retract', {'id': RIDING, 'note': 'never rode along'})
 check('retract answers 200', code == 200, (code, d))
 code, me = body('person/me')
-riding = [o for o in me.get('observations', []) if o['id'] == RIDING]
+riding = [o for o in dictish(me).get('observations', []) if o['id'] == RIDING]
 check('the timeline labels it retracted', bool(riding) and riding[0]['status'] == 'retracted', riding)
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'done'})
 check('the task is marked done', code == 200 and d['status'] == 'done', (code, d))
@@ -218,7 +231,7 @@ code, d = curl('POST', API + f'/actions/{AID}', {'status': 'approved'})
 check('done is terminal', code == 409, (code, d))
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': True, 'retention_days': 0})
 code, d = observe([], [obs('thing/subaru', 'plate', 'ABC 123', now - timedelta(minutes=1), USER)])
-check('a write with retention 0 lands', code == 200 and all_ok(d, 'observations'), (code, d))
+check('a write with retention 0 lands', code == 200 and all_ok(d, 'observations', 1), (code, d))
 code, bs = body('thing/subaru')
 statuses = {o['id']: o['status'] for o in bs.get('observations', [])} if code == 200 else {}
 check('superseded observations were culled', code == 200 and 'superseded' not in statuses.values(), statuses)
@@ -230,7 +243,9 @@ print('7. refusals')
 code, d = curl('GET', API + '/state', jar=None)
 check('no cookie is 403', code == 403, (code, d))
 code, d = observe([{'id': f'place/p{i}'} for i in range(51)], [])
-check('51 bodies is 400 naming bodies', code == 400 and d.get('error') == 'bodies: over 50', (code, d))
+check('51 bodies is 400 naming bodies', code == 400 and dictish(d).get('error') == 'bodies: over 50', (code, d))
+code, d = observe([], [obs('thing/subaru', 'plate', 'x', now - timedelta(minutes=1), USER)] * 201)
+check('201 observations is 400 naming observations', code == 400 and dictish(d).get('error') == 'observations: over 200', (code, d))
 code, d = observe([], [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'x', 'at': 'yesterday', 'source': USER}])
 check('a bad at is refused per item', code == 200 and not d['observations'][0]['ok'] and d['observations'][0]['error'].startswith('at:'), d)
 code, d = curl('GET', API + '/state?at=yesterday')
