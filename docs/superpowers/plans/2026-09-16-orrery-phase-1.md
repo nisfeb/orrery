@@ -3277,6 +3277,33 @@ Replace `+do-set-action` with:
 
 In `+serve-set-action` the op gains the actor: the `pairs` list becomes `~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')] ['by' s+(gs:orr jon 'by')]]`.
 
+- [ ] **Step 5b: Polish the Task 5 review asked for**
+
+Four small things, all in `code/nex/orrery/app.hoon`:
+
+1. In `+bump-beacon` guard the subtraction like `+compact` does: `=/  ms=@ud  ?:((lth now ~1970.1.1) 0 (div (sub now ~1970.1.1) (div ~s1 1.000)))`.
+2. The writer's no-op branches leave no trace in `/tr/last`. In `+do-act`, the twin branch `?^  (open-twin all kind.p.got title.p.got)  (pure:m |)` becomes `?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')`, and the id-collision branch `?:  ex  (pure:m |)` becomes `?:  ex  (note-then-no 'act' 'an action with this id exists')`. In `+do-retract`, `?:  retracted.obs.r.u.hit  (pure:m |)` becomes `?:  retracted.obs.r.u.hit  (note-then-no 'retract' 'already retracted')`. Add the helper beside `+refuse`:
+
+```hoon
+::  +note-then-no: a no-op that still leaves its reason in /tr/last
+::
+++  note-then-no
+  |=  [op=@t why=@t]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  ~  bind:m  (note op & why)
+  (pure:m |)
+```
+
+3. `+do-set-doc` bumps the beacon on an unchanged document. Before its `over`, read the current one and answer no change when equal:
+
+```hoon
+  ;<  cur=json  bind:m  (read-json (rf 0 / name))
+  ?:  =(cur doc)  (note-then-no op 'unchanged')
+```
+
+4. `+do-retract` writes a body's observation and must compact like `+do-observe` does. After its `over` add `;<  ~  bind:m  (compact kind.u.hit slug.u.hit)`.
+
 Deploy with the fast loop (write-text, reload-nexus, bang `None`). Bodies and actions written by earlier tasks are `%1` grubs: after the reload, `GET /api/state` must still list them (the ladder lifts them), and `GET /api/body/person/me` shows `"ship": "~wex"` only after the next write to it, so upsert it once: `POST /api/bodies {"id":"person/me","ship":"~wex"}`.
 
 - [ ] **Step 6: Extend the gate**
