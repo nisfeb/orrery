@@ -133,6 +133,12 @@
   ?:  =('ensure-me' op)  ensure-me
   ?:  =('observe' op)  (do-observe jon)
   ?:  =('upsert-body' op)  (do-upsert-body jon)
+  ?:  =('delete-body' op)  (do-delete-body jon)
+  ?:  =('retract' op)  (do-retract jon)
+  ?:  =('act' op)  (do-act jon)
+  ?:  =('set-action' op)  (do-set-action jon)
+  ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
+  ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   (refuse op 'unknown op')
 ::  +refuse: a refusal that leaves the writer standing
 ::
@@ -155,13 +161,15 @@
   ^-  json
   (pairs:enjs:format ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['at' (en-time:orr now)]])
 ::  +bump-beacon: the change beacon moves once per op that changed the
-::  tree, never on a refusal or a no-op
+::  tree, never on a refusal or a no-op. Milliseconds since 1970, so a
+::  browser keeps it exact.
 ::
 ++  bump-beacon
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format `@ud`now)])
+  =/  ms=@ud  (div (sub now ~1970.1.1) (div ~s1 1.000))
+  (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format ms)])
 ::  +ensure-me: person/me, named "me", with the aliases me, I and our @p
 ::
 ++  ensure-me
@@ -210,8 +218,9 @@
   ?:  =(merged u.old)  (pure:m |)
   ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%1 merged]])
   (pure:m &)
-::  +do-observe: bodies first, then observations. Items that failed to
-::  decode are skipped here; the caller already reported them.
+::  +do-observe: bodies first, then observations, then compaction of
+::  every subject written. Items that failed to decode are skipped
+::  here; the caller already reported them.
 ::
 ++  do-observe
   |=  jon=json
@@ -221,6 +230,12 @@
   =/  prep  (prep-observe:orr jon now 'writer')
   ;<  c1=?  bind:m  (write-bodies bodies.prep |)
   ;<  c2=?  bind:m  (write-obs obs.prep |)
+  =/  subjects=(list bid:orr)
+    %~  tap  in
+    %-  sy
+    %+  murn  obs.prep
+    |=(e=(each obs:orr @t) ?:(?=(%& -.e) `subject.p.e ~))
+  ;<  ~  bind:m  (compact-each subjects)
   ;<  ~  bind:m  (note 'observe' & '')
   (pure:m |(c1 c2))
 ++  write-bodies
@@ -400,10 +415,23 @@
   ;<  ~  bind:m  ensure-me-from-request
   =/  jon=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
-  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))
-    (serve-state eyre-id args.parsed)
-  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))
-    (serve-observe eyre-id jon)
+  =/  s2=@ta  ?:(?=([@ @ @ *] suffix) i.t.t.suffix %$)
+  =/  s3=@ta  ?:(?=([@ @ @ @ *] suffix) i.t.t.t.suffix %$)
+  =/  args=quay:eyre  args.parsed
+  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))        (serve-state eyre-id args)
+  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))     (serve-body eyre-id s2 s3 args)
+  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))  (serve-delete-body eyre-id s2 s3)
+  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))      (serve-resolve eyre-id args)
+  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))     (serve-observe eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))     (serve-retract eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))      (serve-bodies eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))         (serve-act eyre-id jon)
+  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))      (serve-actions eyre-id args)
+  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))   (serve-set-action eyre-id s2 jon)
+  ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))       (serve-doc eyre-id %'schema.json')
+  ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))       (serve-set-doc eyre-id 'set-schema' jon)
+  ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))       (serve-doc eyre-id %'policy.json')
+  ?:  &(=('PUT' meth) ?=([%api %policy ~] suffix))       (serve-set-doc eyre-id 'set-policy' jon)
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -419,6 +447,7 @@
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
   ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  multi=(set @t)  (multi-of:orr schema)
   =/  folded=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
     (turn all |=(l=loaded [id.l body.l (fold:orr rows.l multi u.when)]))
@@ -426,6 +455,8 @@
     %+  murn  folded
     |=  [id=bid:orr =body:orr winners=(map @t (list row:orr))]
     ?:(=(%situation kind.body) `[id winners] ~)
+  =/  open-sits=(list [id=bid:orr winners=(map @t (list row:orr))])
+    (skim sits |=([* winners=(map @t (list row:orr))] !(is-closed:orr winners)))
   =/  shown
     ?:  =('' kind)  folded
     (skim folded |=(f=[id=bid:orr =body:orr winners=(map @t (list row:orr))] =(kind `@t`kind.body.f)))
@@ -447,8 +478,8 @@
       ['at' (en-time:orr u.when)]
       ['me' s+'person/me']
       ['bodies' bodies-json]
-      ['situations' a+(turn sits |=([id=bid:orr *] `json`s+id))]
-      ['actions' [%a ~]]
+      ['situations' a+(turn open-sits |=([id=bid:orr *] `json`s+id))]
+      ['actions' a+(murn acts |=([id=@ta a=action:orr] ?.((is-open:orr a) ~ `(en-action:orr id a))))]
       ['schema' schema]
   ==
 ::  +serve-observe: decode, answer per item, hand the stamped request to
@@ -480,9 +511,8 @@
   ;<  obs-res=(list json)  bind:m  (obs-results obs.prep known ~)
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] stamped])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
-  ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
   %^  send-json  eyre-id  200
-  (pairs:enjs:format ~[['rev' rev] ['bodies' a+bodies-res] ['observations' a+obs-res]])
+  (pairs:enjs:format ~[['bodies' a+bodies-res] ['observations' a+obs-res]])
 ++  body-results
   |=  [items=(list (each [id=bid:orr =body:orr] @t)) acc=(list json)]
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -517,4 +547,375 @@
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (obs-dir kind.u.pk slug.u.pk) id))
   %^  obs-results  t.items  known
   [(pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+ex]]) acc]
+::  +find-obs: the body holding an observation id, by a sweep
+::
+++  find-obs
+  |=  [up=@ud id=@ta]
+  =/  m  (fiber:fiber:nexus ,(unit [kind=@tas slug=@ta r=row:orr]))
+  ^-  form:m
+  ;<  all=(list loaded)  bind:m  (load-bodies up)
+  %-  pure:m
+  |-
+  ?~  all  ~
+  =/  hit=(unit row:orr)  (find-row rows.i.all id)
+  ?~  hit  $(all t.all)
+  =/  pk  (parse-bid:orr id.i.all)
+  ?~  pk  $(all t.all)
+  `[kind.u.pk slug.u.pk u.hit]
+++  find-row
+  |=  [rs=(list row:orr) id=@ta]
+  ^-  (unit row:orr)
+  ?~  rs  ~
+  ?:  =(id.i.rs id)  `i.rs
+  $(rs t.rs)
+++  find-loaded
+  |=  [all=(list loaded) id=bid:orr]
+  ^-  (unit loaded)
+  ?~  all  ~
+  ?:  =(id.i.all id)  `i.all
+  $(all t.all)
+::  +do-retract: the retracted flag and its note. The grub stays.
+::
+++  do-retract
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  why=@t  (gs:orr jon 'note')
+  ?:  (gth (met 3 why) max-note:orr)  (refuse 'retract' 'note: over 500 bytes')
+  ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 0 `@ta`id)
+  ?~  hit  (refuse 'retract' (cat 3 'no observation ' id))
+  ?:  retracted.obs.r.u.hit  (pure:m |)
+  =/  o=obs:orr  obs.r.u.hit(retracted &, note why)
+  ;<  ~  bind:m
+    %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
+    [[/orrery %obs] `stored-obs:orr`[%1 o]]
+  ;<  ~  bind:m  (note 'retract' & '')
+  (pure:m &)
+++  do-delete-body
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  pk  (parse-bid:orr (gs:orr jon 'id'))
+  ?~  pk  (refuse 'delete-body' 'id: expected <kind>/<slug>')
+  ;<  ex=?  bind:m  (peek-exists:io (rv 0 (body-dir kind.u.pk slug.u.pk)))
+  ?.  ex  (refuse 'delete-body' 'no such body')
+  ;<  *  bind:m  (cull-soft:io (rv 0 (body-dir kind.u.pk slug.u.pk)))
+  ;<  ~  bind:m  (note 'delete-body' & '')
+  (pure:m &)
+::  +load-actions: every action grub
+::
+++  load-actions
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,(list [id=@ta a=action:orr]))
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up /actions) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  %-  pure:m
+  %+  murn  ~(tap by contents.u.fil.ball.vw)
+  |=  [nam=@ta c=[=sang:tarball gain=? bang=(unit tang)]]
+  ^-  (unit [id=@ta a=action:orr])
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.c))
+  ?~  a  ~
+  `[nam u.a]
+::  +first-missing: the first body id in the list that does not exist
+::
+++  first-missing
+  |=  [up=@ud ids=(list bid:orr)]
+  =/  m  (fiber:fiber:nexus ,(unit bid:orr))
+  ^-  form:m
+  ?~  ids  (pure:m ~)
+  =/  pk  (parse-bid:orr i.ids)
+  ?~  pk  (pure:m `i.ids)
+  ;<  ex=?  bind:m  (peek-exists:io (rf up (body-dir kind.u.pk slug.u.pk) %body))
+  ?.  ex  (pure:m `i.ids)
+  (first-missing up t.ids)
+::  +open-twin: an open action with this kind and title, if any
+::
+++  open-twin
+  |=  [all=(list [id=@ta a=action:orr]) kind=@tas title=@t]
+  ^-  (unit [id=@ta a=action:orr])
+  ?~  all  ~
+  ?:  &((is-open:orr a.i.all) =(kind.a.i.all kind) =(title.a.i.all title))  `i.all
+  $(all t.all)
+::  +do-act: a proposal. Its about bodies must exist; an open twin
+::  answers nothing new; policy decides the initial status; a new
+::  action is pushed when policy says so.
+::
+++  do-act
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  got  (de-action:orr (gj:orr jon 'action') now 'writer')
+  ?:  ?=(%| -.got)  (refuse 'act' p.got)
+  ;<  missing=(unit bid:orr)  bind:m  (first-missing 0 ~(tap in about.p.got))
+  ?^  missing  (refuse 'act' (cat 3 'about: no such body ' u.missing))
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ?^  (open-twin all kind.p.got title.p.got)  (pure:m |)
+  =/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))
+  =/  id=@ta  (act-id:orr a)
+  ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))
+  ?:  ex  (pure:m |)
+  ;<  *  bind:m
+    (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%1 a]] ~])
+  ;<  ~  bind:m
+    ?.  (push-of:orr policy)  (pure:(fiber:fiber:nexus ,~) ~)
+    (push-soft a id)
+  ;<  ~  bind:m  (note 'act' & '')
+  (pure:m &)
+::  +push-soft: a notification through /sys/push. Soft, so a refused
+::  road never fails the writer.
+::
+++  push-soft
+  |=  [a=action:orr id=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  title=@t  ?:(=(%approved status.a) 'Orrery filed' 'Orrery proposes')
+  =/  tag=@t  (cat 3 'orrery-' id)
+  ;<  *  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title title.a ~ `'/apps/orrery' `tag]] eny]]
+  (pure:m ~)
+++  do-set-action
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  want=@t  (gs:orr jon 'status')
+  =/  why=@t  (gs:orr jon 'note')
+  ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
+  =/  road=road:tarball  (rf 0 /actions `@ta`id)
+  ;<  cur=view:nexus  bind:m  (peek:io road ~)
+  ?.  ?=([%file *] cur)  (refuse 'set-action' (cat 3 'no action ' id))
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
+  ?~  a  (refuse 'set-action' 'unreadable action')
+  ?.  (transition-ok:orr status.u.a `@tas`want)
+    (refuse 'set-action' (rap 3 'cannot go from ' status.u.a ' to ' want ~))
+  =/  next=action:orr  u.a(status `@tas`want, note why)
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%1 next]])
+  ;<  ~  bind:m  (note 'set-action' & '')
+  (pure:m &)
+++  do-set-doc
+  |=  [name=@ta op=@t jon=json]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse op 'doc: an object is required')
+  ;<  ~  bind:m  (over:io (rf 0 / name) [[/ %json] doc])
+  ;<  ~  bind:m  (note op & '')
+  (pure:m &)
+::  +compact: cull a body's observations that are superseded, expired
+::  or retracted and older than the retention. A live one never goes.
+::
+++  compact
+  |=  [kind=@tas slug=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  span=@dr  (mul (retention-of:orr policy) ~d1)
+  =/  horizon=@da  ?:((lth now span) ~1970.1.1 (sub now span))
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 (body-dir kind slug)) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  =/  rows=(list row:orr)  (rows-in ball.vw)
+  =/  winners  (fold:orr rows (multi-of:orr schema) now)
+  =/  dead=(list @ta)
+    %+  murn  rows
+    |=  r=row:orr
+    ^-  (unit @ta)
+    ?:  (gte at.obs.r horizon)  ~
+    =/  st=@tas  (status-of:orr r winners now)
+    ?:(?=(?(%superseded %expired %retracted) st) `id.r ~)
+  (cull-each 0 (obs-dir kind slug) dead)
+++  cull-each
+  |=  [up=@ud dir=path names=(list @ta)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  names  (pure:m ~)
+  ;<  *  bind:m  (cull-soft:io (rf up dir i.names))
+  (cull-each up dir t.names)
+++  compact-each
+  |=  ids=(list bid:orr)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  ids  (pure:m ~)
+  =/  pk  (parse-bid:orr i.ids)
+  ;<  ~  bind:m
+    ?~  pk  (pure:(fiber:fiber:nexus ,~) ~)
+    (compact kind.u.pk slug.u.pk)
+  (compact-each t.ids)
+::  +serve-body: one body with its attributes, its situations, the open
+::  actions about it, and its full timeline newest first
+::
+++  serve-body
+  |=  [eyre-id=@ta kind=@ta slug=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  when=(unit @da)  (when-arg args now)
+  ?~  when  (send-err eyre-id 400 'at: expected an ISO 8601 UTC time')
+  =/  id=bid:orr  (rap 3 kind '/' slug ~)
+  ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  =/  mine=(unit loaded)  (find-loaded all id)
+  ?~  mine  (send-err eyre-id 404 'no such body')
+  =/  winners  (fold:orr rows.u.mine multi u.when)
+  =/  sits=(list [id=bid:orr winners=(map @t (list row:orr))])
+    %+  murn  all
+    |=  l=loaded
+    ?.(=(%situation kind.body.l) ~ `[id.l (fold:orr rows.l multi u.when)])
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  about-me=(list json)
+    %+  murn  acts
+    |=  [aid=@ta a=action:orr]
+    ?.(&((is-open:orr a) (~(has in about.a) id)) ~ `(en-action:orr aid a))
+  =/  base=json  (en-body:orr id body.u.mine)
+  ?.  ?=([%o *] base)  (send-err eyre-id 500 'encoder')
+  %^  send-json  eyre-id  200
+  :-  %o
+  %-  ~(gas by p.base)
+  :~  ['attrs' (en-attrs winners multi)]
+      ['involved' a+(turn (involved:orr id sits) |=(b=bid:orr `json`s+b))]
+      ['actions' a+about-me]
+      :-  'observations'
+      :-  %a
+      %+  turn  (timeline:orr rows.u.mine winners u.when)
+      |=([r=row:orr status=@tas] (en-obs:orr r status))
+  ==
+++  serve-delete-body
+  |=  [eyre-id=@ta kind=@ta slug=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=bid:orr  (rap 3 kind '/' slug ~)
+  ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
+  ;<  ex=?  bind:m  (peek-exists:io (rv 1 /bodies/[kind]/[slug]))
+  ?.  ex  (send-err eyre-id 404 'no such body')
+  =/  op=json  (pairs:enjs:format ~[['op' s+'delete-body'] ['id' s+id]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+++  serve-resolve
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  q=@t  (fall (get-key:kv:html-utils 'q' args) '')
+  ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded [id.l body.l]))
+  %^  send-json  eyre-id  200
+  :-  %a
+  %+  turn  (resolve:orr q bodies)
+  |=  [id=bid:orr =body:orr match=@tas]
+  ^-  json
+  (pairs:enjs:format ~[['id' s+id] ['kind' s+kind.body] ['name' s+name.body] ['match' s+match]])
+++  serve-retract
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ?:  =('' id)  (send-err eyre-id 400 'id: required')
+  ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 1 `@ta`id)
+  ?~  hit  (send-err eyre-id 404 'no such observation')
+  =/  op=json
+    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+(gs:orr jon 'note')]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+++  serve-bodies
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  got  (de-body:orr jon now)
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  =/  pk  (parse-bid:orr id.p.got)
+  ?~  pk  (send-err eyre-id 400 'id: bad')
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
+  =/  op=json  (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' jon]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id.p.got] ['ok' b+&] ['existing' b+ex]]))
+::  +serve-act: a proposal. The request stamps proposed and by, decodes
+::  once for its answer, and the writer decodes the same JSON, so both
+::  compute the same id. An open twin answers the existing action.
+::
+++  serve-act
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  stamped=json  (fill-act:orr jon now 'http')
+  =/  got  (de-action:orr stamped now 'http')
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ~(tap in about.p.got))
+  ?^  missing  (send-err eyre-id 400 (cat 3 'about: no such body ' u.missing))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  twin=(unit [id=@ta a=action:orr])  (open-twin all kind.p.got title.p.got)
+  ?^  twin
+    %^  send-json  eyre-id  200
+    (pairs:enjs:format ~[['id' s+id.u.twin] ['status' s+status.a.u.twin] ['existing' b+&]])
+  =/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))
+  =/  op=json  (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['id' s+(act-id:orr a)] ['status' s+status.a] ['existing' b+|]])
+::  +serve-actions: ?status=open (the default: proposed and approved),
+::  all, or one status; newest first
+::
+++  serve-actions
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=@t  (fall (get-key:kv:html-utils 'status' args) 'open')
+  ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  keep
+    |=  [id=@ta a=action:orr]
+    ^-  ?
+    ?:  =('all' want)  &
+    ?:  =('open' want)  (is-open:orr a)
+    =(want `@t`status.a)
+  =/  shown=(list [id=@ta a=action:orr])
+    %+  sort  (skim all keep)
+    |=([x=[id=@ta a=action:orr] y=[id=@ta a=action:orr]] (gth proposed.a.x proposed.a.y))
+  (send-json eyre-id 200 a+(turn shown |=([id=@ta a=action:orr] (en-action:orr id a))))
+++  serve-set-action
+  |=  [eyre-id=@ta id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=@t  (gs:orr jon 'status')
+  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
+  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
+  ?~  a  (send-err eyre-id 500 'unreadable action')
+  ?.  (transition-ok:orr status.u.a `@tas`want)
+    (send-err eyre-id 409 (rap 3 'cannot go from ' status.u.a ' to ' want ~))
+  =/  op=json
+    %-  pairs:enjs:format
+    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')]]
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))
+++  serve-doc
+  |=  [eyre-id=@ta name=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / name))
+  (send-json eyre-id 200 doc)
+++  serve-set-doc
+  |=  [eyre-id=@ta op=@t jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] pk])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 --
