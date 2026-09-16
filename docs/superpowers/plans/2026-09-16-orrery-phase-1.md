@@ -2727,7 +2727,7 @@ code, d = observe(
      obs(SIT, 'location', 'Route 9', T0, src('m1')),
      obs(SIT, 'started', iso(T0), T0, src('m1'))])
 check('message 1 lands', code == 200 and all_ok(d, 'observations'), d)
-s = state()
+s = state(iso(T0 + timedelta(minutes=5)))     # as of message 1: the until window has closed by now
 check('me.status is stranded', val(s, 'person/me', 'status') == 'stranded, waiting for a tow', attrs(s, 'person/me'))
 check('subaru on Route 9', val(s, 'thing/subaru', 'location') == 'Route 9')
 parts = (attrs(s, SIT) or {}).get('participants')
