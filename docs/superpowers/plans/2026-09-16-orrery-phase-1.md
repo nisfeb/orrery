@@ -2266,7 +2266,7 @@ The two path segments after `/api/body` and the one after `/api/actions` are pul
   =/  args=quay:eyre  args.parsed
   ?:  &(=('GET' meth) ?=([%api %state ~] suffix))       (serve-state eyre-id args)
   ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))    (serve-body eyre-id s2 s3 args)
-  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix)) (serve-delete-body eyre-id s2 s3)
+  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))  (serve-delete-body eyre-id s2 s3)
   ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))     (serve-resolve eyre-id args)
   ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))    (serve-observe eyre-id jon)
   ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))    (serve-retract eyre-id jon)
