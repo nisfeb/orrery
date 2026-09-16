@@ -9,7 +9,7 @@
 ++  jo  |=(t=@t ^-(json (need (de:json:html t))))
 ++  t0  ~2026.9.16..22.05.00
 ::
-::  ── names ──────────────────────────────────────────────────────────
+::  ==  names
 ::
 ++  test-ok-kind
   ;:  weld
@@ -34,7 +34,7 @@
     (expect-eq !>('thing/subaru') !>((make-bid:orr %thing %subaru)))
   ==
 ::
-::  ── time ───────────────────────────────────────────────────────────
+::  ==  time
 ::
 ++  test-iso-roundtrip
   =/  s=@t  '2026-09-16T22:05:00Z'
@@ -53,7 +53,7 @@
     (expect-eq !>(`@ud`0) !>((unix-secs:orr ~1969.12.31)))
   ==
 ::
-::  ── ids ────────────────────────────────────────────────────────────
+::  ==  ids
 ::
 ++  o1
   ^-  obs:orr
@@ -77,7 +77,7 @@
     [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '']
   (expect-eq !>(19) !>((lent (trip (act-id:orr a)))))
 ::
-::  ── decoders ───────────────────────────────────────────────────────
+::  ==  decoders
 ::
 ++  test-de-body-ok
   =/  got
@@ -146,6 +146,8 @@
     (expect-eq !>('value.ref: expected <kind>/<slug>') !>((bad '{"subject":"thing/subaru","attr":"location","value":{"ref":"nowhere"},"source":{"kind":"user"}}')))
     (expect-eq !>('at: expected an ISO 8601 UTC time such as 2026-09-16T22:05:00Z') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"yesterday","source":{"kind":"user"}}')))
     (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":101,"source":{"kind":"user"}}')))
+    (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":-5,"source":{"kind":"user"}}')))
+    (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":"high","source":{"kind":"user"}}')))
     (expect-eq !>('source.kind: required') !>((bad '{"subject":"thing/subaru","attr":"location","value":1}')))
   ==
 ++  test-de-action-ok
@@ -198,7 +200,7 @@
     (expect !>(?=([%& *] (snag 0 obs.got))))
   ==
 ::
-::  ── readers and merge ──────────────────────────────────────────────
+::  ==  readers and merge
 ::
 ++  test-readers
   =/  b=body:orr  [%person 'Sarah' (sy ~['Sarah']) t0]

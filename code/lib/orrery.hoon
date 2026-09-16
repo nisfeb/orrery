@@ -264,8 +264,9 @@
   =/  until=(unit @da)  (gt jon 'until')
   ?:  &(?=(~ until) !=(~ (gj jon 'until')))
     [%| 'until: expected an ISO 8601 UTC time, or null']
-  =/  conf=@ud  (fall (gn jon 'conf') 100)
-  ?:  (gth conf 100)  [%| 'conf: 0 to 100']
+  =/  conf=(unit @ud)  ?.((has-key jon 'conf') `100 (gn jon 'conf'))
+  ?~  conf  [%| 'conf: 0 to 100']
+  ?:  (gth u.conf 100)  [%| 'conf: 0 to 100']
   =/  sj=json  (gj jon 'source')
   =/  sk=@t  (gs sj 'kind')
   =/  si=@t  (gs sj 'id')
@@ -274,7 +275,7 @@
   =/  by=@t  (gs jon 'by')
   =.  by  ?:(=('' by) default-by by)
   ?:  (gth (met 3 by) max-by)  [%| 'by: over 64 bytes']
-  [%& subject attr value u.at until conf [sk si] by now | '']
+  [%& subject attr value u.at until u.conf [sk si] by now | '']
 ::  +de-action: a proposal. proposed is read from the JSON when given
 ::  (the request fiber stamps it, so its id and the writer's agree).
 ::
