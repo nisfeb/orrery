@@ -244,10 +244,10 @@ In `code/nex/orrery/app.hoon`: delete `+$  loaded`, `+en-attr-row` and `+en-attr
 
 ```hoon
   =/  multi=(set @t)  (multi-of:orr schema)
-  (send-json eyre-id 200 (state-json:orr all acts multi u.when kind rev schema))
+  (send-json eyre-id 200 (state-json:orr all acts multi u.when kind rev shown-schema))
 ```
 
-(everything from the old `folded` binding to the old `send-json` goes). `+serve-body` keeps its reads, the actor's view and the `find-loaded` 404, and ends with:
+(everything from the old `folded` binding to the old `send-json` goes; `shown-schema` is the schema the arm already computes for the actor, the scoped one for a key and the whole one for the owner, which phase 3's final fix round introduced: keep that binding above the call). `+serve-body` keeps its reads, the actor's view and the `find-loaded` 404, and ends with:
 
 ```hoon
   =/  multi=(set @t)  (multi-of:orr schema)
