@@ -1736,7 +1736,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 
 ## Calling them
 
-- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`). The kernel's `call_tool` meta tool takes the same path as its `tool_name`.
+- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`). The kernel's `call_tool` meta tool takes the same path as its `tool_name`.
 - By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 
@@ -1744,14 +1744,14 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 
 | tool | parameters | answers |
 |---|---|---|
-| `orrery-state` | `at`, `kind` | the state view: bodies with attributes and involvements, open situations, open actions, the beacon, the schema |
-| `orrery-body` | `id`, `at` | one body: record, attributes, involved, open actions about it, the timeline |
-| `orrery-resolve` | `q` | bodies whose name or alias matches, exact first |
-| `orrery-observe` | `bodies`, `observations`, `by` | one result per item, with the observation id and whether it existed |
-| `orrery-retract` | `id`, `note`, `by` | ok |
-| `orrery-act` | `kind`, `title`, `payload`, `about`, `due`, `by` | the action id and its status, or the open twin |
-| `orrery-actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition |
-| `orrery-schema` | `schema` | the schema, or ok after replacing it |
+| `orrery_state` | `at`, `kind` | the state view: bodies with attributes and involvements, open situations, open actions, the beacon, the schema |
+| `orrery_body` | `id`, `at` | one body: record, attributes, involved, open actions about it, the timeline |
+| `orrery_resolve` | `q` | bodies whose name or alias matches, exact first |
+| `orrery_observe` | `bodies`, `observations`, `by` | one result per item, with the observation id and whether it existed |
+| `orrery_retract` | `id`, `note`, `by` | ok |
+| `orrery_act` | `kind`, `title`, `payload`, `about`, `due`, `by` | the action id and its status, or the open twin |
+| `orrery_actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition |
+| `orrery_schema` | `schema` | the schema, or ok after replacing it |
 
 `by` defaults to `mcp`. A refusal is an MCP error with the same text the HTTP route would answer.
 
@@ -1759,6 +1759,10 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 
 Over MCP the analyst is the owner: every body, every attribute, sensitive ones included, and it can share and mint nothing (those stay HTTP, owner cookie). A client that should see less gets a scoped key (`docs/keys.md`) or a share (`docs/sharing.md`) instead.
 ```
+
+- [ ] **Step 1b: One spelling for a tool's name**
+
+The tools tree and `call_tool` derive `orrery_state` from the file name, while each tool's own `++  name` said `orrery-state`, so `list_tools` and the tree disagreed. The MCP convention is underscores (`echo`, `call_tool`, `create_desk`): in each of the eight files under `code/lib/tools`, `++  name` becomes the underscore form (`'orrery_state'`, `'orrery_body'`, `'orrery_resolve'`, `'orrery_observe'`, `'orrery_retract'`, `'orrery_act'`, `'orrery_actions'`, `'orrery_schema'`). Write the eight files to wex (no reload needed), then `list_tools` through the MCP server names `orrery_state` and its siblings, and `python3 scripts/mcp-matrix.py $W $CK` (which calls by path) still prints `ALL OK (32 checks)`. `docs/mcp.md` names the tools in the underscore form and says the file names are the hyphenated ones.
 
 - [ ] **Step 2: README, the release doc, the spec**
 
@@ -1770,7 +1774,7 @@ In `README.md`: the docs line gains `docs/mcp.md` and `docs/kernel/README.md`; a
 python3 - <<'PY'
 import json; p='code/version.json'; json.dump({'version': 6}, open(p,'w')); print(open(p).read())
 PY
-git add code/version.json docs README.md
+git add code/version.json docs README.md code/lib/tools
 git commit -m "MCP tools and the page: docs, the gates in the checklist, version 6"
 git push origin main
 curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.git_repo","command":"pull"}' $W/grubbery/forge/api/run
