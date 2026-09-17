@@ -864,20 +864,22 @@ Two constraints did not hold: an attribute value `{"ref": "place/home"}` named a
 In `code/lib/orrery.hoon`, after `drop-attrs`:
 
 ```hoon
-::  +drop-refs: the rows whose value points at a body of a kind outside
-::  the given kinds are dropped, so a key never learns such a body
-::  exists through an attribute value
+::  +veil-refs: a row whose value points at a body of a kind outside
+::  the given kinds keeps its place with a null value, so the fold
+::  shows the attribute as cleared rather than falling back to an
+::  older value the key may see, and the key never learns the body
 ::
-++  drop-refs
+++  veil-refs
   |=  [rows=(list row) kinds=(set @tas)]
   ^-  (list row)
-  %+  skip  rows
+  %+  turn  rows
   |=  r=row
   =/  target=(unit bid)  (ref-of value.obs.r)
-  ?~  target  |
+  ?~  target  r
   =/  pk  (parse-bid u.target)
-  ?~  pk  |
-  !(~(has in kinds) kind.u.pk)
+  ?~  pk  r
+  ?:  (~(has in kinds) kind.u.pk)  r
+  r(value.obs ~)
 ::  +scope-about: an action's about trimmed to the given kinds
 ::
 ++  scope-about
@@ -895,18 +897,20 @@ In `code/lib/orrery.hoon`, after `drop-attrs`:
 In `tests/lib/orrery.hoon`, after `test-out-of-scope`:
 
 ```hoon
-++  test-drop-refs-and-scope-about
+++  test-veil-refs-and-scope-about
   =/  base=obs:orr  o1
   =/  r-place=row:orr  ['1' base(value (pairs:enjs:format ~[['ref' s+'place/home']]))]
   =/  r-person=row:orr  ['2' base(value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]
   =/  r-plain=row:orr  ['3' base]
-  =/  kept=(list row:orr)  (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
+  =/  kept=(list row:orr)  (veil-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
   =/  a=action:orr
     [%task 'Call the shop' ~ (sy ~['thing/subaru' 'person/sarah']) ~ 'mcp' t0 %proposed '' ~]
   =/  trimmed=action:orr  (scope-about:orr a (sy ~[%person]))
   ;:  weld
-    (expect-eq !>(~['2' '3']) !>((turn kept |=(r=row:orr id.r))))
-    (expect-eq !>(3) !>((lent (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person %place])))))
+    (expect-eq !>(~['1' '2' '3']) !>((turn kept |=(r=row:orr id.r))))
+    (expect-eq !>(`json`~) !>(?~(kept ~ value.obs.i.kept)))
+    (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'person/sarah']])) !>(value.obs:(snag 1 `(list row:orr)`kept)))
+    (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'place/home']])) !>(value.obs:(snag 0 (veil-refs:orr ~[r-place] (sy ~[%person %place])))))
     (expect-eq !>((sy ~['person/sarah'])) !>(about.trimmed))
     (expect-eq !>(~) !>(about:(scope-about:orr a ~)))
   ==
@@ -919,7 +923,7 @@ In `code/nex/orrery/app.hoon`, `+view-of` applies both: the body branch becomes 
   |=([id=@ta a=action:orr] [id (scope-about:orr a kinds.s)])
 ```
 
-with the headline saying refs and about outside the kinds are dropped too. In `+serve-retract` the op gains `['by' s+by.act]`; in `+do-retract` the note becomes `(note-by 'retract' & why (gs:orr jon 'by'))` so the ring names the actor and carries the note; in `+retract-each` (phase 2, the follower's carried retractions) the op gains `['by' s+(scot %p src)]`. Above `serve-act`'s action-kind refusal add one comment line: `::  403 here: the key sent the kind itself; a stored id it may not see is a 404`.
+with the headline saying a ref outside the kinds reads as cleared and an about is trimmed. In `+serve-retract` the op gains `['by' s+by.act]`; in `+do-retract` the note becomes `(note-by 'retract' & why (gs:orr jon 'by'))` so the ring names the actor and carries the note; in `+retract-each` (phase 2, the follower's carried retractions) the op gains `['by' s+(scot %p src)]`. Above `serve-act`'s action-kind refusal add one comment line: `::  403 here: the key sent the kind itself; a stored id it may not see is a 404`.
 
 - [ ] **Step 4: The route table**
 
@@ -1156,7 +1160,8 @@ code, a = attrs_of(reader, 'person/me')
 check('a ref inside the kinds shows and one outside does not', code == 200 and a is not None and 'spouse' in a and 'home' not in a, a)
 code, d = reader('GET', '/body/person/me')
 tl = [o.get('attr') for o in listish(dictish(d).get('observations')) if isinstance(o, dict)]
-check('the timeline drops the outside ref too', code == 200 and 'spouse' in tl and 'home' not in tl, tl)
+home_rows = [o for o in listish(dictish(d).get('observations')) if isinstance(o, dict) and o.get('attr') == 'home']
+check('the timeline veils the outside ref as a cleared value', code == 200 and 'spouse' in tl and home_rows and all(o.get('value') is None for o in home_rows), home_rows)
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'mood', 'fine', T0, 'kg-7')]})
 check('the triage key observes mood', code == 200 and all_ok(d, 'observations', 1), d)
 code, a = attrs_of(owner, 'person/me')
@@ -1296,7 +1301,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 ## What to know
 
 - The owner cookie is never scoped. Keys are checked in the app, not by eyre, the way calendar checks CalDAV passwords.
-- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (that row is not shown).
+- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (the key reads that attribute as cleared, never as an older value).
 - Last use is recorded at most once an hour per key.
 - At most 50 keys; scope lists of at most 24 kinds each.
 ```
