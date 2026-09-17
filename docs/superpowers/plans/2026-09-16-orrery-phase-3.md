@@ -857,6 +857,70 @@ and from `;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ...)` on, unchang
 
 and in the op, `['by' s+?:(owner.act (gs:orr jon 'by') by.act)]`.
 
+- [ ] **Step 3b: Carried from the Task 3 review: refs and about stay in scope, a retraction names its actor**
+
+Two constraints did not hold: an attribute value `{"ref": "place/home"}` named a body outside a key's kinds, and a key's retraction reached the audit ring with no `by`. Exact code:
+
+In `code/lib/orrery.hoon`, after `drop-attrs`:
+
+```hoon
+::  +drop-refs: the rows whose value points at a body of a kind outside
+::  the given kinds are dropped, so a key never learns such a body
+::  exists through an attribute value
+::
+++  drop-refs
+  |=  [rows=(list row) kinds=(set @tas)]
+  ^-  (list row)
+  %+  skip  rows
+  |=  r=row
+  =/  target=(unit bid)  (ref-of value.obs.r)
+  ?~  target  |
+  =/  pk  (parse-bid u.target)
+  ?~  pk  |
+  !(~(has in kinds) kind.u.pk)
+::  +scope-about: an action's about trimmed to the given kinds
+::
+++  scope-about
+  |=  [a=action kinds=(set @tas)]
+  ^-  action
+  %=  a
+    about  %-  ~(gas in *(set bid))
+           %+  skim  ~(tap in about.a)
+           |=  b=bid
+           =/  pk  (parse-bid b)
+           ?~(pk | (~(has in kinds) kind.u.pk))
+  ==
+```
+
+In `tests/lib/orrery.hoon`, after `test-out-of-scope`:
+
+```hoon
+++  test-drop-refs-and-scope-about
+  =/  base=obs:orr  o1
+  =/  r-place=row:orr  ['1' base(value (pairs:enjs:format ~[['ref' s+'place/home']]))]
+  =/  r-person=row:orr  ['2' base(value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]
+  =/  r-plain=row:orr  ['3' base]
+  =/  kept=(list row:orr)  (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
+  =/  a=action:orr
+    [%task 'Call the shop' ~ (sy ~['thing/subaru' 'person/sarah']) ~ 'mcp' t0 %proposed '' ~]
+  =/  trimmed=action:orr  (scope-about:orr a (sy ~[%person]))
+  ;:  weld
+    (expect-eq !>(~['2' '3']) !>((turn kept |=(r=row:orr id.r))))
+    (expect-eq !>(3) !>((lent (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person %place])))))
+    (expect-eq !>((sy ~['person/sarah'])) !>(about.trimmed))
+    (expect-eq !>(~) !>(about:(scope-about:orr a ~)))
+  ==
+```
+
+In `code/nex/orrery/app.hoon`, `+view-of` applies both: the body branch becomes `` `l(rows (drop-refs:orr (drop-attrs:orr rows.l hide) kinds.s)) `` and the actions branch becomes
+
+```hoon
+  %+  turn  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
+  |=([id=@ta a=action:orr] [id (scope-about:orr a kinds.s)])
+```
+
+with the headline saying refs and about outside the kinds are dropped too. In `+serve-retract` the op gains `['by' s+by.act]`; in `+do-retract` the note becomes `(note-by 'retract' & why (gs:orr jon 'by'))` so the ring names the actor and carries the note; in `+retract-each` (phase 2, the follower's carried retractions) the op gains `['by' s+(scot %p src)]`. Above `serve-act`'s action-kind refusal add one comment line: `::  403 here: the key sent the kind itself; a stored id it may not see is a 404`.
+
 - [ ] **Step 4: The route table**
 
 In `+handle-request`, the scoped routes drop their `own` and pass `act`:
@@ -998,7 +1062,7 @@ def clean():
     for c in listish(d):
         if isinstance(c, dict) and str(c.get('name', '')).startswith('key-gate '):
             owner('DELETE', '/clients/' + str(c.get('id')))
-    retract_all('person/me', ('health', 'status', 'mood'))
+    retract_all('person/me', ('health', 'status', 'mood', 'spouse', 'home'))
     retract_all('thing/subaru', ('status',))
     owner('PUT', '/policy', STARTER)
     for a in listish(owner('GET', '/actions?status=open')[1]):
@@ -1085,6 +1149,14 @@ code, d = reader('POST', '/observe', {'bodies': [], 'observations': [obs('person
 check('a read-only key cannot observe', code == 403, d)
 code, a = attrs_of(reader, 'person/me')
 check('the read-only key still reads its kinds', code == 200 and a is not None and 'status' in a and 'health' not in a, a)
+code, d = owner('POST', '/observe', {'bodies': [], 'observations': [
+    obs('person/me', 'spouse', {'ref': 'person/sarah'}, T0, 'kg-8'), obs('person/me', 'home', {'ref': 'place/home'}, T0, 'kg-9')]})
+check('owner observes two refs', code == 200 and all_ok(d, 'observations', 2), d)
+code, a = attrs_of(reader, 'person/me')
+check('a ref inside the kinds shows and one outside does not', code == 200 and a is not None and 'spouse' in a and 'home' not in a, a)
+code, d = reader('GET', '/body/person/me')
+tl = [o.get('attr') for o in listish(dictish(d).get('observations')) if isinstance(o, dict)]
+check('the timeline drops the outside ref too', code == 200 and 'spouse' in tl and 'home' not in tl, tl)
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'mood', 'fine', T0, 'kg-7')]})
 check('the triage key observes mood', code == 200 and all_ok(d, 'observations', 1), d)
 code, a = attrs_of(owner, 'person/me')
@@ -1125,6 +1197,14 @@ code, d = owner('POST', '/act', {'kind': 'note', 'title': 'key gate: owner note'
 note_id = str(dictish(d).get('id', ''))
 code, d = todo('POST', '/actions/' + note_id, {'status': 'dismissed'})
 check('an action outside the kinds reads as no such action', code == 404, d)
+code, d = owner('POST', '/act', {'kind': 'task', 'title': 'key gate: owner task about the car', 'about': ['thing/subaru']})
+about_id = str(dictish(d).get('id', ''))
+code, d = todo('GET', '/actions')
+about_rows = [x for x in listish(d) if isinstance(x, dict) and x.get('id') == about_id]
+check('an about outside the kinds is trimmed from what the todo key lists', len(about_rows) == 1 and about_rows[0].get('about') == [], about_rows)
+code, d = owner('GET', '/actions')
+owner_rows = [x for x in listish(d) if isinstance(x, dict) and x.get('id') == about_id]
+check('the owner still sees the about', len(owner_rows) == 1 and owner_rows[0].get('about') == ['thing/subaru'], owner_rows)
 
 print('== owner only')
 for label, fn in (('clients', lambda: triage('GET', '/clients')),
@@ -1216,7 +1296,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 ## What to know
 
 - The owner cookie is never scoped. Keys are checked in the app, not by eyre, the way calendar checks CalDAV passwords.
-- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about`.
+- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (that row is not shown).
 - Last use is recorded at most once an hour per key.
 - At most 50 keys; scope lists of at most 24 kinds each.
 ```
