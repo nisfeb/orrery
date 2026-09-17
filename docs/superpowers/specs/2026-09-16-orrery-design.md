@@ -202,7 +202,7 @@ Live updates: `/beacon/rev` streams through grubbery's keep-SSE the way lattice'
 
 ### MCP tools, in `code/lib/tools`
 
-Eight tools, each a `tool:tools` core, reads by absolute peek into the instance, writes by one poke road to `/main.sig`, the shape lattice's tools use. Parameters are the five MCP scalar types, so a batch arrives as an array parameter whose description states the object shape.
+Eight tools, each a `tool:tools` core, reads by absolute peek into the instance, writes by one poke road to `/main.sig`, the shape lattice's tools use. Parameters are the five MCP scalar types, so a batch arrives as an array parameter whose description states the object shape. File names are hyphenated and declared names are underscored, so `orrery-state.hoon` declares `orrery_state`, and a client reaches it under either spelling.
 
 | tool | parameters |
 |---|---|
@@ -282,8 +282,8 @@ From the lattice, auspex and calendar releases, each silent at the point of fail
 - **HTTP gate**, `scripts/api-matrix.py` against `~wex`: section 8, plus 403 for a non-owner, 400 with the field named for every cap, and the batch caps.
 - **Cross-ship gate**, phase 2, `scripts/ship-share-matrix.py` with `~wex` as host and `~feb` as peer: a body shared read-only arrives on the peer, a new observation on the host reaches the peer within one poll, an edit-mode observation from the peer lands on the host with the peer as actor, a revoke stops the flow. A read from the other ship, never a before-and-after on one.
 - **Scoped keys gate**, phase 3, added to `api-matrix.py`: a key scoped to things and tasks sees no people, cannot observe a person, can file a task, cannot propose a message, and answers 403 once revoked.
-- **MCP gate**, phase 4: the tools list from `tools/list` includes the eight, and the section 8 scenario from raw text through Claude Code lands the same state.
-- **Page**, phase 4: by hand on `~wex`, the scenario visible in all four views.
+- **MCP gate**, phase 4, `scripts/mcp-matrix.py` against `~wex`: a slice of section 8 through the eight tools, each called by absolute path, with every read cross-checked whole against the HTTP API's answer for the same read. `tools/list` is not the check: it stays the kernel's three-tool protocol allowlist by design, so discovery shows in `list_tools` and in the tools tree instead.
+- **Page**, phase 4, `scripts/page-smoke.py` and `scripts/page-test.js`: the page, its script and its style are served to the owner and refused without the cookie, the beacon stream answers with a rev, and the render functions run under node against fixtures. Seeing the scenario in all four views is the owner's own pass, step 10 of `docs/releasing.md` section 8, before the ricsul publish.
 - Never against `~ricsul-bilwyt` until all of the above pass.
 
 ## 11. Phases

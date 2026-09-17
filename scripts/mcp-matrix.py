@@ -86,8 +86,10 @@ def all_ok(d, key, n):
 
 
 def body_attrs(bid):
+    """the attrs object, or None when the answer carries none"""
     ok, d = call('orrery-body', {'id': bid})
-    return dictish(dictish(d).get('attrs')) if ok else None
+    a = dictish(d).get('attrs') if ok else None
+    return a if isinstance(a, dict) else None
 
 
 def clean():
@@ -109,10 +111,19 @@ clean()
 
 print('== reads agree with the HTTP API')
 ok, st = call('orrery-state', {})
+code, hs = http('GET', '/state')
 check('state answers', ok and isinstance(st, dict), st)
 check('state has the envelope', all(k in dictish(st) for k in ('rev', 'at', 'me', 'bodies', 'situations', 'actions', 'schema')), sorted(dictish(st).keys()))
-code, hs = http('GET', '/state')
-check('the same bodies as the HTTP state', code == 200 and sorted(b.get('id') for b in listish(dictish(st).get('bodies')) if isinstance(b, dict)) == sorted(b.get('id') for b in listish(dictish(hs).get('bodies')) if isinstance(b, dict)), (st, hs))
+check('the state view is the HTTP state view, whole',
+      code == 200
+      and dictish(st).get('bodies') == dictish(hs).get('bodies')
+      and dictish(st).get('situations') == dictish(hs).get('situations')
+      and dictish(st).get('schema') == dictish(hs).get('schema')
+      and len(listish(dictish(st).get('bodies'))) >= 1,
+      (st, hs))
+ok, mb = call('orrery-body', {'id': 'person/me'})
+code, hb = http('GET', '/body/person/me')
+check('the body view is the HTTP body view, whole', ok and code == 200 and mb == hb, (mb, hb))
 ok, sc = call('orrery-schema', {})
 check('schema answers with kinds', ok and 'kinds' in dictish(sc), sc)
 ok, st2 = call('orrery-state', {'kind': 'person'})

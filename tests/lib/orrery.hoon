@@ -785,17 +785,30 @@
     :~  ['3' base(subject 'situation/2026-09-16-breakdown', attr 'status', value s+'open')]
         ['4' base(subject 'situation/2026-09-16-breakdown', attr 'participants', value (pairs:enjs:format ~[['ref' s+'thing/subaru']]))]
     ==
+  =/  shut=loaded:orr
+    :+  'situation/2026-09-15-thaw'  [%situation 'thaw' ~ t0 ~]
+    :~  ['5' base(subject 'situation/2026-09-15-thaw', attr 'status', value s+'closed')]
+        ['6' base(subject 'situation/2026-09-15-thaw', attr 'participants', value (pairs:enjs:format ~[['ref' s+'thing/subaru']]))]
+    ==
   =/  a=action:orr
     [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %approved '' ~]
-  =/  all=(list loaded:orr)  ~[car me sit]
+  =/  shut-act=action:orr
+    [%task 'Order the part' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %done '' ~]
+  =/  acts=(list [id=@ta a=action:orr])  ~[['a1' a] ['a2' shut-act]]
+  =/  all=(list loaded:orr)  ~[car me sit shut]
   =/  multi=(set @t)  (sy ~['participants'])
   =/  when=@da  (add t0 ~m1)
-  =/  st=json  (state-json:orr all ~[['a1' a]] multi when '' (numb:enjs:format 7) [%o ~])
-  =/  only-things=json  (state-json:orr all ~ multi when 'thing' (numb:enjs:format 7) [%o ~])
-  =/  bj=json  (body-json:orr car (situations:orr all multi when) ~[['a1' a]] multi when)
+  =/  st=json  (state-json:orr all acts multi when '' (numb:enjs:format 7) [%o ~])
+  =/  only-things=json  (state-json:orr all acts multi when 'thing' (numb:enjs:format 7) [%o ~])
+  =/  no-kind=json  (state-json:orr all acts multi when 'nope' (numb:enjs:format 7) [%o ~])
+  =/  bj=json  (body-json:orr car (situations:orr all multi when) acts multi when)
+  =/  ids=(list json)  (turn (ga:orr st 'bodies') |=(j=json (gj:orr j 'id')))
   ;:  weld
-    (expect-eq !>(3) !>((lent (ga:orr st 'bodies'))))
+    (expect-eq !>(4) !>((lent (ga:orr st 'bodies'))))
     (expect-eq !>(1) !>((lent (ga:orr only-things 'bodies'))))
+    (expect-eq !>(0) !>((lent (ga:orr no-kind 'bodies'))))
+    (expect !>((lien ids |=(j=json =(j `json`s+'situation/2026-09-15-thaw')))))
+    (expect-eq !>(`json`a+~[(en-action:orr `@ta`'a1' a)]) !>((gj:orr st 'actions')))
     (expect-eq !>(`json`a+~[s+'situation/2026-09-16-breakdown']) !>((gj:orr st 'situations')))
     (expect-eq !>(1) !>((lent (ga:orr st 'actions'))))
     (expect-eq !>(`json`(numb:enjs:format 7)) !>((gj:orr st 'rev')))

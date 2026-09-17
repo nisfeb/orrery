@@ -54,6 +54,7 @@
   =/  why=@t  (fall (arg:om args 'note') '')
   ?:  (gth (met 3 why) max-note:orr)  (pure:m (fail:om 'note: over 500 bytes'))
   =/  who=@t  (fall (arg:om args 'by') 'mcp')
+  ?:  (gth (met 3 who) max-by:orr)  (pure:m (fail:om 'by: over 64 bytes'))
   ;<  a=(unit action:orr)  bind:m  (read-action-at:om `@ta`id)
   ?~  a  (pure:m (fail:om 'no such action'))
   ?.  (transition-ok:orr status.u.a `@tas`want)

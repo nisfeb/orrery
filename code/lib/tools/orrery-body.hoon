@@ -20,7 +20,7 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
-  ;<  ~  bind:m  ensure-me:om
+  ;<  *  bind:m  ensure-me:om
   =/  id=(unit @t)  (arg:om args.st 'id')
   ?~  id  (pure:m (fail:om 'id: required'))
   ?~  (parse-bid:orr u.id)  (pure:m (fail:om 'id: expected <kind>/<slug>'))

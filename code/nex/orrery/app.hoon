@@ -918,8 +918,9 @@
     ==
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
+  =/  who=@t  ?:(owner.act ?:(=('' (gs:orr jon 'by')) 'http' (gs:orr jon 'by')) by.act)
   =/  op=json
-    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+by.act]])
+    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+who]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))

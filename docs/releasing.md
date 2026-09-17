@@ -189,11 +189,13 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 1. `code/version.json` bumped, the number one higher than the last release.
 2. `python3 scripts/code-closure.py code` reports nothing missing.
-3. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
-4. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
-5. `python3 scripts/key-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
-6. `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
-7. `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
-8. `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` prints `ALL OK`.
-9. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-10. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
+3. `cmp code/lib/tools.hoon /home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon` prints nothing. The vendored tool types must equal the kernel's or every tool call breaks.
+4. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
+5. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
+6. `python3 scripts/key-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
+7. `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
+8. `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
+9. `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` prints `ALL OK`.
+10. Open `/apps/orrery` on `~wex` in a browser with the owner cookie: the four views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
+11. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
+12. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.

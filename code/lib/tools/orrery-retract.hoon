@@ -26,6 +26,7 @@
   =/  why=@t  (fall (arg:om args.st 'note') '')
   ?:  (gth (met 3 why) max-note:orr)  (pure:m (fail:om 'note: over 500 bytes'))
   =/  who=@t  (fall (arg:om args.st 'by') 'mcp')
+  ?:  (gth (met 3 who) max-by:orr)  (pure:m (fail:om 'by: over 64 bytes'))
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
   ?~  (find-obs:om all `@ta`u.id)  (pure:m (fail:om 'no such observation'))
   =/  op=json

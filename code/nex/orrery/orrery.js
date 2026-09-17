@@ -162,17 +162,20 @@
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
   }
 
+  // a write answers before the writer applies, so the refetch waits
+  function later() { setTimeout(refresh, 300); }
+
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.retract) {
       var note = prompt('Why retract this observation?') ;
       if (note === null) return;
-      post('/retract', { id: b.dataset.retract, note: note }).then(refresh).catch(function (e) { say(e.message, true); });
+      post('/retract', { id: b.dataset.retract, note: note, by: 'page' }).then(later).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.move) {
       var cut = b.dataset.move.indexOf(':');
       var moveId = b.dataset.move.slice(0, cut), moveTo = b.dataset.move.slice(cut + 1);
-      post('/actions/' + seg(moveId), { status: moveTo, by: 'page' }).then(refresh).catch(function (e) { say(e.message, true); });
+      post('/actions/' + seg(moveId), { status: moveTo, by: 'page' }).then(later).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.save) {
       var which = b.dataset.save;
       var parsed;
@@ -193,6 +196,11 @@
       if (document.hidden) { await new Promise(function (r) { setTimeout(r, 1000); }); continue; }
       try {
         var resp = await fetch(KEEP, { headers: { Accept: 'text/event-stream' } });
+        if (!resp.ok) {
+          say('live updates off', true);
+          await new Promise(function (r) { setTimeout(r, 30000); });
+          continue;
+        }
         var rd = resp.body.getReader();
         var dec = new TextDecoder();
         var buf = '';

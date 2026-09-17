@@ -28,7 +28,7 @@
   =/  jon=json
     :-  %o
     %-  ~(gas by *(map @t json))
-    %+  murn  ~['kind' 'title' 'payload' 'about' 'due']
+    %+  murn  ~['kind' 'title' 'payload' 'about' 'due' 'proposed']
     |=  k=@t
     ^-  (unit [@t json])
     =/  v=json  (arg-json:om args.st k)
@@ -37,8 +37,9 @@
   =/  stamped=json  (fill-act:orr jon now who)
   =/  got  (de-action:orr stamped now who)
   ?:  ?=(%| -.got)  (pure:m (fail:om p.got))
-  ;<  missing=(unit bid:orr)  bind:m  (first-missing:om ~(tap in about.p.got))
-  ?^  missing  (pure:m (fail:om (cat 3 'about: no such body ' u.missing)))
+  ;<  missing=(each (unit bid:orr) @t)  bind:m  (first-missing:om ~(tap in about.p.got))
+  ?:  ?=(%| -.missing)  (pure:m (fail:om p.missing))
+  ?^  p.missing  (pure:m (fail:om (cat 3 'about: no such body ' u.p.missing)))
   ;<  policy=json  bind:m  (read-json:om / %'policy.json')
   ;<  all=(list [id=@ta a=action:orr])  bind:m  load-actions:om
   =/  twin=(unit [id=@ta a=action:orr])  (open-twin:om all kind.p.got title.p.got)

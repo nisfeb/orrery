@@ -38,7 +38,8 @@
         ['observations' a+(turn (ga:orr jon 'observations') |=(j=json (fill-obs:orr j now who)))]
     ==
   =/  prep  (prep-observe:orr stamped now who)
-  ;<  ~  bind:m  ensure-me:om
+  ;<  ok=?  bind:m  ensure-me:om
+  ?.  ok  (pure:m (fail:om 'orrery: peek refused'))
   ;<  bodies-res=(list json)  bind:m  (body-results:om bodies.prep ~)
   =/  known=(set bid:orr)
     %-  sy

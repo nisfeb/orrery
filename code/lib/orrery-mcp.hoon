@@ -44,14 +44,16 @@
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base p) n] ~)
   ?.  ?=([~ %file *] vw)  (pure:m [%o ~])
   (pure:m (fall (mole |.(!<(json (need-vase:tarball sang.u.vw)))) [%o ~]))
-::  +exists: a file grub in the instance
+::  +exists: a file grub in the instance; ~ when the peek was refused,
+::  so a grant that narrowed does not read as an absent body
 ::
 ++  exists
   |=  [p=path n=@ta]
-  =/  m  (fiber:fiber:nexus ,?)
+  =/  m  (fiber:fiber:nexus ,(unit ?))
   ^-  form:m
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base p) n] ~)
-  (pure:m ?=([~ %file *] vw))
+  ?~  vw  (pure:m ~)
+  (pure:m `?=([%file *] u.vw))
 ::  +poke-writer: one op to orrery's writer; the error when refused
 ::
 ++  poke-writer
@@ -59,15 +61,17 @@
   =/  m  (fiber:fiber:nexus ,(unit tang))
   ^-  form:m
   (poke-soft:io [%& %& base %'main.sig'] [[/ %json] op])
-::  +ensure-me: person/me is laid by the writer on first use
+::  +ensure-me: person/me is laid by the writer on first use; | when the
+::  peek was refused, so a caller that needs a read can say so
 ::
 ++  ensure-me
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  ;<  ex=?  bind:m  (exists (body-dir %person %me) %body)
-  ?:  ex  (pure:m ~)
+  ;<  ex=(unit ?)  bind:m  (exists (body-dir %person %me) %body)
+  ?~  ex  (pure:m |)
+  ?:  u.ex  (pure:m &)
   ;<  *  bind:m  (poke-writer (pairs:enjs:format ~[['op' s+'ensure-me']]))
-  (pure:m ~)
+  (pure:m &)
 ::  ==  the walkers, the same shapes the nexus reads
 ::
 ++  load-bodies
@@ -144,16 +148,20 @@
   =/  hit=(list row:orr)  (skim rows.i.all |=(r=row:orr =(id.r id)))
   ?^  hit  `[id.i.all i.hit]
   $(all t.all)
+::  +first-missing: the first id with no body, or the refusal that
+::  stopped the walk
+::
 ++  first-missing
   |=  ids=(list bid:orr)
-  =/  m  (fiber:fiber:nexus ,(unit bid:orr))
+  =/  m  (fiber:fiber:nexus ,(each (unit bid:orr) @t))
   ^-  form:m
-  ?~  ids  (pure:m ~)
+  ?~  ids  (pure:m [%& ~])
   ?:  =('person/me' i.ids)  (first-missing t.ids)
   =/  pk  (parse-bid:orr i.ids)
-  ?~  pk  (pure:m `i.ids)
-  ;<  ex=?  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
-  ?.  ex  (pure:m `i.ids)
+  ?~  pk  (pure:m [%& `i.ids])
+  ;<  ex=(unit ?)  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
+  ?~  ex  (pure:m [%| 'orrery: peek refused'])
+  ?.  u.ex  (pure:m [%& `i.ids])
   (first-missing t.ids)
 ++  open-twin
   |=  [all=(list [id=@ta a=action:orr]) kind=@tas title=@t]
@@ -173,9 +181,12 @@
   =/  pk  (parse-bid:orr id.p.i.items)
   ?~  pk
     (body-results t.items [(pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']]) acc])
-  ;<  ex=?  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
+  ;<  ex=(unit ?)  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
+  ?~  ex
+    %+  body-results  t.items
+    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
   %+  body-results  t.items
-  [(pairs:enjs:format ~[['id' s+id.p.i.items] ['ok' b+&] ['existing' b+ex]]) acc]
+  [(pairs:enjs:format ~[['id' s+id.p.i.items] ['ok' b+&] ['existing' b+u.ex]]) acc]
 ++  obs-results
   |=  [items=(list (each obs:orr @t)) known=(set bid:orr) acc=(list json)]
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -187,14 +198,20 @@
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
     (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']]) acc])
-  ;<  has=?  bind:m
-    ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,?) &)
+  ;<  has=(unit ?)  bind:m
+    ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,(unit ?)) `&)
     (exists (body-dir kind.u.pk slug.u.pk) %body)
-  ?.  has
+  ?~  has
+    %^  obs-results  t.items  known
+    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
+  ?.  u.has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
     (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+why]]) acc])
   =/  id=@ta  (obs-id:orr o)
-  ;<  ex=?  bind:m  (exists (obs-dir kind.u.pk slug.u.pk) id)
+  ;<  ex=(unit ?)  bind:m  (exists (obs-dir kind.u.pk slug.u.pk) id)
+  ?~  ex
+    %^  obs-results  t.items  known
+    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
   %^  obs-results  t.items  known
-  [(pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+ex]]) acc]
+  [(pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+u.ex]]) acc]
 --

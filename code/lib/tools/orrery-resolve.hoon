@@ -19,7 +19,7 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
-  ;<  ~  bind:m  ensure-me:om
+  ;<  *  bind:m  ensure-me:om
   =/  q=@t  (fall (arg:om args.st 'q') '')
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
   =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))

@@ -57,6 +57,8 @@ Every desk under the shell that ships a `code/lib/tools` directory joins the reg
 orrery. On `~wex` that means `wallet.desk` and its fourteen tools arrived alongside orrery's
 eight. Worth a line in the release notes.
 
+The threat model changes, and it is worth stating plainly. The patch does not widen reachability: any file in any code namespace was already runnable by absolute path through `call_tool`, so no tool becomes callable that was not callable before. It widens advertisement: every installed desk's `code/lib/tools` directory is now listed to the user's MCP client, so a desk that ships tools is announcing them to whoever holds that client. Those tools run under the mcp tools child's weir, not under the desk's own ask, so what a desk tool can reach is what the mcp nexus was granted. And a bare-name collision across desks resolves in map order, so a desk's tools should carry a prefix the way orrery's do.
+
 `+await-tool` in `nex/mcp.hoon` has no callers: `tools/call` delegates the run to the `tools.tools`
 child, and `desk/gub/nex/tools.hoon` resolves only its own seeded `/code` and the root
 `/code/lib/tools`, deliberately. The patch improves its loop for consistency; nothing runs it.
@@ -83,7 +85,7 @@ sleep 20
 curl -s -b $CK "$W/grubbery/ball/apps/mcp.mcp?info=1"                 # bang: null
 ```
 
-To revert, write `orig.hoon` back the same way and reload again.
+To revert, write the originals back the same way and reload again. The `orig.hoon` copies are one source of them. The other is the grubbery checkout at `/home/sneagan/software/groundwire/grubbery`, whose `desk/gub/nex/mcp.hoon`, `desk/gub/lib/tool-bundle/tools/call-tool.hoon` and `desk/gub/lib/tool-bundle/tools/list-tools.hoon` are the unpatched originals until `git apply` lands the patch there.
 
 The nexus needs the reload. The two bundle tools do not: the tools nexus compiles a tool on each
 call, so `call_tool` answered the new way the moment the file was saved. Both instances read
@@ -99,9 +101,7 @@ tools/list                                3  ['call_tool', 'echo', 'list_tools']
 api/tools-tree                            root 15 + apps/orrery.desk 8 + apps/wallet.desk 14
 ```
 
-`list_tools` prints each tool's own declared `++  name`, which for orrery's tools is hyphenated
-(`orrery-state`), while the tools-tree prints the name derived from the filename
-(`orrery_state`). Both spellings reach the same tool through `call_tool`.
+`list_tools` prints each tool's own declared `++  name`. For orrery's tools that is the underscore form, `orrery_state`, which is also the name the tools tree derives from the file name `orrery-state.hoon`. So the two listings agree, and `call_tool` reaches the same tool under either spelling, because it maps underscores to hyphens before it looks for the file.
 
 The rehearsal was left in place on `~wex`: no bang, the kernel's own tools all still answer, and
 the registry is a strict superset of the old one. Both gates
