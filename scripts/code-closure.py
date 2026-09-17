@@ -45,7 +45,18 @@ ball = re.compile(r'^\s*/[<&]\s+\S+\s+(\S+)|^\s*/\*\s+\S+\s+%\S+\s+(\S+)', re.M)
 #
 #  A blot appears either inside a pair, [[/dir %name] value], or as a unit,
 #  `[/dir %name]. Those two forms are what this matches.
-marc = re.compile(r'(?:\[\[|`\[)\s*/((?:[a-z0-9-]+/?)*)\s+%\'?([a-z][a-z0-9-]*)\'?\s*\]')
+#
+#  A NECK IS NOT A MARC EITHER. A pulp is [neck=(unit neck) weir gain contents],
+#  so a nexus literal writes its neck as the unit right after the pulp's own
+#  unit - [`[`[/ %code] ~ %.n ~] kids] - and %code names a nexus type, not a
+#  mark. The lookbehind drops a `[ that another `[ opens.
+marc = re.compile(r'(?:\[\[|(?<!`\[)`\[)\s*/((?:[a-z0-9-]+/?)*)\s+%\'?([a-z][a-z0-9-]*)\'?\s*\]')
+
+#  The four foundational marks are compiled at bootstrap from the kernel's own
+#  /gub/mar and forced into every code nexus before +build-code runs (see
+#  +bootstrap-marcs, "changed by fiat, every build"), so a guest never carries
+#  them: they resolve whether or not the desk ships a copy.
+foundational = {'mar/%s.hoon' % n for n in ('hoon', 'tang', 'mime', 'kelvin')}
 
 recv = re.compile(r'[=?]\(\s*\[/((?:[a-z0-9-]+/?)*)\s+%\'?([a-z][a-z0-9-]*)\'?\s*\]')
 
@@ -86,7 +97,7 @@ while True:
     missing = set()
     for rel in sorted(f for f in have if f.endswith('.hoon')):
         for w in wants(rel, have):
-            if w.endswith('/') or w in have: continue
+            if w.endswith('/') or w in have or w in foundational: continue
             missing.add(w)
     if not missing: break
     if not fill:
