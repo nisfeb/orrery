@@ -223,6 +223,14 @@ code, d = triage('POST', '/act', {'kind': 'task', 'title': 'key gate: another ta
 check('a key with no action kinds cannot propose', code == 403, d)
 code, d = triage('GET', '/actions')
 check('a key with no action kinds lists none', code == 200 and d == [], d)
+code, d = owner('POST', '/clients', {'name': 'key-gate watcher', 'by': 'watcher',
+                                     'scope': {'kinds': [], 'actions': ['task'], 'write': False}})
+check('mint a read-only key that may see tasks', code == 200 and '.' in str(dictish(d).get('token', '')), d)
+watcher = as_key(str(dictish(d).get('token', '')))
+code, d = watcher('GET', '/actions')
+check('the read-only key lists the task', code == 200 and any(isinstance(x, dict) and x.get('id') == task_id for x in listish(d)), d)
+code, d = watcher('POST', '/actions/' + task_id, {'status': 'done'})
+check('a read-only key cannot transition', code == 403, d)
 code, d = todo('POST', '/actions/' + task_id, {'status': 'done', 'by': 'liar'})
 check('the todo key completes its task', code == 200, d)
 code, d = owner('GET', '/actions?status=done')
@@ -238,6 +246,7 @@ about_id = str(dictish(d).get('id', ''))
 code, d = todo('GET', '/actions')
 about_rows = [x for x in listish(d) if isinstance(x, dict) and x.get('id') == about_id]
 check('an about outside the kinds is trimmed from what the todo key lists', len(about_rows) == 1 and about_rows[0].get('about') == [], about_rows)
+check('the todo key does not list an action of another kind', len(about_rows) == 1 and not any(isinstance(x, dict) and x.get('id') == note_id for x in listish(d)), d)
 code, d = owner('GET', '/actions')
 owner_rows = [x for x in listish(d) if isinstance(x, dict) and x.get('id') == about_id]
 check('the owner still sees the about', len(owner_rows) == 1 and owner_rows[0].get('about') == ['thing/subaru'], owner_rows)
