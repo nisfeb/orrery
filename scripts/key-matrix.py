@@ -121,9 +121,9 @@ check('policy marks health sensitive', code == 200, d)
 code, d = owner('GET', '/schema')
 check('the owner reads the schema', code == 200 and isinstance(dictish(d).get('kinds'), dict), d)
 base = json.loads(json.dumps(d)) if code == 200 else {'kinds': {}}
+STARTER_SCHEMA[0] = json.loads(json.dumps(base))  # the schema as found
 base_person = dictish(dictish(base.get('kinds')).get('person'))
 base_person['attrs'] = [a for a in listish(base_person.get('attrs')) if a != 'health']
-STARTER_SCHEMA[0] = base
 run_schema = json.loads(json.dumps(base))
 dictish(dictish(run_schema.get('kinds')).get('person'))['attrs'] = base_person['attrs'] + ['health']
 code, d = owner('PUT', '/schema', run_schema)
@@ -203,7 +203,7 @@ code, d = triage('POST', '/observe', {'bodies': [], 'observations': [
 check('a mixed batch is 403', code == 403, d)
 code, a = attrs_of(owner, 'person/me')
 check('the in-scope half of a refused batch was not written',
-      dictish(dictish(a).get('status')).get('value') != 'mixed batch', a)
+      code == 200 and dictish(dictish(a).get('status')).get('value') == 'working from bed', a)
 code, d = triage('POST', '/bodies', {'id': 'person/sam', 'name': 'Sam', 'ship': '~zod'})
 check('a key may not set a body ship', code == 403 and dictish(d).get('error') == 'not in scope: ship', (code, d))
 code, d = triage('POST', '/observe', {'bodies': [{'id': 'person/sam', 'name': 'Sam', 'ship': '~zod'}], 'observations': []})

@@ -55,13 +55,16 @@ check('the style is refused without the cookie', code == 403, (code, b[:100]))
 # served script so the gate follows the page rather than a copy of it
 m = re.search(r"var KEEP = '([^']+)'", js)
 check('the script names the beacon stream', bool(m), js[:200])
+# a miss on the KEEP regex leaves ev empty, so the two stream checks
+# fail loudly rather than vanishing from the count
+ev = ''
 if m:
     ev = subprocess.run(['curl', '-s', '-N', '-m', '3', '-b', JAR,
                          '-H', 'accept: text/event-stream', HOST + m.group(1)],
                         capture_output=True, text=True).stdout
-    lines = [ln.strip() for ln in ev.split('\n')]
-    check('the stream names a rev event', any(ln.startswith('event: ') and ln.endswith('/rev') for ln in lines), ev[:200])
-    check('the stream carries the rev as digits', any(ln.startswith('data: ') and ln[6:].strip().isdigit() for ln in lines), ev[:200])
+lines = [ln.strip() for ln in ev.split('\n')]
+check('the stream names a rev event', any(ln.startswith('event: ') and ln.endswith('/rev') for ln in lines), ev[:200])
+check('the stream carries the rev as digits', any(ln.startswith('data: ') and ln[6:].strip().isdigit() for ln in lines), ev[:200])
 
 r = subprocess.run(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page-test.js')], capture_output=True, text=True)
 print(r.stdout.rstrip())

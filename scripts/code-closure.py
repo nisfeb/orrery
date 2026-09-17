@@ -113,7 +113,7 @@ while True:
         shutil.copyfile(s, os.path.join(code, m))
         added.append(m); got = True
     if not got:
-        print('   stuck — missing files have no source'); sys.exit(1)
+        print('   stuck: missing files have no source'); sys.exit(1)
     if rounds > 20: print('   too many rounds'); sys.exit(1)
 
 n = len(files_in(code))

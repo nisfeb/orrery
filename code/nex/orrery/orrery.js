@@ -55,7 +55,8 @@
     out += '<div class="card"><h2>Now</h2>';
     if (!attrs.length) out += '<p class="muted">No current attributes.</p>';
     else {
-      out += '<table><tr><th>attribute</th><th>value</th><th>since</th><th>by</th><th>source</th></tr>';
+      out += '<table><tr><th scope="col">attribute</th><th scope="col">value</th><th scope="col">since</th>' +
+        '<th scope="col">by</th><th scope="col">source</th></tr>';
       attrs.forEach(function (a) {
         var rows = v.attrs[a];
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
@@ -76,7 +77,8 @@
     out += '<div class="card"><h2>Timeline</h2>';
     if (!v.observations || !v.observations.length) out += '<p class="muted">No observations.</p>';
     else {
-      out += '<table><tr><th>at</th><th>attribute</th><th>value</th><th>status</th><th>by</th><th>source</th><th></th></tr>';
+      out += '<table><tr><th scope="col">at</th><th scope="col">attribute</th><th scope="col">value</th>' +
+        '<th scope="col">status</th><th scope="col">by</th><th scope="col">source</th><th scope="col"></th></tr>';
       v.observations.forEach(function (o) {
         out += '<tr class="' + esc(o.status) + '"><td>' + fmtTime(o.at) + '</td><td>' + esc(o.attr) + '</td><td>' + fmtValue(o.value) +
           '</td><td>' + badge(o.status) + (o.note ? ' <span class="muted">' + esc(o.note) + '</span>' : '') +
@@ -108,13 +110,33 @@
 
   function settings(schema, policy) {
     return '<h1>Settings</h1>' +
-      '<div class="card"><h2>schema.json</h2><textarea id="schema">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
+      '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
-      '<div class="card"><h2>policy.json</h2><textarea id="policy">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
+      '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
       '<p><button data-save="policy">save policy</button></p></div>';
   }
 
-  var render = { bodies: bodies, body: body, inbox: inbox, settings: settings, esc: esc, fmtValue: fmtValue };
+  function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
+  function route(hash) {
+    var h = String(hash || '').replace(/^#/, '') || 'bodies';
+    if (h.indexOf('body/') === 0) return { name: 'body', id: h.slice(5) };
+    return { name: h };
+  }
+  // one block of the raw beacon stream: only its "event:" and "data:"
+  // lines carry anything
+  function sseEvent(block) {
+    var name = '', data = '';
+    String(block).split('\n').forEach(function (ln) {
+      if (ln.indexOf('event: ') === 0) name = ln.slice(7).trim();
+      else if (ln.indexOf('data: ') === 0) data = ln.slice(6).trim();
+    });
+    return { name: name, data: data };
+  }
+
+  var render = {
+    bodies: bodies, body: body, inbox: inbox, settings: settings, esc: esc, fmtValue: fmtValue,
+    seg: seg, route: route, sseEvent: sseEvent,
+  };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
   if (typeof document === 'undefined') { return; }
 
@@ -135,21 +157,15 @@
       return r.json();
     });
   }
-  function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function post(path, bodyObj, method) {
     return api(path, { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) });
   }
 
-  function route() {
-    var h = location.hash.replace(/^#/, '') || 'bodies';
-    if (h.indexOf('body/') === 0) return { name: 'body', id: h.slice(5) };
-    return { name: h };
-  }
   var refreshing = false, again = false;
   function refresh() {
     if (refreshing) { again = true; return; }
     refreshing = true;
-    var r = route();
+    var r = route(location.hash);
     var p;
     if (r.name === 'body') p = api('/body/' + seg(r.id)).then(function (v) { view.innerHTML = body(v); });
     else if (r.name === 'inbox') p = api('/actions?status=open').then(function (a) { view.innerHTML = inbox(a); });
@@ -169,7 +185,7 @@
     var b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.retract) {
-      var note = prompt('Why retract this observation?') ;
+      var note = prompt('Why retract this observation?');
       if (note === null) return;
       post('/retract', { id: b.dataset.retract, note: note, by: 'page' }).then(later).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.move) {
@@ -222,11 +238,8 @@
           buf = evs.pop();
           evs.forEach(function (ev) {
             if (document.hidden) return;
-            var name = '', data = '';
-            ev.split('\n').forEach(function (ln) {
-              if (ln.indexOf('event: ') === 0) name = ln.slice(7).trim();
-              else if (ln.indexOf('data: ') === 0) data = ln.slice(6).trim();
-            });
+            var parsed = sseEvent(ev);
+            var name = parsed.name, data = parsed.data;
             if (!name || name.slice(-4) !== '/rev') return;
             if (name.indexOf('old') === 0) { if (lastRev !== null && data && data !== lastRev) bumped(); lastRev = data; return; }
             lastRev = data;

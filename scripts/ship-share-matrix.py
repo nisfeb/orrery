@@ -170,7 +170,12 @@ clean()
 code, d = peer('POST', '/bodies', {'id': 'person/me', 'ship': PEERNAME})
 check('peer person/me carries its ship', code == 200, d)
 code, d = peer('GET', '/policy')
-PEER_POLICY[0] = d if code == 200 and isinstance(d, dict) else STARTER
+found = dictish(d) if code == 200 and isinstance(d, dict) else dict(STARTER)
+#  an aborted run leaves the gate's own sensitive list behind: it is not
+#  the peer's, so it never becomes the baseline
+if found.get('sensitive') == ['health']:
+    found = {k: v for k, v in found.items() if k != 'sensitive'}
+PEER_POLICY[0] = found
 code, d = peer('PUT', '/policy', dict(dictish(PEER_POLICY[0]), sensitive=['health']))
 check('the peer marks health sensitive', code == 200, d)
 code, d = host('POST', '/bodies', {'id': 'person/sarah', 'name': 'Sarah', 'ship': PEERNAME})
@@ -253,14 +258,14 @@ code, d = observe(host, 'person/sarah', 'plan', 'dinner at seven', T0, 'share-3'
 check('host observes plan', code == 200, d)
 peer('POST', '/sync')
 wait('the plan mirrors', lambda: attr(peer, 'person/me', 'plan'), 90)
-check('the share group holds a ship while the share is live', (group_ships() or 0) > 0, group_ships())
+check('the share group is not empty while the share is live', (group_ships() or 0) > 0, group_ships())
 code, d = host('DELETE', '/share/person/sarah/' + PEERNAME)
 check('revoke answers ok', code == 200, d)
 wait('the peer row goes', lambda: gone_from(peer, 'accepted', KEY), 30)
 check('the mirrored plan stays', dictish(attr(peer, 'person/me', 'plan')).get('value') == 'dinner at seven', attr(peer, 'person/me', 'plan'))
 s = shares(host)
 check('the host no longer lists the share', s is not None and PEERNAME not in dictish(dictish(s.get('shares')).get('person/sarah')), s)
-check('the peer leaves the share group', group_ships() == 0, group_ships())
+check('the share group empties on revoke', group_ships() == 0, group_ships())
 
 print('== a re-share works')
 code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})
@@ -275,7 +280,7 @@ check('the shared body goes', code == 200, d)
 s = shares(host)
 check('the host no longer lists the share of a deleted body',
       s is not None and 'person/sarah' not in dictish(s.get('shares')), s)
-check('the peer leaves the group with the body', group_ships() == 0, group_ships())
+check('the share group empties with the body', group_ships() == 0, group_ships())
 code, d = host('POST', '/bodies', {'id': 'person/sarah', 'name': 'Sarah', 'ship': PEERNAME})
 check('the body comes back for the rest of the gate', code == 200, d)
 code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})

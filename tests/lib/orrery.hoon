@@ -8,7 +8,6 @@
 |%
 ++  jo  |=(t=@t ^-(json (need (de:json:html t))))
 ++  t0  ~2026.9.16..22.05.00
-::
 ::  ==  names
 ::
 ++  test-ok-kind
@@ -33,7 +32,6 @@
     (expect-eq !>(`(unit [@tas @ta])`~) !>((parse-bid:orr 'Person/Sarah')))
     (expect-eq !>('thing/subaru') !>((make-bid:orr %thing %subaru)))
   ==
-::
 ::  ==  time
 ::
 ++  test-iso-roundtrip
@@ -55,7 +53,6 @@
     (expect-eq !>(`@ud`1.789.596.300) !>((unix-secs:orr t0)))
     (expect-eq !>(`@ud`0) !>((unix-secs:orr ~1969.12.31)))
   ==
-::
 ::  ==  ids
 ::
 ++  o1
@@ -79,7 +76,6 @@
   =/  a=action:orr
     [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %proposed '' ~]
   (expect-eq !>(19) !>((lent (trip (act-id:orr a)))))
-::
 ::  ==  decoders
 ::
 ++  test-de-body-ok
@@ -220,7 +216,6 @@
     (expect !>(?=([%| *] (snag 1 bodies.got))))
     (expect !>(?=([%& *] (snag 0 obs.got))))
   ==
-::
 ::  ==  readers and merge
 ::
 ++  test-readers
@@ -245,7 +240,6 @@
     (expect-eq !>('sarah') !>((fresh-name:orr %sarah '')))
     (expect-eq !>('Sarah') !>((fresh-name:orr %sarah 'Sarah')))
   ==
-::
 ::  ==  the fold
 ::
 ++  r  |=([id=@ta o=obs:orr] ^-(row:orr [id o]))
@@ -311,8 +305,10 @@
   =/  d  (r 'd' (mk 'mood' s+'grim' t0))
   =.  retracted.obs.d  &
   =/  when  (add t0 ~d1)
-  =/  w  (fold:orr ~[a b c d] ~ when)
-  =/  tl  (timeline:orr ~[a b c d] w when)
+  ::  e speaks of a moment after when: future, and it never wins the fold
+  =/  e  (r 'e' (mk 'location' s+'garage' (add when ~d1)))
+  =/  w  (fold:orr ~[a b c d e] ~ when)
+  =/  tl  (timeline:orr ~[a b c d e] w when)
   =/  st
     |=  id=@ta
     ^-  @tas
@@ -323,9 +319,9 @@
     (expect-eq !>(%live) !>((st 'b')))
     (expect-eq !>(%expired) !>((st 'c')))
     (expect-eq !>(%retracted) !>((st 'd')))
-    (expect-eq !>('b') !>(?~(tl '' id.r.i.tl)))
+    (expect-eq !>(%future) !>((st 'e')))
+    (expect-eq !>('e') !>(?~(tl '' id.r.i.tl)))
   ==
-::
 ::  ==  involved and resolve
 ::
 ++  test-involved
@@ -365,7 +361,6 @@
     (expect-eq !>(`(list bid:orr)`~) !>((ids 'zzz')))
     (expect-eq !>(`(list bid:orr)`~) !>((ids '')))
   ==
-::
 ::  ==  actions, policy, encoders
 ::
 ++  test-action-rules
@@ -392,7 +387,6 @@
     (expect-eq !>('live') !>((gs:orr j 'status')))
     (expect-eq !>('Sarah') !>((gs:orr (en-body:orr 'person/sarah' [%person 'Sarah' ~ t0 ~]) 'name')))
   ==
-::
 ::  ==  amendments: ship, history, push modes, the ring
 ::
 ++  test-de-body-ship
@@ -438,7 +432,6 @@
     (expect-eq !>(`json`(jo '{"n":2}')) !>(?:(?=([%a *] three) (snag 0 p.three) ~)))
     (expect-eq !>(1) !>((lent ?:(?=([%a *] fresh) p.fresh ~))))
   ==
-::
 ::  ==  the final review: caps, the seen tie-break, an id and an order
 ::
 ::  +big: a string of n bytes, for the over-cap cases
@@ -541,7 +534,6 @@
     (expect-eq !>(`(unit (list step:orr))`[~ ~[[t0 %approved 'mcp']]]) !>((bind (read-action:orr old-act) |=(a=action:orr history.a))))
     (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
   ==
-::
 ::  ==  sharing
 ::
 ++  test-share-helpers
@@ -564,7 +556,10 @@
 ::  it heard it from, so a decode on the receiving side reads as the
 ::  sender's claim
 ++  test-carry-and-receive
-  =/  r=row:orr  ['1789596300-abcdef01' o1]
+  ::  o1 carries no until, so the row under test sets one: an until that
+  ::  does not survive the trip would compare ~ with ~ and prove nothing
+  =/  src=obs:orr  o1
+  =/  r=row:orr  ['1789596300-abcdef01' src(until `(add t0 ~h2))]
   =/  carried=json  (carry-obs:orr 'person/me' r)
   ::  a sender that plants by and source changes nothing: the receiver
   ::  writes both from the transport it heard the row on
@@ -586,7 +581,7 @@
     (expect-eq !>(`source:orr`['ship' '~wex/1789596300-abcdef01']) !>(source.p.back))
     (expect-eq !>(value:o1) !>(value.p.back))
     (expect-eq !>(at:o1) !>(at.p.back))
-    (expect-eq !>(until:o1) !>(until.p.back))
+    (expect-eq !>(`(unit @da)`[~ (add t0 ~h2)]) !>(until.p.back))
     (expect-eq !>(90) !>(conf.p.back))
     (expect-eq !>(`json`~) !>((gj:orr carried 'by')))
     (expect-eq !>(`json`~) !>((gj:orr carried 'source')))
@@ -597,8 +592,9 @@
     (expect !>(!(from-ship:orr p.back ~feb)))
     (expect !>(!(from-ship:orr o1 ~wex)))
     (expect !>(!(from-ship:orr other ~wex)))
+    ::  a carried value that is not an object comes back untouched
+    (expect-eq !>(`json`s+'not an object') !>((receive-obs:orr ~wex s+'not an object')))
   ==
-::
 ::  ==  scoped client keys
 ::
 ++  test-de-scope
@@ -737,17 +733,19 @@
   =/  r-person=row:orr  ['2' base(value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]
   =/  r-plain=row:orr  ['3' base]
   =/  r-nope=row:orr  ['4' base(value (pairs:enjs:format ~[['ref' s+'nope']]))]
-  =/  kept=(list row:orr)  (veil-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
+  =/  r-thing=row:orr  ['5' base(value (pairs:enjs:format ~[['ref' s+'thing/subaru']]))]
+  =/  kept=(list row:orr)  (veil-refs:orr ~[r-place r-person r-thing r-plain] (sy ~[%person]))
   =/  unparsed=(list row:orr)  (veil-refs:orr ~[r-nope] (sy ~[%person]))
   =/  a=action:orr
     [%task 'Call the shop' ~ (sy ~['thing/subaru' 'person/sarah']) ~ 'mcp' t0 %proposed '' ~]
   =/  trimmed=action:orr  (scope-about:orr a (sy ~[%person]))
   ;:  weld
-    (expect-eq !>(~['veiled-0' '2' '3']) !>((turn kept |=(r=row:orr id.r))))
+    (expect-eq !>(~['veiled-0' '2' 'veiled-1' '3']) !>((turn kept |=(r=row:orr id.r))))
     (expect-eq !>(`json`~) !>(?~(kept ~ value.obs.i.kept)))
     (expect-eq !>('2') !>(id:(snag 1 `(list row:orr)`kept)))
     (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'person/sarah']])) !>(value.obs:(snag 1 `(list row:orr)`kept)))
-    (expect-eq !>(`json`s+'Route 9') !>(value.obs:(snag 2 `(list row:orr)`kept)))
+    (expect-eq !>(`json`~) !>(value.obs:(snag 2 `(list row:orr)`kept)))
+    (expect-eq !>(`json`s+'Route 9') !>(value.obs:(snag 3 `(list row:orr)`kept)))
     (expect-eq !>(~['4']) !>((turn unparsed |=(r=row:orr id.r))))
     (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'nope']])) !>(?~(unparsed ~ value.obs.i.unparsed)))
     (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'place/home']])) !>(value.obs:(snag 0 (veil-refs:orr ~[r-place] (sy ~[%person %place])))))
@@ -763,7 +761,9 @@
     ?.  ?=([%o *] base)  base
     [%o (~(put by p.base) 'actions' a+~[s+'task' s+'note'])]
   =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
-  =/  hide=(set @t)  (sy ~['health' 'status'])
+  ::  likes is both a person attr and a multi name: it pins that the
+  ::  hidden names leave multi too, not only the attrs lists
+  =/  hide=(set @t)  (sy ~['health' 'status' 'likes'])
   =/  out=json  (scope-schema:orr schema sc hide)
   =/  kinds=json  (gj:orr out 'kinds')
   =/  names=(list @t)  ?:(?=([%o *] kinds) (sort ~(tap in ~(key by p.kinds)) aor) ~)
@@ -775,9 +775,10 @@
     (expect !>(!(lien attrs |=(t=@t =('status' t)))))
     (expect !>((lien attrs |=(t=@t =('location' t)))))
     (expect !>((lien multi |=(t=@t =('participants' t)))))
+    (expect !>(!(lien multi |=(t=@t =('likes' t)))))
+    (expect !>(!(lien attrs |=(t=@t =('likes' t)))))
     (expect-eq !>(~['task']) !>(acts))
   ==
-::
 ::  ==  the shared view encoders
 ::
 ++  test-state-and-body-json

@@ -16,6 +16,7 @@
       ['payload' [%object 'anything the action needs, at most 4000 bytes serialized']]
       ['about' [%array 'body ids this action is about, at most 20']]
       ['due' [%string 'ISO 8601 UTC time the action is due']]
+      ['proposed' [%string 'ISO 8601 UTC time the action was proposed (default: now)']]
       ['by' [%string 'who is proposing (default "mcp")']]
   ==
 ++  required  ~['kind' 'title']

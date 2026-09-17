@@ -12,6 +12,13 @@
 ::    /tr/last                         the last writer outcome, as json
 ::    /tr/log                          the audit ring, the last 500 ops
 ::    /tr/inbox                        ship traffic, its own ring of 500
+::    /shares.json                     what we share out, by body id
+::    /shares.sig                      the inbox other ships poke
+::    /share-offers.json               what was offered to us
+::    /ship-remotes.json               what we accepted, a row per share
+::    /sync.sig                        the follower: pull, then push
+::    /clients.json                    the minted keys, salted hashes only
+::    the page and the manifests       laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
 ::  absolute path, so every road is [%| up lane], where up is the number
@@ -225,6 +232,14 @@
   ^-  form:m
   ;<  ~  bind:m  (note op & why)
   (pure:m |)
+::  +trail-entry: one audit row. Both rings carry the same five pairs,
+::  so they are built in one place.
+::
+++  trail-entry
+  |=  [op=@t ok=? why=@t by=@t now=@da]
+  ^-  json
+  %-  pairs:enjs:format
+  ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
 ::  +note: the last writer outcome at /tr/last, and the audit ring at
 ::  /tr/log (the last 500). Fiber prints reach only the raw console; a
 ::  grub is readable by every tool.
@@ -241,9 +256,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  entry=json
-    %-  pairs:enjs:format
-    ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
+  =/  entry=json  (trail-entry op ok why by now)
   ;<  ~  bind:m  (over:io (rf 0 /tr %last) [[/ %json] entry])
   ;<  log=json  bind:m  (read-json (rf 0 /tr %log))
   (over:io (rf 0 /tr %log) [[/ %json] (ring:orr log entry 500)])
@@ -263,9 +276,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  entry=json
-    %-  pairs:enjs:format
-    ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
+  =/  entry=json  (trail-entry op ok why by now)
   ;<  log=json  bind:m  (read-json (rf up /tr %inbox))
   (over:io (rf up /tr %inbox) [[/ %json] (ring:orr log entry 500)])
 ::  +note-refusals: one ship-traffic note per refusal, for the rows a
@@ -368,8 +379,12 @@
     ?~(os '' (gs:orr i.os 'by'))
   ;<  ~  bind:m
     ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'observe' & '' who)
-    (note 'observe' & '')
+    (note-by 'observe' & '' who)
   (pure:m |(c1 c2))
+::  +write-bodies: one grub per body in a batch. A refused item or an
+::  id that will not parse is skipped, so one bad row never stops the
+::  rest of the batch.
+::
 ++  write-bodies
   |=  [items=(list (each [id=bid:orr =body:orr] @t)) changed=?]
   =/  m  (fiber:fiber:nexus ,?)
@@ -402,6 +417,9 @@
   ;<  err=(unit tang)  bind:m
     (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 o]] ~])
   (write-obs t.items |(changed ?=(~ err)))
+::  +do-upsert-body: lay or replace one body. The decoder's refusal is
+::  the refusal, so the writer and the route agree on what is valid.
+::
 ++  do-upsert-body
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
@@ -415,6 +433,8 @@
   ;<  ~  bind:m  (note 'upsert-body' & '')
   (pure:m changed)
 ::  ==  reads: walking the tree
+::
+::  +read-json: a JSON grub in the instance, [%o ~] when absent
 ::
 ++  read-json
   |=  road=road:tarball
@@ -512,10 +532,10 @@
   ;<  our=@p  bind:m  get-our:io
   =/  parsed  (parse-url:http-utils url.request.req)
   ::  drop /apps/orrery; a trailing slash parses as a trailing empty knot
-  =/  suffix=path  (slag 2 site.parsed)
+  =/  suffix0=path  (slag 2 site.parsed)
   =/  suffix=path
-    ?:  &(?=(^ suffix) =('' (rear `path`suffix)))  (snip `path`suffix)
-    suffix
+    ?:  &(?=(^ suffix0) =('' (rear `path`suffix0)))  (snip `path`suffix0)
+    suffix0
   =/  meth=@t  method.request.req
   ;<  who=(unit actor)  bind:m  (identify req src our)
   ?~  who  (send-err eyre-id 403 'forbidden')
@@ -523,13 +543,15 @@
   ::  +own: a route the owner alone may take
   =/  own  |=(f=form:m ^-(form:m ?:(owner.act f (send-err eyre-id 403 'owner only'))))
   ::  a body is read as JSON, so a request carrying one says it is JSON.
-  ::  The gates and the page all send the header.
+  ::  The gates and the page all send the header. A POST with no body
+  ::  carries no JSON to mistype, so it is not a 415.
   =/  ctype=@t
     =/  raw=tape
       (cass (trip (fall (get-header:http 'content-type' header-list.request.req) '')))
     (crip raw)
   ?:  ?&  |(=('POST' meth) =('PUT' meth))
           ?=(^ body.request.req)
+          !=(0 p.u.body.request.req)
           !=('application/json' (end [3 16] ctype))
       ==
     (send-err eyre-id 415 'content-type: application/json required')
@@ -649,8 +671,12 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['bodies' a+bodies-res] ['observations' a+obs-res]])
-::  seen carries the ids already answered in this batch, so the second
-::  copy of one item answers existing rather than claiming a fresh write
+::  +body-results: one answer per body in a batch: whether it parsed,
+::  and whether the id was already there
+::
+::    seen carries the ids already answered in this batch, so the second
+::    copy of one item answers existing rather than claiming a fresh
+::    write. +obs-results below keeps the same set for the rows.
 ::
 ++  body-results
   |=  [items=(list (each [id=bid:orr =body:orr] @t)) seen=(set bid:orr) acc=(list json)]
@@ -669,6 +695,10 @@
   =/  entry=json
     (pairs:enjs:format ~[['id' s+bd] ['ok' b+&] ['existing' b+|(ex (~(has in seen) bd))]])
   %^  body-results  t.items  (~(put in seen) bd)  [entry acc]
+::  +obs-results: one answer per observation in the same batch. known
+::  carries the bodies the batch is laying, so a row about one of them
+::  is not an unknown subject.
+::
 ++  obs-results
   |=  $:  items=(list (each obs:orr @t))
           known=(set bid:orr)
@@ -747,6 +777,9 @@
     ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'retract' & why who)
     (note-by 'retract' & why who)
   (pure:m &)
+::  +do-delete-body: cull a body's whole directory, its observations
+::  with it
+::
 ++  do-delete-body
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
@@ -841,6 +874,9 @@
   =/  sent=?  ?=(~ err)
   ;<  ~  bind:m  (note-by 'push' sent ?:(sent title.a 'push refused') by.a)
   (pure:m ~)
+::  +do-set-action: move one action to a new status, refusing a
+::  transition the model does not allow
+::
 ++  do-set-action
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
@@ -848,7 +884,7 @@
   =/  id=@t  (gs:orr jon 'id')
   =/  want=@t  (gs:orr jon 'status')
   =/  why=@t  (gs:orr jon 'note')
-  =/  by=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
   ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
   ;<  cur=view:nexus  bind:m  (peek:io road ~)
@@ -858,10 +894,13 @@
   ?.  (transition-ok:orr status.u.a `@tas`want)
     (refuse 'set-action' (rap 3 'cannot go from ' status.u.a ' to ' want ~))
   ;<  now=@da  bind:m  get-time:io
-  =/  next=action:orr  (transition:orr u.a `@tas`want by why now)
+  =/  next=action:orr  (transition:orr u.a `@tas`want who why now)
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
-  ;<  ~  bind:m  (note-by 'set-action' & '' by)
+  ;<  ~  bind:m  (note-by 'set-action' & '' who)
   (pure:m &)
+::  +do-set-doc: replace schema.json or policy.json whole. An unchanged
+::  document is a no-op, not a write, so the beacon does not move.
+::
 ++  do-set-doc
   |=  [name=@ta op=@t jon=json]
   =/  m  (fiber:fiber:nexus ,?)
@@ -933,15 +972,17 @@
   ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  =/  hide=(set @t)  (hidden-for act policy)
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
-  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
-  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
-  =/  all=(list loaded:orr)  all.seen
-  =/  acts=(list [id=@ta a=action:orr])  acts.seen
+  =/  all=(list loaded:orr)  all:(view-of act all0 ~ hide)
   =/  mine=(unit loaded:orr)  (find-loaded all id)
   ?~  mine  (send-err eyre-id 404 'no such body')
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  acts=(list [id=@ta a=action:orr])  acts:(view-of act ~ acts0 hide)
   =/  multi=(set @t)  (multi-of:orr schema)
   (send-json eyre-id 200 (body-json:orr u.mine (situations:orr all multi u.when) acts multi u.when))
+::  +serve-delete-body: DELETE one body, and drop whatever share it had
+::
 ++  serve-delete-body
   |=  [eyre-id=@ta kind=@ta slug=@ta]
   =/  m  (fiber:fiber:nexus ,~)
@@ -972,12 +1013,17 @@
   ?~  base
     (note-inbox-at 1 'delete-body' | 'cannot find where this app is installed' '')
   (set-share-group u.base kind slug ~)
+::  +serve-resolve: a name to the bodies it could mean, best match
+::  first, over the bodies this actor may see
+::
 ++  serve-resolve
   |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  q=@t  (fall (get-key:kv:html-utils 'q' args) '')
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ::  the empty hide set is safe here and saves the policy read: this
+  ::  route emits id, kind, name and match, never an attribute
   =/  all=(list loaded:orr)  all:(view-of act all0 ~ ~)
   =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))
   %^  send-json  eyre-id  200
@@ -986,6 +1032,9 @@
   |=  [id=bid:orr =body:orr match=@tas]
   ^-  json
   (pairs:enjs:format ~[['id' s+id] ['kind' s+kind.body] ['name' s+name.body] ['match' s+match]])
+::  +serve-retract: mark one observation retracted. A row the actor may
+::  not see answers 404, never a refusal that would confirm it exists.
+::
 ++  serve-retract
   |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1021,6 +1070,9 @@
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+::  +serve-bodies: POST one body, laid or replaced. A key never sends a
+::  ship: identity is the owner's to assign.
+::
 ++  serve-bodies
   |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1100,6 +1152,10 @@
     %+  sort  (skim all keep)
     |=([x=[id=@ta a=action:orr] y=[id=@ta a=action:orr]] (gth proposed.a.x proposed.a.y))
   (send-json eyre-id 200 a+(turn shown |=([id=@ta a=action:orr] (en-action:orr id a))))
+::  +serve-set-action: POST a new status for one action. The transition
+::  is checked here as well as in the writer, so the client gets a 409
+::  rather than a silent refusal in the trail.
+::
 ++  serve-set-action
   |=  [eyre-id=@ta id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1123,12 +1179,16 @@
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))
+::  +serve-doc: schema.json or policy.json, as stored
+::
 ++  serve-doc
   |=  [eyre-id=@ta name=@ta]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / name))
   (send-json eyre-id 200 doc)
+::  +serve-set-doc: PUT one of those documents, through the writer
+::
 ++  serve-set-doc
   |=  [eyre-id=@ta op=@t jon=json]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1139,6 +1199,11 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  ==  sharing: where things are
+::
+::  +orrery-instance: the desk path a peer's orrery is assumed to sit
+::  at. Only the first offer uses it; every later poke follows the base
+::  that offer carried, which is why a peer that installed orrery
+::  elsewhere answers notified false (docs/sharing.md).
 ::
 ++  orrery-instance  `path`/apps/'shell.shell'/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
 ::  +ug-base: where this ship keeps its usergroups
@@ -1163,6 +1228,8 @@
   =/  dirs=(list path)
     (murn ~(tap in u.ls) |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~)))
   ?~  dirs  (pure:m ~)
+  ::  an arbitrary lane: a desk app cannot learn its own path, so two
+  ::  instances claiming the name leave nothing here to tell them apart
   (pure:m `i.dirs)
 ::  +ug-read-weir: a usergroup's how, read whole, the way calendar reads
 ::  its share groups
@@ -1466,9 +1533,11 @@
     ?~  h  ~
     ?.  &(=(`json`b+& (gj:orr j 'retracted')) !retracted.u.h)  ~
     `oid.u.h
+  ::  the retract pokes are capped, so the count answers for the cap
+  =/  dead=(list @ta)  (scag max-obs:orr gone)
   ;<  ~  bind:m  (observe-fresh up fresh)
-  ;<  ~  bind:m  (retract-each up src (scag max-obs:orr gone))
-  (pure:m [(add ?~(fresh 0 1) (lent gone)) (flop bad.split)])
+  ;<  ~  bind:m  (retract-each up src dead)
+  (pure:m [(add ?~(fresh 0 1) (lent dead)) (flop bad.split)])
 ::  +poke-writer: one op to our writer, soft (a refusal is noted there)
 ::
 ++  poke-writer
@@ -2018,7 +2087,7 @@
   ^-  (unit @t)
   ?~  scope.act  ~
   ?.  write.u.scope.act  `'read only key'
-  =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act (sensitive-of:orr policy))
+  =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act (hidden-for act policy))
   ?~  bad  ~
   `(cat 3 'not in scope: ' u.bad)
 ::  +deny-write: why a key may not write a body of this kind, or ~
@@ -2050,5 +2119,12 @@
   ?.  ?=([%file *] vw)  (send-err eyre-id 404 'no such file')
   =/  got=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.vw))))
   ?~  got  (send-err eyre-id 500 'unreadable file')
-  (send-simple:srv eyre-id [[200 ~[['content-type' u.ct] ['cache-control' 'no-cache']]] `q.u.got])
+  ::  nosniff: each of the three files is served with its own type, and
+  ::  a browser must not guess a different one out of the bytes
+  =/  heads
+    :~  ['content-type' u.ct]
+        ['cache-control' 'no-cache']
+        ['x-content-type-options' 'nosniff']
+    ==
+  (send-simple:srv eyre-id [[200 heads] `q.u.got])
 --

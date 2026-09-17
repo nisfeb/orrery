@@ -191,7 +191,7 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 2. `python3 scripts/code-closure.py code` reports nothing missing.
 3. `cmp code/lib/tools.hoon /home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon` prints nothing. The vendored tool types must equal the kernel's or every tool call breaks.
 4. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
-5. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
+5. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row. Run it first, because it deletes the bodies the sharing gate shares.
 6. `python3 scripts/key-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
 7. `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
 8. `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.

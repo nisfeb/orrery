@@ -68,4 +68,9 @@ const hostileBody = render.body(Object.assign({}, view, { observations: [Object.
 ok('notes and actors are escaped on the timeline', !hostileBody.includes('<script>') && hostileBody.includes('&lt;script&gt;car&lt;/script&gt;') && hostileBody.includes('&lt;x&gt;'));
 ok('esc handles the five characters', render.esc('<&>"\'') === '&lt;&amp;&gt;&quot;&#39;');
 ok('fmtValue renders strings, refs and objects', render.fmtValue('x') === 'x' && render.fmtValue({ ref: 'a/b' }).includes('#body/a/b') && render.fmtValue({ n: 1 }) === '{&quot;n&quot;:1}');
+
+const first = render.sseEvent('event: old /rev\ndata: 1789600000000');
+ok('sseEvent reads the initial "old /rev" name and its data', first.name === 'old /rev' && first.data === '1789600000000' && render.sseEvent(': comment\n').name === '');
+ok('route reads a body hash, and an empty hash is the body list', render.route('#body/person/me').name === 'body' && render.route('#body/person/me').id === 'person/me' && render.route('').name === 'bodies' && render.route('#inbox').name === 'inbox');
+ok('seg encodes each segment and keeps the slash', render.seg('situation/2026-09-16 breakdown') === 'situation/2026-09-16%20breakdown');
 console.log('ALL OK (' + n + ' checks)');

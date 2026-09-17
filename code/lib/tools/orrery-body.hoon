@@ -20,7 +20,8 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
-  ;<  *  bind:m  ensure-me:om
+  ;<  ok=?  bind:m  ensure-me:om
+  ?.  ok  (pure:m (fail:om 'orrery: peek refused'))
   =/  id=(unit @t)  (arg:om args.st 'id')
   ?~  id  (pure:m (fail:om 'id: required'))
   ?~  (parse-bid:orr u.id)  (pure:m (fail:om 'id: expected <kind>/<slug>'))
@@ -29,9 +30,9 @@
   ?~  when  (pure:m (fail:om 'at: expected an ISO 8601 UTC time'))
   ;<  schema=json  bind:m  (read-json:om / %'schema.json')
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  load-actions:om
   =/  mine=(unit loaded:orr)  (find-loaded:om all u.id)
   ?~  mine  (pure:m (fail:om 'no such body'))
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  load-actions:om
   =/  multi=(set @t)  (multi-of:orr schema)
   (pure:m (text:om (body-json:orr u.mine (situations:orr all multi u.when) acts multi u.when)))
 --

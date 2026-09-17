@@ -104,6 +104,13 @@ def all_ok(d, key, n):
 
 # ── 0. a clean slate ────────────────────────────────────────────────
 print('0. clean slate')
+#  SIT is keyed on today's date, so a run on the other side of midnight
+#  UTC would leave an earlier day's breakdown open for ever
+code, st0 = curl('GET', API + '/state')
+old_sits = [] if code != 200 else [str(dictish(b).get('id', '')) for b in dictish(st0).get('bodies', [])]
+for b in old_sits:
+    if b.startswith('situation/') and b.endswith('-breakdown'):
+        curl('DELETE', API + '/body/' + b)
 for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, SIT]:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')

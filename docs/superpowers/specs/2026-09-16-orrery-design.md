@@ -129,7 +129,7 @@ code/
   mar/json.hoon  sig.hoon  mime.hoon               the kernel marcs the tree lays, vendored as auspex does
 tests/lib/orrery.hoon            unit tests, run on ~wex with the revision pinned
 scripts/api-matrix.py            the HTTP gate against ~wex
-docs/                            this spec, releasing.md copied from calendar, using.md
+docs/                            this spec, releasing.md copied from calendar, keys.md, mcp.md, sharing.md, kernel/README.md
 ```
 
 Repo `nisfeb/orrery`, branch `main`. The desk is hermetic: every lib and marc it uses is inside `code/`, checked by a copy of auspex's `scripts/code-closure.py`.
@@ -151,7 +151,7 @@ Phase 2 vendored eight more marcs beside those: `gall-poke`, `poke-ack`, `ships`
 /tile.json /icon.svg /link.json /weir.json /orrery.html /orrery.js /orrery.css   replaced on every reload
 ```
 
-Phase 2 added six paths to that tree: `/shares.json`, `/shares.sig`, `/share-offers.json`, `/ship-remotes.json`, `/sync.sig` and `/tr/inbox`, the ring of 500 ship-traffic outcomes.
+Phase 2 added six paths to that tree: `/shares.json`, `/shares.sig`, `/share-offers.json`, `/ship-remotes.json`, `/sync.sig` and `/tr/inbox`, the ring of 500 ship-traffic outcomes. Phase 3 added a seventh, `/clients.json`, the minted keys as salted hashes.
 
 Everything about a body sits under its own directory, so one deep peek reads a body and one shallow peek lists a kind. Files and subdirectories are separate maps in a ball, so `body` and `obs/` never collide.
 
@@ -211,7 +211,7 @@ Eight tools, each a `tool:tools` core, reads by absolute peek into the instance,
 | `orrery-resolve` | `q` |
 | `orrery-observe` | `bodies`, `observations`, `by` |
 | `orrery-retract` | `id`, `note`, `by` |
-| `orrery-act` | `kind`, `title`, `payload`, `about`, `due`, `by` |
+| `orrery-act` | `kind`, `title`, `payload`, `about`, `due`, `proposed`, `by` |
 | `orrery-actions` | `status` to list; `id` and `status` to transition, `note` and `by` |
 | `orrery-schema` | none to read; `schema` to replace |
 
@@ -281,7 +281,7 @@ From the lattice, auspex and calendar releases, each silent at the point of fail
 - **Unit**, `tests/lib/orrery.hoon`, on `~wex` with the revision pinned: id derivation is deterministic and excludes `by`; kind, slug, attr and cap validation; the single-valued fold prefers latest `at` and breaks ties on `seen`; the multi fold collects and refreshes; `until` expires; `null` clears; retracted observations are ignored; `?at` filtering; `involved`; resolve ordering; JSON round-trips for all three shapes.
 - **HTTP gate**, `scripts/api-matrix.py` against `~wex`: section 8, plus 403 for a non-owner, 400 with the field named for every cap, and the batch caps.
 - **Cross-ship gate**, phase 2, `scripts/ship-share-matrix.py` with `~wex` as host and `~feb` as peer: a body shared read-only arrives on the peer, a new observation on the host reaches the peer within one poll, an edit-mode observation from the peer lands on the host with the peer as actor, a revoke stops the flow. A read from the other ship, never a before-and-after on one.
-- **Scoped keys gate**, phase 3, added to `api-matrix.py`: a key scoped to things and tasks sees no people, cannot observe a person, can file a task, cannot propose a message, and answers 403 once revoked.
+- **Scoped keys gate**, phase 3, `scripts/key-matrix.py`: a key scoped to things and tasks sees no people, cannot observe a person, can file a task, cannot propose a message, and answers 403 once revoked.
 - **MCP gate**, phase 4, `scripts/mcp-matrix.py` against `~wex`: a slice of section 8 through the eight tools, each called by absolute path, with every read cross-checked whole against the HTTP API's answer for the same read. `tools/list` is not the check: it stays the kernel's three-tool protocol allowlist by design, so discovery shows in `list_tools` and in the tools tree instead.
 - **Page**, phase 4, `scripts/page-smoke.py` and `scripts/page-test.js`: the page, its script and its style are served to the owner and refused without the cookie, the beacon stream answers with a rev, and the render functions run under node against fixtures. Seeing the scenario in all four views is the owner's own pass, step 10 of `docs/releasing.md` section 8, before the ricsul publish.
 - Never against `~ricsul-bilwyt` until all of the above pass.

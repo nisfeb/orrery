@@ -1,6 +1,6 @@
 # The MCP tools
 
-Orrery's eight tools give an analyst on the ship's MCP server the same views and writes as the HTTP API, as the owner. They live in `code/lib/tools` and run on the mcp nexus's tools child, reading the instance by absolute peek and writing through the one poke road to the writer.
+Orrery's eight tools give an analyst on the ship's MCP server the owner's views and writes over the HTTP API, apart from the routes under What stays on HTTP below. They live in `code/lib/tools` and run on the mcp nexus's tools child, reading the instance by absolute peek and writing through the one poke road to the writer.
 
 ## Calling them
 
@@ -17,7 +17,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 | `orrery_resolve` | `q` | bodies whose name or alias matches, exact first |
 | `orrery_observe` | `bodies`, `observations`, `by` | one result per item, with the observation id and whether it existed |
 | `orrery_retract` | `id`, `note`, `by` | ok |
-| `orrery_act` | `kind`, `title`, `payload`, `about`, `due`, `by` | the action id and its status, or the open twin |
+| `orrery_act` | `kind`, `title`, `payload`, `about`, `due`, `proposed`, `by` | the action id and its status, or the open twin |
 | `orrery_actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition |
 | `orrery_schema` | `schema` | the schema, or ok after replacing it |
 
