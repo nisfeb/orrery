@@ -769,7 +769,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
 --
 ```
 
-`code/lib/tools/orrery-actions.hoon`:
+`code/lib/tools/orrery-actions.hoon` (a `tool:tools` core admits exactly its five arms, so the `move` helper lives in a second core under `=<`):
 
 ```hoon
 ::  orrery-actions: list actions, or move one, as GET and POST /apps/orrery/api/actions
@@ -777,6 +777,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
 /<  tools  /lib/tools.hoon
 /<  orr  /lib/orrery.hoon
 /<  om  /lib/orrery-mcp.hoon
+=<
 ^-  tool:tools
 |%
 ++  name  'orrery-actions'
@@ -810,6 +811,8 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
     %+  sort  (skim all keep)
     |=([x=[id=@ta a=action:orr] y=[id=@ta a=action:orr]] (gth proposed.a.x proposed.a.y))
   (pure:m (text:om a+(turn shown |=([id=@ta a=action:orr] (en-action:orr id a)))))
+--
+|%
 ::  +move: one transition through the writer
 ::
 ++  move
@@ -873,7 +876,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
 - [ ] **Step 4: Hermeticity and deploy**
 
 ```bash
-python3 scripts/code-closure.py code    # expected: closed; tools.hoon, orrery-mcp.hoon and the eight tools all resolve inside code/
+python3 scripts/code-closure.py code    # expected: closed; tools.hoon, orrery-mcp.hoon and the eight tools all resolve inside code/. The vendored tools.hoon names the necks %code and %tools and the foundational mark %hoon, which are not marcs: the checker's blot regex and its foundational set (%hoon %tang %mime %kelvin) were corrected for this in Task 2.
 ```
 
 On wex: `create-folder` `tools` under `$D/code/lib`, `create-file` and `write-text` each of the eight tools, `create-file` and `write-text` `code/lib/tools.hoon` and `code/lib/orrery-mcp.hoon` (the library from Task 1 is on the ship already). No reload is needed for tools; reload anyway so the instance's own compile confirms nothing in `code/lib` broke (`bang` `None`). Then one call by path:
@@ -1102,7 +1105,7 @@ Expected: `ALL OK` with the check count printed, twice; then the phase 1 gate `A
 - [ ] **Step 7: Commit and push**
 
 ```bash
-git add code/lib/tools.hoon code/lib/orrery-mcp.hoon code/lib/tools scripts/mcp-matrix.py
+git add code/lib/tools.hoon code/lib/orrery-mcp.hoon code/lib/tools scripts/mcp-matrix.py scripts/code-closure.py
 git commit -m "The eight MCP tools, callable by path, with the MCP gate"
 git push origin main
 ```
