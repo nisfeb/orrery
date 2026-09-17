@@ -56,6 +56,16 @@
           [%fall %& [/beacon %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/tr %last] [[/ %json] [%o ~]]]
           [%fall %& [/tr %log] [[/ %json] [%a ~]]]
+          ::  sharing (spec section 11). shares.json: body id to the ships
+          ::  it is shared with and the mode. shares.sig: the inbox other
+          ::  ships poke offers, revokes and edits into. share-offers.json:
+          ::  what was offered to us. ship-remotes.json: what we accepted.
+          ::  sync.sig: the follower that pulls and pushes.
+          [%fall %& [/ %'shares.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'shares.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'share-offers.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'ship-remotes.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'sync.sig'] [[/ %sig] ~]]
       ==
     ::
     ++  on-file
@@ -82,6 +92,25 @@
         ;<  ~  bind:m  (rise-wait:io prod "%orrery web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /apps/orrery])
         (http-dispatch:io %orrery)
+          ::  the inbox: other ships poke offers, revokes, and observations
+          ::  on bodies shared with them in edit mode. The sender is the
+          ::  transport's; the payload is data; nothing reaches the writer
+          ::  without by and source rewritten here. A local poke is ignored.
+          [~ %'shares.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery inbox: failed")
+        ::  the road any ship pokes is laid from here: the registry keys a
+        ::  grant to the poking fiber's own rail and scopes it to that
+        ::  fiber's directory, so only a fiber at the root can grant a
+        ::  road at the root. A request fiber's grant is refused.
+        ;<  ~  bind:m  lay-inbox-road
+        |-
+        ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
+        =/  src=(unit @p)  (get-poke-src:io from)
+        ;<  our=@p  bind:m  get-our:io
+        ;<  ~  bind:m
+          ?:  |(?=(~ src) =(our (fall src our)))  (pure:m ~)
+          (take-inbox (fall src our) sage)
+        $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%orrery request: failed")
@@ -107,12 +136,21 @@
       :~  (line '/sys/bowl.sig' 'read the current time and our ship')
           (line '/sys/eyre/' 'bind /apps/orrery and answer requests')
           (line '/sys/push/' 'notify you when the assistant proposes or files an action. Refuse this and proposals wait silently in the inbox')
+          (line '/sys/gall/' 'tell another ship you shared a body with it, revoke that, and send it your observations on a body it shared with you in edit mode. Refuse this and sharing with ships is unavailable; everything else works')
+          (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds')
+          (line '/sys/ames/registry' 'let the ships you share a body with read it. Refuse this and sharing with ships is unavailable')
+          (line '/sys/ames/usergroups/' 'keep one group per shared body: the ships that may read it')
       ==
       :-  'peek'
       :-  %a
-      :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer')
+      :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer and an offer can say where to read')
+          (line '/sys/ames/usergroups/' 'see which ships a body is shared with')
+          (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
       ==
-      ['make' [%a ~]]
+      :-  'make'
+      :-  %a
+      :~  (line '/sys/ames/usergroups/' 'make the group for a body the first time it is shared')
+      ==
   ==
 ::  ==  the writer
 ::
@@ -439,6 +477,7 @@
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
   =/  s2=@ta  ?:(?=([@ @ @ *] suffix) i.t.t.suffix %$)
   =/  s3=@ta  ?:(?=([@ @ @ @ *] suffix) i.t.t.t.suffix %$)
+  =/  s4=@ta  ?:(?=([@ @ @ @ @ *] suffix) i.t.t.t.t.suffix %$)
   =/  args=quay:eyre  args.parsed
   ?:  &(=('GET' meth) ?=([%api %state ~] suffix))        (serve-state eyre-id args)
   ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))     (serve-body eyre-id s2 s3 args)
@@ -454,6 +493,12 @@
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))       (serve-set-doc eyre-id 'set-schema' jon)
   ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))       (serve-doc eyre-id %'policy.json')
   ?:  &(=('PUT' meth) ?=([%api %policy ~] suffix))       (serve-set-doc eyre-id 'set-policy' jon)
+  ?:  &(=('POST' meth) ?=([%api %share ~] suffix))          (serve-share eyre-id jon)
+  ?:  &(=('DELETE' meth) ?=([%api %share @ @ @ ~] suffix))  (serve-revoke eyre-id s2 s3 s4)
+  ?:  &(=('GET' meth) ?=([%api %shares ~] suffix))          (serve-shares eyre-id)
+  ?:  &(=('POST' meth) ?=([%api %accept ~] suffix))         (serve-accept eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %decline ~] suffix))        (serve-decline eyre-id jon)
+  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))           (serve-sync eyre-id)
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -959,5 +1004,451 @@
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] pk])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  ==  sharing: where things are
+::
+++  orrery-instance  `path`/apps/'shell.shell'/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
+++  ug-base     `path`/sys/ames/usergroups
+++  public-grp  `path`/sys/ames/usergroups/'public.grp'
+::  +self-base: where this instance lives, from the shell's link registry
+::  (/sys/link/orrery/dest.lanes: every instance claiming the name, ours
+::  among them). ~ when the road is refused or the registry has no row.
+::
+++  self-base
+  =/  m  (fiber:fiber:nexus ,(unit path))
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /sys/link/orrery %'dest.lanes'] ~)
+  ?.  ?=([~ %file *] vw)  (pure:m ~)
+  =/  ls=(unit (set lane:tarball))
+    (mole |.(!<((set lane:tarball) (need-vase:tarball sang.u.vw))))
+  ?~  ls  (pure:m ~)
+  =/  dirs=(list path)
+    (murn ~(tap in u.ls) |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~)))
+  ?~  dirs  (pure:m ~)
+  (pure:m `i.dirs)
+::  +ug-read-weir, +ug-set: a usergroup's how and who, read and written
+::  whole, the way calendar keeps its share groups
+::
+++  ug-read-weir
+  |=  gdir=path
+  =/  m  (fiber:fiber:nexus ,weir:nexus)
+  ^-  form:m
+  ;<  hv=(unit view:nexus)  bind:m  (peek-soft:io [%& %& gdir %'how.weir'] ~)
+  ?~  hv  (pure:m *weir:nexus)
+  ?.  ?=([%file *] u.hv)  (pure:m *weir:nexus)
+  (pure:m (fall (mole |.(;;(weir:nexus (sang-noun:tarball sang.u.hv)))) *weir:nexus))
+++  ug-set
+  |=  [gname=@t ships=(set @p) pk=(set road:tarball) pok=(set road:tarball)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  gdir=path  (snoc ug-base (crip (weld (trip gname) ".grp")))
+  ;<  old=weir:nexus  bind:m  (ug-read-weir gdir)
+  =/  =weir:nexus  [make.old pok pk]
+  ;<  ~  bind:m  (over:io [%& %& gdir %'who.ships'] [[/ %ships] ships])
+  ;<  ~  bind:m  (over:io [%& %& gdir %'how.weir'] [[/ %weir] weir])
+  (pure:m ~)
+::  +set-share-group: the ships a body is shared with may peek its
+::  directory. Edit mode adds nothing here: any ship may poke the inbox,
+::  and the inbox checks the share record before it applies an edit.
+::
+++  set-share-group
+  |=  [base=path kind=@tas slug=@ta mine=(map @t json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  ships=(set @p)
+    %-  ~(gas in *(set @p))
+    (murn ~(tap by mine) |=([s=@t *] (slaw %p s)))
+  =/  dir=road:tarball  [%& %| (weld base /bodies/[kind]/[slug])]
+  (ug-set (group-name:orr kind slug) ships (sy ~[dir]) ~)
+::  +lay-inbox-road: our shares.sig takes pokes from any ship, through
+::  the /public group's weir. Quiet when the roads are refused: sharing
+::  is optional.
+::
+++  lay-inbox-road
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (pure:m ~)
+  ;<  old=weir:nexus  bind:m  (ug-read-weir public-grp)
+  =/  road=road:tarball  [%& %& u.base %'shares.sig']
+  ?:  (~(has in poke.old) road)  (pure:m ~)
+  ;<  reg=(unit tang)  bind:m  (reg-register-at-soft:io [u.base %'shares.sig'])
+  ?^  reg  (pure:m ~)
+  ;<  err=(unit tang)  bind:m  (reg-how-soft:io /public [~ (sy road ~) ~])
+  (pure:m ~)
+::  +remote-poke-wait: a poke to another ship's grubbery, answered or
+::  timed out (a peer that is down must not park the fiber). A timeout
+::  is not a failure: the poke usually landed.
+::
+++  remote-poke-wait
+  |=  [target=@p =lane:tarball jon=json]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  req=load:remo:nexus  [[/share-poke lane] %poke [[/ %json] jon]]
+  ;<  w=wire  bind:m  (nonce:io /share-poke)
+  ;<  ~  bind:m
+    %-  send-dart:io
+    [%node w &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[target %grubbery] grubbery-load+req]]]
+  ;<  ~  bind:m  (set-timer:io /remote (add now ~s30))
+  ;<  ok=?  bind:m
+    |=  input:fiber:nexus
+    :+  ~  q.state
+    ?+  in  [%skip ~]
+        ~  [%wait ~]
+        [~ %veto %node * * *]
+      ?.(=(w wire.dart.u.in) [%skip ~] [%done %.n])
+        [~ %pack * *]
+      ?.  =(w wire.u.in)  [%skip ~]
+      ?~(err.u.in [%wait ~] [%done %.n])
+        [~ %poke * *]
+      ?:  =([/ %timer-wake] p.sage.u.in)
+        ?.(?=([%remote *] !<(path q.sage.u.in)) [%skip ~] [%done %.n])
+      ?.  =([/ %poke-ack] p.sage.u.in)  [%skip ~]
+      =/  [aw=wire err=(unit tang)]  !<([wire (unit tang)] q.sage.u.in)
+      ?.  =(w aw)  [%skip ~]
+      [%done ?=(~ err)]
+    ==
+  ;<  ~  bind:m  (cancel-timer:io /remote)
+  (pure:m ok)
+::  +peek-remote-wait: a deep peek of another ship's file or directory,
+::  ~ on veto, miss or timeout
+::
+++  peek-remote-wait
+  |=  [target=@p road=road:tarball]
+  =/  m  (fiber:fiber:nexus ,(unit view:nexus))
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  until=@da  (add now ~s30)
+  ;<  pw=wire  bind:m  (nonce:io /peek)
+  =/  rr=road:tarball
+    ?-  -.road
+      %|  road
+      %&
+        =/  prefix=path  /sys/ames/ships/[(scot %p target)]/root
+        ?-  -.p.road
+          %&  [%& %& (weld prefix path.p.p.road) name.p.p.road]
+          %|  [%& %| (weld prefix p.p.road)]
+        ==
+    ==
+  ;<  ~  bind:m  (send-dart:io %node pw rr %peek ~ ~ %.y)
+  ;<  ~  bind:m  (set-timer:io /remote until)
+  ;<  got=(unit view:nexus)  bind:m
+    |=  input:fiber:nexus
+    :+  ~  q.state
+    ?+  in  [%skip ~]
+        ~  [%wait ~]
+        [~ %veto %node * * *]
+      ?.(=(pw wire.dart.u.in) [%skip ~] [%done ~])
+        [~ %peek * *]
+      ?.(=(pw wire.u.in) [%skip ~] [%done `view.u.in])
+        [~ %poke * *]
+      ?.  =([/ %timer-wake] p.sage.u.in)  [%skip ~]
+      ?.(?=([%remote *] !<(path q.sage.u.in)) [%skip ~] [%done ~])
+    ==
+  ;<  ~  bind:m  (cancel-timer:io /remote)
+  (pure:m got)
+::  ==  the inbox
+::
+::  +take-inbox: one poke from another ship: an offer, a revoke, or
+::  observations on a body we shared with it in edit mode
+::
+++  take-inbox
+  |=  [src=@p =sage:tarball]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
+  =/  act=@t  (gs:orr jon 'action')
+  =/  id=@t  (gs:orr jon 'id')
+  ?:  =(~ (parse-bid:orr id))
+    (note-by 'inbox' | 'id: expected <kind>/<slug>' (scot %p src))
+  =/  key=@t  (share-key:orr src id)
+  ?:  =('offer' act)  (take-offer src key id jon)
+  ?:  =('revoke' act)  (take-revoke src key)
+  ?:  =('observe' act)  (take-edit src id jon)
+  (note-by 'inbox' | (cat 3 'unknown action ' act) (scot %p src))
+::  +take-offer: a host offers a body. An offer for a share already
+::  accepted only updates the row's mode: no second offer.
+::
+++  take-offer
+  |=  [src=@p key=@t id=bid:orr jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  mode=@t  ?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')
+  ;<  rows=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
+  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ?:  (~(has by rm) key)
+    =/  row=json  (fall (~(get by rm) key) ~)
+    ?.  ?=([%o *] row)  (pure:m ~)
+    =/  next=json  [%o (~(put by p.row) 'mode' s+mode)]
+    ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
+    (note-by 'offer' & 'mode updated' (scot %p src))
+  ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
+  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ::  a full inbox drops new offers; 200 is far past what a person gets
+  ?:  &((gte ~(wyt by cur) 200) !(~(has by cur) key))
+    (note-by 'offer' | 'inbox full' (scot %p src))
+  =/  offer=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p src)]
+        ['id' s+id]
+        ['ship' s+(gs:orr jon 'ship')]
+        ['name' s+(gs:orr jon 'name')]
+        ['mode' s+mode]
+        ['base' s+(gs:orr jon 'base')]
+        ['at' (en-time:orr now)]
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
+  (note-by 'offer' & key (scot %p src))
+::  +take-revoke: the offer and the accepted row go; the mirrored
+::  observations stay, with the host still named as their source
+::
+++  take-revoke
+  |=  [src=@p key=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
+  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
+  ;<  rows=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
+  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(del by rm) key)]])
+  (note-by 'revoke' & key (scot %p src))
+::  +take-edit: a peer's observations on a body we shared with it in
+::  edit mode. The share record decides; every row must name the shared
+::  body; by and source become the sender before the writer sees them.
+::
+++  take-edit
+  |=  [src=@p id=bid:orr jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
+  =/  mode=@t  (gs:orr (gj:orr shares id) (scot %p src))
+  ?.  =('edit' mode)  (note-by 'edit' | 'not shared in edit mode' (scot %p src))
+  =/  rows=(list json)
+    %+  skim  (scag max-obs:orr (ga:orr jon 'observations'))
+    |=(j=json &(?=([%o *] j) =(id (gs:orr j 'subject'))))
+  ?~  rows  (note-by 'edit' | 'nothing about the shared body' (scot %p src))
+  ;<  n=@ud  bind:m  (apply-carried 0 src `(list json)`rows)
+  (note-by 'edit' & (scot %ud n) (scot %p src))
+::  ==  carried rows: what another ship sent, or what we read from it
+::
+::  +apply-carried: rows from one ship about one of our bodies (the
+::  subject is ours already). A row we do not hold becomes an
+::  observation from that ship, through the writer; a row we hold that
+::  the ship retracted since is retracted here. Answers the number of
+::  writer pokes.
+::
+++  apply-carried
+  |=  [up=@ud src=@p rows=(list json)]
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  ?~  rows  (pure:m 0)
+  =/  subject=bid:orr  (gs:orr i.rows 'subject')
+  =/  pk  (parse-bid:orr subject)
+  ?~  pk  (pure:m 0)
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
+  ?.  ?=([%ball *] vw)  (pure:m 0)
+  =/  pre=@t  (rap 3 (scot %p src) '/' ~)
+  ::  what we hold from this ship, by the sender's grub name
+  =/  held=(map @t [oid=@ta retracted=?])
+    %-  ~(gas by *(map @t [oid=@ta retracted=?]))
+    %+  murn  (rows-in ball.vw)
+    |=  r=row:orr
+    ^-  (unit [@t [@ta ?]])
+    ?.  (from-ship:orr obs.r src)  ~
+    `[(rsh [3 (met 3 pre)] id.source.obs.r) id.r retracted.obs.r]
+  =/  all=(list json)  `(list json)`rows
+  =/  fresh=(list json)
+    %+  murn  all
+    |=  j=json
+    ^-  (unit json)
+    ?.  =(subject (gs:orr j 'subject'))  ~
+    ?:  (~(has by held) (gs:orr j 'oid'))  ~
+    ?:  =(`json`b+& (gj:orr j 'retracted'))  ~
+    `(receive-obs:orr src j)
+  =/  gone=(list @ta)
+    %+  murn  all
+    |=  j=json
+    ^-  (unit @ta)
+    =/  h=(unit [oid=@ta retracted=?])  (~(get by held) (gs:orr j 'oid'))
+    ?~  h  ~
+    ?.  &(=(`json`b+& (gj:orr j 'retracted')) !retracted.u.h)  ~
+    `oid.u.h
+  ;<  ~  bind:m  (observe-fresh up fresh)
+  ;<  ~  bind:m  (retract-each up src gone)
+  (pure:m (add ?~(fresh 0 1) (lent gone)))
+::  +poke-writer: one op to our writer, soft (a refusal is noted there)
+::
+++  poke-writer
+  |=  [up=@ud op=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  *  bind:m  (poke-soft:io (rf up / %'main.sig') [[/ %json] op])
+  (pure:m ~)
+::  +observe-fresh: the rows we do not hold yet, as one observe op
+::
+++  observe-fresh
+  |=  [up=@ud fresh=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  fresh  (pure:m ~)
+  %+  poke-writer  up
+  %-  pairs:enjs:format
+  :~  ['op' s+'observe']
+      ['bodies' [%a ~]]
+      ['observations' a+(scag max-obs:orr `(list json)`fresh)]
+  ==
+::  +retract-each: retractions carried from a ship, one writer poke each
+::
+++  retract-each
+  |=  [up=@ud src=@p oids=(list @ta)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  oids  (pure:m ~)
+  =/  why=@t  (rap 3 'retracted on ' (scot %p src) ~)
+  ;<  ~  bind:m
+    (poke-writer up (pairs:enjs:format ~[['op' s+'retract'] ['id' s+i.oids] ['note' s+why]]))
+  (retract-each up src t.oids)
+::  ==  the share routes, on request fibers
+::
+::  +serve-share: share a body with a ship: the record, the grant, the
+::  offer to the peer's inbox
+::
+++  serve-share
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (send-err eyre-id 400 'id: expected <kind>/<slug>')
+  =/  shp=(unit @p)  (slaw %p (gs:orr jon 'ship'))
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  our=@p  bind:m  get-our:io
+  ?:  =(u.shp our)  (send-err eyre-id 400 'ship: that is this ship')
+  =/  mode=@t  ?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')
+  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body) ~)
+  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such body')
+  =/  b=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.cur))
+  ?~  b  (send-err eyre-id 500 'unreadable body')
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
+  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
+  =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
+  =.  mine  (~(put by mine) (scot %p u.shp) s+mode)
+  ;<  ~  bind:m  (over:io (rf 1 / %'shares.json') [[/ %json] [%o (~(put by all) id [%o mine])]])
+  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
+  ;<  told=?  bind:m
+    %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
+    %-  pairs:enjs:format
+    :~  ['action' s+'offer']
+        ['id' s+id]
+        ['ship' `json`?~(ship.u.b ~ s+(scot %p u.ship.u.b))]
+        ['name' s+name.u.b]
+        ['mode' s+mode]
+        ['base' s+(spat u.base)]
+    ==
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['notified' b+told]]))
+::  +serve-revoke: the ship leaves the record and the group, and is told
+::
+++  serve-revoke
+  |=  [eyre-id=@ta kind=@ta slug=@ta ship=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=bid:orr  (rap 3 kind '/' slug ~)
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (send-err eyre-id 400 'expected <kind>/<slug>')
+  =/  shp=(unit @p)  (slaw %p ship)
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
+  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
+  =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
+  ?.  (~(has by mine) (scot %p u.shp))  (send-err eyre-id 404 'not shared with that ship')
+  =.  mine  (~(del by mine) (scot %p u.shp))
+  ;<  ~  bind:m
+    (over:io (rf 1 / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
+  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
+  ;<  *  bind:m
+    %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
+    (pairs:enjs:format ~[['action' s+'revoke'] ['id' s+id]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-shares: what we share, what was offered to us, what we accepted
+::
+++  serve-shares
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
+  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['shares' shares] ['offers' offers] ['accepted' rows]]))
+::  +serve-accept: an offered body becomes ours to follow. The target is
+::  person/me when the body's ship is us, else the body's own id, laid
+::  through the writer if absent; the row is written and the follower
+::  prodded.
+::
+++  serve-accept
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
+  ?~  host  (send-err eyre-id 400 'host: expected an @p')
+  =/  id=@t  (gs:orr jon 'id')
+  =/  key=@t  (share-key:orr u.host id)
+  ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
+  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  =/  offer=(unit json)  (~(get by cur) key)
+  ?~  offer  (send-err eyre-id 404 'no such offer')
+  ;<  our=@p  bind:m  get-our:io
+  =/  oship=(unit @p)  (slaw %p (gs:orr u.offer 'ship'))
+  =/  target=bid:orr  (mirror-target:orr our oship id)
+  ?~  (parse-bid:orr target)  (send-err eyre-id 400 'id: bad')
+  =/  body-j=json
+    ?:  =('person/me' target)  (pairs:enjs:format ~[['id' s+target]])
+    %-  pairs:enjs:format
+    :~  ['id' s+target]
+        ['name' s+(gs:orr u.offer 'name')]
+        ['ship' `json`?~(oship ~ s+(scot %p u.oship))]
+    ==
+  ;<  *  bind:m
+    (poke-soft:io (rf 1 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' body-j]])])
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p u.host)]
+        ['id' s+id]
+        ['target' s+target]
+        ['mode' s+(gs:orr u.offer 'mode')]
+        ['base' s+(gs:orr u.offer 'base')]
+        ['pushed' [%o ~]]
+        ['last' s+'']
+        ['error' s+'']
+    ==
+  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
+  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ;<  ~  bind:m  (over:io (rf 1 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key row)]])
+  ;<  ~  bind:m  (over:io (rf 1 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['target' s+target]]))
+++  serve-decline
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
+  ?~  host  (send-err eyre-id 400 'host: expected an @p')
+  =/  key=@t  (share-key:orr u.host (gs:orr jon 'id'))
+  ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
+  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ;<  ~  bind:m  (over:io (rf 1 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+++  serve-sync
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ~  bind:m  lay-inbox-road
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 --
