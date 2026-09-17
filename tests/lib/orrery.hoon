@@ -591,4 +591,115 @@
     (expect !>(!(from-ship:orr o1 ~wex)))
     (expect !>(!(from-ship:orr other ~wex)))
   ==
+::
+::  ==  scoped client keys
+::
+++  test-de-scope
+  =/  full=json
+    %-  pairs:enjs:format
+    :~  ['kinds' a+~[s+'person' s+'thing']]
+        ['actions' a+~[s+'task']]
+        ['write' b+&]
+    ==
+  =/  got  (de-scope:orr full)
+  =/  bad-kind  (de-scope:orr (pairs:enjs:format ~[['kinds' a+~[s+'Person']]]))
+  =/  bad-write  (de-scope:orr (pairs:enjs:format ~[['write' s+'yes']]))
+  =/  empty  (de-scope:orr [%o ~])
+  ;:  weld
+    (expect !>(?=(%& -.got)))
+    (expect-eq !>((sy ~['person' 'thing'])) !>(?:(?=(%& -.got) kinds.p.got ~)))
+    (expect-eq !>((sy ~['task'])) !>(?:(?=(%& -.got) actions.p.got ~)))
+    (expect-eq !>(&) !>(?:(?=(%& -.got) write.p.got |)))
+    (expect-eq !>([%| 'scope.kinds: each a kind name']) !>(bad-kind))
+    (expect-eq !>([%| 'scope.write: expected true or false']) !>(bad-write))
+    (expect !>(?=(%& -.empty)))
+    (expect-eq !>(|) !>(?:(?=(%& -.empty) write.p.empty &)))
+    (expect-eq !>([%| 'scope: expected an object']) !>((de-scope:orr s+'x')))
+    (expect !>((kind-in-scope:orr [(sy ~[%person]) ~ |] %person)))
+    (expect !>(!(kind-in-scope:orr [(sy ~[%person]) ~ |] %place)))
+    (expect !>((action-in-scope:orr [~ (sy ~[%task]) &] %task)))
+    (expect !>(!(action-in-scope:orr [~ (sy ~[%task]) &] %note)))
+  ==
+++  test-parse-bearer
+  ;:  weld
+    (expect-eq !>(`['abc' 'def']) !>((parse-bearer:orr 'Bearer abc.def')))
+    (expect-eq !>(`['abc' 'de.f']) !>((parse-bearer:orr 'bearer abc.de.f')))
+    (expect-eq !>(~) !>((parse-bearer:orr 'Basic abc.def')))
+    (expect-eq !>(~) !>((parse-bearer:orr 'Bearer abcdef')))
+    (expect-eq !>(~) !>((parse-bearer:orr 'Bearer abc.')))
+    (expect-eq !>(~) !>((parse-bearer:orr 'Bearer .def')))
+    (expect-eq !>(~) !>((parse-bearer:orr '')))
+  ==
+++  test-secret-and-hash
+  =/  eny=@  (shax 'a fixed seed')
+  =/  s=@t  (secret-of:orr eny)
+  =/  i=@t  (id-of:orr eny)
+  =/  n=@ud  (met 3 s)
+  ;:  weld
+    (expect !>(&((gte n 20) (lte n 24))))
+    (expect !>(=(~ (find "." (trip s)))))
+    (expect !>(=(~ (find "." (trip i)))))
+    (expect !>(&((gte (met 3 i) 6) (lte (met 3 i) 8))))
+    (expect-eq !>((hash-token:orr 'salt' s)) !>((hash-token:orr 'salt' s)))
+    (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'pepper' s))))
+    (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'salt' 'other'))))
+  ==
+++  test-client-roundtrip
+  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
+  =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
+  =/  back=(unit client:orr)  (de-client:orr (en-client-row:orr c))
+  =/  view=json  (en-client-view:orr c)
+  ;:  weld
+    (expect-eq !>(`c) !>(back))
+    (expect !>((client-ok:orr c 'secret')))
+    (expect !>(!(client-ok:orr c 'wrong')))
+    (expect-eq !>(~) !>((gj:orr view 'hash')))
+    (expect-eq !>(~) !>((gj:orr view 'salt')))
+    (expect-eq !>(`json`s+'abc') !>((gj:orr view 'id')))
+    (expect-eq !>(~) !>((de-client:orr s+'x')))
+  ==
+++  test-sensitive-and-drop
+  =/  policy=json  (pairs:enjs:format ~[['sensitive' a+~[s+'health' s+'income']]])
+  =/  hide=(set @t)  (sensitive-of:orr policy)
+  =/  base=obs:orr  o1
+  =/  r1=row:orr  ['1' base]
+  =/  r2=row:orr  ['2' base(attr 'health')]
+  =/  kept=(list row:orr)  (drop-attrs:orr ~[r1 r2] hide)
+  ;:  weld
+    (expect-eq !>((sy ~['health' 'income'])) !>(hide))
+    (expect-eq !>(~) !>((sensitive-of:orr [%o ~])))
+    (expect-eq !>(1) !>((lent kept)))
+    (expect-eq !>('location') !>(?~(kept '' attr.obs.i.kept)))
+    (expect-eq !>(2) !>((lent (drop-attrs:orr ~[r1 r2] ~))))
+  ==
+++  test-fill-as-forces-by
+  =/  j=json  (pairs:enjs:format ~[['by' s+'liar'] ['subject' s+'person/me']])
+  ;:  weld
+    (expect-eq !>(`json`s+'talon') !>((gj:orr (fill-obs-as:orr j t0 'talon') 'by')))
+    (expect-eq !>(`json`s+'talon') !>((gj:orr (fill-act-as:orr j t0 'talon') 'by')))
+    (expect-eq !>(`json`s+(en-iso:orr t0)) !>((gj:orr (fill-obs-as:orr j t0 'talon') 'at')))
+  ==
+++  test-out-of-scope
+  =/  sc=scope:orr  [(sy ~[%person]) ~ &]
+  =/  hide=(set @t)  (sy ~['health'])
+  =/  ok=json
+    %-  pairs:enjs:format
+    :~  ['bodies' a+~[(pairs:enjs:format ~[['id' s+'person/sam']])]]
+        ['observations' a+~[(pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+'status']])]]
+    ==
+  =/  bad-body=json
+    (pairs:enjs:format ~[['bodies' a+~[(pairs:enjs:format ~[['id' s+'place/home']])]]])
+  =/  bad-subject=json
+    (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'thing/car'] ['attr' s+'x']])]]])
+  =/  bad-attr=json
+    (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+'health']])]]])
+  =/  unparsed=json
+    (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'nope'] ['attr' s+'x']])]]])
+  ;:  weld
+    (expect-eq !>(~) !>((out-of-scope:orr ok sc hide)))
+    (expect-eq !>(`'place/home') !>((out-of-scope:orr bad-body sc hide)))
+    (expect-eq !>(`'thing/car') !>((out-of-scope:orr bad-subject sc hide)))
+    (expect-eq !>(`'health') !>((out-of-scope:orr bad-attr sc hide)))
+    (expect-eq !>(~) !>((out-of-scope:orr unparsed sc hide)))
+  ==
 --

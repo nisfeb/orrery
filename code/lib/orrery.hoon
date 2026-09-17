@@ -748,4 +748,199 @@
   ?.  =('ship' kind.source.o)  |
   =/  pre=@t  (rap 3 (scot %p who) '/' ~)
   =(pre (end [3 (met 3 pre)] id.source.o))
+::  ==  scoped client keys (spec section 11, phase 3)
+::
+::  a scope: the body kinds a key may read (and, with write, observe),
+::  the action kinds it may propose, and whether it may write at all
+::
++$  scope  [kinds=(set @tas) actions=(set @tas) write=?]
+::  a client: one minted key. The secret is never stored, only a salted
+::  sha-256 of it; used is the last use, at most hourly.
+::
++$  client
+  $:  id=@t
+      name=@t
+      by=@t
+      =scope
+      salt=@t
+      hash=@t
+      made=@da
+      used=(unit @da)
+  ==
+++  max-clients      50
+++  max-scope-kinds  24
+::  +de-scope: {"kinds": [...], "actions": [...], "write": bool}. Absent
+::  lists are empty, absent write is false. Every name must be a kind.
+::
+++  de-scope
+  |=  j=json
+  ^-  (each scope @t)
+  ?.  ?=([%o *] j)  [%| 'scope: expected an object']
+  =/  ks=(list json)  (ga j 'kinds')
+  =/  as=(list json)  (ga j 'actions')
+  ?:  (gth (lent ks) max-scope-kinds)  [%| 'scope.kinds: over 24']
+  ?:  (gth (lent as) max-scope-kinds)  [%| 'scope.actions: over 24']
+  =/  kinds=(unit (set @tas))  (de-kinds ks)
+  ?~  kinds  [%| 'scope.kinds: each a kind name']
+  =/  actions=(unit (set @tas))  (de-kinds as)
+  ?~  actions  [%| 'scope.actions: each a kind name']
+  =/  w=json  (gj j 'write')
+  ?.  ?|(?=(~ w) ?=([%b *] w))  [%| 'scope.write: expected true or false']
+  [%& u.kinds u.actions ?:(?=([%b *] w) p.w |)]
+::  +de-kinds: kind names as a set, ~ when one is not a kind
+::
+++  de-kinds
+  |=  ks=(list json)
+  ^-  (unit (set @tas))
+  =|  acc=(set @tas)
+  |-
+  ?~  ks  `acc
+  ?.  ?=([%s *] i.ks)  ~
+  ?.  (ok-kind p.i.ks)  ~
+  $(ks t.ks, acc (~(put in acc) `@tas`p.i.ks))
+++  en-scope
+  |=  s=scope
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['kinds' a+(turn ~(tap in kinds.s) |=(k=@tas `json`s+k))]
+      ['actions' a+(turn ~(tap in actions.s) |=(k=@tas `json`s+k))]
+      ['write' b+write.s]
+  ==
+++  kind-in-scope    |=([s=scope k=@tas] ^-(? (~(has in kinds.s) k)))
+++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))
+::  +de-client, +en-client-row, +en-client-view: a stored row (with the
+::  salt and the hash) and what the owner sees of it (without them)
+::
+++  de-client
+  |=  j=json
+  ^-  (unit client)
+  ?.  ?=([%o *] j)  ~
+  =/  sc  (de-scope (gj j 'scope'))
+  ?.  ?=(%& -.sc)  ~
+  =/  made=(unit @da)  (de-iso (gs j 'made'))
+  ?~  made  ~
+  ?:  =('' (gs j 'id'))  ~
+  :-  ~
+  :*  (gs j 'id')
+      (gs j 'name')
+      (gs j 'by')
+      p.sc
+      (gs j 'salt')
+      (gs j 'hash')
+      u.made
+      (de-iso (gs j 'used'))
+  ==
+++  en-client-view
+  |=  c=client
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.c]
+      ['name' s+name.c]
+      ['by' s+by.c]
+      ['scope' (en-scope scope.c)]
+      ['made' (en-time made.c)]
+      ['used' (en-maybe-time used.c)]
+  ==
+++  en-client-row
+  |=  c=client
+  ^-  json
+  =/  view=json  (en-client-view c)
+  ?.  ?=([%o *] view)  view
+  [%o (~(gas by p.view) ~[['salt' s+salt.c] ['hash' s+hash.c]])]
+::  +secret-of, +id-of: base-32 text from entropy, dots stripped. scot
+::  drops leading zero digits, so a secret is 20 to 24 characters and an
+::  id 6 to 8.
+::
+++  secret-of
+  |=  eny=@
+  ^-  @t
+  =/  raw=tape  (trip (scot %uv (end [3 15] eny)))
+  (crip (skip (slag 2 raw) |=(c=@t =('.' c))))
+++  id-of
+  |=  eny=@
+  ^-  @t
+  =/  raw=tape  (trip (scot %uv (end [3 5] eny)))
+  =/  body=tape  (skip (slag 2 raw) |=(c=@t =('.' c)))
+  ?:  (lth (lent body) 6)  (crip (weld "0k" body))
+  (crip body)
+::  +hash-token: a salted sha-256 as text
+::
+++  hash-token
+  |=  [salt=@t secret=@t]
+  ^-  @t
+  (scot %ux (shax (rap 3 salt ':' secret ~)))
+::  +parse-bearer: "Bearer <id>.<secret>" to the pair, or ~. The scheme
+::  is case-insensitive; the id ends at the first dot.
+::
+++  parse-bearer
+  |=  h=@t
+  ^-  (unit [id=@t secret=@t])
+  =/  t=tape  (trip h)
+  ?.  (gte (lent t) 8)  ~
+  ?.  =("bearer " (cass (scag 7 t)))  ~
+  =/  tok=tape  (slag 7 t)
+  =/  at=(unit @ud)  (find "." tok)
+  ?~  at  ~
+  =/  id=tape  (scag u.at tok)
+  =/  secret=tape  (slag +(u.at) tok)
+  ?:  |(=(0 (lent id)) =(0 (lent secret)))  ~
+  `[(crip id) (crip secret)]
+::  +client-ok: the presented secret against the stored salt and hash
+::
+++  client-ok
+  |=  [c=client secret=@t]
+  ^-  ?
+  =(hash.c (hash-token salt.c secret))
+::  +sensitive-of: policy.sensitive as a set of attribute names
+::
+++  sensitive-of
+  |=  policy=json
+  ^-  (set @t)
+  (sy (murn (ga policy 'sensitive') |=(j=json ^-((unit @t) ?:(?=([%s *] j) `p.j ~)))))
+::  +drop-attrs: the rows whose attribute is not hidden
+::
+++  drop-attrs
+  |=  [rows=(list row) hide=(set @t)]
+  ^-  (list row)
+  ?:  =(~ hide)  rows
+  (skip rows |=(r=row (~(has in hide) attr.obs.r)))
+::  +force-string, +fill-obs-as, +fill-act-as: the key's identity
+::  replaces whatever by the payload carried
+::
+++  force-string
+  |=  [j=json k=@t v=json]
+  ^-  json
+  ?.  ?=([%o *] j)  j
+  [%o (~(put by p.j) k v)]
+++  fill-obs-as
+  |=  [j=json now=@da by=@t]
+  ^-  json
+  (force-string (with-default j 'at' s+(en-iso now)) 'by' s+by)
+++  fill-act-as
+  |=  [j=json now=@da by=@t]
+  ^-  json
+  (force-string (with-default j 'proposed' s+(en-iso now)) 'by' s+by)
+::  +out-of-scope: the first body id, subject or attribute in an observe
+::  batch that a scope may not write, or ~. An id that does not parse is
+::  left for the decoders to refuse.
+::
+++  out-of-scope
+  |=  [jon=json s=scope hide=(set @t)]
+  ^-  (unit @t)
+  =/  bad-body=(unit @t)
+    %+  roll  (ga jon 'bodies')
+    |=  [j=json acc=(unit @t)]
+    ?^  acc  acc
+    =/  pk  (parse-bid (gs j 'id'))
+    ?~  pk  ~
+    ?:((kind-in-scope s kind.u.pk) ~ `(gs j 'id'))
+  ?^  bad-body  bad-body
+  %+  roll  (ga jon 'observations')
+  |=  [j=json acc=(unit @t)]
+  ?^  acc  acc
+  =/  pk  (parse-bid (gs j 'subject'))
+  ?~  pk  ~
+  ?.  (kind-in-scope s kind.u.pk)  `(gs j 'subject')
+  ?:  (~(has in hide) (gs j 'attr'))  `(gs j 'attr')
+  ~
 --
