@@ -74,8 +74,8 @@ The distributor must open a desk to a usergroup before a subscriber can mirror i
 curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"add":"/public"}' \
   "$W/grubbery/api/poke/apps/shell.shell/desks/orrery.desk/share.usergroups?blot=/json"
 # expected: an ack (an empty or ok body, no error text)
-curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/share.usergroups?raw=1"
-# expected: the set now lists /public
+curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/share.usergroups?info=1" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("text"))'
+# expected: {/public}   (the node's mark is /usergroups, so ?raw=1 answers jam bytes, not text)
 ```
 
 - [ ] **Step 3: Install the desk on feb, following wex**
