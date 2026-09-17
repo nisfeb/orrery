@@ -1388,7 +1388,7 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 ```
 
-Expected: `ALL OK (44 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on feb (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
+Expected: `ALL OK (47 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on feb (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
 
 - [ ] **Step 3: Rerun the phase 1 gate on wex**
 
