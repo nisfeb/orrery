@@ -919,21 +919,66 @@
   ?:  =(~ hide)  rows
   (skip rows |=(r=row (~(has in hide) attr.obs.r)))
 ::  +veil-refs: a row whose value points at a body of a kind outside
-::  the given kinds keeps its place with a null value, so the fold
-::  shows the attribute as cleared rather than falling back to an
-::  older value the key may see, and the key never learns the body
+::  the given kinds keeps its place with a null value and a synthetic
+::  id, so the fold shows the attribute as cleared rather than falling
+::  back to an older value the key may see, and nothing on the row
+::  commits to the hidden body (the real id is a hash over the value)
 ::
 ++  veil-refs
   |=  [rows=(list row) kinds=(set @tas)]
   ^-  (list row)
-  %+  turn  rows
-  |=  r=row
+  =|  n=@ud
+  |-
+  ^-  (list row)
+  ?~  rows  ~
+  =/  r=row  i.rows
   =/  target=(unit bid)  (ref-of value.obs.r)
-  ?~  target  r
-  =/  pk  (parse-bid u.target)
-  ?~  pk  r
-  ?:  (~(has in kinds) kind.u.pk)  r
-  r(value.obs ~)
+  =/  hide=?
+    ?~  target  |
+    =/  pk  (parse-bid u.target)
+    ?~  pk  |
+    !(~(has in kinds) kind.u.pk)
+  ?.  hide  [r $(rows t.rows)]
+  :-  r(id (cat 3 'veiled-' (scot %ud n)), value.obs ~)
+  $(rows t.rows, n +(n))
+::  +scope-schema: the schema as a key may see it: its kinds only, the
+::  hidden attribute names dropped from every attrs list and from
+::  multi, and an actions list (when present) trimmed to its action
+::  kinds
+::
+++  scope-schema
+  |=  [schema=json s=scope hide=(set @t)]
+  ^-  json
+  ?.  ?=([%o *] schema)  schema
+  =/  kinds=json  (gj schema 'kinds')
+  =/  kept=json
+    ?.  ?=([%o *] kinds)  [%o ~]
+    :-  %o
+    %-  ~(gas by *(map @t json))
+    %+  murn  ~(tap by p.kinds)
+    |=  [k=@t v=json]
+    ^-  (unit [@t json])
+    ?.  (~(has in kinds.s) `@tas`k)  ~
+    ?.  ?=([%o *] v)  `[k v]
+    `[k [%o (~(put by p.v) 'attrs' (drop-names (gj v 'attrs') hide))]]
+  =/  out=(map @t json)  (~(put by p.schema) 'kinds' kept)
+  =?  out  (~(has by out) 'multi')
+    (~(put by out) 'multi' (drop-names (gj schema 'multi') hide))
+  =?  out  (~(has by out) 'actions')
+    =/  acts=json  (gj schema 'actions')
+    %+  ~(put by out)  'actions'
+    :-  %a
+    %+  skim  ?:(?=([%a *] acts) p.acts ~)
+    |=(j=json ?:(?=([%s *] j) (~(has in actions.s) `@tas`p.j) |))
+  [%o out]
+::  +drop-names: a JSON list of names without the hidden ones
+::
+++  drop-names
+  |=  [names=json hide=(set @t)]
+  ^-  json
+  :-  %a
+  %+  skip  ?:(?=([%a *] names) p.names ~)
+  |=(j=json ?:(?=([%s *] j) (~(has in hide) p.j) |))
 ::  +scope-about: an action's about trimmed to the given kinds
 ::
 ++  scope-about
@@ -962,10 +1007,13 @@
   |=  [j=json now=@da by=@t]
   ^-  json
   (force-string (with-default j 'proposed' s+(en-iso now)) 'by' s+by)
-::  +out-of-scope: the first body id, subject or attribute in an observe
-::  batch that a scope may not write, or ~. An id that does not parse is
-::  left for the decoders to refuse. The caller checks write first; this
-::  names what a writing key may not touch.
+::  +out-of-scope: the first body id, subject, attribute or ref in an
+::  observe batch that a scope may not write, or ~. An id that does not
+::  parse is left for the decoders to refuse. A key may never send a
+::  body's ship, and may only relate what it can see: a value pointing
+::  at a body outside its kinds is refused, so the key cannot confirm
+::  that body through an existing answer. The caller checks write
+::  first; this names what a writing key may not touch.
 ::
 ++  out-of-scope
   |=  [jon=json s=scope hide=(set @t)]
@@ -976,6 +1024,7 @@
     ?^  acc  acc
     =/  pk  (parse-bid (gs j 'id'))
     ?~  pk  ~
+    ?:  ?=(^ (gj j 'ship'))  `'ship'
     ?:((kind-in-scope s kind.u.pk) ~ `(gs j 'id'))
   ?^  bad-body  bad-body
   %+  roll  (ga jon 'observations')
@@ -985,5 +1034,10 @@
   ?~  pk  ~
   ?.  (kind-in-scope s kind.u.pk)  `(gs j 'subject')
   ?:  (~(has in hide) (gs j 'attr'))  `(gs j 'attr')
-  ~
+  =/  target=(unit bid)  (ref-of (gj j 'value'))
+  ?~  target  ~
+  =/  tk  (parse-bid u.target)
+  ?~  tk  ~
+  ?:  (kind-in-scope s kind.u.tk)  ~
+  `u.target
 --

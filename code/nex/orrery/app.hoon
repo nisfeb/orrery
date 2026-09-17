@@ -599,6 +599,11 @@
     :~  ['attrs' (en-attrs winners multi)]
         ['involved' a+(turn (involved:orr id sits) |=(b=bid:orr `json`s+b))]
     ==
+  ::  a key gets the schema trimmed to its scope: GET /schema is the
+  ::  owner's, so the state view must not hand the whole document over
+  =/  shown-schema=json
+    ?~  scope.act  schema
+    (scope-schema:orr schema u.scope.act (hidden-for act policy))
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['rev' rev]
@@ -607,7 +612,7 @@
       ['bodies' bodies-json]
       ['situations' a+(turn open-sits |=([id=bid:orr *] `json`s+id))]
       ['actions' a+(murn acts |=([id=@ta a=action:orr] ?.((is-open:orr a) ~ `(en-action:orr id a))))]
-      ['schema' schema]
+      ['schema' shown-schema]
   ==
 ::  +serve-observe: decode, answer per item, hand the stamped request to
 ::  the writer. The ids reported here are the ids the writer makes,
@@ -982,7 +987,7 @@
   =/  visible=?
     ?~  scope.act  &
     ?&  (kind-in-scope:orr u.scope.act kind.u.hit)
-        !(~(has in (sensitive-of:orr policy)) attr.obs.r.u.hit)
+        !(~(has in (hidden-for act policy)) attr.obs.r.u.hit)
     ==
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
@@ -1002,6 +1007,9 @@
   ?~  pk  (send-err eyre-id 400 'id: bad')
   =/  denied=(unit @t)  (deny-write act kind.u.pk)
   ?^  denied  (send-err eyre-id 403 u.denied)
+  ::  identity is the owner's to assign: a key never sends a ship
+  ?:  &(?=(^ scope.act) ?=(^ (gj:orr jon 'ship')))
+    (send-err eyre-id 403 'not in scope: ship')
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   =/  op=json  (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' jon]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
@@ -1914,9 +1922,9 @@
   ?:(owner.act ~ (sensitive-of:orr policy))
 ::  +view-of: what an actor may see: the bodies in its kinds with the
 ::  hidden attributes dropped, and the actions in its action kinds. A
-::  value that refs a body outside the kinds reads as cleared, and an
-::  about naming one is trimmed away: a key never learns such a body
-::  exists. The owner sees everything.
+::  value that refs a body outside the kinds reads as cleared on a row
+::  with a synthetic id, and an about naming one is trimmed away: a key
+::  never learns such a body exists. The owner sees everything.
 ::
 ++  view-of
   |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action:orr]) hide=(set @t)]

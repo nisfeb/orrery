@@ -2,16 +2,18 @@
 """key-matrix.py HOST JAR
 The key gate for orrery (spec section 11, phase 3) against a fake ship.
 The owner (JAR, from POST /~/login) marks health sensitive, mints a
-triage key, a todo key and a read-only key, and the keys then see and
-write exactly their scope and nothing sensitive. Exits 1 on any
-failure. Safe to rerun: it revokes what it minted, retracts what it
-observed and restores the starter policy."""
+triage key, a todo key, a narrow key and two read-only keys, and the
+keys then see and write exactly their scope and nothing sensitive.
+Exits 1 on any failure. Safe to rerun: it revokes what it minted,
+retracts what it observed, deletes the bodies it made and restores the
+starter policy and the schema it found."""
 import json, subprocess, sys, time
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
 API = HOST + '/apps/orrery/api'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
+STARTER_SCHEMA = [None]
 fails = []
 count = [0]
 
@@ -100,10 +102,13 @@ def clean():
     retract_all('person/me', ('health', 'status', 'mood', 'spouse', 'home'))
     retract_all('thing/subaru', ('status',))
     owner('PUT', '/policy', STARTER)
+    if STARTER_SCHEMA[0] is not None:
+        owner('PUT', '/schema', STARTER_SCHEMA[0])
     for a in listish(owner('GET', '/actions?status=open')[1]):
         if isinstance(a, dict) and str(a.get('title', '')).startswith('key gate'):
             owner('POST', '/actions/' + str(a.get('id')), {'status': 'dismissed', 'note': 'key gate'})
     owner('DELETE', '/body/place/lake-house')
+    owner('DELETE', '/body/situation/key-gate')
 
 
 T0 = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -113,6 +118,16 @@ code, d = owner('POST', '/bodies', {'id': 'thing/subaru', 'name': 'the Subaru'})
 check('owner reaches thing/subaru', code == 200, d)
 code, d = owner('PUT', '/policy', dict(STARTER, sensitive=['health']))
 check('policy marks health sensitive', code == 200, d)
+code, d = owner('GET', '/schema')
+check('the owner reads the schema', code == 200 and isinstance(dictish(d).get('kinds'), dict), d)
+base = json.loads(json.dumps(d)) if code == 200 else {'kinds': {}}
+base_person = dictish(dictish(base.get('kinds')).get('person'))
+base_person['attrs'] = [a for a in listish(base_person.get('attrs')) if a != 'health']
+STARTER_SCHEMA[0] = base
+run_schema = json.loads(json.dumps(base))
+dictish(dictish(run_schema.get('kinds')).get('person'))['attrs'] = base_person['attrs'] + ['health']
+code, d = owner('PUT', '/schema', run_schema)
+check('the schema names health among the person attributes', code == 200, d)
 code, d = owner('POST', '/observe', {'bodies': [], 'observations': [
     obs('person/me', 'health', 'flu', T0, 'kg-1'), obs('person/me', 'status', 'working from bed', T0, 'kg-2')]})
 check('owner observes health and status', code == 200 and all_ok(d, 'observations', 2), d)
@@ -176,6 +191,17 @@ code, d = triage('POST', '/observe', {'bodies': [{'id': 'org/acme', 'name': 'Acm
 check('a body outside the kinds is 403', code == 403, d)
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('org/acme', 'status', 'x', T0, 'kg-5')]})
 check('a subject outside the kinds is 403', code == 403, d)
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [
+    obs('person/me', 'status', 'mixed batch', T0, 'kg-10'), obs('org/acme', 'status', 'x', T0, 'kg-11')]})
+check('a mixed batch is 403', code == 403, d)
+code, a = attrs_of(owner, 'person/me')
+check('the in-scope half of a refused batch was not written',
+      dictish(dictish(a).get('status')).get('value') != 'mixed batch', a)
+code, d = triage('POST', '/bodies', {'id': 'person/sam', 'name': 'Sam', 'ship': '~zod'})
+check('a key may not set a body ship', code == 403 and dictish(d).get('error') == 'not in scope: ship', (code, d))
+code, d = triage('POST', '/observe', {'bodies': [{'id': 'person/sam', 'name': 'Sam', 'ship': '~zod'}], 'observations': []})
+check('a key may not set a ship in an observe batch',
+      code == 403 and dictish(d).get('error') == 'not in scope: ship', (code, d))
 code, d = triage('POST', '/bodies', {'id': 'place/lake-house', 'name': 'the lake house'})
 check('the triage key creates a body in scope', code == 200, d)
 code, d = triage('POST', '/bodies', {'id': 'org/acme', 'name': 'Acme'})
@@ -208,6 +234,47 @@ check('a sensitive observation reads as no such observation', code == 404, d)
 code, d = triage('POST', '/retract', {'id': mood_obs, 'note': 'key gate'})
 check('the triage key retracts its own observation', code == 200, d)
 
+print('== a key relates only what it can see')
+code, d = owner('POST', '/clients', {'name': 'key-gate narrow', 'by': 'narrow',
+                                     'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
+check('mint the narrow key', code == 200 and '.' in str(dictish(d).get('token', '')), d)
+narrow = as_key(str(dictish(d).get('token', '')))
+code, d = narrow('POST', '/observe', {'bodies': [], 'observations': [
+    obs('person/me', 'home', {'ref': 'place/lake-house'}, T0, 'kg-12')]})
+check('a ref at a body outside the kinds is 403',
+      code == 403 and 'place/lake-house' in str(dictish(d).get('error', '')), (code, d))
+code, d = narrow('POST', '/observe', {'bodies': [], 'observations': [
+    obs('person/me', 'home', {'ref': 'place/home'}, T0, 'kg-9')]})
+check('resubmitting the owner ref row is 403, never existing',
+      code == 403 and 'place/home' in str(dictish(d).get('error', '')), (code, d))
+code, d = narrow('GET', '/body/person/me')
+home_rows = [o for o in listish(dictish(d).get('observations')) if isinstance(o, dict) and o.get('attr') == 'home']
+veiled = str(dictish(home_rows[0] if home_rows else {}).get('id', ''))
+check('a veiled row carries a synthetic id', veiled.startswith('veiled-'), home_rows)
+code, d = narrow('POST', '/retract', {'id': veiled, 'note': 'key gate'})
+check('a veiled row cannot be retracted', code == 404, d)
+code, d = narrow('GET', '/state')
+sch = dictish(dictish(d).get('schema'))
+kinds = dictish(sch.get('kinds'))
+check('the state schema keeps only the kinds of the key', code == 200 and sorted(kinds) == ['person'], sch)
+person_attrs = listish(dictish(kinds.get('person')).get('attrs'))
+check('the state schema drops the sensitive attribute name',
+      'health' not in person_attrs and 'location' in person_attrs, person_attrs)
+code, d = owner('POST', '/bodies', {'id': 'situation/key-gate', 'name': 'the key gate situation'})
+check('the owner creates a situation the key may not see', code == 200, d)
+time.sleep(1)
+code, d = owner('POST', '/observe', {'bodies': [], 'observations': [
+    obs('situation/key-gate', 'participants', {'ref': 'person/me'}, T0, 'kg-13'),
+    obs('situation/key-gate', 'status', 'open', T0, 'kg-14')]})
+check('the owner opens the situation with person/me in it', code == 200 and all_ok(d, 'observations', 2), d)
+time.sleep(1)
+code, d = owner('GET', '/body/person/me')
+check('the owner sees the situation in involved',
+      code == 200 and 'situation/key-gate' in listish(dictish(d).get('involved')), d)
+code, d = narrow('GET', '/body/person/me')
+check('involved is empty for a key that cannot see the situation',
+      code == 200 and listish(dictish(d).get('involved')) == [], dictish(d).get('involved'))
+
 print('== actions by kind')
 code, d = todo('POST', '/act', {'kind': 'task', 'title': 'key gate: call the shop', 'about': ['thing/subaru']})
 check('an about outside the kinds reads as no such body', code == 400, d)
@@ -229,6 +296,9 @@ check('mint a read-only key that may see tasks', code == 200 and '.' in str(dict
 watcher = as_key(str(dictish(d).get('token', '')))
 code, d = watcher('GET', '/actions')
 check('the read-only key lists the task', code == 200 and any(isinstance(x, dict) and x.get('id') == task_id for x in listish(d)), d)
+code, d = watcher('POST', '/act', {'kind': 'task', 'title': 'key gate: watcher task'})
+check('a read-only key with action kinds still proposes',
+      code == 200 and dictish(d).get('status') == 'approved', d)
 code, d = watcher('POST', '/actions/' + task_id, {'status': 'done'})
 check('a read-only key cannot transition', code == 403, d)
 code, d = todo('POST', '/actions/' + task_id, {'status': 'done', 'by': 'liar'})

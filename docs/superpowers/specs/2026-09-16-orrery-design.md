@@ -167,7 +167,7 @@ The beacon is nested and bumps only on a change, for the reasons auspex recorded
 
 ### HTTP, under `/apps/orrery/api`
 
-Owner only: the eyre `authenticated` flag and `src` equal to `our`, else 403. JSON in, JSON out. Times are ISO 8601 UTC in both directions.
+The owner cookie (eyre's `authenticated` flag and `src` equal to `our`), or a minted key within its scope (section 11 phase 3), else 403. JSON in, JSON out. Times are ISO 8601 UTC in both directions.
 
 | method and path | does |
 |---|---|
@@ -177,11 +177,14 @@ Owner only: the eyre `authenticated` flag and `src` equal to `our`, else 403. JS
 | `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; per-item results |
 | `POST /retract` | `{"id", "note"}` |
 | `POST /bodies` | upsert one body |
-| `DELETE /body/<kind>/<slug>` | cull the subtree. Refs to it elsewhere render as the bare id |
+| `DELETE /body/<kind>/<slug>` | cull the subtree. Refs to it elsewhere render as the bare id. Owner only |
 | `POST /act` | propose; answers `{"id", "status"}`, status `approved` when policy says so |
 | `GET /actions?status=open` | `open` by default, meaning proposed and approved; `all`; or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
-| `GET` and `PUT /schema`, `/policy` | the whole document |
+| `GET` and `PUT /schema`, `/policy` | the whole document. Owner only |
+| `POST /clients` | mint a key; answers the row and the token once. Owner only |
+| `GET /clients` | the keys with their scope, made and last used, never the secret. Owner only |
+| `DELETE /clients/<id>` | revoke a key. Owner only |
 
 Batch caps: 50 bodies and 200 observations per observe. A caller that needs more sends more requests.
 

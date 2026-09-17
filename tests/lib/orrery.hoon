@@ -703,28 +703,71 @@
     (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+'health']])]]])
   =/  unparsed=json
     (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'nope'] ['attr' s+'x']])]]])
+  =/  ref-obs
+    |=  target=@t
+    ^-  json
+    =/  v=json  (pairs:enjs:format ~[['ref' s+target]])
+    =/  one=json
+      (pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+'home'] ['value' v]])
+    (pairs:enjs:format ~[['observations' a+~[one]]])
+  =/  wide=scope:orr  [(sy ~[%person %place]) ~ &]
+  =/  ship-body=json
+    (pairs:enjs:format ~[['bodies' a+~[(pairs:enjs:format ~[['id' s+'person/sam'] ['ship' s+'~zod']])]]])
   ;:  weld
     (expect-eq !>(~) !>((out-of-scope:orr ok sc hide)))
     (expect-eq !>(`'place/home') !>((out-of-scope:orr bad-body sc hide)))
     (expect-eq !>(`'thing/car') !>((out-of-scope:orr bad-subject sc hide)))
     (expect-eq !>(`'health') !>((out-of-scope:orr bad-attr sc hide)))
     (expect-eq !>(~) !>((out-of-scope:orr unparsed sc hide)))
+    (expect-eq !>(`'place/home') !>((out-of-scope:orr (ref-obs 'place/home') sc hide)))
+    (expect-eq !>(~) !>((out-of-scope:orr (ref-obs 'place/home') wide hide)))
+    (expect-eq !>(~) !>((out-of-scope:orr (ref-obs 'nope') sc hide)))
+    (expect-eq !>(`'ship') !>((out-of-scope:orr ship-body sc hide)))
   ==
 ++  test-veil-refs-and-scope-about
   =/  base=obs:orr  o1
   =/  r-place=row:orr  ['1' base(value (pairs:enjs:format ~[['ref' s+'place/home']]))]
   =/  r-person=row:orr  ['2' base(value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]
   =/  r-plain=row:orr  ['3' base]
+  =/  r-nope=row:orr  ['4' base(value (pairs:enjs:format ~[['ref' s+'nope']]))]
   =/  kept=(list row:orr)  (veil-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
+  =/  unparsed=(list row:orr)  (veil-refs:orr ~[r-nope] (sy ~[%person]))
   =/  a=action:orr
     [%task 'Call the shop' ~ (sy ~['thing/subaru' 'person/sarah']) ~ 'mcp' t0 %proposed '' ~]
   =/  trimmed=action:orr  (scope-about:orr a (sy ~[%person]))
   ;:  weld
-    (expect-eq !>(~['1' '2' '3']) !>((turn kept |=(r=row:orr id.r))))
+    (expect-eq !>(~['veiled-0' '2' '3']) !>((turn kept |=(r=row:orr id.r))))
     (expect-eq !>(`json`~) !>(?~(kept ~ value.obs.i.kept)))
+    (expect-eq !>('2') !>(id:(snag 1 `(list row:orr)`kept)))
     (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'person/sarah']])) !>(value.obs:(snag 1 `(list row:orr)`kept)))
+    (expect-eq !>(`json`s+'Route 9') !>(value.obs:(snag 2 `(list row:orr)`kept)))
+    (expect-eq !>(~['4']) !>((turn unparsed |=(r=row:orr id.r))))
+    (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'nope']])) !>(?~(unparsed ~ value.obs.i.unparsed)))
     (expect-eq !>(`json`(pairs:enjs:format ~[['ref' s+'place/home']])) !>(value.obs:(snag 0 (veil-refs:orr ~[r-place] (sy ~[%person %place])))))
     (expect-eq !>((sy ~['person/sarah'])) !>(about.trimmed))
     (expect-eq !>(~) !>(about:(scope-about:orr a ~)))
+  ==
+::  +test-scope-schema: a key sees its kinds, without the hidden
+::  attribute names, and only the action kinds it may propose
+::
+++  test-scope-schema
+  =/  base=json  starter-schema:orr
+  =/  schema=json
+    ?.  ?=([%o *] base)  base
+    [%o (~(put by p.base) 'actions' a+~[s+'task' s+'note'])]
+  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
+  =/  hide=(set @t)  (sy ~['health' 'status'])
+  =/  out=json  (scope-schema:orr schema sc hide)
+  =/  kinds=json  (gj:orr out 'kinds')
+  =/  names=(list @t)  ?:(?=([%o *] kinds) (sort ~(tap in ~(key by p.kinds)) aor) ~)
+  =/  attrs=(list @t)  (strings:orr (ga:orr (gj:orr kinds 'person') 'attrs'))
+  =/  multi=(list @t)  (strings:orr (ga:orr out 'multi'))
+  =/  acts=(list @t)  (strings:orr (ga:orr out 'actions'))
+  ;:  weld
+    (expect-eq !>(~['person']) !>(names))
+    (expect !>(!(lien attrs |=(t=@t =('status' t)))))
+    (expect !>((lien attrs |=(t=@t =('location' t)))))
+    (expect !>((lien multi |=(t=@t =('participants' t)))))
+    (expect-eq !>(~['task']) !>(acts))
   ==
 --
