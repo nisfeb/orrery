@@ -24,6 +24,9 @@
 ::
 /<  orr   /lib/orrery.hoon
 /&  icon  icon.svg
+/&  page-html  orrery.html
+/&  page-css   orrery.css
+/&  page-js    orrery.js
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -45,6 +48,9 @@
           [%over %& [/ %'link.json'] [[/ %json] link]]
           [%over %& [/ %'weir.json'] [[/ %json] weir-json]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
+          [%over %& [/ %'orrery.html'] [[/ %mime] page-html]]
+          [%over %& [/ %'orrery.css'] [[/ %mime] page-css]]
+          [%over %& [/ %'orrery.js'] [[/ %mime] page-js]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'web.sig'] [[/ %sig] ~]]
           [%fall %| /requests empty-dir:loader]
@@ -503,6 +509,9 @@
   =/  s3=@ta  ?:(?=([@ @ @ @ *] suffix) i.t.t.t.suffix %$)
   =/  s4=@ta  ?:(?=([@ @ @ @ @ *] suffix) i.t.t.t.t.suffix %$)
   =/  args=quay:eyre  args.parsed
+  ?:  &(=('GET' meth) ?=(~ suffix))                          (own (serve-file eyre-id %'orrery.html'))
+  ?:  &(=('GET' meth) ?=([%'orrery.css' ~] suffix))          (own (serve-file eyre-id %'orrery.css'))
+  ?:  &(=('GET' meth) ?=([%'orrery.js' ~] suffix))           (own (serve-file eyre-id %'orrery.js'))
   ?:  &(=('GET' meth) ?=([%api %state ~] suffix))           (serve-state eyre-id args act)
   ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))        (serve-body eyre-id s2 s3 args act)
   ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))     (own (serve-delete-body eyre-id s2 s3))
@@ -1877,4 +1886,25 @@
   ?.  write.u.scope.act  `'read only key'
   ?.  (kind-in-scope:orr u.scope.act kind)  `(cat 3 'not in scope: ' kind)
   ~
+::  ==  the page
+::
+::  +serve-file: one of the page's grubs, no-cache so an updated desk
+::  shows at the next load
+::
+++  serve-file
+  |=  [eyre-id=@ta name=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  ct=(unit @t)
+    ?+  name  ~
+      %'orrery.html'  `'text/html; charset=utf-8'
+      %'orrery.css'   `'text/css; charset=utf-8'
+      %'orrery.js'    `'text/javascript; charset=utf-8'
+    ==
+  ?~  ct  (send-err eyre-id 404 'no such file')
+  ;<  vw=view:nexus  bind:m  (peek:io (rf 1 / name) `[/ %mime])
+  ?.  ?=([%file *] vw)  (send-err eyre-id 404 'no such file')
+  =/  got=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.vw))))
+  ?~  got  (send-err eyre-id 500 'unreadable file')
+  (send-simple:srv eyre-id [[200 ~[['content-type' u.ct] ['cache-control' 'no-cache']]] `q.u.got])
 --
