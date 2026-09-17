@@ -85,7 +85,7 @@ The tool runs on the mcp instance's `/tools` child nexus under that nexus's weir
 ++  test-state-and-body-json
   =/  base=obs:orr  o1
   =/  car=loaded:orr
-    ['thing/subaru' [%thing 'the Subaru' ~['the car'] t0 ~] ~[['1' base]]]
+    ['thing/subaru' [%thing 'the Subaru' (sy ~['the car']) t0 ~] ~[['1' base]]]
   =/  me=loaded:orr
     :+  'person/me'  [%person 'me' ~ t0 `~wex]
     ~[['2' base(subject 'person/me', attr 'spouse', value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]]
@@ -258,7 +258,7 @@ In `code/nex/orrery/app.hoon`: delete `+$  loaded`, `+en-attr-row` and `+en-attr
 
 - [ ] **Step 5: Tests green, deploy, gates**
 
-Copy the two library files to the mount, commit, `-test`: 50 `OK`, `ok=%.y`. Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to wex with the fast loop, reload, `bang` `None`. Then, one at a time: `python3 scripts/api-matrix.py $W $CK` (`ALL OK`), `python3 scripts/key-matrix.py $W $CK` (`ALL OK (65 checks)`), `python3 scripts/ship-share-matrix.py $W $CK $F $FK` (`ALL OK (68 checks)`; feb still runs version 5 and only the host side changed).
+Copy the two library files to the mount, commit, `-test`: 51 `OK`, `ok=%.y`. Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to wex with the fast loop, reload, `bang` `None`. Then, one at a time: `python3 scripts/api-matrix.py $W $CK` (`ALL OK`), `python3 scripts/key-matrix.py $W $CK` (`ALL OK (83 checks)`), `python3 scripts/ship-share-matrix.py $W $CK $F $FK` (`ALL OK (68 checks)`; feb still runs version 5 and only the host side changed).
 
 - [ ] **Step 6: Commit**
 
