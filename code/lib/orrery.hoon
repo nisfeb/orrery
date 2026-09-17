@@ -767,6 +767,8 @@
       made=@da
       used=(unit @da)
   ==
+::  caps
+::
 ++  max-clients      50
 ++  max-scope-kinds  24
 ::  +de-scope: {"kinds": [...], "actions": [...], "write": bool}. Absent
@@ -778,8 +780,9 @@
   ?.  ?=([%o *] j)  [%| 'scope: expected an object']
   =/  ks=(list json)  (ga j 'kinds')
   =/  as=(list json)  (ga j 'actions')
-  ?:  (gth (lent ks) max-scope-kinds)  [%| 'scope.kinds: over 24']
-  ?:  (gth (lent as) max-scope-kinds)  [%| 'scope.actions: over 24']
+  =/  over=@t  (rap 3 ': over ' (scot %ud max-scope-kinds) ~)
+  ?:  (gth (lent ks) max-scope-kinds)  [%| (cat 3 'scope.kinds' over)]
+  ?:  (gth (lent as) max-scope-kinds)  [%| (cat 3 'scope.actions' over)]
   =/  kinds=(unit (set @tas))  (de-kinds ks)
   ?~  kinds  [%| 'scope.kinds: each a kind name']
   =/  actions=(unit (set @tas))  (de-kinds as)
@@ -798,6 +801,8 @@
   ?.  ?=([%s *] i.ks)  ~
   ?.  (ok-kind p.i.ks)  ~
   $(ks t.ks, acc (~(put in acc) `@tas`p.i.ks))
+::  +en-scope: a scope as JSON
+::
 ++  en-scope
   |=  s=scope
   ^-  json
@@ -809,7 +814,9 @@
 ++  kind-in-scope    |=([s=scope k=@tas] ^-(? (~(has in kinds.s) k)))
 ++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))
 ::  +de-client, +en-client-row, +en-client-view: a stored row (with the
-::  salt and the hash) and what the owner sees of it (without them)
+::  salt and the hash) and what the owner sees of it (without them). A
+::  row without a scope is refused, never read as an empty scope: a
+::  stored row always has one.
 ::
 ++  de-client
   |=  j=json
@@ -847,22 +854,27 @@
   =/  view=json  (en-client-view c)
   ?.  ?=([%o *] view)  view
   [%o (~(gas by p.view) ~[['salt' s+salt.c] ['hash' s+hash.c]])]
-::  +secret-of, +id-of: base-32 text from entropy, dots stripped. scot
-::  drops leading zero digits, so a secret is 20 to 24 characters and an
-::  id 6 to 8.
+::  +secret-of, +id-of: base-32 text from entropy, dots stripped and
+::  zero-padded to a floor, since scot drops leading zero digits: a
+::  secret is 20 to 24 characters, an id 6 to 8. Callers feed each a
+::  disjoint slice of the entropy; neither derives from the other.
 ::
 ++  secret-of
   |=  eny=@
   ^-  @t
-  =/  raw=tape  (trip (scot %uv (end [3 15] eny)))
-  (crip (skip (slag 2 raw) |=(c=@t =('.' c))))
+  (pad-left (skip (slag 2 (trip (scot %uv (end [3 15] eny)))) |=(c=@t =('.' c))) 20)
 ++  id-of
   |=  eny=@
   ^-  @t
-  =/  raw=tape  (trip (scot %uv (end [3 5] eny)))
-  =/  body=tape  (skip (slag 2 raw) |=(c=@t =('.' c)))
-  ?:  (lth (lent body) 6)  (crip (weld "0k" body))
-  (crip body)
+  (pad-left (skip (slag 2 (trip (scot %uv (end [3 5] eny)))) |=(c=@t =('.' c))) 6)
+::  +pad-left: zeros in front, up to a floor
+::
+++  pad-left
+  |=  [t=tape n=@ud]
+  ^-  @t
+  =/  len=@ud  (lent t)
+  ?:  (gte len n)  (crip t)
+  (crip (weld (reap (sub n len) '0') t))
 ::  +hash-token: a salted sha-256 as text
 ::
 ++  hash-token
@@ -878,7 +890,9 @@
   =/  t=tape  (trip h)
   ?.  (gte (lent t) 8)  ~
   ?.  =("bearer " (cass (scag 7 t)))  ~
-  =/  tok=tape  (slag 7 t)
+  =/  tok=tape
+    =/  raw=tape  (slag 7 t)
+    |-  ?:(?=([%' ' *] raw) $(raw t.raw) raw)
   =/  at=(unit @ud)  (find "." tok)
   ?~  at  ~
   =/  id=tape  (scag u.at tok)
@@ -922,7 +936,8 @@
   (force-string (with-default j 'proposed' s+(en-iso now)) 'by' s+by)
 ::  +out-of-scope: the first body id, subject or attribute in an observe
 ::  batch that a scope may not write, or ~. An id that does not parse is
-::  left for the decoders to refuse.
+::  left for the decoders to refuse. The caller checks write first; this
+::  names what a writing key may not touch.
 ::
 ++  out-of-scope
   |=  [jon=json s=scope hide=(set @t)]

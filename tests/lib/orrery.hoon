@@ -604,6 +604,7 @@
   =/  got  (de-scope:orr full)
   =/  bad-kind  (de-scope:orr (pairs:enjs:format ~[['kinds' a+~[s+'Person']]]))
   =/  bad-write  (de-scope:orr (pairs:enjs:format ~[['write' s+'yes']]))
+  =/  many=json  (pairs:enjs:format ~[['kinds' a+(reap 25 `json`s+'person')]])
   =/  empty  (de-scope:orr [%o ~])
   ;:  weld
     (expect !>(?=(%& -.got)))
@@ -612,6 +613,7 @@
     (expect-eq !>(&) !>(?:(?=(%& -.got) write.p.got |)))
     (expect-eq !>([%| 'scope.kinds: each a kind name']) !>(bad-kind))
     (expect-eq !>([%| 'scope.write: expected true or false']) !>(bad-write))
+    (expect-eq !>([%| 'scope.kinds: over 24']) !>((de-scope:orr many)))
     (expect !>(?=(%& -.empty)))
     (expect-eq !>(|) !>(?:(?=(%& -.empty) write.p.empty &)))
     (expect-eq !>([%| 'scope: expected an object']) !>((de-scope:orr s+'x')))
@@ -629,6 +631,7 @@
     (expect-eq !>(~) !>((parse-bearer:orr 'Bearer abc.')))
     (expect-eq !>(~) !>((parse-bearer:orr 'Bearer .def')))
     (expect-eq !>(~) !>((parse-bearer:orr '')))
+    (expect-eq !>(`['abc' 'def']) !>((parse-bearer:orr 'Bearer   abc.def')))
   ==
 ++  test-secret-and-hash
   =/  eny=@  (shax 'a fixed seed')
@@ -640,6 +643,9 @@
     (expect !>(=(~ (find "." (trip s)))))
     (expect !>(=(~ (find "." (trip i)))))
     (expect !>(&((gte (met 3 i) 6) (lte (met 3 i) 8))))
+    (expect-eq !>(6) !>((met 3 (id-of:orr 1))))
+    (expect-eq !>('000001') !>((id-of:orr 1)))
+    (expect-eq !>(20) !>((met 3 (secret-of:orr 1))))
     (expect-eq !>((hash-token:orr 'salt' s)) !>((hash-token:orr 'salt' s)))
     (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'pepper' s))))
     (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'salt' 'other'))))
@@ -647,10 +653,12 @@
 ++  test-client-roundtrip
   =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
   =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
+  =/  c2=client:orr  c(used `t0)
   =/  back=(unit client:orr)  (de-client:orr (en-client-row:orr c))
   =/  view=json  (en-client-view:orr c)
   ;:  weld
     (expect-eq !>(`c) !>(back))
+    (expect-eq !>(`c2) !>((de-client:orr (en-client-row:orr c2))))
     (expect !>((client-ok:orr c 'secret')))
     (expect !>(!(client-ok:orr c 'wrong')))
     (expect-eq !>(~) !>((gj:orr view 'hash')))
