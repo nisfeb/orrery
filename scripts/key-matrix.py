@@ -353,6 +353,7 @@ for label, fn in (('clients', lambda: triage('GET', '/clients')),
                   ('schema', lambda: triage('GET', '/schema')),
                   ('shares', lambda: triage('GET', '/shares')),
                   ('delete body', lambda: triage('DELETE', '/body/place/lake-house')),
+                  ('merge', lambda: triage('POST', '/merge', {'from': 'place/lake-house', 'into': 'person/me'})),
                   ('share', lambda: triage('POST', '/share', {'id': 'person/me', 'ship': '~feb'}))):
     code, d = fn()
     check('a key may not reach ' + label, code == 403 and dictish(d).get('error') == 'owner only', (code, d))

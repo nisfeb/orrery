@@ -603,27 +603,134 @@
 ::  ==  resolve
 ::
 ++  lower  |=(t=@t ^-(@t (crip (cass (trip t)))))
-::  +resolve: bodies whose name or alias equals q, then those where one
-::  starts with q, case-insensitive, at most 20
+::  +tokens: a phrase as lowercase words, split on every byte that is
+::  neither a letter nor a digit
+::
+++  tokens
+  |=  t=@t
+  ^-  (list @t)
+  =/  st=[cur=tape acc=(list @t)]
+    %+  roll  (trip (lower t))
+    |=  [c=@tD s=[cur=tape acc=(list @t)]]
+    ^-  [cur=tape acc=(list @t)]
+    ?:  |(&((gte c 'a') (lte c 'z')) &((gte c '0') (lte c '9')))
+      [[c cur.s] acc.s]
+    ?:  =(~ cur.s)  s
+    [~ [(crip (flop cur.s)) acc.s]]
+  =/  out=(list @t)
+    ?:(=(~ cur.st) acc.st [(crip (flop cur.st)) acc.st])
+  (flop out)
+::  +token-hit: the shorter side's tokens all appear in the longer
+::  side's, and the shorter side has at least one token. "andrea" hits
+::  "Andrea Egan" in both directions; "andrea" never hits "Andrew Egan".
+::
+++  token-hit
+  |=  [a=(list @t) b=(list @t)]
+  ^-  ?
+  =/  flip=?  (gth (lent a) (lent b))
+  =/  short=(list @t)  ?:(flip b a)
+  =/  long=(list @t)   ?:(flip a b)
+  ?~  short  |
+  %+  levy  `(list @t)`short
+  |=(x=@t (lien `(list @t)`long |=(y=@t =(x y))))
+::  +identity-values: the live email and phone values of one body, as
+::  lowercase strings. An identity is not spelling: a query equal to one
+::  of these names the body exactly.
+::
+++  identity-values
+  |=  winners=(map @t (list row))
+  ^-  (list @t)
+  =/  rs=(list row)
+    %+  weld  (fall (~(get by winners) 'email') ~)
+    (fall (~(get by winners) 'phone') ~)
+  %+  turn
+    %+  murn  rs
+    |=(r=row ^-((unit @t) ?:(?=([%s *] value.obs.r) `p.value.obs.r ~)))
+  lower
+::  +resolve: bodies whose ship, name, alias, email or phone equals q,
+::  then those whose name or alias shares every token with it, then
+::  those where one starts with q, case-insensitive, at most 20
 ::
 ++  resolve
-  |=  [q=@t bodies=(list [id=bid =body])]
+  |=  [q=@t bodies=(list [id=bid =body winners=(map @t (list row))])]
   ^-  (list [id=bid =body match=@tas])
   =/  lq=@t  (lower q)
   ?:  =('' lq)  ~
+  =/  qt=(list @t)  (tokens q)
   =/  hit
-    |=  [id=bid b=body]
+    |=  [id=bid b=body winners=(map @t (list row))]
     ^-  (unit [id=bid =body match=@tas])
     =/  sh=@t  ?~(ship.b '' (scot %p u.ship.b))
     ?:  &(!=('' sh) =(sh lq))  `[id b %exact]
     =/  names=(list @t)  (turn `(list @t)`[name.b ~(tap in aliases.b)] lower)
     ?:  (lien names |=(n=@t =(n lq)))  `[id b %exact]
+    ?:  (lien (identity-values winners) |=(v=@t =(v lq)))  `[id b %exact]
+    ?:  (lien names |=(n=@t (token-hit qt (tokens n))))  `[id b %token]
     ?:  (lien names |=(n=@t =(lq (end [3 (met 3 lq)] n))))  `[id b %prefix]
     ~
   =/  hits=(list [id=bid =body match=@tas])  (murn bodies hit)
   =/  exact  (skim hits |=(h=[id=bid =body match=@tas] =(%exact match.h)))
+  =/  toks   (skim hits |=(h=[id=bid =body match=@tas] =(%token match.h)))
   =/  pref   (skim hits |=(h=[id=bid =body match=@tas] =(%prefix match.h)))
-  (scag 20 (weld exact pref))
+  (scag 20 :(weld exact toks pref))
+::  ==  merge: folding one body into another
+::
+::  +resubject: one observation row copied onto another body. Everything
+::  but the subject stays, seen included (the copy is not a new fact),
+::  and the id is recomputed from the new subject.
+::
+++  resubject
+  |=  [r=row new=bid]
+  ^-  row
+  =/  o=obs  obs.r(subject new)
+  [(obs-id o) o]
+::  +repoint: a live row whose value named one body, re-pointed at
+::  another: a fresh row beside the old one, seen now
+::
+++  repoint
+  |=  [r=row into=bid now=@da]
+  ^-  row
+  =/  o=obs  obs.r
+  =/  v=json  (pairs:enjs:format ~[['ref' s+into]])
+  =/  next=obs  o(value v, seen now, retracted |, note '')
+  [(obs-id next) next]
+::  +absorb: into with from's aliases unioned in and from's name added
+::  as an alias. The name, ship and created stamp stay into's.
+::
+++  absorb
+  |=  [into=body from=body]
+  ^-  body
+  =/  als=(set @t)  (~(uni in aliases.into) aliases.from)
+  =.  als  ?:(=('' name.from) als (~(put in als) name.from))
+  into(aliases als)
+::  +move-rows: from's rows re-subjected onto into, those into does not
+::  already hold. A copy with an id already there is left as it is.
+::
+++  move-rows
+  |=  [src=(list row) dst=(list row) into=bid]
+  ^-  (list row)
+  =/  held=(set @ta)  (sy (turn dst |=(r=row id.r)))
+  %+  skim  (turn src |=(r=row (resubject r into)))
+  |=(r=row !(~(has in held) id.r))
+::  +ref-rows: every live row on any body but from whose value points at
+::  from, each with the body that holds it
+::
+++  ref-rows
+  |=  [all=(list loaded) from=bid when=@da]
+  ^-  (list [id=bid r=row])
+  %-  zing
+  %+  turn  all
+  |=  l=loaded
+  ^-  (list [id=bid r=row])
+  ?:  =(id.l from)  ~
+  %+  turn
+    %+  skim  rows.l
+    |=  r=row
+    ^-  ?
+    ?.  (is-live obs.r when)  |
+    =/  t=(unit bid)  (ref-of value.obs.r)
+    ?~(t | =(u.t from))
+  |=(r=row [id.l r])
 ::  ==  actions
 ::
 ++  is-open
@@ -747,6 +854,7 @@
           ['thing' (kind ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until'])]
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'])]
           ['situation' (kind ~['status' 'participants' 'location' 'started' 'ended' 'summary'])]
+          ['activity' (kind ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next'])]
           ['note' (kind ~['text'])]
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]

@@ -4,7 +4,7 @@ The HTTP gate for orrery: spec section 8, the stranded car, against a
 fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
 retracts and dismisses what an earlier run left."""
-import json, subprocess, sys, threading
+import json, subprocess, sys, threading, time
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
@@ -46,6 +46,8 @@ UNTIL = T0 + timedelta(hours=4)
 DUE = T0 + timedelta(hours=15)
 SIT = 'situation/' + T0.strftime('%Y-%m-%d') + '-breakdown'
 SHOP = 'place/johns-machine-shop'
+ORG = 'org/sarah-connor'
+MAIL = 'Sarah.Connor@example.com'
 TITLE = "Call John's Machine Shop about the Subaru"
 MSG = "Tell Sarah the car is at John's"
 RACE = "Tell Sarah the tow is booked"
@@ -103,6 +105,16 @@ def all_ok(d, key, n):
     return len(items) == n and all(x.get('ok') for x in items)
 
 
+def retract_matrix(bid):
+    #  every live row this gate wrote on a body it does not delete
+    code, d = body(bid)
+    if code != 200:
+        return
+    for o in dictish(d).get('observations', []):
+        if o['source']['id'].startswith('matrix-') and o['status'] != 'retracted':
+            curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
+
+
 # ── 0. a clean slate ────────────────────────────────────────────────
 print('0. clean slate')
 #  SIT is keyed on today's date, so a run on the other side of midnight
@@ -112,14 +124,13 @@ old_sits = [] if code != 200 else [str(dictish(b).get('id', '')) for b in dictis
 for b in old_sits:
     if b.startswith('situation/') and b.endswith('-breakdown'):
         curl('DELETE', API + '/body/' + b)
-for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, SIT]:
+retract_matrix('person/sarah')
+for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, ORG, SIT]:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')
 check('person/me exists', code == 200, (code, me))
 curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})
-for o in dictish(me).get('observations', []):
-    if o['source']['id'].startswith('matrix-') and o['status'] != 'retracted':
-        curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
+retract_matrix('person/me')
 code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
     if a['title'] in (TITLE, MSG, RACE):
@@ -365,6 +376,59 @@ check('a non-array observations is 400', code == 400
       and dictish(d).get('error') == 'observations: expected an array', (code, d))
 code, d = curl('GET', API + '/nothing')
 check('an unknown route is 404', code == 404, (code, d))
+
+# ── 8. identity, tokens and the merge ───────────────────────────────
+print('8. resolve on identity, and one body folded into another')
+ORG_AT = T0 - timedelta(days=2)
+code, d = observe([], [obs('person/sarah', 'email', MAIL, now - timedelta(minutes=2), USER)])
+check('sarah gets an email address', code == 200 and all_ok(d, 'observations', 1), (code, d))
+code, r = curl('GET', API + '/resolve?q=sarah.connor%40EXAMPLE.com')
+hit = [x for x in (r if isinstance(r, list) else []) if dictish(x).get('id') == 'person/sarah']
+check('resolve finds sarah by her address, exact',
+      code == 200 and len(hit) == 1 and hit[0].get('match') == 'exact', (code, r))
+code, r = curl('GET', API + '/resolve?q=Sarah%20Connor')
+hit = [x for x in (r if isinstance(r, list) else []) if dictish(x).get('id') == 'person/sarah']
+check('resolve finds sarah by the words of a fuller name',
+      code == 200 and len(hit) == 1 and hit[0].get('match') == 'token', (code, r))
+code, d = observe([{'id': ORG, 'name': 'Sarah Connor'}],
+                  [obs(ORG, 'phone', '+1 555 0100', ORG_AT, src('merge')),
+                   obs('person/me', 'spouse', ref(ORG), now - timedelta(minutes=1), USER)])
+check('the duplicate org and a reference to it land',
+      code == 200 and all_ok(d, 'bodies', 1) and all_ok(d, 'observations', 2), (code, d))
+code, d = curl('POST', API + '/merge', {'from': ORG, 'into': 'person/sarah'})
+check('the merge answers 200, one row moved and one reference repointed',
+      code == 200 and dictish(d).get('moved') == 1 and dictish(d).get('repointed') == 1
+      and dictish(d).get('ok') is True, (code, d))
+time.sleep(2)
+code, sar = body('person/sarah')
+moved = [o for o in dictish(sar).get('observations', []) if o.get('attr') == 'phone']
+check("the org's observation is on sarah, with its own at and source",
+      code == 200 and len(moved) == 1 and moved[0].get('at') == iso(ORG_AT)
+      and moved[0].get('source') == src('merge'), (code, moved))
+check("the merged name is one of sarah's aliases",
+      code == 200 and 'Sarah Connor' in dictish(sar).get('aliases', []), dictish(sar).get('aliases'))
+s = state()
+check('me.spouse points at sarah again',
+      val(s, 'person/me', 'spouse') == ref('person/sarah'), attrs(s, 'person/me'))
+code, me = body('person/me')
+gone = [o for o in dictish(me).get('observations', []) if o.get('value') == ref(ORG)]
+check('the old reference is retracted, and says where it went',
+      code == 200 and bool(gone) and all(o.get('status') == 'retracted'
+      and o.get('note') == 'merged into person/sarah' for o in gone), (code, gone))
+code, d = body(ORG)
+check('the body merged away is gone', code == 404, (code, d))
+code, d = curl('POST', API + '/merge', {'from': 'person/sarah', 'into': 'person/sarah'})
+check('a merge of a body into itself is 400',
+      code == 400 and dictish(d).get('error') == 'from and into are the same body', (code, d))
+code, d = curl('POST', API + '/merge', {'from': 'person/me', 'into': 'person/sarah'})
+check('a merge from person/me is 400',
+      code == 400 and dictish(d).get('error') == 'person/me cannot be merged away', (code, d))
+code, d = curl('POST', API + '/merge', {'from': 'org/nobody', 'into': 'person/sarah'})
+check('a merge of an unknown body is 404',
+      code == 404 and dictish(d).get('error') == 'no such body org/nobody', (code, d))
+code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
+check('the writer noted the merge last',
+      code == 200 and dictish(last).get('op') == 'merge' and dictish(last).get('ok') is True, last)
 
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')

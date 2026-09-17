@@ -16,6 +16,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 - `write`: false makes the key read-only: it cannot observe, create bodies, retract or transition an action. Proposing needs only the action kind, so a read-only key with `actions` can still file a proposal for the owner to approve. A proposal of a kind the policy auto-approves is approved on the spot, and one it does not auto-approve waits for the owner.
 - `by` on everything a key writes is the key's identity, whatever the payload said, so the audit trail names the client.
 - A key never sets a body's ship: identity is the owner's to assign.
+- Deleting a body and merging one into another (`POST /merge`) are the owner's, over the cookie: a key asking for either is 403 `owner only`.
 - A key may only relate what it can see. An observation whose value points at a body outside the key's kinds is refused, naming that body, so a key cannot confirm one by watching for an `existing` answer.
 - A batch with one item outside the scope is refused whole, with the first offending id or attribute named. Nothing in it is written, including the items that were in scope.
 

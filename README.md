@@ -54,7 +54,7 @@ The answer has one line per item, so a client can fix the one it got wrong.
 
 ```bash
 curl -s -b jar $API/body/person/sarah          # one body: attributes, situations, actions, timeline
-curl -s -b jar "$API/resolve?q=wife"           # find bodies by name or alias
+curl -s -b jar "$API/resolve?q=wife"           # find bodies by identity, name or alias
 curl -s -b jar $API/state                      # everything at once: the view an assistant reads
 ```
 
@@ -123,6 +123,10 @@ post observe '{
 ```
 
 `participants` is multi-valued: each observation adds a value instead of replacing the last one. The schema says which attributes work that way. Set the situation's `status` to `closed` when it is over and it leaves everyone's `involved` list.
+
+A situation happens once. Something that keeps happening is an `activity`: the weekly game night, the standing Tuesday call, the gym. It carries a `schedule` and a `cadence` alongside the `participants`, so a repeating event is one body with a `next`, not one situation per occurrence.
+
+Two bodies that turn out to be the same person are folded with `POST /api/merge`, `{"from": "org/sarah-connor", "into": "person/sarah"}`: every observation moves onto `into` keeping its own time and source, every reference to `from` is repointed at `into` and the old one retracted, the aliases union, and `from` is deleted. `person/me` can be merged into but never away.
 
 ### Actions
 
@@ -290,11 +294,12 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 |---|---|
 | `GET /state?at=&kind=` | every body with its attributes and involvements, the open situations, the open actions, the beacon, the time it was folded at, `me` and the schema |
 | `GET /body/<kind>/<slug>?at=` | one body with its timeline |
-| `GET /resolve?q=` | bodies whose name or alias matches, exact first then prefix, at most 20 |
+| `GET /resolve?q=` | bodies a phrase could mean: an exact hit on a ship, an email address, a phone number, a name or an alias, then bodies sharing every word of it, then prefixes; at most 20 |
 | `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations |
 | `POST /retract` | `{"id", "note"}` |
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |
+| `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |

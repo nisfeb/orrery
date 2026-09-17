@@ -207,6 +207,7 @@
   ?:  =('observe' op)  (do-observe jon)
   ?:  =('upsert-body' op)  (do-upsert-body jon)
   ?:  =('delete-body' op)  (do-delete-body jon)
+  ?:  =('merge' op)  (do-merge jon)
   ?:  =('retract' op)  (do-retract jon)
   ?:  =('act' op)  (do-act jon)
   ?:  =('set-action' op)  (do-set-action jon)
@@ -572,6 +573,7 @@
   ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))        (serve-observe eyre-id jon act)
   ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))        (serve-retract eyre-id jon act)
   ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))         (serve-bodies eyre-id jon act)
+  ?:  &(=('POST' meth) ?=([%api %merge ~] suffix))          (own (serve-merge eyre-id jon))
   ?:  &(=('POST' meth) ?=([%api %act ~] suffix))            (serve-act eyre-id jon act)
   ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))         (serve-actions eyre-id args act)
   ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))      (serve-set-action eyre-id s2 jon act)
@@ -791,6 +793,101 @@
   ;<  *  bind:m  (cull-soft:io (rv 0 (body-dir kind.u.pk slug.u.pk)))
   ;<  ~  bind:m  (note 'delete-body' & '')
   (pure:m &)
+::  +do-merge: fold one body into another. The rows move, the references
+::  to from are re-pointed at into, the aliases union, and from is
+::  culled the way delete-body culls it. The share record is the route's
+::  to drop: it needs +self-base, which the writer cannot reach.
+::
+++  do-merge
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  from=@t  (gs:orr jon 'from')
+  =/  into=@t  (gs:orr jon 'into')
+  ?:  =(from into)  (refuse 'merge' 'from and into are the same body')
+  ?:  =('person/me' from)  (refuse 'merge' 'person/me cannot be merged away')
+  =/  fk  (parse-bid:orr from)
+  ?~  fk  (refuse 'merge' (cat 3 'no such body ' from))
+  =/  ik  (parse-bid:orr into)
+  ?~  ik  (refuse 'merge' (cat 3 'no such body ' into))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  src=(unit loaded:orr)  (find-loaded all from)
+  ?~  src  (refuse 'merge' (cat 3 'no such body ' from))
+  =/  dst=(unit loaded:orr)  (find-loaded all into)
+  ?~  dst  (refuse 'merge' (cat 3 'no such body ' into))
+  =/  fresh=(list row:orr)  (move-rows:orr rows.u.src rows.u.dst into)
+  =/  pointing=(list [id=bid:orr r=row:orr])  (ref-rows:orr all from now)
+  ;<  ~  bind:m  (ensure-dirs 0 / `(list @ta)`~[%bodies kind.u.ik slug.u.ik %obs])
+  ;<  ~  bind:m  (write-rows 0 (obs-dir kind.u.ik slug.u.ik) fresh)
+  ;<  ~  bind:m  (repoint-each pointing into now)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  ~  bind:m  (reabout acts from into)
+  =/  merged=body:orr  (absorb:orr body.u.dst body.u.src)
+  ;<  ~  bind:m
+    ?:  =(merged body.u.dst)  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  over:io  (rf 0 (body-dir kind.u.ik slug.u.ik) %body)
+    [[/orrery %body] `stored-body:orr`[%2 merged]]
+  ;<  *  bind:m  (cull-soft:io (rv 0 (body-dir kind.u.fk slug.u.fk)))
+  ;<  ~  bind:m  (compact kind.u.ik slug.u.ik)
+  =/  why=@t
+    %+  rap  3
+    :~  from  ' -> '  into
+        ', moved '  (scot %ud (lent fresh))
+        ', repointed '  (scot %ud (lent pointing))
+    ==
+  ;<  ~  bind:m  (note 'merge' & why)
+  (pure:m &)
+::  +write-rows: one grub per row, under a body's obs directory. A row
+::  whose id is already there is left as it is.
+::
+++  write-rows
+  |=  [up=@ud dir=path rows=(list row:orr)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  rows  (pure:m ~)
+  =/  cur=row:orr  i.rows
+  =/  road=road:tarball  (rf up dir id.cur)
+  ;<  ex=?  bind:m  (peek-exists:io road)
+  ;<  ~  bind:m
+    ?:  ex  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  *  bind:(fiber:fiber:nexus ,~)
+      (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 obs.cur]] ~])
+    (pure:(fiber:fiber:nexus ,~) ~)
+  (write-rows up dir t.rows)
+::  +repoint-each: a reference to the merged body, rewritten in place:
+::  the live row beside it points at into, and the old one is retracted
+::  with the merge named
+::
+++  repoint-each
+  |=  [items=(list [id=bid:orr r=row:orr]) into=bid:orr now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  items  (pure:m ~)
+  =/  cur=[id=bid:orr r=row:orr]  i.items
+  =/  pk  (parse-bid:orr id.cur)
+  ?~  pk  (repoint-each t.items into now)
+  =/  dir=path  (obs-dir kind.u.pk slug.u.pk)
+  ;<  ~  bind:m  (write-rows 0 dir ~[(repoint:orr r.cur into now)])
+  =/  old=obs:orr  obs.r.cur(retracted &, note (cat 3 'merged into ' into))
+  ;<  ~  bind:m
+    (over:io (rf 0 dir id.r.cur) [[/orrery %obs] `stored-obs:orr`[%1 old]])
+  (repoint-each t.items into now)
+::  +reabout: every action whose about names the merged body names the
+::  body it was merged into instead. about is a set, so no duplicate.
+::
+++  reabout
+  |=  [acts=(list [id=@ta a=action:orr]) from=bid:orr into=bid:orr]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  acts  (pure:m ~)
+  =/  cur=[id=@ta a=action:orr]  i.acts
+  ?.  (~(has in about.a.cur) from)  (reabout t.acts from into)
+  =/  kept=(set bid:orr)  (~(del in about.a.cur) from)
+  =/  next=action:orr  a.cur(about (~(put in kept) into))
+  ;<  ~  bind:m
+    (over:io (rf 0 /actions id.cur) [[/orrery %action] `stored-action:orr`[%2 next]])
+  (reabout t.acts from into)
 ::  +load-actions: every action grub
 ::
 ++  load-actions
@@ -1013,19 +1110,66 @@
   ?~  base
     (note-inbox-at 1 'delete-body' | 'cannot find where this app is installed' '')
   (set-share-group u.base kind slug ~)
+::  +serve-merge: POST one body folded into another, owner only. The
+::  route checks what the writer refuses, so a client hears 400 or 404
+::  rather than a silent refusal in the trail, and counts what the write
+::  will move from the same tree the writer reads: a write answers
+::  before it applies.
+::
+++  serve-merge
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  from=@t  (gs:orr jon 'from')
+  =/  into=@t  (gs:orr jon 'into')
+  ?:  =(from into)  (send-err eyre-id 400 'from and into are the same body')
+  ?:  =('person/me' from)  (send-err eyre-id 400 'person/me cannot be merged away')
+  =/  fk  (parse-bid:orr from)
+  ?~  fk  (send-err eyre-id 404 (cat 3 'no such body ' from))
+  =/  ik  (parse-bid:orr into)
+  ?~  ik  (send-err eyre-id 404 (cat 3 'no such body ' into))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  src=(unit loaded:orr)  (find-loaded all from)
+  ?~  src  (send-err eyre-id 404 (cat 3 'no such body ' from))
+  =/  dst=(unit loaded:orr)  (find-loaded all into)
+  ?~  dst  (send-err eyre-id 404 (cat 3 'no such body ' into))
+  =/  moved=@ud  (lent (move-rows:orr rows.u.src rows.u.dst into))
+  =/  repointed=@ud  (lent (ref-rows:orr all from now))
+  =/  op=json
+    (pairs:enjs:format ~[['op' s+'merge'] ['from' s+from] ['into' s+into]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ;<  ~  bind:m  (drop-share kind.u.fk slug.u.fk from)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['from' s+from]
+      ['into' s+into]
+      ['moved' (numb:enjs:format moved)]
+      ['repointed' (numb:enjs:format repointed)]
+      ['ok' b+&]
+  ==
 ::  +serve-resolve: a name to the bodies it could mean, best match
 ::  first, over the bodies this actor may see
+::
+::    The answer emits id, kind, name and match, never an attribute, but
+::    resolve matches on the folded email and phone, so a key that may
+::    not see a sensitive attribute must not be able to confirm one by
+::    asking for it: the hidden set is the actor's.
 ::
 ++  serve-resolve
   |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  q=@t  (fall (get-key:kv:html-utils 'q' args) '')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
-  ::  the empty hide set is safe here and saves the policy read: this
-  ::  route emits id, kind, name and match, never an attribute
-  =/  all=(list loaded:orr)  all:(view-of act all0 ~ ~)
-  =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))
+  =/  all=(list loaded:orr)  all:(view-of act all0 ~ (hidden-for act policy))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    (turn all |=(l=loaded:orr [id.l body.l (fold:orr rows.l multi now)]))
   %^  send-json  eyre-id  200
   :-  %a
   %+  turn  (resolve:orr q bodies)

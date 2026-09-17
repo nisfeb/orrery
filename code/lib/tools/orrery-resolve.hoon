@@ -1,4 +1,4 @@
-::  orrery-resolve: bodies by name or alias, as GET /apps/orrery/api/resolve?q=
+::  orrery-resolve: bodies by identity or name, as GET /apps/orrery/api/resolve?q=
 ::
 /<  tools  /lib/tools.hoon
 /<  orr  /lib/orrery.hoon
@@ -7,7 +7,7 @@
 |%
 ++  name  'orrery_resolve'
 ++  description
-  'Find bodies whose name or alias matches a phrase: exact matches first, then prefixes, case-insensitive, at most 20. Use it before observing about someone or something named in a message.'
+  'Find the bodies a phrase could mean: an email address, a phone number, a name or an alias. Exact matches first, then bodies sharing every word of the phrase, then prefixes, case-insensitive, at most 20. Use it before observing about someone or something named in a message.'
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))
@@ -22,8 +22,12 @@
   ;<  ok=?  bind:m  ensure-me:om
   ?.  ok  (pure:m (fail:om 'orrery: peek refused'))
   =/  q=@t  (fall (arg:om args.st 'q') '')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json:om / %'schema.json')
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
-  =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    (turn all |=(l=loaded:orr [id.l body.l (fold:orr rows.l multi now)]))
   %-  pure:m
   %-  text:om
   :-  %a

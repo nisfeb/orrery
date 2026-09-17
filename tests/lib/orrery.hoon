@@ -342,11 +342,26 @@
     (expect-eq !>(`(list bid:orr)`~['situation/one']) !>((involved:orr 'person/sarah' sits)))
     (expect-eq !>(`(list bid:orr)`~) !>((involved:orr 'person/me' sits)))
   ==
+::  +none, +wn: a body with nothing folded, and one whose winners hold
+::  an attribute with the given values, the shape resolve takes
+::
+++  none  *(map @t (list row:orr))
+++  wn
+  |=  [attr=@t vs=(list @t)]
+  ^-  (map @t (list row:orr))
+  %-  ~(gas by *(map @t (list row:orr)))
+  ~[[attr (turn vs |=(v=@t ^-(row:orr (r 'x' (mk attr s+v t0)))))]]
+::  +marks: each hit as its body and how it matched
+::
+++  marks
+  |=  hits=(list [id=bid:orr =body:orr match=@tas])
+  ^-  (list [id=bid:orr match=@tas])
+  (turn hits |=(h=[id=bid:orr =body:orr match=@tas] ^-([id=bid:orr match=@tas] [id.h match.h])))
 ++  test-resolve
-  =/  bodies=(list [id=bid:orr =body:orr])
-    :~  ['person/sarah' [%person 'Sarah' (sy ~['wife']) t0 `~sampel-palnet]]
-        ['place/johns-machine-shop' [%place 'John\'s Machine Shop' (sy ~['John\'s' 'the shop']) t0 ~]]
-        ['thing/subaru' [%thing 'The Subaru' (sy ~['the car']) t0 ~]]
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    :~  ['person/sarah' [%person 'Sarah' (sy ~['wife']) t0 `~sampel-palnet] none]
+        ['place/johns-machine-shop' [%place 'John\'s Machine Shop' (sy ~['John\'s' 'the shop']) t0 ~] none]
+        ['thing/subaru' [%thing 'The Subaru' (sy ~['the car']) t0 ~] none]
     ==
   =/  ids
     |=  q=@t
@@ -360,6 +375,70 @@
     (expect-eq !>(`(list bid:orr)`~['person/sarah']) !>((ids '~sampel-palnet')))
     (expect-eq !>(`(list bid:orr)`~) !>((ids 'zzz')))
     (expect-eq !>(`(list bid:orr)`~) !>((ids '')))
+  ==
+::  an address or a number is an identity: a query equal to one is an
+::  exact hit, whether the attribute is single or multi valued
+::
+++  test-resolve-identity
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    :~  ['person/andrea' [%person 'Andrea' ~ t0 ~] (wn 'email' ~['Andrea.Egan@example.com'])]
+        ['person/bo' [%person 'Bo' ~ t0 ~] (wn 'phone' ~['+1 555 0100' '+1 555 0199'])]
+        ['person/cy' [%person 'Cy' ~ t0 ~] none]
+    ==
+  =/  hits  |=(q=@t ^-((list [id=bid:orr match=@tas]) (marks (resolve:orr q bodies))))
+  ;:  weld
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/andrea' %exact]]) !>((hits 'ANDREA.egan@example.com')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/bo' %exact]]) !>((hits '+1 555 0100')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/bo' %exact]]) !>((hits '+1 555 0199')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'nobody@example.com')))
+  ==
+::  a token hit: every word of the shorter side is in the longer, in
+::  either direction; a near miss is no hit; exact, then token, then
+::  prefix
+::
+++  test-resolve-tokens
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    :~  ['person/andrea' [%person 'Andrea' ~ t0 ~] none]
+        ['org/andrea-egan' [%org 'Andrea Egan' ~ t0 ~] none]
+        ['person/andrew' [%person 'Andrew Egan' ~ t0 ~] none]
+        ['person/andreasson' [%person 'Andreasson' ~ t0 ~] none]
+    ==
+  =/  hits  |=(q=@t ^-((list [id=bid:orr match=@tas]) (marks (resolve:orr q bodies))))
+  =/  one=(list [id=bid:orr match=@tas])
+    ~[['person/andrea' %exact] ['org/andrea-egan' %token] ['person/andreasson' %prefix]]
+  =/  two=(list [id=bid:orr match=@tas])
+    ~[['org/andrea-egan' %exact] ['person/andrea' %token]]
+  ;:  weld
+    (expect-eq !>(one) !>((hits 'andrea')))
+    (expect-eq !>(two) !>((hits 'Andrea Egan')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'egan andrews')))
+  ==
+::  ==  merge: the pure parts
+::
+::  +resubject keeps everything but the subject and the id
+::
+++  test-resubject
+  =/  o=obs:orr  (mk 'status' s+'open' t0)
+  =/  old=row:orr  (r (obs-id:orr o) o)
+  =/  new=row:orr  (resubject:orr old 'person/sarah')
+  ;:  weld
+    (expect-eq !>('person/sarah') !>(subject.obs.new))
+    (expect-eq !>((obs-id:orr obs.new)) !>(id.new))
+    (expect !>(!=(id.old id.new)))
+    (expect-eq !>(obs.old(subject 'person/sarah')) !>(obs.new))
+  ==
+::  +absorb unions the aliases and takes from's name as one more, and
+::  keeps into's name, ship and created
+::
+++  test-absorb
+  =/  into=body:orr  [%person 'Andrea' (sy ~['Andy']) t0 `~sampel-palnet]
+  =/  gone=body:orr  [%org 'Andrea Egan' (sy ~['AE']) (add t0 ~d1) ~]
+  =/  got=body:orr  (absorb:orr into gone)
+  ;:  weld
+    (expect-eq !>('Andrea') !>(name.got))
+    (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship.got))
+    (expect-eq !>(t0) !>(created.got))
+    (expect-eq !>((sy `(list @t)`~['Andy' 'AE' 'Andrea Egan'])) !>(aliases.got))
   ==
 ::  ==  actions, policy, encoders
 ::
@@ -569,9 +648,9 @@
 ::  an exact hit outranks a prefix hit on another body
 ::
 ++  test-resolve-exact-before-prefix
-  =/  bodies=(list [id=bid:orr =body:orr])
-    :~  ['person/sammy' [%person 'Sammy' ~ t0 ~]]
-        ['person/sam' [%person 'Sam' ~ t0 ~]]
+  =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
+    :~  ['person/sammy' [%person 'Sammy' ~ t0 ~] none]
+        ['person/sam' [%person 'Sam' ~ t0 ~] none]
     ==
   =/  hits  (resolve:orr 'sam' bodies)
   ;:  weld

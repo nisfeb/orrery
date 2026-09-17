@@ -30,7 +30,11 @@ A body carries `kind`, `name` (at most 200 bytes), `aliases` (a set of at most 3
 
 `person/me` is created on first load with the name `me`, the aliases `me` and `I`, and `ship` set to our own @p. The user or a client renames it.
 
-An upsert of an existing id replaces the name if one is given and unions the aliases. There is no merge of two bodies in v1: retract the observations on the duplicate and delete it.
+An upsert of an existing id replaces the name if one is given and unions the aliases.
+
+Resolve answers the bodies a phrase could mean, best match first, at most twenty. A query equal to a body's ship, to one of its names or aliases, or to a live value of its `email` or `phone` attribute is an `exact` hit: an address and a number are identity, not spelling. A query whose words are all among the words of a name or an alias, or a name or alias whose words are all among the query's, is a `token` hit: "andrea" finds "Andrea Egan" and "Andrea Egan" finds "Andrea", while "andrea" never finds "Andrew Egan". A name or alias that starts with the query is a `prefix` hit. Comparison is case-insensitive, and a word is a run of letters and digits.
+
+Two bodies that turn out to be one are folded with `POST /merge`, `{"from", "into"}`, owner only. Every observation on `from` is copied onto `into` with its own time, source and `seen`, its id recomputed from the new subject, and a copy already there is left alone. Every live observation anywhere whose value is `{"ref": from}` is retracted with the note `merged into <into>` and written again beside it as `{"ref": into}`. Every action whose `about` names `from` names `into` instead. The aliases union and `from`'s name joins them, while `into` keeps its name, ship and created stamp. Then `from` is deleted the way `DELETE /body` deletes it, share record and group included. `from` may not be `person/me` and the two may not be the same body; `into` may be anything, `person/me` included.
 
 ### Observations
 
@@ -104,6 +108,7 @@ The starter schema:
     "thing":     {"attrs": ["type", "status", "location", "owner", "make", "model", "plate", "last-service", "warranty-until"]},
     "org":       {"attrs": ["type", "phone", "email", "website", "contact", "address"]},
     "situation": {"attrs": ["status", "participants", "location", "started", "ended", "summary"]},
+    "activity":  {"attrs": ["status", "schedule", "cadence", "location", "participants", "organizer", "last", "next"]},
     "note":      {"attrs": ["text"]}
   },
   "multi": ["participants", "likes", "dislikes", "household", "vehicles", "children", "owners", "members", "aware-of"],
@@ -173,11 +178,12 @@ The owner cookie (eyre's `authenticated` flag and `src` equal to `our`), or a mi
 |---|---|
 | `GET /state?at=&kind=` | the state view |
 | `GET /body/<kind>/<slug>?at=` | one body with its timeline |
-| `GET /resolve?q=` | bodies whose name or alias matches, exact first then prefix, case-insensitive, at most 20 |
+| `GET /resolve?q=` | bodies a phrase could mean: exact on a ship, email, phone, name or alias, then token, then prefix, case-insensitive, at most 20 |
 | `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; per-item results |
 | `POST /retract` | `{"id", "note"}` |
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | cull the subtree. Refs to it elsewhere render as the bare id. Owner only |
+| `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`. Owner only |
 | `POST /act` | propose; answers `{"id", "status"}`, status `approved` when policy says so |
 | `GET /actions?status=open` | `open` by default, meaning proposed, approved and claimed; `all`; or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
