@@ -495,7 +495,7 @@ cmp code/lib/tools.hoon /home/sneagan/software/groundwire/grubbery/desk/gub/lib/
 
 - [ ] **Step 3: The eight tools**
 
-Every file starts the same way and differs in its core. `code/lib/tools/orrery-state.hoon`:
+Every file starts the same way and differs in its core. Every tool lays `person/me` first through `ensure-me:om`, as every HTTP route does through `ensure-me-from-request`, so a cold MCP-only instance answers the same views. `code/lib/tools/orrery-state.hoon`:
 
 ```hoon
 ::  orrery-state: the state view, as GET /apps/orrery/api/state gives it
@@ -520,6 +520,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ;<  ~  bind:m  ensure-me:om
   ;<  now=@da  bind:m  get-time:io
   =/  when=(unit @da)  (when-arg:om args.st now)
   ?~  when  (pure:m (fail:om 'at: expected an ISO 8601 UTC time'))
@@ -557,6 +558,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ;<  ~  bind:m  ensure-me:om
   =/  id=(unit @t)  (arg:om args.st 'id')
   ?~  id  (pure:m (fail:om 'id: required'))
   ?~  (parse-bid:orr u.id)  (pure:m (fail:om 'id: expected <kind>/<slug>'))
@@ -597,6 +599,7 @@ Every file starts the same way and differs in its core. `code/lib/tools/orrery-s
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ;<  ~  bind:m  ensure-me:om
   =/  q=@t  (fall (arg:om args.st 'q') '')
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
   =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))
