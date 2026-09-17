@@ -626,17 +626,65 @@
   (scag 20 (weld exact pref))
 ::  ==  actions
 ::
-++  is-open  |=(a=action ^-(? |(=(%proposed status.a) =(%approved status.a))))
-::  +transition-ok: proposed to approved or dismissed; approved to done,
-::  failed or dismissed. Nothing leaves done, failed or dismissed.
+++  is-open
+  |=  a=action
+  ^-  ?
+  |(=(%proposed status.a) =(%approved status.a) =(%claimed status.a))
+::  +transition-ok: proposed to approved or dismissed; approved to
+::  claimed, done, failed or dismissed; claimed to done, failed,
+::  dismissed or claimed again. Nothing leaves done, failed or dismissed.
 ::
 ++  transition-ok
   |=  [cur=@tas want=@tas]
   ^-  ?
   ?+  cur  |
     %proposed  |(=(%approved want) =(%dismissed want))
-    %approved  |(=(%done want) =(%failed want) =(%dismissed want))
+    %approved  |(=(%claimed want) =(%done want) =(%failed want) =(%dismissed want))
+    %claimed   |(=(%claimed want) =(%done want) =(%failed want) =(%dismissed want))
   ==
+::  +claim-lease: how long one actor's claim holds an action
+::
+++  claim-lease  ~m10
+::  +claimant: the by of the last claimed step, '' when there is none
+::
+++  claimant
+  |=  a=action
+  ^-  @t
+  =/  back=(list step)  (flop history.a)
+  |-  ^-  @t
+  ?~  back  ''
+  ?:  =(%claimed status.i.back)  by.i.back
+  $(back t.back)
+::  +claimed-at: when the last claimed step was taken, or proposed when
+::  there is none
+::
+++  claimed-at
+  |=  a=action
+  ^-  @da
+  =/  back=(list step)  (flop history.a)
+  |-  ^-  @da
+  ?~  back  proposed.a
+  ?:  =(%claimed status.i.back)  at.i.back
+  $(back t.back)
+::  +move-refusal: why this actor cannot move this action now, or ~.
+::  The table first, then the claim: while the lease is live the action
+::  is held against another actor, and done or failed is the claimant's
+::  to report. A clock earlier than the claim is inside the lease.
+::
+++  move-refusal
+  |=  [a=action want=@tas who=@t now=@da]
+  ^-  (unit @t)
+  ?.  (transition-ok status.a want)
+    =/  no=@t  (rap 3 'cannot go from ' status.a ' to ' want ~)
+    `no
+  ?.  =(%claimed status.a)  ~
+  =/  hold=@t  (claimant a)
+  =/  at=@da  (claimed-at a)
+  =/  live=?  |((lte now at) (lth (sub now at) claim-lease))
+  =/  no=@t  (rap 3 'claimed by ' hold ~)
+  ?:  =(%claimed want)  ?:(live `no ~)
+  ?.  |(=(%done want) =(%failed want))  ~
+  ?:(=(who hold) ~ `no)
 ++  initial-status
   |=  [kind=@tas auto=(set @t)]
   ^-  @tas

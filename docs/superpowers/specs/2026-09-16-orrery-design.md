@@ -66,11 +66,11 @@ Retraction sets `status` to `retracted` with a note. The grub stays. Superseded 
 | `due` | time or null | optional |
 | `by` | string | who proposed it |
 | `proposed` | time | set by the ship |
-| `status` | enum | `proposed`, `approved`, `done`, `dismissed`, `failed` |
+| `status` | enum | `proposed`, `approved`, `claimed`, `done`, `dismissed`, `failed` |
 | `note` | string | why it was dismissed or failed, at most 500 bytes |
 | `history` | list of `{at, status, by}` | every status the action has held, oldest first, with who set it: the proposer, `policy` for an automatic approval, the owner, or a client's identity |
 
-Transitions: proposed to approved or dismissed; approved to done, failed or dismissed. Failed is terminal in v1; propose again. Every transition appends to `history`, so the audit question "who approved this, and when" is answered by the action itself. Under the owner cookie the actor is whatever the request says, `user` by default; under a scoped client key (section 11) the actor is the key's identity and cannot be faked.
+Transitions: proposed to approved or dismissed; approved to claimed, done, failed or dismissed; claimed to done, failed, dismissed or claimed again. Failed is terminal in v1; propose again. An executor claims an approved action before it acts, which holds it for ten minutes against every other actor, so a re-claim inside the lease and a done or failed by anyone but the claimant are refused with `claimed by <claimant>`. Every transition appends to `history`, so the audit questions "who approved this, and when" and "who is acting on it" are answered by the action itself. Under the owner cookie the actor is whatever the request says, `user` by default; under a scoped client key (section 11) the actor is the key's identity and cannot be faked.
 
 A proposal whose `kind` and `title` match an open action (proposed or approved) returns the existing id instead of making a second one. Fuzzy duplicates are the analyst's job: it reads the open actions before proposing.
 

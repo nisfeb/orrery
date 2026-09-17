@@ -12,7 +12,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 
 - `kinds`: the body kinds the key may see. The state, body and resolve views omit every other body, and a body outside them answers exactly what a missing body answers. With `write`, the key may observe those bodies and create them.
 - The state view's `schema` is trimmed to those kinds, with the sensitive attribute names dropped from every `attrs` list and from `multi`, and the `actions` list cut to the key's action kinds. `GET /schema` stays the owner's.
-- `actions`: the action kinds the key may propose and list. With `write`, it may also approve, dismiss and complete them.
+- `actions`: the action kinds the key may propose and list. With `write`, it may also approve, dismiss, claim and complete them. A claim holds an action for ten minutes under the key identity, so another client that claims it or reports it done inside that lease is refused with `claimed by <identity>`.
 - `write`: false makes the key read-only: it cannot observe, create bodies, retract or transition an action. Proposing needs only the action kind, so a read-only key with `actions` can still file a proposal for the owner to approve. A proposal of a kind the policy auto-approves is approved on the spot, and one it does not auto-approve waits for the owner.
 - `by` on everything a key writes is the key's identity, whatever the payload said, so the audit trail names the client.
 - A key never sets a body's ship: identity is the owner's to assign.

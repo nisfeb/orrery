@@ -376,6 +376,58 @@
     (expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))
     (expect !>((~(has in (multi-of:orr starter-schema:orr)) 'participants')))
   ==
+::  +held: an action with a status and the history that led to it
+::
+++  held
+  |=  [status=@tas history=(list step:orr)]
+  ^-  action:orr
+  [%message 'tell sarah' ~ ~ ~ 'mcp' t0 status '' history]
+++  test-claim-transitions
+  =/  open=action:orr  (held %claimed ~[[t0 %proposed 'mcp'] [(add t0 ~m1) %claimed 'exec-a']])
+  =/  shut=action:orr  (held %done ~[[t0 %proposed 'mcp'] [(add t0 ~m1) %claimed 'exec-a'] [(add t0 ~m2) %done 'exec-a']])
+  ;:  weld
+    (expect !>((transition-ok:orr %approved %claimed)))
+    (expect !>((transition-ok:orr %claimed %done)))
+    (expect !>((transition-ok:orr %claimed %failed)))
+    (expect !>((transition-ok:orr %claimed %dismissed)))
+    (expect !>((transition-ok:orr %claimed %claimed)))
+    (expect !>(!(transition-ok:orr %claimed %approved)))
+    (expect !>(!(transition-ok:orr %proposed %claimed)))
+    (expect !>(!(transition-ok:orr %done %claimed)))
+    (expect !>((is-open:orr open)))
+    (expect !>(!(is-open:orr shut)))
+  ==
+++  test-claimant
+  =/  twice=action:orr
+    %+  held  %claimed
+    :~  [t0 %proposed 'mcp']
+        [(add t0 ~s1) %approved 'user']
+        [(add t0 ~m1) %claimed 'exec-a']
+        [(add t0 ~m20) %claimed 'exec-b']
+    ==
+  =/  never=action:orr  (held %approved ~[[t0 %proposed 'mcp'] [(add t0 ~s1) %approved 'user']])
+  ;:  weld
+    (expect-eq !>('exec-b') !>((claimant:orr twice)))
+    (expect-eq !>(`@da`(add t0 ~m20)) !>((claimed-at:orr twice)))
+    (expect-eq !>('') !>((claimant:orr never)))
+    (expect-eq !>(t0) !>((claimed-at:orr never)))
+  ==
+++  test-move-refusal
+  =/  at=@da  (add t0 ~m1)
+  =/  soon=@da  (add at ~m1)
+  =/  late=@da  (add at ~m11)
+  =/  mine=action:orr  (held %claimed ~[[t0 %proposed 'mcp'] [at %claimed 'exec-a']])
+  ;:  weld
+    (expect-eq !>(`(unit @t)`[~ 'claimed by exec-a']) !>((move-refusal:orr mine %claimed 'exec-b' soon)))
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr mine %claimed 'exec-b' late)))
+    (expect-eq !>(`(unit @t)`[~ 'claimed by exec-a']) !>((move-refusal:orr mine %done 'user' soon)))
+    (expect-eq !>(`(unit @t)`[~ 'claimed by exec-a']) !>((move-refusal:orr mine %failed 'exec-b' soon)))
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr mine %done 'exec-a' soon)))
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr mine %dismissed 'user' soon)))
+    (expect-eq !>(`(unit @t)`[~ 'claimed by exec-a']) !>((move-refusal:orr mine %claimed 'exec-b' t0)))
+    (expect-eq !>(`(unit @t)`[~ 'cannot go from claimed to approved']) !>((move-refusal:orr mine %approved 'user' soon)))
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr (held %approved ~[[t0 %proposed 'mcp']]) %claimed 'exec-a' soon)))
+  ==
 ++  test-encoders-roundtrip
   =/  j=json  (en-obs:orr (r 'x' o1) %live)
   =/  back  (de-obs:orr j t0 'http')

@@ -126,7 +126,7 @@ post observe '{
 
 ### Actions
 
-An action is something to do. An assistant proposes it, and it moves through proposed, approved, done, dismissed or failed.
+An action is something to do. An assistant proposes it, and it moves through proposed, approved, claimed, done, dismissed or failed.
 
 ```bash
 post act '{"kind": "task", "title": "Ask Sarah about the move to Porto",
@@ -140,11 +140,15 @@ post act '{"kind": "task", "title": "Ask Sarah about the move to Porto",
 It is `approved` at once because the starter policy auto-approves tasks and notes. A `message` or a `calendar` action answers `proposed` and waits for you. Proposing the same kind and title again answers the existing id instead of making a second one.
 
 ```bash
-curl -s -b jar "$API/actions?status=open"                  # proposed and approved, the todo list
+curl -s -b jar "$API/actions?status=open"                  # proposed, approved and claimed, the todo list
 post actions/1758110400-9c2e41aa '{"status": "done"}'      # or dismissed, or failed with a note
 ```
 
-Every action carries its history: who proposed it, who approved it (you, or `policy`), and when. The audit question is answered by the action itself.
+An executor claims an approved action before it acts, with `{"status": "claimed", "by": "telegram"}`, and the claim holds it for ten minutes.
+
+A second executor's claim inside that lease is refused with `claimed by telegram`, only the claimant reports done or failed, and you unstick a claimed action by dismissing it.
+
+Every action carries its history: who proposed it, who approved it (you, or `policy`), who claimed it, and when. The audit question is answered by the action itself.
 
 ### Where facts come from
 
@@ -258,7 +262,7 @@ Everything orrery stores is one of three shapes; everything else is a directory 
 
 - A **body** is something that exists: a person, a place, a thing, an org, a situation or a note. Its id is `<kind>/<slug>`, and it carries a name, aliases, when it was created and, when it has one, its @p.
 - An **observation** is one immutable claim about one body: `subject.attr = value`, with `at` (when it became true), `until`, `conf`, `source`, `by` and `seen` (when the ship recorded it). Its only mutable parts are the retracted flag and its note.
-- An **action** is something to do: a task or a note the ship holds, or a client-executed kind such as a message. It carries `kind`, `title`, `payload`, `about`, `due`, `by`, `proposed`, `status`, `note` and its `history`.
+- An **action** is something to do: a task or a note the ship holds, or a client-executed kind such as a message, claimed by its executor before it acts. It carries `kind`, `title`, `payload`, `about`, `due`, `by`, `proposed`, `status`, `note` and its `history`.
 
 Body kinds, attribute names, action kinds and source kinds are all open strings and values are JSON, so a new kind of fact never needs a migration.
 
@@ -288,7 +292,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
-| `GET /actions?status=` | `open` by default (proposed and approved), `all`, or one status |
+| `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
 | `GET` and `PUT /schema`, `/policy` | the whole document; owner only |
 | `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only |

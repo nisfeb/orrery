@@ -891,9 +891,9 @@
   ?.  ?=([%file *] cur)  (refuse 'set-action' (cat 3 'no action ' id))
   =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
   ?~  a  (refuse 'set-action' 'unreadable action')
-  ?.  (transition-ok:orr status.u.a `@tas`want)
-    (refuse 'set-action' (rap 3 'cannot go from ' status.u.a ' to ' want ~))
   ;<  now=@da  bind:m  get-time:io
+  =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
+  ?^  no  (refuse 'set-action' u.no)
   =/  next=action:orr  (transition:orr u.a `@tas`want who why now)
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
   ;<  ~  bind:m  (note-by 'set-action' & '' who)
@@ -1171,11 +1171,14 @@
   ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
     (send-err eyre-id 404 'no such action')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
-  ?.  (transition-ok:orr status.u.a `@tas`want)
-    (send-err eyre-id 409 (rap 3 'cannot go from ' status.u.a ' to ' want ~))
+  =/  said=@t  ?:(owner.act (gs:orr jon 'by') by.act)
+  =/  who=@t  ?:(=('' said) 'user' said)
+  ;<  now=@da  bind:m  get-time:io
+  =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
+  ?^  no  (send-err eyre-id 409 u.no)
   =/  op=json
     %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+?:(owner.act (gs:orr jon 'by') by.act)]]
+    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))

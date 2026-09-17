@@ -18,7 +18,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 | `orrery_observe` | `bodies`, `observations`, `by` | one result per item, with the observation id and whether it existed |
 | `orrery_retract` | `id`, `note`, `by` | ok |
 | `orrery_act` | `kind`, `title`, `payload`, `about`, `due`, `proposed`, `by` | the action id and its status, or the open twin |
-| `orrery_actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition |
+| `orrery_actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition; a `claimed` move holds the action for ten minutes under the actor in `by`, `mcp` by default |
 | `orrery_schema` | `schema` | the schema, or ok after replacing it |
 
 `by` defaults to `mcp`. In an observe batch it is per item: an observation's own `by` wins over the batch's, and either is refused over 64 bytes.

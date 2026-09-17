@@ -12,7 +12,7 @@
 |%
 ++  name  'orrery_actions'
 ++  description
-  'Without an id: list actions, newest first, by status ("open" for proposed and approved, the default; "all"; or one status). With an id and a status: move that action to approved, dismissed, done or failed, with an optional note.'
+  'Without an id: list actions, newest first, by status ("open" for proposed, approved and claimed, the default; "all"; or one status). With an id and a status: move that action to approved, claimed, dismissed, done or failed, with an optional note. A claim holds an approved action for ten minutes, so only the actor that claimed it reports done or failed.'
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))
@@ -57,8 +57,9 @@
   ?:  (gth (met 3 who) max-by:orr)  (pure:m (fail:om 'by: over 64 bytes'))
   ;<  a=(unit action:orr)  bind:m  (read-action-at:om `@ta`id)
   ?~  a  (pure:m (fail:om 'no such action'))
-  ?.  (transition-ok:orr status.u.a `@tas`want)
-    (pure:m (fail:om (rap 3 'cannot go from ' status.u.a ' to ' want ~)))
+  ;<  now=@da  bind:m  get-time:io
+  =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
+  ?^  no  (pure:m (fail:om u.no))
   =/  op=json
     %-  pairs:enjs:format
     ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]

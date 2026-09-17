@@ -188,6 +188,16 @@ ok, d = call('orrery-actions', {'id': task_id, 'status': 'approved'})
 check('a transition out of a terminal state is an error', not ok and 'cannot go' in str(d), d)
 ok, d = call('orrery-actions', {'id': 'nope', 'status': 'done'})
 check('an unknown action is an error', not ok, d)
+ok, d = call('orrery-act', {'kind': 'task', 'title': 'mcp gate: claim before doing', 'by': 'mcp-gate'})
+claim_id = str(dictish(d).get('id', ''))
+ok, d = call('orrery-actions', {'id': claim_id, 'status': 'claimed'})
+check('the tool claims an approved action', ok and dictish(d).get('status') == 'claimed', d)
+ok, d = call('orrery-actions', {'id': claim_id, 'status': 'done', 'note': 'mcp gate'})
+check('the claimant completes it through the tool', ok and dictish(d).get('status') == 'done', d)
+code, hd = http('GET', '/actions?status=done')
+row = [x for x in listish(hd) if isinstance(x, dict) and x.get('id') == claim_id]
+check('the HTTP history shows the claim by the default actor', code == 200 and len(row) == 1
+      and any(dictish(h).get('status') == 'claimed' and dictish(h).get('by') == 'mcp' for h in listish(dictish(row[0]).get('history'))), row)
 
 print('== retract')
 ok, d = call('orrery-retract', {'id': obs_id, 'note': 'mcp gate', 'by': 'mcp-gate'})

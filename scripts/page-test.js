@@ -32,6 +32,11 @@ const view = {
 const inbox = [
   { id: 'p1', kind: 'message', title: 'Tell Sarah the car is at the shop', status: 'proposed', proposed: '2026-09-17T02:11:00Z', by: 'mcp', about: ['person/sarah'], history: [] },
   { id: 'a1', kind: 'task', title: 'Call the shop', status: 'approved', proposed: '2026-09-17T02:10:00Z', by: 'mcp', about: ['thing/subaru'], history: [] },
+  { id: 'c1', kind: 'message', title: 'Tell John the car is ready', status: 'claimed', proposed: '2026-09-17T02:12:00Z', by: 'mcp', about: [], history: [
+    { at: '2026-09-17T02:12:00Z', status: 'proposed', by: 'mcp' },
+    { at: '2026-09-17T02:13:00Z', status: 'approved', by: 'user' },
+    { at: '2026-09-17T02:14:00Z', status: 'claimed', by: 'telegram' },
+  ] },
 ];
 
 let n = 0;
@@ -55,6 +60,7 @@ ok('involved and actions are listed', body.includes('situation/2026-09-16-breakd
 const inboxHtml = render.inbox(inbox);
 ok('a proposed action offers approve and dismiss', inboxHtml.includes('data-move="p1:approved"') && inboxHtml.includes('data-move="p1:dismissed"') && !inboxHtml.includes('data-move="p1:done"'));
 ok('an approved action offers done, failed and dismiss', inboxHtml.includes('data-move="a1:done"') && inboxHtml.includes('data-move="a1:failed"') && inboxHtml.includes('data-move="a1:dismissed"') && !inboxHtml.includes('data-move="a1:approved"'));
+ok('a claimed action names its claimant and offers only dismiss', inboxHtml.includes('claimed by telegram') && inboxHtml.includes('data-move="c1:dismissed"') && !inboxHtml.includes('data-move="c1:done"') && !inboxHtml.includes('data-move="c1:claimed"'));
 ok('about ids link to bodies', inboxHtml.includes('href="#body/person/sarah"'));
 ok('an empty inbox says so', render.inbox([]).includes('Nothing waiting'));
 

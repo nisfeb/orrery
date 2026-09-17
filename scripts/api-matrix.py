@@ -243,6 +243,32 @@ check('the subaru view lists the open task', code == 200 and isinstance(bs, dict
       and any(dictish(x).get('id') == AID for x in bs.get('actions', [])), bs.get('actions') if code == 200 else bs)
 code, a3 = curl('POST', API + '/act', {'kind': 'message', 'title': MSG, 'by': 'api-matrix'})
 check('a message waits for a human', code == 200 and dictish(a3).get('status') == 'proposed', (code, a3))
+MID = dictish(a3).get('id', '') if code == 200 else ''
+code, d = curl('POST', API + f'/actions/{MID}', {'status': 'approved'})
+check('the owner approves the message', code == 200, (code, d))
+code, d = curl('POST', API + f'/actions/{MID}', {'status': 'claimed', 'by': 'exec-a'})
+check('an executor claims the approved message', code == 200 and dictish(d).get('status') == 'claimed', (code, d))
+code, acts = curl('GET', API + '/actions?status=open')
+check('a claimed action is still open', code == 200 and any(dictish(x).get('id') == MID for x in (acts if isinstance(acts, list) else [])), acts)
+code, acts = curl('GET', API + '/actions?status=approved')
+check('a claimed action has left the approved list', code == 200
+      and not any(dictish(x).get('id') == MID for x in (acts if isinstance(acts, list) else [])), acts)
+code, d = curl('POST', API + f'/actions/{MID}', {'status': 'claimed', 'by': 'exec-b'})
+check('a second claim inside the lease is 409 naming the claimant',
+      code == 409 and dictish(d).get('error') == 'claimed by exec-a', (code, d))
+code, d = curl('POST', API + f'/actions/{MID}', {'status': 'done', 'by': 'exec-b'})
+check('done by another actor is 409 naming the claimant',
+      code == 409 and dictish(d).get('error') == 'claimed by exec-a', (code, d))
+code, d = curl('POST', API + '/act', {'kind': 'message', 'title': MSG, 'by': 'api-matrix'})
+check('a proposal matching a claimed action answers the existing id',
+      code == 200 and dictish(d).get('id') == MID and dictish(d).get('existing'), (code, d))
+code, d = curl('POST', API + f'/actions/{MID}', {'status': 'done', 'by': 'exec-a'})
+check('the claimant reports done', code == 200 and dictish(d).get('status') == 'done', (code, d))
+code, acts = curl('GET', API + '/actions?status=done')
+msg = [x for x in acts if isinstance(x, dict) and x.get('id') == MID] if isinstance(acts, list) else []
+hist = [(h.get('status'), h.get('by')) for h in dictish(msg[0] if msg else {}).get('history', [])]
+check('the history reads proposed, approved, claimed and done',
+      hist == [('proposed', 'api-matrix'), ('approved', 'user'), ('claimed', 'exec-a'), ('done', 'exec-a')], hist)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the audit log holds the push', code == 200 and isinstance(log, list)
       and any(dictish(x).get('op') == 'push' for x in log), log[-3:] if isinstance(log, list) else log)

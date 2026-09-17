@@ -91,13 +91,21 @@
     return out;
   }
 
-  var MOVES = { proposed: ['approved', 'dismissed'], approved: ['done', 'failed', 'dismissed'] };
+  var MOVES = { proposed: ['approved', 'dismissed'], approved: ['done', 'failed', 'dismissed'], claimed: ['dismissed'] };
+  // the claimant is the by of the last claimed step in the history
+  function claimant(a) {
+    var who = '';
+    ((a && a.history) || []).forEach(function (h) { if (h && h.status === 'claimed') who = h.by || ''; });
+    return who;
+  }
   function inbox(actions) {
     var out = '<h1>Inbox</h1>';
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
     out += '<ul class="actions">';
     actions.forEach(function (a) {
-      out += '<li class="card">' + badge(a.status) + ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
+      out += '<li class="card">' + badge(a.status) +
+        (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
+        ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + esc(a.by || '') + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' +
         (a.about && a.about.length ? '<div>about ' + links(a.about) + '</div>' : '') + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
