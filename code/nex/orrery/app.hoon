@@ -1132,8 +1132,8 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['id' s+(act-id:orr a)] ['status' s+status.a] ['existing' b+|]])
-::  +serve-actions: ?status=open (the default: proposed and approved),
-::  all, or one status; newest first
+::  +serve-actions: ?status=open (the default: proposed, approved and
+::  claimed), all, or one status; newest first
 ::
 ++  serve-actions
   |=  [eyre-id=@ta args=quay:eyre act=actor]
@@ -1181,7 +1181,8 @@
     ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
-  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))
+  %^  send-json  eyre-id  200
+  (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['by' s+who] ['ok' b+&]])
 ::  +serve-doc: schema.json or policy.json, as stored
 ::
 ++  serve-doc

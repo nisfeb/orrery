@@ -148,6 +148,10 @@ An executor claims an approved action before it acts, with `{"status": "claimed"
 
 A second executor's claim inside that lease is refused with `claimed by telegram`, only the claimant reports done or failed, and you unstick a claimed action by dismissing it.
 
+The answer to a move carries the `by` the ship will store, and it comes back before the writer has applied the move, so an executor confirms its claim by reading the action back and acts only when the last claimed step names it.
+
+Two claims fired in the same instant both answer ok; the writer keeps the first, and the second executor learns it lost when it reads the action back.
+
 Every action carries its history: who proposed it, who approved it (you, or `policy`), who claimed it, and when. The audit question is answered by the action itself.
 
 ### Where facts come from

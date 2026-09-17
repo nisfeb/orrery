@@ -16,7 +16,7 @@ Everything orrery stores is one of three shapes. Everything else is a directory 
 
 - A **body** is something that exists: a person, a place, a thing, an org, a situation, or a note. It has a stable id, a kind, a name, aliases and, when it is a person or a thing with a ship, an @p. The user is the body `person/me`.
 - An **observation** is one claim about one body: `subject.attr = value`, with when it became true, when it is expected to stop being true, how confident the asserter was, where it came from, and who asserted it. Observations are immutable. Current state is a fold over them.
-- An **action** is something to do: a task, a note to the user, or a client-executed kind such as a message. It moves through proposed, approved, done, dismissed, failed. Tasks are actions, so the todo list is "approved tasks not yet done".
+- An **action** is something to do: a task, a note to the user, or a client-executed kind such as a message. It moves through proposed, approved, claimed, done, dismissed, failed. Tasks are actions, so the todo list is "approved tasks not yet done".
 
 Extension points are deliberate and few: body kinds, attribute names, action kinds and source kinds are all open strings, and values are JSON. Adding a new kind of fact never changes a type, a marc, or a migration.
 
@@ -70,9 +70,9 @@ Retraction sets `status` to `retracted` with a note. The grub stays. Superseded 
 | `note` | string | why it was dismissed or failed, at most 500 bytes |
 | `history` | list of `{at, status, by}` | every status the action has held, oldest first, with who set it: the proposer, `policy` for an automatic approval, the owner, or a client's identity |
 
-Transitions: proposed to approved or dismissed; approved to claimed, done, failed or dismissed; claimed to done, failed, dismissed or claimed again. Failed is terminal in v1; propose again. An executor claims an approved action before it acts, which holds it for ten minutes against every other actor, so a re-claim inside the lease and a done or failed by anyone but the claimant are refused with `claimed by <claimant>`. Every transition appends to `history`, so the audit questions "who approved this, and when" and "who is acting on it" are answered by the action itself. Under the owner cookie the actor is whatever the request says, `user` by default; under a scoped client key (section 11) the actor is the key's identity and cannot be faked.
+Transitions: proposed to approved or dismissed; approved to claimed, done, failed or dismissed; claimed to done, failed, dismissed or claimed again. Failed is terminal in v1; propose again. An executor claims an approved action before it acts, which holds it for ten minutes against every other actor, so a re-claim inside the lease and a done or failed by anyone but the claimant are refused with `claimed by <claimant>`. A move answers before the writer applies it and carries the `by` it will store, so an executor confirms a claim by reading the action back and acts only when the last claimed step names it; two claims in the same instant both answer ok and the writer keeps the first. Every transition appends to `history`, so the audit questions "who approved this, and when" and "who is acting on it" are answered by the action itself. Under the owner cookie the actor is whatever the request says, `user` by default; under a scoped client key (section 11) the actor is the key's identity and cannot be faked.
 
-A proposal whose `kind` and `title` match an open action (proposed or approved) returns the existing id instead of making a second one. Fuzzy duplicates are the analyst's job: it reads the open actions before proposing.
+A proposal whose `kind` and `title` match an open action (proposed, approved or claimed) returns the existing id instead of making a second one. Fuzzy duplicates are the analyst's job: it reads the open actions before proposing.
 
 `policy.json` names the kinds that are approved the moment they are proposed. With `{"auto": ["task", "note"]}` the assistant adding a todo item is one write and no question. Everything not listed waits in the inbox.
 
@@ -179,7 +179,7 @@ The owner cookie (eyre's `authenticated` flag and `src` equal to `our`), or a mi
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | cull the subtree. Refs to it elsewhere render as the bare id. Owner only |
 | `POST /act` | propose; answers `{"id", "status"}`, status `approved` when policy says so |
-| `GET /actions?status=open` | `open` by default, meaning proposed and approved; `all`; or one status |
+| `GET /actions?status=open` | `open` by default, meaning proposed, approved and claimed; `all`; or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
 | `GET` and `PUT /schema`, `/policy` | the whole document. Owner only |
 | `POST /clients` | mint a key; answers the row and the token once. Owner only |

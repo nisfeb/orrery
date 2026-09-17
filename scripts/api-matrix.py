@@ -4,7 +4,7 @@ The HTTP gate for orrery: spec section 8, the stranded car, against a
 fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
 retracts and dismisses what an earlier run left."""
-import json, subprocess, sys
+import json, subprocess, sys, threading
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
@@ -48,6 +48,7 @@ SIT = 'situation/' + T0.strftime('%Y-%m-%d') + '-breakdown'
 SHOP = 'place/johns-machine-shop'
 TITLE = "Call John's Machine Shop about the Subaru"
 MSG = "Tell Sarah the car is at John's"
+RACE = "Tell Sarah the tow is booked"
 USER = {'kind': 'user', 'id': 'matrix-setup'}
 
 
@@ -121,7 +122,7 @@ for o in dictish(me).get('observations', []):
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
 code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
-    if a['title'] in (TITLE, MSG):
+    if a['title'] in (TITLE, MSG, RACE):
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
@@ -248,6 +249,7 @@ code, d = curl('POST', API + f'/actions/{MID}', {'status': 'approved'})
 check('the owner approves the message', code == 200, (code, d))
 code, d = curl('POST', API + f'/actions/{MID}', {'status': 'claimed', 'by': 'exec-a'})
 check('an executor claims the approved message', code == 200 and dictish(d).get('status') == 'claimed', (code, d))
+check('the claim answer carries the by the ship stores', dictish(d).get('by') == 'exec-a', (code, d))
 code, acts = curl('GET', API + '/actions?status=open')
 check('a claimed action is still open', code == 200 and any(dictish(x).get('id') == MID for x in (acts if isinstance(acts, list) else [])), acts)
 code, acts = curl('GET', API + '/actions?status=approved')
@@ -269,6 +271,35 @@ msg = [x for x in acts if isinstance(x, dict) and x.get('id') == MID] if isinsta
 hist = [(h.get('status'), h.get('by')) for h in dictish(msg[0] if msg else {}).get('history', [])]
 check('the history reads proposed, approved, claimed and done',
       hist == [('proposed', 'api-matrix'), ('approved', 'user'), ('claimed', 'exec-a'), ('done', 'exec-a')], hist)
+#  the route answers before the writer applies, so two claims in one
+#  instant can both hear ok; the writer keeps the first and the history
+#  is the proof
+code, r = curl('POST', API + '/act', {'kind': 'message', 'title': RACE, 'by': 'api-matrix'})
+RID = dictish(r).get('id', '') if code == 200 else ''
+code, d = curl('POST', API + f'/actions/{RID}', {'status': 'approved'})
+check('the race message is proposed and approved', bool(RID) and code == 200, (code, r, d))
+answers = {}
+
+
+def claim_as(who):
+    answers[who] = curl('POST', API + f'/actions/{RID}', {'status': 'claimed', 'by': who})
+
+
+racers = [threading.Thread(target=claim_as, args=(w,)) for w in ('exec-x', 'exec-y')]
+for t in racers:
+    t.start()
+for t in racers:
+    t.join()
+code, acts = curl('GET', API + '/actions?status=open')
+race_row = [x for x in acts if isinstance(x, dict) and x.get('id') == RID] if isinstance(acts, list) else []
+steps = [h for h in dictish(race_row[0] if race_row else {}).get('history', []) if dictish(h).get('status') == 'claimed']
+check('two claims at once leave one claimed step, by one of the two',
+      len(steps) == 1 and dictish(steps[0]).get('by') in ('exec-x', 'exec-y'), (answers, steps))
+winner = str(dictish(steps[0]).get('by')) if len(steps) == 1 else ''
+loser = 'exec-y' if winner == 'exec-x' else 'exec-x'
+code, d = curl('POST', API + f'/actions/{RID}', {'status': 'done', 'by': loser})
+check('the actor that lost the race cannot report done',
+      code == 409 and dictish(d).get('error') == 'claimed by ' + winner, (code, d, winner))
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the audit log holds the push', code == 200 and isinstance(log, list)
       and any(dictish(x).get('op') == 'push' for x in log), log[-3:] if isinstance(log, list) else log)

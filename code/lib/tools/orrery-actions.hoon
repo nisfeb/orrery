@@ -65,5 +65,7 @@
     ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]
   ;<  err=(unit tang)  bind:m  (poke-writer:om op)
   ?^  err  (pure:m (fail:om 'the writer refused the poke'))
-  (pure:m (text:om (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]])))
+  =/  ans=json
+    (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['by' s+who] ['ok' b+&]])
+  (pure:m (text:om ans))
 --
