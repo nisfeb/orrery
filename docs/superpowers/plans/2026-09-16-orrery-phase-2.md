@@ -298,19 +298,18 @@ Replace `+weir-json` with:
           (line '/sys/eyre/' 'bind /apps/orrery and answer requests')
           (line '/sys/push/' 'notify you when the assistant proposes or files an action. Refuse this and proposals wait silently in the inbox')
           (line '/sys/gall/' 'tell another ship you shared a body with it, revoke that, and send it your observations on a body it shared with you in edit mode. Refuse this and sharing with ships is unavailable; everything else works')
-          (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds')
-          (line '/sys/ames/registry' 'let the ships you share a body with read it. Refuse this and sharing with ships is unavailable')
-          (line '/sys/ames/usergroups/' 'keep one group per shared body: the ships that may read it')
+          (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
+          (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
       ==
       :-  'peek'
       :-  %a
       :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer and an offer can say where to read')
-          (line '/sys/ames/usergroups/' 'see which ships a body is shared with')
+          (line '/sys/ames/usergroups/' 'read a share group before rewriting it')
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
       ==
       :-  'make'
       :-  %a
-      :~  (line '/sys/ames/usergroups/' 'make the group for a body the first time it is shared')
+      :~  (line '/sys/ames/usergroups/' 'make and rewrite the group for a shared body: the ships that may read it')
       ==
   ==
 ```
@@ -805,14 +804,14 @@ In `+handle-request`, after the `s3` line add `=/  s4=@ta  ?:(?=([@ @ @ @ @ *] s
 The fast loop on wex (`W`, `/tmp/wex.cookies`) and on feb (`F`, `/tmp/feb.cookies`): create each new marc file (`create-file` on `$D/code/mar`, and `$D/code/mar/usergroups` after a `create-folder` with `foldername=usergroups` on `$D/code/mar`), write every new or changed file, reload, bang `None` on both. Then approve the grown ask on both, since the shell replaces the weir with exactly what is granted:
 
 ```bash
-GR='{"poke":["/sys/bowl.sig","/sys/eyre/","/sys/push/","/sys/gall/","/sys/behn/","/sys/ames/registry","/sys/ames/usergroups/"],"peek":["/sys/link/","/sys/ames/usergroups/","/sys/ames/ships/"],"make":["/sys/ames/usergroups/"]}'
+GR='{"poke":["/sys/bowl.sig","/sys/eyre/","/sys/push/","/sys/gall/","/sys/behn/","/sys/ames/registry"],"peek":["/sys/link/","/sys/ames/usergroups/","/sys/ames/ships/"],"make":["/sys/ames/usergroups/"]}'
 for pair in "$W $CK" "$F $FK"; do set -- $pair
   curl -s -b $2 -X POST -H 'content-type: application/json' -d "{\"action\":\"approve-weir\",\"app\":\"$APP\",\"granted\":$GR}" $1/apps/grubbery/permits
   curl -s -b $2 -X POST -H 'content-type: application/json' -d "{\"app\":\"$APP\"}" $1/apps/grubbery/permits/reload
 done
 sleep 20
 curl -s -b $CK "$W/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["bang"], d["weir"])'
-# expected on both: None, and a weir listing the eleven roads
+# expected on both: None, and a weir listing the ten roads
 ```
 
 - [ ] **Step 7: Smoke the offer path by hand**
@@ -1459,7 +1458,7 @@ A body and its observations can be shared with another ship: read mode mirrors w
 
 ## What to know
 
-- The ask grows by poke on `/sys/gall/`, `/sys/behn/`, `/sys/ames/registry` and `/sys/ames/usergroups/`, peek on `/sys/ames/usergroups/` and `/sys/ames/ships/`, make on `/sys/ames/usergroups/`. Refuse them and everything else keeps working; sharing is off.
+- The ask grows by poke on `/sys/gall/`, `/sys/behn/` and `/sys/ames/registry`, peek on `/sys/ames/usergroups/` and `/sys/ames/ships/`, make on `/sys/ames/usergroups/`. Refuse them and everything else keeps working; sharing is off.
 - `{"ref"}` values travel verbatim. They name bodies on the ship that observed them. One that names the receiving body itself is refused by the writer and noted in the audit log.
 - The name, aliases and ship of a shared body are copied once, at accept. Later changes to them do not follow; observations do.
 - Every accepted row carries `last` (the last attempt, successful or not) and `error` (empty, or why the host could not be read or would not take the edits). In edit mode the host's acknowledgement means it received the rows, not that it kept them: rows sent after the host narrowed the share are dropped there and noted in its audit log.
@@ -1491,7 +1490,7 @@ sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/de
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 4}; feb polls wex, allow up to five minutes
 for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
-#   None [('poke', 7), ('read', 3), ('write', 1)] on both (the info view names peek "read" and make "write"). A shorter weir means the sync replaced the consent: re-approve with Task 3 Step 6's granted object on that ship.
+#   None [('poke', 6), ('read', 3), ('write', 1)] on both (the info view names peek "read" and make "write"). A shorter weir means the sync replaced the consent: re-approve with Task 3 Step 6's granted object on that ship.
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 #   ALL OK, on the synced code
 ```

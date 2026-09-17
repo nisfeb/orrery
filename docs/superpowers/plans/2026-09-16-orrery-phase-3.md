@@ -1244,7 +1244,7 @@ sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/de
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 5}; feb polls wex, allow up to five minutes
 for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
-#   None [('poke', 7), ('read', 3), ('write', 1)] on both. A shorter weir means the sync replaced the consent: re-approve with phase 2's granted object on that ship.
+#   None [('poke', 6), ('read', 3), ('write', 1)] on both. A shorter weir means the sync replaced the consent: re-approve with phase 2's granted object on that ship.
 python3 scripts/key-matrix.py $W $CK
 python3 scripts/api-matrix.py $W $CK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
