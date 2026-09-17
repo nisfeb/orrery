@@ -111,6 +111,21 @@
           ?:  |(?=(~ src) =(our (fall src our)))  (pure:m ~)
           (take-inbox (fall src our) sage)
         $
+          ::  the follower: every five minutes, and whenever prodded (an
+          ::  accept, a sync request), pull every body another ship shared
+          ::  with us and push our own observations back on the ones shared
+          ::  in edit mode. A grant approved after the rise lands the inbox
+          ::  road here too.
+          [~ %'sync.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery sync: failed")
+        |-
+        ;<  ~  bind:m  lay-inbox-road
+        ;<  ~  bind:m  sync-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /tick (add now ~m5))
+        ;<  *  bind:m  take-poke-from:io
+        ;<  ~  bind:m  (cancel-timer:io /tick)
+        $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%orrery request: failed")
@@ -1166,7 +1181,7 @@
   ?:  =('offer' act)  (take-offer src key id jon)
   ?:  =('revoke' act)  (take-revoke src key)
   ?:  =('observe' act)  (take-edit src id jon)
-  (note-by 'inbox' | (cat 3 'unknown action ' act) (scot %p src))
+  (note-by 'inbox' | 'unknown action' (scot %p src))
 ::  +take-offer: a host offers a body. An offer for a share already
 ::  accepted only updates the row's mode: no second offer.
 ::
@@ -1176,11 +1191,15 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   =/  mode=@t  ?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')
+  =/  oship=@t  (gs:orr jon 'ship')
+  ?:  &(!=('' oship) ?=(~ (slaw %p oship)))  (note-by 'offer' | 'ship: expected an @p' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-by 'offer' | 'name: over 200 bytes' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-by 'offer' | 'base: over 200 bytes' (scot %p src))
   ;<  rows=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
   =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
   ?:  (~(has by rm) key)
     =/  row=json  (fall (~(get by rm) key) ~)
-    ?.  ?=([%o *] row)  (pure:m ~)
+    ?.  ?=([%o *] row)  (note-by 'offer' | 'accepted row unreadable' (scot %p src))
     =/  next=json  [%o (~(put by p.row) 'mode' s+mode)]
     ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
     (note-by 'offer' & 'mode updated' (scot %p src))
@@ -1226,12 +1245,15 @@
   ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
   =/  mode=@t  (gs:orr (gj:orr shares id) (scot %p src))
   ?.  =('edit' mode)  (note-by 'edit' | 'not shared in edit mode' (scot %p src))
+  =/  got=(list json)  (ga:orr jon 'observations')
+  ?:  (gth (lent got) max-obs:orr)  (note-by 'edit' | 'observations: over 200' (scot %p src))
   =/  rows=(list json)
-    %+  skim  (scag max-obs:orr (ga:orr jon 'observations'))
+    %+  skim  got
     |=(j=json &(?=([%o *] j) =(id (gs:orr j 'subject'))))
   ?~  rows  (note-by 'edit' | 'nothing about the shared body' (scot %p src))
   ;<  n=@ud  bind:m  (apply-carried 0 src `(list json)`rows)
-  (note-by 'edit' & (scot %ud n) (scot %p src))
+  =/  why=@t  (rap 3 (scot %ud (lent rows)) ' rows, ' (scot %ud n) ' pokes' ~)
+  (note-by 'edit' & why (scot %p src))
 ::  ==  carried rows: what another ship sent, or what we read from it
 ::
 ::  +apply-carried: rows from one ship about one of our bodies (the
@@ -1272,6 +1294,7 @@
     %+  murn  all
     |=  j=json
     ^-  (unit @ta)
+    ?.  =(subject (gs:orr j 'subject'))  ~
     =/  h=(unit [oid=@ta retracted=?])  (~(get by held) (gs:orr j 'oid'))
     ?~  h  ~
     ?.  &(=(`json`b+& (gj:orr j 'retracted')) !retracted.u.h)  ~
@@ -1448,7 +1471,115 @@
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  ~  bind:m  lay-inbox-road
   ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  ==  the follower: what other ships shared with us
+::
+::  +sync-pass: every accepted share: mirror the host's rows, push ours
+::  back in edit mode, and record the pass on the row
+::
+++  sync-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  rows-j=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
+  =/  rows=(list [key=@t row=json])  ?:(?=([%o *] rows-j) ~(tap by p.rows-j) ~)
+  (sync-rows rows ~)
+::  +sync-rows: one row at a time; the file is re-read before the write
+::  so an accept or a revoke that landed during the pass is kept
+::
+++  sync-rows
+  |=  [rows=(list [key=@t row=json]) done=(map @t json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  rows
+    ?:  =(~ done)  (pure:m ~)
+    ;<  fresh=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
+    =/  cur=(map @t json)  ?:(?=([%o *] fresh) p.fresh ~)
+    =/  merged=(map @t json)
+      %+  roll  ~(tap by done)
+      |=  [[key=@t row=json] acc=_cur]
+      ?.((~(has by acc) key) acc (~(put by acc) key row))
+    (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o merged]])
+  ;<  next=json  bind:m  (sync-one row.i.rows)
+  (sync-rows t.rows (~(put by done) key.i.rows next))
+::  +sync-one: one accepted share, answering the row with last, error
+::  and pushed brought up to date
+::
+++  sync-one
+  |=  row=json
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ?.  ?=([%o *] row)  (pure:m row)
+  ;<  now=@da  bind:m  get-time:io
+  =/  host=(unit @p)  (slaw %p (gs:orr row 'host'))
+  ?~  host  (pure:m [%o (~(put by p.row) 'error' s+'host: expected an @p')])
+  =/  id=bid:orr  (gs:orr row 'id')
+  =/  target=bid:orr  (gs:orr row 'target')
+  =/  base=path  (fall (mole |.((stab (gs:orr row 'base')))) orrery-instance)
+  ;<  err=(unit @t)  bind:m  (mirror-pass u.host id target base)
+  =/  pushed=(map @t json)  =/(p (gj:orr row 'pushed') ?:(?=([%o *] p) p.p ~))
+  ;<  push=[ok=? pushed=(map @t json)]  bind:m
+    (push-pass u.host id target base pushed =('edit' (gs:orr row 'mode')))
+  =/  msg=@t
+    ?:  ?=(^ err)  u.err
+    ?.  ok.push  'the host did not take our observations (down, or the share is read only now)'
+    ''
+  %-  pure:m
+  :-  %o
+  %-  ~(gas by p.row)
+  :~  ['last' (en-time:orr now)]
+      ['error' s+msg]
+      ['pushed' [%o pushed.push]]
+  ==
+::  +mirror-pass: the host's body directory, read whole; its own rows
+::  (not ones it mirrored from elsewhere: one hop) land here as
+::  observations from the host, through +apply-carried. ~ when fine,
+::  else the error for the row.
+::
+++  mirror-pass
+  |=  [host=@p id=bid:orr target=bid:orr base=path]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m `'id: expected <kind>/<slug>')
+  ;<  vw=(unit view:nexus)  bind:m
+    (peek-remote-wait host [%& %| (weld base (body-dir kind.u.pk slug.u.pk))])
+  ?~  vw  (pure:m `'the host did not answer (down, or the share was revoked)')
+  ?.  ?=([%ball *] u.vw)  (pure:m `'the host no longer shares this body')
+  =/  rows=(list row:orr)  (skim (rows-in ball.u.vw) |=(r=row:orr (is-local:orr obs.r)))
+  ;<  *  bind:m  (apply-carried 0 host (turn rows |=(r=row:orr (carry-obs:orr target r))))
+  (pure:m ~)
+::  +push-pass: in edit mode, our own rows on the target body that the
+::  host has not taken yet (or whose retraction it has not), sent to its
+::  inbox. pushed maps our grub name to the retracted flag it holds.
+::
+++  push-pass
+  |=  [host=@p id=bid:orr target=bid:orr base=path pushed=(map @t json) run=?]
+  =/  m  (fiber:fiber:nexus ,[ok=? pushed=(map @t json)])
+  ^-  form:m
+  ?.  run  (pure:m [& pushed])
+  =/  pk  (parse-bid:orr target)
+  ?~  pk  (pure:m [& pushed])
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 (body-dir kind.u.pk slug.u.pk)) ~)
+  ?.  ?=([%ball *] vw)  (pure:m [& pushed])
+  =/  todo=(list row:orr)
+    %+  skim  (rows-in ball.vw)
+    |=  r=row:orr
+    ?.  (is-local:orr obs.r)  |
+    =/  was=(unit json)  (~(get by pushed) id.r)
+    ?~  was  &
+    !=(`json`b+retracted.obs.r u.was)
+  ?~  todo  (pure:m [& pushed])
+  =/  batch=(list row:orr)  (scag max-obs:orr `(list row:orr)`todo)
+  ;<  ok=?  bind:m
+    %^  remote-poke-wait  host  [%& base %'shares.sig']
+    %-  pairs:enjs:format
+    :~  ['action' s+'observe']
+        ['id' s+id]
+        ['observations' a+(turn batch |=(r=row:orr (carry-obs:orr id r)))]
+    ==
+  ?.  ok  (pure:m [| pushed])
+  =/  next=(map @t json)
+    (roll batch |=([r=row:orr acc=_pushed] (~(put by acc) id.r b+retracted.obs.r)))
+  (pure:m [& next])
 --
