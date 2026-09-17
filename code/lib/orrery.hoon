@@ -839,6 +839,7 @@
   :~  ['auto' a+~[s+'task' s+'note']]
       ['push' s+'proposed']
       ['retention_days' (numb:enjs:format 365)]
+      ['sensitive' a+~[s+'health' s+'income']]
   ==
 ++  starter-schema
   ^-  json
@@ -849,7 +850,7 @@
   %-  pairs:enjs:format
   :~  :-  'kinds'
       %-  pairs:enjs:format
-      :~  ['person' (kind ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes'])]
+      :~  ['person' (kind ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income'])]
           ['place' (kind ~['type' 'address' 'phone' 'hours' 'geo'])]
           ['thing' (kind ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until'])]
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'])]

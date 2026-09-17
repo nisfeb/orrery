@@ -22,7 +22,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 
 ## Sensitive attributes
 
-`policy.json` may carry `"sensitive": ["health", "income"]`. A key never receives those attributes on any view, cannot observe them, and cannot retract them, whatever its scope. The owner cookie sees everything.
+`policy.json` starts with `"sensitive": ["health", "income"]`, the two attributes a triager puts medical and money facts under, and the owner may add to the list. A key never receives those attributes on any view, cannot observe them, and cannot retract them, whatever its scope. The owner cookie sees everything. A ship seeded before version 11 keeps its own policy; add the line there by hand.
 
 A writing key can learn that a name is sensitive by trying to observe it and reading the refusal. It never learns the value.
 

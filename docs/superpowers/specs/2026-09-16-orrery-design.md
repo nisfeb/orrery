@@ -103,7 +103,7 @@ The starter schema:
 ```json
 {
   "kinds": {
-    "person":    {"attrs": ["status", "location", "phone", "email", "ship", "birthday", "relationship", "employer", "timezone", "likes", "dislikes"]},
+    "person":    {"attrs": ["status", "location", "phone", "email", "ship", "birthday", "relationship", "employer", "timezone", "likes", "dislikes", "health", "income"]},
     "place":     {"attrs": ["type", "address", "phone", "hours", "geo"]},
     "thing":     {"attrs": ["type", "status", "location", "owner", "make", "model", "plate", "last-service", "warranty-until"]},
     "org":       {"attrs": ["type", "phone", "email", "website", "contact", "address"]},
@@ -116,7 +116,7 @@ The starter schema:
 }
 ```
 
-`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`; any other value behaves as `proposed`, so a typo never silences notifications. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than `retention_days` by the later of when it was true and when the ship recorded it are culled. A live observation is never culled. Ageing a row by the later of the two keeps a fact recorded today about five years ago for the retention from today.
+`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365, "sensitive": ["health", "income"]}`. `sensitive` names the attributes a client key never sees or writes (section 11, phase 3); the two the starter names are where a triager puts medical and money facts, so they are kept from every key unless the owner says otherwise. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`; any other value behaves as `proposed`, so a typo never silences notifications. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than `retention_days` by the later of when it was true and when the ship recorded it are culled. A live observation is never culled. Ageing a row by the later of the two keeps a fact recorded today about five years ago for the retention from today.
 
 ## 4. Shape of the desk
 
