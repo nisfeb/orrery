@@ -1914,9 +1914,9 @@
   ?:(owner.act ~ (sensitive-of:orr policy))
 ::  +view-of: what an actor may see: the bodies in its kinds with the
 ::  hidden attributes dropped, and the actions in its action kinds. A
-::  value that refs a body outside the kinds goes too, and an about
-::  naming one is trimmed away: a key never learns such a body exists.
-::  The owner sees everything.
+::  value that refs a body outside the kinds reads as cleared, and an
+::  about naming one is trimmed away: a key never learns such a body
+::  exists. The owner sees everything.
 ::
 ++  view-of
   |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action:orr]) hide=(set @t)]
@@ -1927,7 +1927,7 @@
       |=  l=loaded
       ^-  (unit loaded)
       ?.  (kind-in-scope:orr s kind.body.l)  ~
-      `l(rows (drop-refs:orr (drop-attrs:orr rows.l hide) kinds.s))
+      `l(rows (veil-refs:orr (drop-attrs:orr rows.l hide) kinds.s))
   %+  turn  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
   |=([id=@ta a=action:orr] [id (scope-about:orr a kinds.s)])
 ::  +deny-observe: why a key may not send this batch, or ~. The owner is

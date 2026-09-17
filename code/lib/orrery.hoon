@@ -918,20 +918,22 @@
   ^-  (list row)
   ?:  =(~ hide)  rows
   (skip rows |=(r=row (~(has in hide) attr.obs.r)))
-::  +drop-refs: the rows whose value points at a body of a kind outside
-::  the given kinds are dropped, so a key never learns such a body
-::  exists through an attribute value
+::  +veil-refs: a row whose value points at a body of a kind outside
+::  the given kinds keeps its place with a null value, so the fold
+::  shows the attribute as cleared rather than falling back to an
+::  older value the key may see, and the key never learns the body
 ::
-++  drop-refs
+++  veil-refs
   |=  [rows=(list row) kinds=(set @tas)]
   ^-  (list row)
-  %+  skip  rows
+  %+  turn  rows
   |=  r=row
   =/  target=(unit bid)  (ref-of value.obs.r)
-  ?~  target  |
+  ?~  target  r
   =/  pk  (parse-bid u.target)
-  ?~  pk  |
-  !(~(has in kinds) kind.u.pk)
+  ?~  pk  r
+  ?:  (~(has in kinds) kind.u.pk)  r
+  r(value.obs ~)
 ::  +scope-about: an action's about trimmed to the given kinds
 ::
 ++  scope-about
