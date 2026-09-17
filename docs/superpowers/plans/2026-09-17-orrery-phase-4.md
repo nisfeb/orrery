@@ -1313,7 +1313,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
         var n = Object.keys(b.attrs || {}).length;
         out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
           (b.ship ? ' <span class="muted">' + esc(b.ship) + '</span>' : '') +
-          '<span class="id">' + esc(b.id) + (n ? ' · ' + n + ' attr' + (n === 1 ? '' : 's') : '') + '</span></a>';
+          '<span class="id">' + esc(b.id) + (n ? ' &middot; ' + n + ' attr' + (n === 1 ? '' : 's') : '') + '</span></a>';
       });
       out += '</div>';
     });
@@ -1323,8 +1323,8 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
 
   function body(v) {
     var out = '<h1>' + esc(v.name || v.id) + ' <span class="muted">' + esc(v.id) + '</span></h1>';
-    out += '<p class="muted">' + esc(v.kind) + (v.ship ? ' · ' + esc(v.ship) : '') +
-      (v.aliases && v.aliases.length ? ' · also ' + v.aliases.map(esc).join(', ') : '') + '</p>';
+    out += '<p class="muted">' + esc(v.kind) + (v.ship ? ' &middot; ' + esc(v.ship) : '') +
+      (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(esc).join(', ') : '') + '</p>';
     var attrs = Object.keys(v.attrs || {}).sort();
     out += '<div class="card"><h2>Now</h2>';
     if (!attrs.length) out += '<p class="muted">No current attributes.</p>';
@@ -1369,7 +1369,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
     out += '<ul class="actions">';
     actions.forEach(function (a) {
       out += '<li class="card">' + badge(a.status) + ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
-        ' · proposed ' + fmtTime(a.proposed) + ' by ' + esc(a.by || '') + (a.due ? ' · due ' + fmtTime(a.due) : '') + '</span>' +
+        ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + esc(a.by || '') + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' +
         (a.about && a.about.length ? '<div>about ' + links(a.about) + '</div>' : '') + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
         out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
@@ -1610,7 +1610,7 @@ print('ALL OK (%d checks)' % count[0])
 
 - [ ] **Step 5: Deploy, smoke, look**
 
-Write `app.hoon` and the three page files to wex (`create-file` for each new file under `$D/code/nex/orrery`, then `write-text`), reload, `bang` `None`. Run `python3 scripts/page-smoke.py $W $CK`: `ALL OK (8 checks)`. Then read the page by hand once as a person would, through curl: `curl -s -b $CK $W/apps/orrery | head -20` shows the shell. The interactive behaviour (a click that retracts, the beacon refresh) is verified in the report by reading the JS against the API routes it calls; the owner tries it in a browser after the release. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`.
+Write `app.hoon` and the three page files to wex (`create-file` for each new file under `$D/code/nex/orrery` with an explicit `blot=/mime` beside `filename=`, since the explorer would otherwise derive a marc from the extension that the desk does not vendor and the `/&` import only gathers a `[/ %mime]` grub; then `write-text`), reload, `bang` `None`. Run `python3 scripts/page-smoke.py $W $CK`: `ALL OK (8 checks)`. Then read the page by hand once as a person would, through curl: `curl -s -b $CK $W/apps/orrery | head -20` shows the shell. The interactive behaviour (a click that retracts, the beacon refresh) is verified in the report by reading the JS against the API routes it calls; the owner tries it in a browser after the release. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`.
 
 - [ ] **Step 6: Commit and push**
 
