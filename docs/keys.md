@@ -12,7 +12,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 
 - `kinds`: the body kinds the key may see. The state, body and resolve views omit every other body, and a body outside them answers exactly what a missing body answers. With `write`, the key may observe those bodies and create them.
 - `actions`: the action kinds the key may propose and list. With `write`, it may also approve, dismiss and complete them.
-- `write`: false makes the key read-only for everything.
+- `write`: false makes the key read-only: it cannot observe, create bodies, retract or transition an action. Proposing needs only the action kind, so a read-only key with `actions` can still file a proposal for the owner to approve.
 - `by` on everything a key writes is the key's identity, whatever the payload said, so the audit trail names the client.
 - A batch with one item outside the scope is refused whole, with the first offending id or attribute named.
 
