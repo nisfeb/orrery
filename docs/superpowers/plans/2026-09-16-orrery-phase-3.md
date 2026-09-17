@@ -1171,7 +1171,7 @@ python3 scripts/api-matrix.py $W $CK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 ```
 
-Expected: `ALL OK` with the check count printed, both times; then the phase 1 gate `ALL OK`; then the two-ship gate `ALL OK (47 checks)` (feb still runs version 4; the host side of every route is what changed, and the two-ship gate only uses the owner cookie). A failure in the key gate whose cause is the nexus code is reported, not patched around: the controller rules.
+Expected: `ALL OK` with the check count printed, both times; then the phase 1 gate `ALL OK`; then the two-ship gate `ALL OK (68 checks)` (feb still runs version 4; the host side of every route is what changed, and the two-ship gate only uses the owner cookie). A failure in the key gate whose cause is the nexus code is reported, not patched around: the controller rules.
 
 - [ ] **Step 3: Commit and push**
 
@@ -1248,7 +1248,7 @@ for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$
 python3 scripts/key-matrix.py $W $CK
 python3 scripts/api-matrix.py $W $CK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
-#   ALL OK, ALL OK, ALL OK (47 checks), on the synced code
+#   ALL OK, ALL OK, ALL OK (68 checks), on the synced code
 ```
 
 - [ ] **Step 5: Commit anything the spec edits left**
