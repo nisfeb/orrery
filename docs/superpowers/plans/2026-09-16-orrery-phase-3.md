@@ -549,8 +549,9 @@ Append before the closing `--`:
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
   =/  name=@t  (gs:orr jon 'name')
   ?:  |(=('' name) (gth (met 3 name) max-name:orr))  (send-err eyre-id 400 'name: 1 to 200 bytes')
-  =/  by=@t  (gs:orr jon 'by')
-  ?:  |(=('' by) (gth (met 3 by) max-by:orr))  (send-err eyre-id 400 'by: 1 to 64 bytes')
+  ::  who, not by: a leg named by would shadow the map door used below
+  =/  who=@t  (gs:orr jon 'by')
+  ?:  |(=('' who) (gth (met 3 who) max-by:orr))  (send-err eyre-id 400 'by: 1 to 64 bytes')
   =/  sc  (de-scope:orr (gj:orr jon 'scope'))
   ?:  ?=(%| -.sc)  (send-err eyre-id 400 p.sc)
   ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
@@ -562,7 +563,7 @@ Append before the closing `--`:
   ?:  (~(has by cm) id)  (send-err eyre-id 409 'id: taken, try again')
   =/  salt=@t  (scot %uv (end [3 10] (rsh [3 5] eny)))
   =/  secret=@t  (secret-of:orr (rsh [3 15] eny))
-  =/  c=client:orr  [id name by p.sc salt (hash-token:orr salt secret) now ~]
+  =/  c=client:orr  [id name who p.sc salt (hash-token:orr salt secret) now ~]
   =/  op=json  (pairs:enjs:format ~[['op' s+'add-client'] ['client' (en-client-row:orr c)]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
@@ -570,7 +571,7 @@ Append before the closing `--`:
   %-  pairs:enjs:format
   :~  ['id' s+id]
       ['name' s+name]
-      ['by' s+by]
+      ['by' s+who]
       ['scope' (en-scope:orr p.sc)]
       ['token' s+(rap 3 id '.' secret ~)]
       ['made' (en-time:orr now)]
