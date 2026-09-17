@@ -3003,6 +3003,8 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
     (expect !>((should-push:orr 'proposed' %proposed)))
     (expect !>(!(should-push:orr 'proposed' %approved)))
     (expect !>(!(should-push:orr 'none' %proposed)))
+    (expect !>((should-push:orr 'bogus' %proposed)))
+    (expect !>(!(should-push:orr 'bogus' %approved)))
   ==
 ++  test-ring
   =/  one=json  (ring:orr [%a ~] (jo '{"n":1}') 2)
@@ -3185,12 +3187,16 @@ Replace `+push-of` with these three arms, and change `starter-policy`'s row to `
   ^-  @t
   =/  m=@t  (gs policy 'push')
   ?:(=('' m) 'proposed' m)
+::  +should-push: all pushes every new action; none pushes nothing;
+::  proposed, the default and what an unknown mode means, pushes only
+::  an action that needs a human
+::
 ++  should-push
   |=  [mode=@t status=@tas]
   ^-  ?
   ?:  =('all' mode)  &
-  ?:  =('proposed' mode)  =(%proposed status)
-  |
+  ?:  =('none' mode)  |
+  =(%proposed status)
 ::  +transition: a new status with its note, appended to the history
 ::
 ++  transition
@@ -3250,7 +3256,7 @@ In `+write-body` every `` `stored-body:orr`[%1 fresh] `` and `` `stored-body:orr
 In `+do-act`, replace everything from the line `=/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))` to the end of the arm with:
 
 ```hoon
-  =/  auto=?  (~(has in (auto-of:orr policy)) `@t`kind.p.got)
+  =/  auto=?  =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))
   =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
   =/  id=@ta  (act-id:orr a)
   ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))

@@ -111,7 +111,7 @@ The starter schema:
 }
 ```
 
-`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than the retention are culled. A live observation is never culled.
+`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`; any other value behaves as `proposed`, so a typo never silences notifications. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than the retention are culled. A live observation is never culled.
 
 ## 4. Shape of the desk
 
