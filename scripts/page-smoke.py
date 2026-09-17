@@ -3,7 +3,7 @@
 The page is served to the owner with the right types and no cache, and
 refused without the cookie; then the render tests run under node.
 Exits 1 on any failure."""
-import subprocess, sys
+import os, subprocess, sys
 
 HOST, JAR = sys.argv[1:3]
 fails = []
@@ -38,14 +38,14 @@ check('the page answers 200 as html', code == 200 and h.get('content-type', '').
 check('the page is not cached', 'no-cache' in h.get('cache-control', ''), h)
 check('the page loads its script and style', 'orrery.js' in b and 'orrery.css' in b and 'id="view"' in b, b[:200])
 code, h, b = get('/apps/orrery/orrery.js')
-check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and 'orrery.js' not in b[:0] and '/apps/orrery/api' in b, (code, h))
+check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and '/apps/orrery/api' in b, (code, h))
 code, h, b = get('/apps/orrery/orrery.css')
 check('the style answers as css', code == 200 and h.get('content-type', '').startswith('text/css'), (code, h))
 code, h, b = get('/apps/orrery/nope.txt')
 check('an unknown file is 404', code == 404, (code, b[:100]))
 code, h, b = get('/apps/orrery', jar=False)
 check('the page is refused without the cookie', code == 403, (code, b[:100]))
-r = subprocess.run(['node', 'scripts/page-test.js'], capture_output=True, text=True)
+r = subprocess.run(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page-test.js')], capture_output=True, text=True)
 print(r.stdout.rstrip())
 check('the render tests pass under node', r.returncode == 0 and 'ALL OK' in r.stdout, r.stderr[:300])
 if fails:

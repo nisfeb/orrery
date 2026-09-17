@@ -26,7 +26,7 @@
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
 
   function bodies(state) {
-    var byKind = {};
+    var byKind = Object.create(null);
     (state.bodies || []).forEach(function (b) { (byKind[b.kind] = byKind[b.kind] || []).push(b); });
     var kinds = Object.keys(byKind).sort();
     var out = '<h1>Bodies</h1>';
@@ -59,6 +59,7 @@
       attrs.forEach(function (a) {
         var rows = v.attrs[a];
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
+          if (!r) return;
           out += '<tr><td>' + esc(a) + '</td><td>' + fmtValue(r.value) + '</td><td>' + fmtTime(r.at) +
             '</td><td>' + esc(r.by || '') + '</td><td>' + source(r.source) + '</td></tr>';
         });
@@ -126,12 +127,15 @@
   function say(msg, bad) { statusEl.textContent = msg; statusEl.className = 'status' + (bad ? ' bad' : ''); }
   function api(path, opts) {
     return fetch(API + path, opts).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) { throw new Error(d.error || ('http ' + r.status)); }
-        return d;
-      });
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          throw new Error(d.error || ('http ' + r.status));
+        });
+      }
+      return r.json();
     });
   }
+  function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function post(path, bodyObj, method) {
     return api(path, { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) });
   }
@@ -147,7 +151,7 @@
     refreshing = true;
     var r = route();
     var p;
-    if (r.name === 'body') p = api('/body/' + r.id).then(function (v) { view.innerHTML = body(v); });
+    if (r.name === 'body') p = api('/body/' + seg(r.id)).then(function (v) { view.innerHTML = body(v); });
     else if (r.name === 'inbox') p = api('/actions?status=open').then(function (a) { view.innerHTML = inbox(a); });
     else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy')]).then(function (d) { view.innerHTML = settings(d[0], d[1]); });
     else p = api('/state').then(function (s) { view.innerHTML = bodies(s); if (typeof s.rev === 'number') lastRev = String(s.rev); });
@@ -166,8 +170,9 @@
       if (note === null) return;
       post('/retract', { id: b.dataset.retract, note: note }).then(refresh).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.move) {
-      var parts = b.dataset.move.split(':');
-      post('/actions/' + parts[0], { status: parts[1], by: 'page' }).then(refresh).catch(function (e) { say(e.message, true); });
+      var cut = b.dataset.move.indexOf(':');
+      var moveId = b.dataset.move.slice(0, cut), moveTo = b.dataset.move.slice(cut + 1);
+      post('/actions/' + seg(moveId), { status: moveTo, by: 'page' }).then(refresh).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.save) {
       var which = b.dataset.save;
       var parsed;
@@ -198,6 +203,7 @@
           var evs = buf.split('\n\n');
           buf = evs.pop();
           evs.forEach(function (ev) {
+            if (document.hidden) return;
             var name = '', data = '';
             ev.split('\n').forEach(function (ln) {
               if (ln.indexOf('event: ') === 0) name = ln.slice(7).trim();

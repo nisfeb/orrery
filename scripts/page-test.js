@@ -38,7 +38,7 @@ let n = 0;
 function ok(label, cond) { n += 1; assert.ok(cond, label); console.log('  ok   ' + label); }
 
 const bodies = render.bodies(state);
-ok('bodies are grouped by kind', bodies.indexOf('<h2>person</h2>') < bodies.indexOf('<h2>situation</h2>') && bodies.includes('<h2>thing</h2>'));
+ok('bodies are grouped by kind', bodies.indexOf('<h2>person</h2>') >= 0 && bodies.indexOf('<h2>person</h2>') < bodies.indexOf('<h2>situation</h2>') && bodies.includes('<h2>thing</h2>'));
 ok('every body links to its view', bodies.includes('href="#body/person/me"') && bodies.includes('href="#body/thing/subaru"'));
 ok('names are escaped', !bodies.includes('<b>Subaru</b>') && bodies.includes('&lt;b&gt;Subaru&lt;/b&gt;'));
 ok('open situations are listed', bodies.includes('situation/2026-09-16-breakdown'));
@@ -62,6 +62,10 @@ const settings = render.settings({ kinds: { person: { attrs: ['status'] } } }, {
 ok('the schema is editable JSON', settings.includes('id="schema"') && settings.includes('&quot;person&quot;'));
 ok('the policy is editable JSON', settings.includes('id="policy"') && settings.includes('&quot;health&quot;'));
 
+const hostile = render.inbox([{ id: 'h1', kind: 'task', title: 'Call <b>the</b> shop', status: 'proposed', proposed: '2026-09-17T02:10:00Z', by: '<i>who</i>', about: [], history: [] }]);
+ok('titles and actors are escaped in the inbox', !hostile.includes('<b>the</b>') && hostile.includes('&lt;b&gt;the&lt;/b&gt;') && hostile.includes('&lt;i&gt;who&lt;/i&gt;'));
+const hostileBody = render.body(Object.assign({}, view, { observations: [Object.assign({}, view.observations[2], { note: 'wrong <script>car</script>', by: '<x>' })] }));
+ok('notes and actors are escaped on the timeline', !hostileBody.includes('<script>') && hostileBody.includes('&lt;script&gt;car&lt;/script&gt;') && hostileBody.includes('&lt;x&gt;'));
 ok('esc handles the five characters', render.esc('<&>"\'') === '&lt;&amp;&gt;&quot;&#39;');
 ok('fmtValue renders strings, refs and objects', render.fmtValue('x') === 'x' && render.fmtValue({ ref: 'a/b' }).includes('#body/a/b') && render.fmtValue({ n: 1 }) === '{&quot;n&quot;:1}');
 console.log('ALL OK (' + n + ' checks)');
