@@ -58,7 +58,7 @@ curl -s -b jar "$API/resolve?q=wife"           # find bodies by name or alias
 curl -s -b jar $API/state                      # everything at once: the view an assistant reads
 ```
 
-The body view shows the current attributes and, below them, every observation ever made about her, newest first, each labelled live, superseded, expired or retracted.
+The body view shows the current attributes and, below them, every observation ever made about her, newest first, each labelled live, future, superseded, expired or retracted.
 
 ```json
 {"id": "person/sarah", "kind": "person", "name": "Sarah", "aliases": ["wife"], "created": "2026-09-17T12:00:00Z", "ship": null,
@@ -104,7 +104,7 @@ post observe '{
 }'
 ```
 
-`person/me` is you. It exists from the first load, with your ship's name on it, and you or a client rename it.
+`person/me` is you. It is made on the first request, with your ship's name on it, and you or a client rename it.
 
 ### Situations
 
@@ -171,9 +171,9 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
-On her ship, `GET /api/shares` lists the offer and `post accept '{"host": "~your-ship", "id": "person/sarah"}'` takes it. Because the body carries her ship's name it lands on her own `person/me`. Her ship reads the body every five minutes and on demand (`POST /api/sync`), and every mirrored fact names its origin: `by` is your ship, and `source` is `{"kind": "ship", "id": "~your-ship/<observation id>"}`.
+On her ship (point `API` and the cookie jar at it first), `GET /api/shares` lists the offer and `post accept '{"host": "~your-ship", "id": "person/sarah"}'` takes it. Because the body carries her ship's name it lands on her own `person/me`. Her ship reads the body every five minutes and on demand (`POST /api/sync`), and every mirrored fact names its origin: `by` is your ship, and `source` is `{"kind": "ship", "id": "~your-ship/<observation id>"}`.
 
-The unit of sharing is one body. Nothing else on your ship is visible to her. `DELETE /api/share/person/sarah/~sampel-palnet` ends it. A share carries the body whole, every attribute on it, so a body holding facts you would not share is not a body to share; the one filter is on the way back, where attributes named in `policy.sensitive` are never sent to the host. The whole protocol is in `docs/sharing.md`.
+The unit of sharing is one body. Nothing else on your ship is visible to her. `DELETE /api/share/person/sarah/~sampel-palnet` ends it. A share carries the body whole, every attribute on it, so a body holding facts you would not share is not a body to share; the one filter is on the way back, where attributes named in her ship's `policy.sensitive` are never sent to yours. The whole protocol is in `docs/sharing.md`.
 
 ## Keys for clients that do not run a ship
 
@@ -194,7 +194,7 @@ What a key sees is bounded by its scope: only the kinds it was given, never the 
 
 ## Tools for an AI analyst
 
-If your analyst runs on the ship's MCP server, orrery ships eight tools with the owner's views and writes: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions` and `orrery_schema`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
+If your analyst runs on the ship's MCP server, orrery ships eight tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions` and `orrery_schema`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
 
 ## Install
 
@@ -209,7 +209,7 @@ curl -s -b jar -H 'content-type: application/json' -X POST $SHIP/apps/grubbery/d
   -d '{"name": "orrery", "code": "~ricsul-bilwyt/apps/shell.shell/desks/orrery.desk/desk/code"}'
 ```
 
-The desk syncs within a few minutes, and a consent prompt asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, and the sharing roads (behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off. Then open `/apps/orrery`. Updates arrive on their own whenever ricsul republishes `code/version.json`.
+The desk syncs within a few minutes, and a consent prompt asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off. Then open `/apps/orrery`. Updates arrive on their own whenever ricsul republishes `code/version.json`.
 
 ## Under the hood
 
@@ -218,8 +218,8 @@ The desk syncs within a few minutes, and a consent prompt asks you to approve th
 Everything orrery stores is one of three shapes; everything else is a directory or a JSON file.
 
 - A **body** is something that exists: a person, a place, a thing, an org, a situation or a note. Its id is `<kind>/<slug>`, and it carries a name, aliases, when it was created and, when it has one, its @p.
-- An **observation** is one immutable claim about one body: `subject.attr = value`, with `at` (when it became true), `until`, `conf`, `source`, `by` and `seen` (when the ship recorded it). Its only mutable field is `status`, live or retracted.
-- An **action** is something to do: a task or a note the ship holds, or a client-executed kind such as a message. It carries `kind`, `title`, `payload`, `about`, `due`, `by`, `status`, `note` and its `history`.
+- An **observation** is one immutable claim about one body: `subject.attr = value`, with `at` (when it became true), `until`, `conf`, `source`, `by` and `seen` (when the ship recorded it). Its only mutable parts are the retracted flag and its note.
+- An **action** is something to do: a task or a note the ship holds, or a client-executed kind such as a message. It carries `kind`, `title`, `payload`, `about`, `due`, `by`, `proposed`, `status`, `note` and its `history`.
 
 Body kinds, attribute names, action kinds and source kinds are all open strings and values are JSON, so a new kind of fact never needs a migration.
 
@@ -229,7 +229,7 @@ State is never stored. It is a fold over the live observations, computed on ever
 
 - A single-valued attribute takes the observation with the latest `at`, ties broken by the latest `seen`.
 - A multi-valued attribute collects the distinct values of its live observations. Reasserting a value refreshes it; removing one is retracting its observations.
-- An observation whose `until` has passed is expired. One that lost the fold is superseded. Neither is stored as such; both are labels in the timeline.
+- An observation whose `until` has passed is expired. One whose `at` is still ahead of the read time is future and does not win its slot. One that lost the fold is superseded. None of these is stored as such; all are labels in the timeline.
 - A `null` value wins its slot and clears it.
 - `?at=<time>` folds only observations with `at` at or before that time.
 
@@ -241,7 +241,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 
 | method and path | does |
 |---|---|
-| `GET /state?at=&kind=` | every body with its attributes and involvements, the open situations, the open actions, the beacon and the schema |
+| `GET /state?at=&kind=` | every body with its attributes and involvements, the open situations, the open actions, the beacon, the time it was folded at, `me` and the schema |
 | `GET /body/<kind>/<slug>?at=` | one body with its timeline |
 | `GET /resolve?q=` | bodies whose name or alias matches, exact first then prefix, at most 20 |
 | `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations |
