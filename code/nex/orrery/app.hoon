@@ -502,9 +502,9 @@
   (pure:m ~)
 ::  +handle-request: one HTTP request, on its own ephemeral fiber.
 ::  Who is asking is settled by +identify: the owner (eyre's
-::  authenticated flag and src equal to our) or a minted key. Every
-::  route here is wrapped in +own, the owner alone; the scoped routes
-::  open to keys in the next task.
+::  authenticated flag and src equal to our) or a minted key. The
+::  scoped routes take the actor and apply its scope themselves; every
+::  other route is wrapped in +own, the owner alone.
 ::
 ++  handle-request
   |=  eyre-id=@ta
@@ -532,16 +532,16 @@
   =/  s3=@ta  ?:(?=([@ @ @ @ *] suffix) i.t.t.t.suffix %$)
   =/  s4=@ta  ?:(?=([@ @ @ @ @ *] suffix) i.t.t.t.t.suffix %$)
   =/  args=quay:eyre  args.parsed
-  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))           (own (serve-state eyre-id args))
-  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))        (own (serve-body eyre-id s2 s3 args))
+  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))           (serve-state eyre-id args act)
+  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))        (serve-body eyre-id s2 s3 args act)
   ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))     (own (serve-delete-body eyre-id s2 s3))
-  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))         (own (serve-resolve eyre-id args))
-  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))        (own (serve-observe eyre-id jon))
-  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))        (own (serve-retract eyre-id jon))
-  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))         (own (serve-bodies eyre-id jon))
-  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))            (own (serve-act eyre-id jon))
-  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))         (own (serve-actions eyre-id args))
-  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))      (own (serve-set-action eyre-id s2 jon))
+  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))         (serve-resolve eyre-id args act)
+  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))        (serve-observe eyre-id jon act)
+  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))        (serve-retract eyre-id jon act)
+  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))         (serve-bodies eyre-id jon act)
+  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))            (serve-act eyre-id jon act)
+  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))         (serve-actions eyre-id args act)
+  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))      (serve-set-action eyre-id s2 jon act)
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))          (own (serve-doc eyre-id %'schema.json'))
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))          (own (serve-set-doc eyre-id 'set-schema' jon))
   ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))          (own (serve-doc eyre-id %'policy.json'))
@@ -560,7 +560,7 @@
 ::  situations, the open actions and the schema, as of ?at
 ::
 ++  serve-state
-  |=  [eyre-id=@ta args=quay:eyre]
+  |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -568,9 +568,13 @@
   ?~  when  (send-err eyre-id 400 'at: expected an ISO 8601 UTC time')
   =/  kind=@t  (fall (get-key:kv:html-utils 'kind' args) '')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
-  ;<  all=(list loaded)  bind:m  (load-bodies 1)
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
+  =/  all=(list loaded)  all.seen
+  =/  acts=(list [id=@ta a=action:orr])  acts.seen
   =/  multi=(set @t)  (multi-of:orr schema)
   =/  folded=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
     (turn all |=(l=loaded [id.l body.l (fold:orr rows.l multi u.when)]))
@@ -610,7 +614,7 @@
 ::  because at and by are stamped before either side decodes.
 ::
 ++  serve-observe
-  |=  [eyre-id=@ta jon=json]
+  |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
@@ -621,14 +625,21 @@
     (send-err eyre-id 400 'bodies: over 50')
   ?:  (gth (lent (ga:orr jon 'observations')) max-obs:orr)
     (send-err eyre-id 400 'observations: over 200')
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  =/  denied=(unit @t)  (deny-observe act jon policy)
+  ?^  denied  (send-err eyre-id 403 u.denied)
   ;<  now=@da  bind:m  get-time:io
+  =/  stamp
+    |=  j=json
+    ^-  json
+    ?:(owner.act (fill-obs:orr j now 'http') (fill-obs-as:orr j now by.act))
   =/  stamped=json
     %-  pairs:enjs:format
     :~  ['op' s+'observe']
         ['bodies' a+(ga:orr jon 'bodies')]
-        ['observations' a+(turn (ga:orr jon 'observations') |=(j=json (fill-obs:orr j now 'http')))]
+        ['observations' a+(turn (ga:orr jon 'observations') stamp)]
     ==
-  =/  prep  (prep-observe:orr stamped now 'http')
+  =/  prep  (prep-observe:orr stamped now by.act)
   ;<  bodies-res=(list json)  bind:m  (body-results bodies.prep ~)
   =/  known=(set bid:orr)
     %-  sy
@@ -891,7 +902,7 @@
 ::  actions about it, and its full timeline newest first
 ::
 ++  serve-body
-  |=  [eyre-id=@ta kind=@ta slug=@ta args=quay:eyre]
+  |=  [eyre-id=@ta kind=@ta slug=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -900,8 +911,13 @@
   =/  id=bid:orr  (rap 3 kind '/' slug ~)
   ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   =/  multi=(set @t)  (multi-of:orr schema)
-  ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
+  =/  all=(list loaded)  all.seen
+  =/  acts=(list [id=@ta a=action:orr])  acts.seen
   =/  mine=(unit loaded)  (find-loaded all id)
   ?~  mine  (send-err eyre-id 404 'no such body')
   =/  winners  (fold:orr rows.u.mine multi u.when)
@@ -909,7 +925,6 @@
     %+  murn  all
     |=  l=loaded
     ?.(=(%situation kind.body.l) ~ `[id.l (fold:orr rows.l multi u.when)])
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  about-me=(list json)
     %+  murn  acts
     |=  [aid=@ta a=action:orr]
@@ -940,11 +955,12 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ++  serve-resolve
-  |=  [eyre-id=@ta args=quay:eyre]
+  |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  q=@t  (fall (get-key:kv:html-utils 'q' args) '')
-  ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
+  =/  all=(list loaded)  all:(view-of act all0 ~ ~)
   =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded [id.l body.l]))
   %^  send-json  eyre-id  200
   :-  %a
@@ -953,7 +969,7 @@
   ^-  json
   (pairs:enjs:format ~[['id' s+id] ['kind' s+kind.body] ['name' s+name.body] ['match' s+match]])
 ++  serve-retract
-  |=  [eyre-id=@ta jon=json]
+  |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  id=@t  (gs:orr jon 'id')
@@ -962,13 +978,21 @@
   ?:  (gth (met 3 why) max-note:orr)  (send-err eyre-id 400 'note: over 500 bytes')
   ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 1 `@ta`id)
   ?~  hit  (send-err eyre-id 404 'no such observation')
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  =/  visible=?
+    ?~  scope.act  &
+    ?&  (kind-in-scope:orr u.scope.act kind.u.hit)
+        !(~(has in (sensitive-of:orr policy)) attr.obs.r.u.hit)
+    ==
+  ?.  visible  (send-err eyre-id 404 'no such observation')
+  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
   =/  op=json
     (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ++  serve-bodies
-  |=  [eyre-id=@ta jon=json]
+  |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -976,6 +1000,8 @@
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
   =/  pk  (parse-bid:orr id.p.got)
   ?~  pk  (send-err eyre-id 400 'id: bad')
+  =/  denied=(unit @t)  (deny-write act kind.u.pk)
+  ?^  denied  (send-err eyre-id 403 u.denied)
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   =/  op=json  (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' jon]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
@@ -986,13 +1012,26 @@
 ::  compute the same id. An open twin answers the existing action.
 ::
 ++  serve-act
-  |=  [eyre-id=@ta jon=json]
+  |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  stamped=json  (fill-act:orr jon now 'http')
-  =/  got  (de-action:orr stamped now 'http')
+  =/  stamped=json  ?:(owner.act (fill-act:orr jon now 'http') (fill-act-as:orr jon now by.act))
+  =/  got  (de-action:orr stamped now by.act)
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.p.got))
+    (send-err eyre-id 403 (cat 3 'not in scope: ' kind.p.got))
+  =/  outside=(unit bid:orr)
+    ?~  scope.act  ~
+    =/  s=scope:orr  u.scope.act
+    %+  roll  ~(tap in about.p.got)
+    |=  [b=bid:orr acc=(unit bid:orr)]
+    ^-  (unit bid:orr)
+    ?^  acc  acc
+    =/  pk  (parse-bid:orr b)
+    ?~  pk  ~
+    ?:((kind-in-scope:orr s kind.u.pk) ~ `b)
+  ?^  outside  (send-err eyre-id 400 (cat 3 'about: no such body ' u.outside))
   ;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ~(tap in about.p.got))
   ?^  missing  (send-err eyre-id 400 (cat 3 'about: no such body ' u.missing))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
@@ -1011,11 +1050,12 @@
 ::  all, or one status; newest first
 ::
 ++  serve-actions
-  |=  [eyre-id=@ta args=quay:eyre]
+  |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  want=@t  (fall (get-key:kv:html-utils 'status' args) 'open')
-  ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  all0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  all=(list [id=@ta a=action:orr])  acts:(view-of act ~ all0 ~)
   =/  keep
     |=  [id=@ta a=action:orr]
     ^-  ?
@@ -1027,7 +1067,7 @@
     |=([x=[id=@ta a=action:orr] y=[id=@ta a=action:orr]] (gth proposed.a.x proposed.a.y))
   (send-json eyre-id 200 a+(turn shown |=([id=@ta a=action:orr] (en-action:orr id a))))
 ++  serve-set-action
-  |=  [eyre-id=@ta id=@ta jon=json]
+  |=  [eyre-id=@ta id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'expected an object')
@@ -1038,11 +1078,14 @@
   ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
   =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
   ?~  a  (send-err eyre-id 500 'unreadable action')
+  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
+    (send-err eyre-id 404 'no such action')
+  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
   ?.  (transition-ok:orr status.u.a `@tas`want)
     (send-err eyre-id 409 (rap 3 'cannot go from ' status.u.a ' to ' want ~))
   =/  op=json
     %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+(gs:orr jon 'by')]]
+    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+?:(owner.act (gs:orr jon 'by') by.act)]]
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))
@@ -1857,4 +1900,49 @@
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+::  ==  the scope, applied
+::
+::  +hidden-for: the attributes an actor never sees: none for the
+::  owner, policy.sensitive for a key
+::
+++  hidden-for
+  |=  [act=actor policy=json]
+  ^-  (set @t)
+  ?:(owner.act ~ (sensitive-of:orr policy))
+::  +view-of: what an actor may see: the bodies in its kinds with the
+::  hidden attributes dropped, and the actions in its action kinds. The
+::  owner sees everything.
+::
+++  view-of
+  |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action:orr]) hide=(set @t)]
+  ^-  [all=(list loaded) acts=(list [id=@ta a=action:orr])]
+  ?~  scope.act  [all acts]
+  =/  s=scope:orr  u.scope.act
+  :-  %+  murn  all
+      |=  l=loaded
+      ^-  (unit loaded)
+      ?.  (kind-in-scope:orr s kind.body.l)  ~
+      `l(rows (drop-attrs:orr rows.l hide))
+  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
+::  +deny-observe: why a key may not send this batch, or ~. The owner is
+::  never denied. A batch with one item outside the scope is refused
+::  whole, naming the first offender (which the key itself sent).
+::
+++  deny-observe
+  |=  [act=actor jon=json policy=json]
+  ^-  (unit @t)
+  ?~  scope.act  ~
+  ?.  write.u.scope.act  `'read only key'
+  =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act (sensitive-of:orr policy))
+  ?~  bad  ~
+  `(cat 3 'not in scope: ' u.bad)
+::  +deny-write: why a key may not write a body of this kind, or ~
+::
+++  deny-write
+  |=  [act=actor kind=@tas]
+  ^-  (unit @t)
+  ?~  scope.act  ~
+  ?.  write.u.scope.act  `'read only key'
+  ?.  (kind-in-scope:orr u.scope.act kind)  `(cat 3 'not in scope: ' kind)
+  ~
 --
