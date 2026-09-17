@@ -191,5 +191,6 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 2. `python3 scripts/code-closure.py code` reports nothing missing.
 3. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
 4. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
-5. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-6. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
+5. `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` prints `ALL OK`.
+6. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
+7. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
