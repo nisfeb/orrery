@@ -1169,7 +1169,7 @@ let n = 0;
 function ok(label, cond) { n += 1; assert.ok(cond, label); console.log('  ok   ' + label); }
 
 const bodies = render.bodies(state);
-ok('bodies are grouped by kind', bodies.indexOf('<h2>person</h2>') < bodies.indexOf('<h2>situation</h2>') && bodies.includes('<h2>thing</h2>'));
+ok('bodies are grouped by kind', bodies.indexOf('<h2>person</h2>') >= 0 && bodies.indexOf('<h2>person</h2>') < bodies.indexOf('<h2>situation</h2>') && bodies.includes('<h2>thing</h2>'));
 ok('every body links to its view', bodies.includes('href="#body/person/me"') && bodies.includes('href="#body/thing/subaru"'));
 ok('names are escaped', !bodies.includes('<b>Subaru</b>') && bodies.includes('&lt;b&gt;Subaru&lt;/b&gt;'));
 ok('open situations are listed', bodies.includes('situation/2026-09-16-breakdown'));
@@ -1193,6 +1193,10 @@ const settings = render.settings({ kinds: { person: { attrs: ['status'] } } }, {
 ok('the schema is editable JSON', settings.includes('id="schema"') && settings.includes('&quot;person&quot;'));
 ok('the policy is editable JSON', settings.includes('id="policy"') && settings.includes('&quot;health&quot;'));
 
+const hostile = render.inbox([{ id: 'h1', kind: 'task', title: 'Call <b>the</b> shop', status: 'proposed', proposed: '2026-09-17T02:10:00Z', by: '<i>who</i>', about: [], history: [] }]);
+ok('titles and actors are escaped in the inbox', !hostile.includes('<b>the</b>') && hostile.includes('&lt;b&gt;the&lt;/b&gt;') && hostile.includes('&lt;i&gt;who&lt;/i&gt;'));
+const hostileBody = render.body(Object.assign({}, view, { observations: [Object.assign({}, view.observations[2], { note: 'wrong <script>car</script>', by: '<x>' })] }));
+ok('notes and actors are escaped on the timeline', !hostileBody.includes('<script>') && hostileBody.includes('&lt;script&gt;car&lt;/script&gt;') && hostileBody.includes('&lt;x&gt;'));
 ok('esc handles the five characters', render.esc('<&>"\'') === '&lt;&amp;&gt;&quot;&#39;');
 ok('fmtValue renders strings, refs and objects', render.fmtValue('x') === 'x' && render.fmtValue({ ref: 'a/b' }).includes('#body/a/b') && render.fmtValue({ n: 1 }) === '{&quot;n&quot;:1}');
 console.log('ALL OK (' + n + ' checks)');
@@ -1221,7 +1225,7 @@ Run `node scripts/page-test.js`: expected to fail at the `require` (no such file
     <a href="#inbox">Inbox <span id="inbox-count" class="count"></span></a>
     <a href="#settings">Settings</a>
   </nav>
-  <span id="status" class="status"></span>
+  <span id="status" class="status" role="status" aria-live="polite"></span>
 </header>
 <main id="view"><p class="muted">Loading.</p></main>
 <script src="/apps/orrery/orrery.js"></script>
@@ -1300,7 +1304,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
 
   function bodies(state) {
-    var byKind = {};
+    var byKind = Object.create(null);
     (state.bodies || []).forEach(function (b) { (byKind[b.kind] = byKind[b.kind] || []).push(b); });
     var kinds = Object.keys(byKind).sort();
     var out = '<h1>Bodies</h1>';
@@ -1333,6 +1337,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
       attrs.forEach(function (a) {
         var rows = v.attrs[a];
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
+          if (!r) return;
           out += '<tr><td>' + esc(a) + '</td><td>' + fmtValue(r.value) + '</td><td>' + fmtTime(r.at) +
             '</td><td>' + esc(r.by || '') + '</td><td>' + source(r.source) + '</td></tr>';
         });
@@ -1400,12 +1405,15 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
   function say(msg, bad) { statusEl.textContent = msg; statusEl.className = 'status' + (bad ? ' bad' : ''); }
   function api(path, opts) {
     return fetch(API + path, opts).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) { throw new Error(d.error || ('http ' + r.status)); }
-        return d;
-      });
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          throw new Error(d.error || ('http ' + r.status));
+        });
+      }
+      return r.json();
     });
   }
+  function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function post(path, bodyObj, method) {
     return api(path, { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) });
   }
@@ -1421,7 +1429,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
     refreshing = true;
     var r = route();
     var p;
-    if (r.name === 'body') p = api('/body/' + r.id).then(function (v) { view.innerHTML = body(v); });
+    if (r.name === 'body') p = api('/body/' + seg(r.id)).then(function (v) { view.innerHTML = body(v); });
     else if (r.name === 'inbox') p = api('/actions?status=open').then(function (a) { view.innerHTML = inbox(a); });
     else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy')]).then(function (d) { view.innerHTML = settings(d[0], d[1]); });
     else p = api('/state').then(function (s) { view.innerHTML = bodies(s); if (typeof s.rev === 'number') lastRev = String(s.rev); });
@@ -1440,8 +1448,9 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
       if (note === null) return;
       post('/retract', { id: b.dataset.retract, note: note }).then(refresh).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.move) {
-      var parts = b.dataset.move.split(':');
-      post('/actions/' + parts[0], { status: parts[1], by: 'page' }).then(refresh).catch(function (e) { say(e.message, true); });
+      var cut = b.dataset.move.indexOf(':');
+      var moveId = b.dataset.move.slice(0, cut), moveTo = b.dataset.move.slice(cut + 1);
+      post('/actions/' + seg(moveId), { status: moveTo, by: 'page' }).then(refresh).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.save) {
       var which = b.dataset.save;
       var parsed;
@@ -1472,6 +1481,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
           var evs = buf.split('\n\n');
           buf = evs.pop();
           evs.forEach(function (ev) {
+            if (document.hidden) return;
             var name = '', data = '';
             ev.split('\n').forEach(function (ln) {
               if (ln.indexOf('event: ') === 0) name = ln.slice(7).trim();
@@ -1493,7 +1503,7 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
 })();
 ```
 
-Run `node scripts/page-test.js`: expected `ALL OK (19 checks)`. A failing assertion names the render function to fix.
+Run `node scripts/page-test.js`: expected `ALL OK (21 checks)`. A failing assertion names the render function to fix.
 
 - [ ] **Step 3: Serving**
 
@@ -1557,7 +1567,7 @@ Append before the closing `--`:
 The page is served to the owner with the right types and no cache, and
 refused without the cookie; then the render tests run under node.
 Exits 1 on any failure."""
-import subprocess, sys
+import os, subprocess, sys
 
 HOST, JAR = sys.argv[1:3]
 fails = []
@@ -1592,14 +1602,14 @@ check('the page answers 200 as html', code == 200 and h.get('content-type', '').
 check('the page is not cached', 'no-cache' in h.get('cache-control', ''), h)
 check('the page loads its script and style', 'orrery.js' in b and 'orrery.css' in b and 'id="view"' in b, b[:200])
 code, h, b = get('/apps/orrery/orrery.js')
-check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and 'orrery.js' not in b[:0] and '/apps/orrery/api' in b, (code, h))
+check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and '/apps/orrery/api' in b, (code, h))
 code, h, b = get('/apps/orrery/orrery.css')
 check('the style answers as css', code == 200 and h.get('content-type', '').startswith('text/css'), (code, h))
 code, h, b = get('/apps/orrery/nope.txt')
 check('an unknown file is 404', code == 404, (code, b[:100]))
 code, h, b = get('/apps/orrery', jar=False)
 check('the page is refused without the cookie', code == 403, (code, b[:100]))
-r = subprocess.run(['node', 'scripts/page-test.js'], capture_output=True, text=True)
+r = subprocess.run(['node', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'page-test.js')], capture_output=True, text=True)
 print(r.stdout.rstrip())
 check('the render tests pass under node', r.returncode == 0 and 'ALL OK' in r.stdout, r.stderr[:300])
 if fails:
