@@ -1797,6 +1797,17 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 
 `git status` clean; otherwise `git commit -am "Spec section 6 matches what landed"` and push.
 
+### Final review fixes (after the whole-branch review)
+
+Six findings from the whole-branch review landed as one fix round; the plan records them so it mirrors the code.
+
+- A refused peek is not an absence: `exists:om` answers `(unit ?)` (`~` on a veto) and the tools answer `orrery: peek refused` instead of `unknown subject` or `about: no such body` when the mcp tools child's grants are narrower than wex's.
+- The MCP gate locks the transports: the state view compared whole (bodies, situations, schema) with at least one body, and one body view compared whole against the HTTP route.
+- The page smoke locks the beacon: it reads the keep path out of the served script, opens the stream, and asserts an `event:` line ending in `/rev` with a numeric `data:` line; the script and the style are refused without the cookie too.
+- `orrery_act` forwards `proposed`; `by` is capped at 64 on the retract and move tools; `serve-retract` honours an owner payload `by` and the page sends `by: page`; a post-write refresh waits 300 ms; the stream loop says `live updates off` on a non-ok keep answer and backs off.
+- The encoder unit test locks the open-only filters and an unknown kind.
+- The docs say what the code does: `docs/kernel/README.md` (names, the revert source, the threat-model change), `docs/mcp.md` (the refusal-text deltas, what stays HTTP-only, `by` per item and capped), `docs/releasing.md` (the vendored `tools.hoon` pin check; the owner's by-hand page pass before the ricsul publish), spec sections 6 (file names hyphenated, declared names underscored) and 10 (the gate that exists; the page pass is the owner's).
+
 ---
 
 ## Self-review
