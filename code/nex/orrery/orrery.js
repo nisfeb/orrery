@@ -190,7 +190,17 @@
   // /rev", which EventSource cannot subscribe to; it carries the current
   // rev, so a bump missed while nobody watched shows as a difference) ----
   var timer = null;
-  function bumped() { clearTimeout(timer); timer = setTimeout(refresh, 300); }
+  // a re-render replaces the settings textareas, so a bump waits while
+  // one of them has focus; the next bump after blur refreshes
+  function editing() {
+    var el = document.activeElement;
+    return !!(el && el.tagName === 'TEXTAREA' && view.contains(el));
+  }
+  function bumped() {
+    if (editing()) return;
+    clearTimeout(timer);
+    timer = setTimeout(function () { if (!editing()) refresh(); }, 300);
+  }
   async function stream() {
     for (;;) {
       if (document.hidden) { await new Promise(function (r) { setTimeout(r, 1000); }); continue; }

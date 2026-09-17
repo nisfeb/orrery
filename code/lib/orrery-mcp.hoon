@@ -171,47 +171,62 @@
   $(all t.all)
 ::  ==  per-item answers for an observe batch, as the HTTP route gives them
 ::
+::  seen carries the ids already answered in this batch, so the second
+::  copy of one item answers existing rather than claiming a fresh write
+::
 ++  body-results
-  |=  [items=(list (each [id=bid:orr =body:orr] @t)) acc=(list json)]
+  |=  [items=(list (each [id=bid:orr =body:orr] @t)) seen=(set bid:orr) acc=(list json)]
   =/  m  (fiber:fiber:nexus ,(list json))
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    (body-results t.items [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    (body-results t.items seen [entry acc])
   =/  pk  (parse-bid:orr id.p.i.items)
   ?~  pk
-    (body-results t.items [(pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']])
+    (body-results t.items seen [entry acc])
+  =/  bd=bid:orr  id.p.i.items
   ;<  ex=(unit ?)  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
   ?~  ex
-    %+  body-results  t.items
-    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
-  %+  body-results  t.items
-  [(pairs:enjs:format ~[['id' s+id.p.i.items] ['ok' b+&] ['existing' b+u.ex]]) acc]
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    (body-results t.items seen [entry acc])
+  =/  entry=json
+    (pairs:enjs:format ~[['id' s+bd] ['ok' b+&] ['existing' b+|(u.ex (~(has in seen) bd))]])
+  (body-results t.items (~(put in seen) bd) [entry acc])
 ++  obs-results
-  |=  [items=(list (each obs:orr @t)) known=(set bid:orr) acc=(list json)]
+  |=  $:  items=(list (each obs:orr @t))
+          known=(set bid:orr)
+          seen=(set @ta)
+          acc=(list json)
+      ==
   =/  m  (fiber:fiber:nexus ,(list json))
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    (obs-results t.items known seen [entry acc])
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']])
+    (obs-results t.items known seen [entry acc])
   ;<  has=(unit ?)  bind:m
     ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,(unit ?)) `&)
     (exists (body-dir kind.u.pk slug.u.pk) %body)
   ?~  has
-    %^  obs-results  t.items  known
-    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    (obs-results t.items known seen [entry acc])
   ?.  u.has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+why]]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+why]])
+    (obs-results t.items known seen [entry acc])
   =/  id=@ta  (obs-id:orr o)
   ;<  ex=(unit ?)  bind:m  (exists (obs-dir kind.u.pk slug.u.pk) id)
   ?~  ex
-    %^  obs-results  t.items  known
-    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']]) acc]
-  %^  obs-results  t.items  known
-  [(pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+u.ex]]) acc]
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    (obs-results t.items known seen [entry acc])
+  =/  entry=json
+    (pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+|(u.ex (~(has in seen) id))]])
+  (obs-results t.items known (~(put in seen) id) [entry acc])
 --

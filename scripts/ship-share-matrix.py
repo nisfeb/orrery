@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
 HOSTNAME, PEERNAME = '~wex', '~feb'
+GROUP = '/grubbery/ball/sys/ames/usergroups/orrery-person.sarah.grp?info=1'
+STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
+PEER_POLICY = [None]
 fails = []
 count = [0]
 
@@ -74,6 +77,23 @@ def dictish(x):
     return x if isinstance(x, dict) else {}
 
 
+def listish(x):
+    return x if isinstance(x, list) else []
+
+
+def group_ships():
+    """the size in bytes of the share group's who.ships, or None when
+    the read failed. A group with no ship in it is 0; the ?info=1 text
+    of a /ships grub is always null, so the size is what can be read."""
+    code, d = raw(HOST, HJAR, GROUP)
+    if code != 200:
+        return None
+    for c in listish(dictish(d).get('children')):
+        if dictish(c).get('name') == 'who.ships':
+            return dictish(c).get('size')
+    return None
+
+
 def iso(dt):
     return dt.replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -133,12 +153,14 @@ def clean():
         peer('POST', '/decline', {'host': h, 'id': i})
     for side, bid in ((host, 'person/sarah'), (peer, 'person/me'),
                       (host, 'person/me'), (peer, 'person/' + HOSTNAME[1:])):
-        for n in ('location', 'mood', 'plan'):
+        for n in ('location', 'mood', 'plan', 'health'):
             row = attr(side, bid, n)
             if row:
                 retract(side, row)
     host('DELETE', '/body/person/john')
     peer('DELETE', '/body/person/john')
+    if PEER_POLICY[0] is not None:
+        peer('PUT', '/policy', PEER_POLICY[0])
 
 
 T0 = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -147,6 +169,10 @@ print('== setup')
 clean()
 code, d = peer('POST', '/bodies', {'id': 'person/me', 'ship': PEERNAME})
 check('peer person/me carries its ship', code == 200, d)
+code, d = peer('GET', '/policy')
+PEER_POLICY[0] = d if code == 200 and isinstance(d, dict) else STARTER
+code, d = peer('PUT', '/policy', dict(dictish(PEER_POLICY[0]), sensitive=['health']))
+check('the peer marks health sensitive', code == 200, d)
 code, d = host('POST', '/bodies', {'id': 'person/sarah', 'name': 'Sarah', 'ship': PEERNAME})
 check('host person/sarah carries the peer ship', code == 200, d)
 code, d = observe(host, 'person/sarah', 'location', 'at the lake house', T0, 'share-1')
@@ -202,6 +228,16 @@ check('the host source names the peer grub', source_id(hrow) == PEERNAME + '/' +
 peer('POST', '/sync')
 time.sleep(10)
 check('nothing echoes back onto the peer', dictish(attr(peer, 'person/me', 'mood')).get('by') == 'ship-share-matrix', attr(peer, 'person/me', 'mood'))
+
+print('== a sensitive attribute stays home')
+code, d = observe(peer, 'person/me', 'health', 'flu', T0, 'share-4')
+check('peer observes a sensitive attribute', code == 200, d)
+peer('POST', '/sync')
+time.sleep(10)
+check('the sensitive attribute is not pushed', absent(host, 'person/sarah', 'health'), attr(host, 'person/sarah', 'health'))
+check('the attribute it may push is still there', dictish(attr(host, 'person/sarah', 'mood')).get('value') == 'tired', attr(host, 'person/sarah', 'mood'))
+code, d = retract(peer, dictish(attr(peer, 'person/me', 'health')))
+check('peer retracts the sensitive attribute', code == 200, d)
 code, d = retract(peer, prow)
 check('peer retracts mood', code == 200, d)
 peer('POST', '/sync')
@@ -217,14 +253,14 @@ code, d = observe(host, 'person/sarah', 'plan', 'dinner at seven', T0, 'share-3'
 check('host observes plan', code == 200, d)
 peer('POST', '/sync')
 wait('the plan mirrors', lambda: attr(peer, 'person/me', 'plan'), 90)
+check('the share group holds a ship while the share is live', (group_ships() or 0) > 0, group_ships())
 code, d = host('DELETE', '/share/person/sarah/' + PEERNAME)
 check('revoke answers ok', code == 200, d)
 wait('the peer row goes', lambda: gone_from(peer, 'accepted', KEY), 30)
 check('the mirrored plan stays', dictish(attr(peer, 'person/me', 'plan')).get('value') == 'dinner at seven', attr(peer, 'person/me', 'plan'))
 s = shares(host)
 check('the host no longer lists the share', s is not None and PEERNAME not in dictish(dictish(s.get('shares')).get('person/sarah')), s)
-code, d = raw(HOST, HJAR, '/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/who.ships?info=1')
-check('the peer leaves the share group', code == 200 and PEERNAME not in str(dictish(d).get('text')), (code, d))
+check('the peer leaves the share group', group_ships() == 0, group_ships())
 
 print('== a re-share works')
 code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})
@@ -232,6 +268,18 @@ check('share again', code == 200, d)
 wait('a fresh offer', lambda: dictish(dictish(shares(peer)).get('offers')).get(KEY), 30)
 code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/sarah'})
 check('accept again', code == 200, d)
+
+print('== deleting a body drops its share')
+code, d = host('DELETE', '/body/person/sarah')
+check('the shared body goes', code == 200, d)
+s = shares(host)
+check('the host no longer lists the share of a deleted body',
+      s is not None and 'person/sarah' not in dictish(s.get('shares')), s)
+check('the peer leaves the group with the body', group_ships() == 0, group_ships())
+code, d = host('POST', '/bodies', {'id': 'person/sarah', 'name': 'Sarah', 'ship': PEERNAME})
+check('the body comes back for the rest of the gate', code == 200, d)
+code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})
+check('and is shared again, so the next run can revoke it', code == 200, d)
 
 print("== the host's own self lands on person/<host>")
 SELF = 'person/' + HOSTNAME[1:]

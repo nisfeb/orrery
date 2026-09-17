@@ -29,7 +29,8 @@ A writing key can learn that a name is sensitive by trying to observe it and rea
 
 - The owner cookie is never scoped. Keys are checked in the app, not by eyre, the way calendar checks CalDAV passwords.
 - A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (the key reads that attribute as cleared, never as an older value). Only a top-level `{"ref"}` value is veiled; a body id written inside free-form JSON is not.
-- A veiled row carries a synthetic id of the form `veiled-<n>`, because the real id is a hash over the value it hides. Retracting that id answers `no such observation`.
+- A veiled row carries a synthetic id of the form `veiled-<n>`, because the real id is a hash over the value it hides. Retracting that id answers `no such observation`, and so does retracting the real id, so a key that recomputes one learns nothing from the answer.
+- What a veiled row does reveal is this much: that some body of a kind outside the key's kinds is referenced from that attribute, at that time, by that source. Not which body, not its name, not that it exists.
 - The state view's `rev` moves on every write, in scope or out of it, so a key can tell that something changed without being told what.
 - Action titles and payloads are free text and are not veiled. A title that names a body outside the key's kinds is shown as written.
 - `by` and `source` on the rows a key reads name other clients and ships, since they are part of the audit trail.

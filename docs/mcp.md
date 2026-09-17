@@ -4,7 +4,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 
 ## Calling them
 
-- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`). The kernel's `call_tool` meta tool takes the same path as its `tool_name`.
+- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`).
 - By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 
@@ -23,7 +23,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 
 `by` defaults to `mcp`. In an observe batch it is per item: an observation's own `by` wins over the batch's, and either is refused over 64 bytes.
 
-A refusal is an MCP error carrying the text the HTTP route would answer, with three deltas. `orrery_body` says `id: expected <kind>/<slug>` where the route says `expected <kind>/<slug>`; `orrery_actions` with no status to move says `status: required to move an action`; `orrery_observe` refuses a non-array `bodies` or `observations` where the route reads an absent one as empty. Everything else refuses with the route's text.
+A refusal is an MCP error carrying the text the HTTP route would answer, with four deltas. `orrery_body` says `id: expected <kind>/<slug>` where the route says `expected <kind>/<slug>`; `orrery_actions` with no status to move says `status: required to move an action`; `orrery_observe` refuses a non-array `bodies` or `observations` where the route reads an absent one as empty; `orrery_retract` and `orrery_actions` refuse a `by` over 64 bytes, where the owner's own routes take any length. Everything else refuses with the route's text.
 
 One refusal has no route counterpart. `orrery: peek refused` means the mcp tools child was not granted a peek into the instance, so a missing body could not be told from a vetoed read. On `~wex` the mcp instance holds the whole ball and it never appears.
 
@@ -35,4 +35,4 @@ The writer's trail is not a tool either. `/tr/last`, the last writer outcome, is
 
 ## What the analyst can see
 
-Over MCP the analyst is the owner: every body, every attribute, sensitive ones included, and it can share and mint nothing (those stay HTTP, owner cookie). A client that should see less gets a scoped key (`docs/keys.md`) or a share (`docs/sharing.md`) instead.
+Over MCP the analyst is the owner: every body, every attribute, sensitive ones included. Orrery ships no tool for sharing or for minting a key, but that bounds the tools, not the analyst. What an MCP analyst can reach is the mcp server's weir, today the whole ball, so an analyst on this ship can do anything the owner can, the writer included. Scoping an analyst means a key or a share on another ship, which is what spec section 6 says.

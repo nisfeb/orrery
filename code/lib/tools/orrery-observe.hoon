@@ -31,22 +31,33 @@
   ?:  (gth (lent (ga:orr jon 'bodies')) max-bodies:orr)  (pure:m (fail:om 'bodies: over 50'))
   ?:  (gth (lent (ga:orr jon 'observations')) max-obs:orr)  (pure:m (fail:om 'observations: over 200'))
   ;<  now=@da  bind:m  get-time:io
+  =/  all-obs=(list json)
+    (turn (ga:orr jon 'observations') |=(j=json (fill-obs:orr j now who)))
+  ::  a ship source is the inbox's to set, from the transport: an item
+  ::  claiming one is answered refused and never reaches the writer
   =/  stamped=json
     %-  pairs:enjs:format
     :~  ['op' s+'observe']
         ['bodies' a+(ga:orr jon 'bodies')]
-        ['observations' a+(turn (ga:orr jon 'observations') |=(j=json (fill-obs:orr j now who)))]
+        ['observations' a+(skip all-obs ship-source:orr)]
     ==
-  =/  prep  (prep-observe:orr stamped now who)
+  =/  shown=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'observe']
+        ['bodies' a+(ga:orr jon 'bodies')]
+        ['observations' a+all-obs]
+    ==
+  =/  prep  (prep-observe:orr shown now who)
+  =/  items=(list (each obs:orr @t))  (mark-reserved:orr all-obs obs.prep)
   ;<  ok=?  bind:m  ensure-me:om
   ?.  ok  (pure:m (fail:om 'orrery: peek refused'))
-  ;<  bodies-res=(list json)  bind:m  (body-results:om bodies.prep ~)
+  ;<  bodies-res=(list json)  bind:m  (body-results:om bodies.prep ~ ~)
   =/  known=(set bid:orr)
     %-  sy
     :-  'person/me'
     %+  murn  bodies.prep
     |=(e=(each [id=bid:orr =body:orr] @t) ?:(?=(%& -.e) `id.p.e ~))
-  ;<  obs-res=(list json)  bind:m  (obs-results:om obs.prep known ~)
+  ;<  obs-res=(list json)  bind:m  (obs-results:om items known ~ ~)
   ;<  err=(unit tang)  bind:m  (poke-writer:om stamped)
   ?^  err  (pure:m (fail:om 'the writer refused the poke'))
   (pure:m (text:om (pairs:enjs:format ~[['bodies' a+bodies-res] ['observations' a+obs-res]])))

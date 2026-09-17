@@ -111,7 +111,7 @@ The starter schema:
 }
 ```
 
-`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`; any other value behaves as `proposed`, so a typo never silences notifications. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than the retention are culled. A live observation is never culled.
+`policy.json` starts as `{"auto": ["task", "note"], "push": "proposed", "retention_days": 365}`. `push` is `proposed` (notify through `/sys/push` only when an action needs a human), `all` (every new action, filed ones included) or `none`; any other value behaves as `proposed`, so a typo never silences notifications. An auto-filed action is not an interruption; it is visibility, and visibility is the audit log's job: `/tr/log` keeps the last 500 writer outcomes, each with the op, whether it applied, why not, when, and the actor. `retention_days` bounds compaction: on each write to a body, its observations that are superseded, expired or retracted and older than `retention_days` by the later of when it was true and when the ship recorded it are culled. A live observation is never culled. Ageing a row by the later of the two keeps a fact recorded today about five years ago for the retention from today.
 
 ## 4. Shape of the desk
 
@@ -316,7 +316,7 @@ The unit shared is a body: its `body` grub and its observations. Calendar's ship
 - `clients.json` holds one row per client: a name, an id, a salted hash of the secret, the identity it acts as (`by`), a scope, when it was minted and last used. The owner mints one with `POST /api/clients {"name", "by", "scope"}` and sees the token once; `DELETE /api/clients/<id>` revokes.
 - A scope is `{"kinds": [...], "actions": [...], "write": true|false}`. `kinds` are the body kinds the client may read and, with `write`, observe; `actions` the action kinds it may propose; `write` also covers approving, dismissing and completing.
 - A request carrying `Authorization: Bearer <token>` acts under that scope: the state, body and resolve views omit bodies outside `kinds`, a body outside them is a 404, an observation on one is a 403, a proposal of a kind outside `actions` is a 403, and `by` is forced to the key's identity so the audit trail is honest.
-- `policy.json` gains `sensitive`, a list of attribute names only the owner cookie ever sees; a key never receives them, whatever its scope. A client that keeps a todo list gets `{"kinds": [], "actions": ["task"], "write": true}` and never learns a health attribute exists.
+- `policy.json` gains `sensitive`, a list of attribute names only the owner cookie ever sees over HTTP; a key never receives them, whatever its scope. A share (phase 2) is a grant on a directory and carries the body whole, sensitive attributes included, so the one place sharing honors the list is the push back to a host, which drops them. A client that keeps a todo list gets `{"kinds": [], "actions": ["task"], "write": true}` and never learns a health attribute exists.
 - The owner cookie keeps full access. Keys are checked in-app, like calendar's CalDAV passwords, never by eyre.
 
 ## 12. Release and install

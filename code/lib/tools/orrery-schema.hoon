@@ -23,7 +23,7 @@
   ?~  doc
     ;<  schema=json  bind:m  (read-json:om / %'schema.json')
     (pure:m (text:om schema))
-  ?.  ?=([%o *] doc)  (pure:m (fail:om 'schema: expected an object'))
+  ?.  ?=([%o *] doc)  (pure:m (fail:om 'a JSON object is required'))
   ;<  err=(unit tang)  bind:m
     (poke-writer:om (pairs:enjs:format ~[['op' s+'set-schema'] ['doc' doc]]))
   ?^  err  (pure:m (fail:om 'the writer refused the poke'))

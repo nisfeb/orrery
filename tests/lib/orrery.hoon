@@ -45,6 +45,9 @@
     (expect-eq !>(`(unit @da)`~) !>((de-iso:orr '2026-09-16 22:05:00')))
     (expect-eq !>(`(unit @da)`~) !>((de-iso:orr '2026-13-01T00:00:00Z')))
     (expect-eq !>(`(unit @da)`~) !>((de-iso:orr '2026-09-16T22:05:00+02:00')))
+    ::  a day the month does not have rolls over in +year: refuse it
+    (expect-eq !>(`(unit @da)`~) !>((de-iso:orr '2026-02-30T00:00:00Z')))
+    (expect-eq !>(`(unit @da)`[~ ~2026.2.28]) !>((de-iso:orr '2026-02-28T00:00:00Z')))
     (expect-eq !>('1970-01-01T00:00:00Z') !>((en-iso:orr ~1970.1.1)))
   ==
 ++  test-unix-secs
@@ -550,7 +553,11 @@
     (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex `~wex 'person/me')))
     (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex ~ 'person/me')))
     (expect-eq !>('person/ricsul-bilwyt') !>((mirror-target:orr ~feb ~ricsul-bilwyt `~ricsul-bilwyt 'person/me')))
-    (expect-eq !>('orrery-person-sarah') !>((group-name:orr %person %sarah)))
+    (expect-eq !>('orrery-person.sarah') !>((group-name:orr %person %sarah)))
+    ::  a dot cannot appear in a kind or a slug, so no two bodies share
+    ::  a group name
+    (expect-eq !>('orrery-per-son.me') !>((group-name:orr %per-son %me)))
+    (expect-eq !>('orrery-per.son-me') !>((group-name:orr %per %son-me)))
   ==
 ::  a carried observation names the other side's body and carries the
 ::  sender's grub name; the receiver sets by and source from the ship

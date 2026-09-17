@@ -148,6 +148,13 @@ ok, d = call('orrery-observe', {'observations': [{'subject': 'org/nobody', 'attr
 check('an unknown subject is refused per item', ok and len(listish(dictish(d).get('observations'))) == 1 and dictish(listish(dictish(d).get('observations'))[0]).get('ok') is False, d)
 ok, d = call('orrery-observe', {'observations': 'nope'})
 check('a non-array batch is an error', not ok, d)
+ok, d = call('orrery-observe', {'observations': [{'subject': 'person/me', 'attr': 'mood', 'value': 'forged',
+                                                 'at': iso(T0), 'source': {'kind': 'ship', 'id': '~zod/x'}}]})
+o = listish(dictish(d).get('observations'))
+check('a ship source is refused per item', ok and len(o) == 1 and dictish(o[0]).get('ok') is False
+      and dictish(o[0]).get('error') == 'source.kind: reserved for the inbox', d)
+a = body_attrs('person/me')
+check('the forged ship claim was not written', dictish(dictish(a).get('mood')).get('value') != 'forged', a)
 ok, d = call('orrery-resolve', {'q': 'mcp test'})
 check('resolve finds the new place by alias', ok and any(dictish(r).get('id') == 'place/mcp-test' for r in listish(d)), d)
 ok, d = call('orrery-body', {'id': 'place/mcp-test'})

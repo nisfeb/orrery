@@ -24,6 +24,9 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ::  an action about person/me on a fresh instance needs it laid first
+  ;<  ok=?  bind:m  ensure-me:om
+  ?.  ok  (pure:m (fail:om 'orrery: peek refused'))
   =/  who=@t  (fall (arg:om args.st 'by') 'mcp')
   =/  jon=json
     :-  %o

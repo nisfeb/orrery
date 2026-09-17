@@ -127,6 +127,10 @@
 ::  +de-iso: "2026-09-16T22:05:00Z" (a fraction is allowed and dropped,
 ::  Z only) to a @da, or ~
 ::
+::    A day the month does not have is refused rather than rolled over:
+::    +year turns 2026-02-30 into March, so the date is re-encoded and
+::    compared with the ten characters the caller sent.
+::
 ++  de-iso
   |=  t=@t
   ^-  (unit @da)
@@ -151,7 +155,9 @@
           (lth h 24)   (lth mi 60)  (lth s 60)
       ==
     ~
-  `(year [[& y] mo d h mi s ~])
+  =/  when=@da  (year [[& y] mo d h mi s ~])
+  ?.  =((end [3 10] (en-iso when)) (end [3 10] t))  ~
+  `when
 ::  +en-iso: a @da to "2026-09-16T22:05:00Z", whole seconds
 ::
 ++  en-iso
@@ -379,6 +385,22 @@
   ^-  [bodies=(list (each [id=bid =body] @t)) obs=(list (each obs @t))]
   :-  (turn (ga jon 'bodies') |=(j=json (de-body j now)))
   (turn (ga jon 'observations') |=(j=json (de-obs j now default-by)))
+::  +ship-source: an observation claiming a ship source. Only the inbox
+::  sets that kind, from the transport; a local client that sent it
+::  would be forging a ship's claim.
+::
+++  ship-source  |=(j=json ^-(? =('ship' (gs (gj j 'source') 'kind'))))
+::  +mark-reserved: a decoded batch with each item whose source kind is
+::  ship refused in place, so the answer keeps the caller's order while
+::  the item itself never reaches the writer
+::
+++  mark-reserved
+  |=  [raw=(list json) items=(list (each obs @t))]
+  ^-  (list (each obs @t))
+  ?~  items  ~
+  ?~  raw  items
+  :-  ?:((ship-source i.raw) [%| 'source.kind: reserved for the inbox'] i.items)
+  $(raw t.raw, items t.items)
 ::  ==  readers: a stored noun to its shape, newest shape first, or ~
 ::
 ++  read-body
@@ -703,10 +725,15 @@
   (rap 3 'person/' (rsh [3 1] (scot %p host)) ~)
 ::  +group-name: the usergroup that may read one shared body
 ::
+::    Kind and slug are joined with a dot, which neither may contain, so
+::    two bodies never share a group. A hyphen would let "per-son/me"
+::    and "per/son-me" collide, and the second share would silently
+::    replace the first one's grant.
+::
 ++  group-name
   |=  [kind=@tas slug=@ta]
   ^-  @t
-  (rap 3 'orrery-' kind '-' slug ~)
+  (rap 3 'orrery-' kind '.' slug ~)
 ::  +carry-obs: an observation as one ship sends it to another: the
 ::  other side's body id as subject, the sender's grub name as oid, and
 ::  whether the sender retracted it. by and source are deliberately

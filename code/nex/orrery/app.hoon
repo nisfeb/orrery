@@ -254,12 +254,20 @@
   |=  [op=@t ok=? why=@t by=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  (note-inbox-at 0 op ok why by)
+::  +note-inbox-at: the same ring from a fiber that is not the nexus
+::  root, which a request fiber is
+::
+++  note-inbox-at
+  |=  [up=@ud op=@t ok=? why=@t by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   =/  entry=json
     %-  pairs:enjs:format
     ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time:orr now)]]
-  ;<  log=json  bind:m  (read-json (rf 0 /tr %inbox))
-  (over:io (rf 0 /tr %inbox) [[/ %json] (ring:orr log entry 500)])
+  ;<  log=json  bind:m  (read-json (rf up /tr %inbox))
+  (over:io (rf up /tr %inbox) [[/ %json] (ring:orr log entry 500)])
 ::  +note-refusals: one ship-traffic note per refusal, for the rows a
 ::  ship sent or holds that the decoder would not take
 ::
@@ -268,7 +276,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?~  bad  (pure:m ~)
-  =/  why=@t  (rap 3 oid.i.bad ': ' why.i.bad ~)
+  ::  the oid is a peer's text: keep it to 64 bytes so the ring holds
+  ::  notes rather than one ship's essay
+  =/  why=@t  (rap 3 (end [3 64] oid.i.bad) ': ' why.i.bad ~)
   ;<  ~  bind:m  (note-inbox op | why by)
   (note-refusals op by t.bad)
 ::  +bump-beacon: the change beacon moves once per op that changed the
@@ -319,8 +329,10 @@
   =/  fresh=body:orr  new(name (fresh-name:orr slug name.new))
   ;<  cur=view:nexus  bind:m  (peek:io road ~)
   ?.  ?=([%file *] cur)
-    ;<  *  bind:m  (make-gained-soft:io road |+[[[/orrery %body] `stored-body:orr`[%2 fresh]] ~])
-    (pure:m &)
+    ::  a vetoed make wrote nothing: the beacon must not move for it
+    ;<  err=(unit tang)  bind:m
+      (make-gained-soft:io road |+[[[/orrery %body] `stored-body:orr`[%2 fresh]] ~])
+    (pure:m ?=(~ err))
   =/  old=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.cur))
   ::  a grub this build cannot read is left where it is: overwriting it
   ::  would throw away a body a later shape may still understand
@@ -349,7 +361,14 @@
     %+  murn  obs.prep
     |=(e=(each obs:orr @t) ?:(?=(%& -.e) `subject.p.e ~))
   ;<  ~  bind:m  (compact-each subjects)
-  ;<  ~  bind:m  (note 'observe' & '')
+  ::  a batch carried from a shared peer belongs in the ship-traffic
+  ::  ring, not in the owner's audit log
+  =/  who=@t
+    =/  os=(list json)  (ga:orr jon 'observations')
+    ?~(os '' (gs:orr i.os 'by'))
+  ;<  ~  bind:m
+    ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'observe' & '' who)
+    (note 'observe' & '')
   (pure:m |(c1 c2))
 ++  write-bodies
   |=  [items=(list (each [id=bid:orr =body:orr] @t)) changed=?]
@@ -380,8 +399,9 @@
   =/  road=road:tarball  (rf 0 (obs-dir kind.u.pk slug.u.pk) (obs-id:orr o))
   ;<  ex=?  bind:m  (peek-exists:io road)
   ?:  ex  (write-obs t.items changed)
-  ;<  *  bind:m  (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 o]] ~])
-  (write-obs t.items &)
+  ;<  err=(unit tang)  bind:m
+    (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 o]] ~])
+  (write-obs t.items |(changed ?=(~ err)))
 ++  do-upsert-body
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
@@ -502,6 +522,17 @@
   =/  act=actor  u.who
   ::  +own: a route the owner alone may take
   =/  own  |=(f=form:m ^-(form:m ?:(owner.act f (send-err eyre-id 403 'owner only'))))
+  ::  a body is read as JSON, so a request carrying one says it is JSON.
+  ::  The gates and the page all send the header.
+  =/  ctype=@t
+    =/  raw=tape
+      (cass (trip (fall (get-header:http 'content-type' header-list.request.req) '')))
+    (crip raw)
+  ?:  ?&  |(=('POST' meth) =('PUT' meth))
+          ?=(^ body.request.req)
+          !=('application/json' (end [3 16] ctype))
+      ==
+    (send-err eyre-id 415 'content-type: application/json required')
   ;<  ~  bind:m  ensure-me-from-request
   =/  jon=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
@@ -574,6 +605,9 @@
   =/  obs-j=json  (gj:orr jon 'observations')
   ?.  |(?=(~ obs-j) ?=([%a *] obs-j))
     (send-err eyre-id 400 'observations: expected an array')
+  =/  bodies-j=json  (gj:orr jon 'bodies')
+  ?.  |(?=(~ bodies-j) ?=([%a *] bodies-j))
+    (send-err eyre-id 400 'bodies: expected an array')
   ?:  (gth (lent (ga:orr jon 'bodies')) max-bodies:orr)
     (send-err eyre-id 400 'bodies: over 50')
   ?:  (gth (lent (ga:orr jon 'observations')) max-obs:orr)
@@ -586,58 +620,84 @@
     |=  j=json
     ^-  json
     ?:(owner.act (fill-obs:orr j now 'http') (fill-obs-as:orr j now by.act))
+  =/  all-obs=(list json)  (turn (ga:orr jon 'observations') stamp)
+  ::  a ship source is the inbox's to set, from the transport: a local
+  ::  client sending one would be forging another ship's claim, so the
+  ::  item is answered refused and never reaches the writer
   =/  stamped=json
     %-  pairs:enjs:format
     :~  ['op' s+'observe']
         ['bodies' a+(ga:orr jon 'bodies')]
-        ['observations' a+(turn (ga:orr jon 'observations') stamp)]
+        ['observations' a+(skip all-obs ship-source:orr)]
     ==
-  =/  prep  (prep-observe:orr stamped now by.act)
-  ;<  bodies-res=(list json)  bind:m  (body-results bodies.prep ~)
+  =/  shown=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'observe']
+        ['bodies' a+(ga:orr jon 'bodies')]
+        ['observations' a+all-obs]
+    ==
+  =/  prep  (prep-observe:orr shown now by.act)
+  =/  items=(list (each obs:orr @t))  (mark-reserved:orr all-obs obs.prep)
+  ;<  bodies-res=(list json)  bind:m  (body-results bodies.prep ~ ~)
   =/  known=(set bid:orr)
     %-  sy
     :-  'person/me'
     %+  murn  bodies.prep
     |=(e=(each [id=bid:orr =body:orr] @t) ?:(?=(%& -.e) `id.p.e ~))
-  ;<  obs-res=(list json)  bind:m  (obs-results obs.prep known ~)
+  ;<  obs-res=(list json)  bind:m  (obs-results items known ~ ~)
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] stamped])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['bodies' a+bodies-res] ['observations' a+obs-res]])
+::  seen carries the ids already answered in this batch, so the second
+::  copy of one item answers existing rather than claiming a fresh write
+::
 ++  body-results
-  |=  [items=(list (each [id=bid:orr =body:orr] @t)) acc=(list json)]
+  |=  [items=(list (each [id=bid:orr =body:orr] @t)) seen=(set bid:orr) acc=(list json)]
   =/  m  (fiber:fiber:nexus ,(list json))
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    (body-results t.items [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc])
+    %^  body-results  t.items  seen
+    [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc]
   =/  pk  (parse-bid:orr id.p.i.items)
   ?~  pk
-    (body-results t.items [(pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']]) acc])
+    %^  body-results  t.items  seen
+    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']]) acc]
+  =/  bd=bid:orr  id.p.i.items
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
-  %+  body-results  t.items
-  [(pairs:enjs:format ~[['id' s+id.p.i.items] ['ok' b+&] ['existing' b+ex]]) acc]
+  =/  entry=json
+    (pairs:enjs:format ~[['id' s+bd] ['ok' b+&] ['existing' b+|(ex (~(has in seen) bd))]])
+  %^  body-results  t.items  (~(put in seen) bd)  [entry acc]
 ++  obs-results
-  |=  [items=(list (each obs:orr @t)) known=(set bid:orr) acc=(list json)]
+  |=  $:  items=(list (each obs:orr @t))
+          known=(set bid:orr)
+          seen=(set @ta)
+          acc=(list json)
+      ==
   =/  m  (fiber:fiber:nexus ,(list json))
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    (obs-results t.items known seen [entry acc])
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']])
+    (obs-results t.items known seen [entry acc])
   ;<  has=?  bind:m
     ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,?) &)
     (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   ?.  has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
-    (obs-results t.items known [(pairs:enjs:format ~[['ok' b+|] ['error' s+why]]) acc])
+    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+why]])
+    (obs-results t.items known seen [entry acc])
   =/  id=@ta  (obs-id:orr o)
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (obs-dir kind.u.pk slug.u.pk) id))
-  %^  obs-results  t.items  known
-  [(pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+ex]]) acc]
+  =/  entry=json
+    (pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+|(ex (~(has in seen) id))]])
+  (obs-results t.items known (~(put in seen) id) [entry acc])
 ::  +find-obs: the body holding an observation id, by a sweep
 ::
 ++  find-obs
@@ -682,7 +742,10 @@
     %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
     [[/orrery %obs] `stored-obs:orr`[%1 o]]
   ;<  ~  bind:m  (compact kind.u.hit slug.u.hit)
-  ;<  ~  bind:m  (note-by 'retract' & why (gs:orr jon 'by'))
+  =/  who=@t  (gs:orr jon 'by')
+  ;<  ~  bind:m
+    ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'retract' & why who)
+    (note-by 'retract' & why who)
   (pure:m &)
 ++  do-delete-body
   |=  jon=json
@@ -813,6 +876,11 @@
 ::  +compact: cull a body's observations that are superseded, expired
 ::  or retracted and older than the retention. A live one never goes.
 ::
+::    A row ages by the later of when it became true and when the ship
+::    recorded it, so a fact learned today about five years ago is kept
+::    for the retention from today, not culled the moment it is
+::    superseded.
+::
 ++  compact
   |=  [kind=@tas slug=@ta]
   =/  m  (fiber:fiber:nexus ,~)
@@ -830,7 +898,7 @@
     %+  murn  rows
     |=  r=row:orr
     ^-  (unit @ta)
-    ?:  (gte at.obs.r horizon)  ~
+    ?:  (gte (max at.obs.r seen.obs.r) horizon)  ~
     =/  st=@tas  (status-of:orr r winners now)
     ?:(?=(?(%superseded %expired %retracted) st) `id.r ~)
   (cull-each 0 (obs-dir kind slug) dead)
@@ -879,13 +947,31 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  id=bid:orr  (rap 3 kind '/' slug ~)
-  ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (send-err eyre-id 400 'expected <kind>/<slug>')
   ;<  ex=?  bind:m  (peek-exists:io (rv 1 /bodies/[kind]/[slug]))
   ?.  ex  (send-err eyre-id 404 'no such body')
   =/  op=json  (pairs:enjs:format ~[['op' s+'delete-body'] ['id' s+id]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  ;<  ~  bind:m  (drop-share kind.u.pk slug.u.pk id)
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+::  +drop-share: a deleted body is shared with nobody. The record goes
+::  and the group is rewritten with no ships, so the peek grant that
+::  outlives the body goes with it.
+::
+++  drop-share
+  |=  [kind=@tas slug=@ta id=bid:orr]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
+  ?.  (~(has by all) id)  (pure:m ~)
+  ;<  ~  bind:m  (over:io (rf 1 / %'shares.json') [[/ %json] [%o (~(del by all) id)]])
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base
+    (note-inbox-at 1 'delete-body' | 'cannot find where this app is installed' '')
+  (set-share-group u.base kind slug ~)
 ++  serve-resolve
   |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
@@ -911,10 +997,21 @@
   ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 1 `@ta`id)
   ?~  hit  (send-err eyre-id 404 'no such observation')
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  ::  a row whose value points at a body outside the key's kinds is
+  ::  veiled on every view: retracting its real id would confirm the
+  ::  hidden body the veil refuses to name
+  =/  ref-ok=?
+    ?~  scope.act  &
+    =/  target=(unit bid:orr)  (ref-of:orr value.obs.r.u.hit)
+    ?~  target  &
+    =/  tk  (parse-bid:orr u.target)
+    ?~  tk  &
+    (kind-in-scope:orr u.scope.act kind.u.tk)
   =/  visible=?
     ?~  scope.act  &
     ?&  (kind-in-scope:orr u.scope.act kind.u.hit)
         !(~(has in (hidden-for act policy)) attr.obs.r.u.hit)
+        ref-ok
     ==
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
@@ -1121,8 +1218,9 @@
   ;<  err=(unit tang)  bind:m  (reg-how-soft:io /public [~ (sy road ~) ~])
   (pure:m ~)
 ::  +remote-poke-wait: a poke to another ship's grubbery, answered or
-::  timed out (a peer that is down must not park the fiber). A timeout
-::  is not a failure: the poke usually landed.
+::  timed out (a peer that is down must not park the fiber). A timer
+::  wake answers yes: grubbery's remote acks are unobservable and the
+::  poke usually landed. A veto or a nack answers no.
 ::
 ++  remote-poke-wait
   |=  [target=@p =lane:tarball jon=json]
@@ -1148,7 +1246,7 @@
       ?~(err.u.in [%wait ~] [%done %.n])
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done %.n])
+        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done %.y])
       ?.  =([/ %poke-ack] p.sage.u.in)  [%skip ~]
       =/  [aw=wire err=(unit tang)]  !<([wire (unit tang)] q.sage.u.in)
       ?.  =(w aw)  [%skip ~]
@@ -1237,6 +1335,13 @@
       (file-offer src key id mode now jon)
     =/  next=json  [%o (~(put by p.row) 'mode' s+mode)]
     ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
+    ::  a wider offer filed earlier goes with the narrowing, so it can
+    ::  no longer be accepted after the host changed its mind
+    ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
+    =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+    ;<  ~  bind:m
+      ?.  (~(has by cur) key)  (pure:(fiber:fiber:nexus ,~) ~)
+      (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
     (note-inbox 'offer' & 'mode updated' (scot %p src))
   (file-offer src key id mode now jon)
 ::  +file-offer: the offer waits in share-offers.json for an accept
@@ -1287,6 +1392,11 @@
   ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
   =/  mode=@t  (gs:orr (gj:orr shares id) (scot %p src))
   ?.  =('edit' mode)  (note-inbox 'edit' | 'not shared in edit mode' (scot %p src))
+  ::  the body may have been deleted since the share was recorded
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (note-inbox 'edit' | 'no such body here' (scot %p src))
+  ;<  here=?  bind:m  (peek-exists:io (rf 0 (body-dir kind.u.pk slug.u.pk) %body))
+  ?.  here  (note-inbox 'edit' | 'no such body here' (scot %p src))
   =/  got=(list json)  (ga:orr jon 'observations')
   ?:  (gth (lent got) max-obs:orr)  (note-inbox 'edit' | 'observations: over 200' (scot %p src))
   =/  rows=(list json)
@@ -1377,6 +1487,7 @@
   %+  poke-writer  up
   %-  pairs:enjs:format
   :~  ['op' s+'observe']
+      ['via' s+'ship']
       ['bodies' [%a ~]]
       ['observations' a+(scag max-obs:orr `(list json)`fresh)]
   ==
@@ -1391,7 +1502,12 @@
   ;<  ~  bind:m
     %+  poke-writer  up
     %-  pairs:enjs:format
-    ~[['op' s+'retract'] ['id' s+i.oids] ['note' s+why] ['by' s+(scot %p src)]]
+    :~  ['op' s+'retract']
+        ['via' s+'ship']
+        ['id' s+i.oids]
+        ['note' s+why]
+        ['by' s+(scot %p src)]
+    ==
   (retract-each up src t.oids)
 ::  ==  the share routes, on request fibers
 ::
@@ -1500,9 +1616,12 @@
   =/  target=bid:orr  (fall same-ship (mirror-target:orr our u.host oship id))
   =/  tpk  (parse-bid:orr target)
   ?~  tpk  (send-err eyre-id 400 'id: bad')
+  ::  person/me counts as existing the way +first-missing counts it: the
+  ::  request queued +ensure-me ahead of this, and an upsert would
+  ::  rename our own self to whatever the host calls us
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.tpk slug.u.tpk) %body))
   ;<  ~  bind:m
-    ?:  ex  (pure:(fiber:fiber:nexus ,~) ~)
+    ?:  |(ex =('person/me' target))  (pure:(fiber:fiber:nexus ,~) ~)
     %+  poke-writer  1
     %-  pairs:enjs:format
     :~  ['op' s+'upsert-body']
@@ -1606,6 +1725,8 @@
   ^-  form:m
   ?.  ?=([%o *] row)  (pure:m row)
   ;<  now=@da  bind:m  get-time:io
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  =/  hide=(set @t)  (sensitive-of:orr policy)
   =/  host=(unit @p)  (slaw %p (gs:orr row 'host'))
   ?~  host  (pure:m [%o (~(put by p.row) 'error' s+'host: expected an @p')])
   =/  id=bid:orr  (gs:orr row 'id')
@@ -1616,11 +1737,13 @@
   =/  err=(unit @t)  err.mir
   =/  bad=(list [oid=@t why=@t])  refused.mir
   ::  a refusal is noted once: the same host row is refused every pass
+  ::  the key is a peer's text, capped at 64 bytes the way the notes are
   =/  seen=(map @t json)  =/(p (gj:orr row 'refused') ?:(?=([%o *] p) p.p ~))
   ;<  ~  bind:m
-    (note-refusals 'mirror' (scot %p u.host) (skim bad |=([o=@t *] !(~(has by seen) o))))
+    %^  note-refusals  'mirror'  (scot %p u.host)
+    (skim bad |=([o=@t *] !(~(has by seen) (end [3 64] o))))
   =/  all-ref=(map @t json)
-    (~(gas by seen) (turn bad |=([o=@t w=@t] [o `json`s+w])))
+    (~(gas by seen) (turn bad |=([o=@t w=@t] [(end [3 64] o) `json`s+w])))
   =/  refused=(map @t json)
     ?:  (lte ~(wyt by all-ref) max-obs:orr)  all-ref
     (~(gas by *(map @t json)) (scag max-obs:orr ~(tap by all-ref)))
@@ -1629,7 +1752,7 @@
   ::  that refused the rows must not count them as landed
   =/  run=?  &(?=(~ err) =('edit' (gs:orr row 'mode')))
   ;<  push=[ok=? pushed=(map @t json)]  bind:m
-    (push-pass u.host id target base pushed run)
+    (push-pass u.host id target base pushed run hide)
   =/  msg=@t
     ?:  ?=(^ err)  u.err
     ?.  ok.push  'the host did not take our observations (down, or the share is read only now)'
@@ -1653,6 +1776,13 @@
   ^-  form:m
   =/  pk  (parse-bid:orr id)
   ?~  pk  (pure:m [[~ 'id: expected <kind>/<slug>'] ~])
+  ::  a body deleted here takes its mirror with it: +apply-carried would
+  ::  answer no pokes and no refusals, which reads as a clean pass
+  =/  tpk  (parse-bid:orr target)
+  ?~  tpk  (pure:m [[~ 'target: expected <kind>/<slug>'] ~])
+  ;<  here=?  bind:m  (peek-exists:io (rf 0 (body-dir kind.u.tpk slug.u.tpk) %body))
+  ?.  here
+    (pure:m [[~ 'the shared body does not exist here any more'] ~])
   ;<  vw=(unit view:nexus)  bind:m
     (peek-remote-wait host [%& %| (weld base (body-dir kind.u.pk slug.u.pk))])
   ?~  vw
@@ -1667,8 +1797,20 @@
 ::  host has not taken yet (or whose retraction it has not), sent to its
 ::  inbox. pushed maps our grub name to the retracted flag it holds.
 ::
+::    An attribute named in policy.sensitive is never pushed. The read
+::    grant cannot filter by attribute, so a body with facts the owner
+::    would not share is not a body to share (docs/sharing.md); this
+::    stops the one direction that can be filtered.
+::
 ++  push-pass
-  |=  [host=@p id=bid:orr target=bid:orr base=path pushed=(map @t json) run=?]
+  |=  $:  host=@p
+          id=bid:orr
+          target=bid:orr
+          base=path
+          pushed=(map @t json)
+          run=?
+          hide=(set @t)
+      ==
   =/  m  (fiber:fiber:nexus ,[ok=? pushed=(map @t json)])
   ^-  form:m
   ?.  run  (pure:m [& pushed])
@@ -1680,6 +1822,7 @@
     %+  skim  (rows-in ball.vw)
     |=  r=row:orr
     ?.  (is-local:orr obs.r)  |
+    ?:  (~(has in hide) attr.obs.r)  |
     =/  was=(unit json)  (~(get by pushed) id.r)
     ?~  was  &
     !=(`json`b+retracted.obs.r u.was)
