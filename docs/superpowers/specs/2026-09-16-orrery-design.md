@@ -310,7 +310,7 @@ The unit shared is a body: its `body` grub and its observations. Calendar's ship
 
 ### Phase 3: scoped client keys
 
-- `clients.json` holds one row per client: a name, an id, a salted hash of the token, the identity it acts as (`by`), a scope, when it was minted and last used. The owner mints one with `POST /api/clients {"name", "by", "scope"}` and sees the token once; `DELETE /api/clients/<id>` revokes.
+- `clients.json` holds one row per client: a name, an id, a salted hash of the secret, the identity it acts as (`by`), a scope, when it was minted and last used. The owner mints one with `POST /api/clients {"name", "by", "scope"}` and sees the token once; `DELETE /api/clients/<id>` revokes.
 - A scope is `{"kinds": [...], "actions": [...], "write": true|false}`. `kinds` are the body kinds the client may read and, with `write`, observe; `actions` the action kinds it may propose; `write` also covers approving, dismissing and completing.
 - A request carrying `Authorization: Bearer <token>` acts under that scope: the state, body and resolve views omit bodies outside `kinds`, a body outside them is a 404, an observation on one is a 403, a proposal of a kind outside `actions` is a 403, and `by` is forced to the key's identity so the audit trail is honest.
 - `policy.json` gains `sensitive`, a list of attribute names only the owner cookie ever sees; a key never receives them, whatever its scope. A client that keeps a todo list gets `{"kinds": [], "actions": ["task"], "write": true}` and never learns a health attribute exists.
