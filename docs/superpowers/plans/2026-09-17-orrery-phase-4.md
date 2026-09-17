@@ -1737,7 +1737,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the same views and
 ## Calling them
 
 - By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`). The kernel's `call_tool` meta tool takes the same path as its `tool_name`.
-- By name, once the kernel discovery patch in `docs/kernel` is released: `tools/list` advertises them under `apps/orrery.desk`.
+- By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 
 ## The tools
@@ -1762,7 +1762,7 @@ Over MCP the analyst is the owner: every body, every attribute, sensitive ones i
 
 - [ ] **Step 2: README, the release doc, the spec**
 
-In `README.md`: the docs line gains `docs/mcp.md` and `docs/kernel/README.md`; a line says the page is at `/apps/orrery` (owner cookie); the gates line gains `scripts/mcp-matrix.py` and `scripts/page-smoke.py`. In `docs/releasing.md` section 8, after the key gate step add two steps: `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, and `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`. In the spec's section 6: the MCP tools table gains `by` on `orrery-retract` and `orrery-actions` and `at` on `orrery-body`, matching the code; the kernel-gap paragraph says the patch exists in `docs/kernel` and was rehearsed on `~wex` on the date of Task 4; the page paragraph says the raw beacon stream is read the way lattice's page reads it. One line per paragraph, no em-dashes, no new promises.
+In `README.md`: the docs line gains `docs/mcp.md` and `docs/kernel/README.md`; a line says the page is at `/apps/orrery` (owner cookie); the gates line gains `scripts/mcp-matrix.py` and `scripts/page-smoke.py`. In `docs/releasing.md` section 8, after the key gate step add two steps: `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, and `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`. In the spec's section 6: the MCP tools table gains `by` on `orrery-retract` and `orrery-actions` and `at` on `orrery-body`, matching the code; the kernel-gap paragraph says the fix is a patch to three kernel files (`nex/mcp.hoon`'s `+get-app-mcp-paths` and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`), that it lives in `docs/kernel` and was rehearsed on `~wex` on the date of Task 4, that `tools/list` stays the kernel's three-tool protocol allowlist by design so discovery shows in the tools tree and `list_tools`, and that `+await-tool` is not on the call path; the page paragraph says the raw beacon stream is read the way lattice's page reads it. One line per paragraph, no em-dashes, no new promises.
 
 - [ ] **Step 3: Version 6 through the forge, and feb follows**
 
