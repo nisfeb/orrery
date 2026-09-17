@@ -167,6 +167,8 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   (note-by op ok why '')
+::  +note-by: the same outcome with the actor who caused it named
+::
 ++  note-by
   |=  [op=@t ok=? why=@t by=@t]
   =/  m  (fiber:fiber:nexus ,~)
@@ -674,7 +676,7 @@
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
-  =/  auto=?  (~(has in (auto-of:orr policy)) `@t`kind.p.got)
+  =/  auto=?  =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))
   =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
   =/  id=@ta  (act-id:orr a)
   ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))

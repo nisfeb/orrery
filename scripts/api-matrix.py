@@ -129,14 +129,19 @@ code, d = observe(
 check('setup answers 200', code == 200, (code, d))
 check('setup bodies all ok', all_ok(d, 'bodies', 3), d)
 check('setup observations all ok', all_ok(d, 'observations', 3), d)
+code, me = body('person/me')
+check('the API emits the ship on a body', code == 200 and dictish(me).get('ship') == '~wex', me)
 s = state()
 check('me.spouse is sarah, read back at once', val(s, 'person/me', 'spouse') == ref('person/sarah'), attrs(s, 'person/me'))
 code, r = curl('GET', API + '/resolve?q=%7Ewex')
-check('resolve finds me by ship', code == 200 and [x['id'] for x in r] == ['person/me'], r)
+check('resolve finds me by ship', code == 200 and isinstance(r, list)
+      and [x.get('id') for x in r if isinstance(x, dict)] == ['person/me'], r)
 code, d = curl('POST', API + '/bodies', {'id': 'person/sarah', 'ship': 'sarah'})
-check('a bad ship is 400', code == 400 and d.get('error', '').startswith('ship:'), (code, d))
+check('a bad ship is 400', code == 400 and str(dictish(d).get('error', '')).startswith('ship:'), (code, d))
 code, d = observe([], [obs('thing/subaru', 'location', ref('thing/subaru'), T0, USER)])
-check('a self-reference is refused per item', code == 200 and not d['observations'][0]['ok'] and 'itself' in d['observations'][0]['error'], d)
+o = dictish(d).get('observations', [])
+check('a self-reference is refused per item', code == 200 and len(o) == 1
+      and not o[0].get('ok') and 'itself' in str(o[0].get('error', '')), d)
 check('me.home is home', val(s, 'person/me', 'home') == ref('place/home'), attrs(s, 'person/me'))
 check('the subaru is mine', val(s, 'thing/subaru', 'owner') == ref('person/me'), attrs(s, 'thing/subaru'))
 
@@ -216,8 +221,9 @@ check('policy auto-approves a task', code == 200 and a['status'] == 'approved' a
 AID = a['id'] if code == 200 else ''
 code, acts = curl('GET', API + '/actions')
 check('the task is on the open list', code == 200 and any(x['id'] == AID for x in acts), acts)
-mine = [x for x in acts if x['id'] == AID]
-check('the history shows proposed then approved by policy', bool(mine) and [(h['status'], h['by']) for h in mine[0]['history']] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
+mine = [x for x in acts if isinstance(x, dict) and x.get('id') == AID] if isinstance(acts, list) else []
+check('the history shows proposed then approved by policy', bool(mine)
+      and [(h.get('status'), h.get('by')) for h in mine[0].get('history', [])] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
 code, a2 = curl('POST', API + '/act', prop)
 check('a second identical proposal answers the same id', code == 200 and a2['id'] == AID and a2['existing'], a2)
 code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
@@ -237,10 +243,13 @@ check('the task is marked done', code == 200 and d['status'] == 'done', (code, d
 code, acts = curl('GET', API + '/actions')
 check('it left the open list', code == 200 and not any(x['id'] == AID for x in acts), acts)
 code, allacts = curl('GET', API + '/actions?status=done')
-done = [x for x in allacts if x['id'] == AID]
-check('done is in the history with the actor', bool(done) and done[0]['history'][-1]['status'] == 'done' and done[0]['history'][-1]['by'] == 'user', done)
+done = [x for x in allacts if isinstance(x, dict) and x.get('id') == AID] if isinstance(allacts, list) else []
+hist = done[0].get('history', []) if done else []
+check('done is in the history with the actor', bool(hist)
+      and hist[-1].get('status') == 'done' and hist[-1].get('by') == 'user', done)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
-check('the audit log ends with the set-action', code == 200 and isinstance(log, list) and log[-1]['op'] == 'set-action' and log[-1]['by'] == 'user', log[-3:] if isinstance(log, list) else log)
+check('the audit log ends with the set-action', code == 200 and isinstance(log, list) and bool(log)
+      and log[-1].get('op') == 'set-action' and log[-1].get('by') == 'user', log[-3:] if isinstance(log, list) else log)
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'approved'})
 check('done is terminal', code == 409, (code, d))
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 0})
@@ -261,7 +270,9 @@ check('51 bodies is 400 naming bodies', code == 400 and dictish(d).get('error') 
 code, d = observe([], [obs('thing/subaru', 'plate', 'x', now - timedelta(minutes=1), USER)] * 201)
 check('201 observations is 400 naming observations', code == 400 and dictish(d).get('error') == 'observations: over 200', (code, d))
 code, d = observe([], [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'x', 'at': 'yesterday', 'source': USER}])
-check('a bad at is refused per item', code == 200 and not d['observations'][0]['ok'] and d['observations'][0]['error'].startswith('at:'), d)
+o = dictish(d).get('observations', [])
+check('a bad at is refused per item', code == 200 and len(o) == 1
+      and not o[0].get('ok') and str(o[0].get('error', '')).startswith('at:'), d)
 code, d = curl('GET', API + '/state?at=yesterday')
 check('a bad ?at is 400', code == 400, (code, d))
 code, d = curl('POST', API + '/act', {'kind': 'task', 'title': 'x', 'about': ['thing/nothing']})

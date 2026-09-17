@@ -405,6 +405,8 @@
     (expect !>((should-push:orr 'proposed' %proposed)))
     (expect !>(!(should-push:orr 'proposed' %approved)))
     (expect !>(!(should-push:orr 'none' %proposed)))
+    (expect !>((should-push:orr 'bogus' %proposed)))
+    (expect !>(!(should-push:orr 'bogus' %approved)))
   ==
 ++  test-ring
   =/  one=json  (ring:orr [%a ~] (jo '{"n":1}') 2)

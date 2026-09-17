@@ -182,7 +182,13 @@
   =/  secs=tape  (a-co:co (unix-secs at.o))
   =/  hex=tape   (hex8 [subject.o attr.o value.o at.o source.o])
   `@ta`(crip "{secs}-{hex}")
-::  +act-id: the same shape over a proposal
+::  +act-id: "<unix seconds of proposed>-<hex8>", an observation id's
+::  shape over a proposal
+::
+::    The hash covers kind, title, payload and by, and must ignore
+::    status and history. The request fiber hashes an action it decoded
+::    itself, while the writer's copy may already carry the policy's
+::    approval step, and the two ids have to agree.
 ::
 ++  act-id
   |=  a=action
@@ -437,6 +443,8 @@
       ['status' s+status]
       ['note' s+note.o]
   ==
+::  +en-step: one step of an action's history as JSON
+::
 ++  en-step
   |=  st=step
   ^-  json
@@ -607,12 +615,16 @@
   ^-  @t
   =/  m=@t  (gs policy 'push')
   ?:(=('' m) 'proposed' m)
+::  +should-push: all pushes every new action; none pushes nothing;
+::  proposed, the default and what an unknown mode means, pushes only
+::  an action that needs a human
+::
 ++  should-push
   |=  [mode=@t status=@tas]
   ^-  ?
   ?:  =('all' mode)  &
-  ?:  =('proposed' mode)  =(%proposed status)
-  |
+  ?:  =('none' mode)  |
+  =(%proposed status)
 ::  +transition: a new status with its note, appended to the history
 ::
 ++  transition
