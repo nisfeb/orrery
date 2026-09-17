@@ -1044,6 +1044,88 @@ In `+apply-carried`, `gone` filters by subject the way `fresh` does: make the fi
     ?.  =(subject (gs:orr j 'subject'))  ~
 ```
 
+- [ ] **Step 2c: Carried from the Task 4 review: a wider share needs a fresh accept**
+
+A host could switch an accepted read share to edit with a second offer, and the follower would start sending the peer's whole local history within five minutes, with no consent. Four edits in `app.hoon`:
+
+In `+take-offer`, replace the `?:  (~(has by rm) key)` block (from that line through its `(note-by 'offer' & 'mode updated' ...)` line) and the rest of the arm with:
+
+```hoon
+  ?:  (~(has by rm) key)
+    =/  row=json  (fall (~(get by rm) key) ~)
+    ?.  ?=([%o *] row)  (note-by 'offer' | 'accepted row unreadable' (scot %p src))
+    ::  a share we accepted: a narrower mode applies at once, a wider
+    ::  one is a new offer, since it would change what we send the host
+    ?:  &(=('edit' mode) !=('edit' (gs:orr row 'mode')))
+      (file-offer src key id mode now jon)
+    =/  next=json  [%o (~(put by p.row) 'mode' s+mode)]
+    ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
+    (note-by 'offer' & 'mode updated' (scot %p src))
+  (file-offer src key id mode now jon)
+::  +file-offer: the offer waits in share-offers.json for an accept
+::
+++  file-offer
+  |=  [src=@p key=@t id=bid:orr mode=@t now=@da jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
+  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ::  a full inbox drops new offers; 200 is far past what a person gets
+  ?:  &((gte ~(wyt by cur) 200) !(~(has by cur) key))
+    (note-by 'offer' | 'inbox full' (scot %p src))
+  =/  offer=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p src)]
+        ['id' s+id]
+        ['ship' s+(gs:orr jon 'ship')]
+        ['name' s+(gs:orr jon 'name')]
+        ['mode' s+mode]
+        ['base' s+(gs:orr jon 'base')]
+        ['at' (en-time:orr now)]
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
+  (note-by 'offer' & key (scot %p src))
+```
+
+In `+serve-accept`, an accept of a share already accepted (the edit offer after a read one) keeps what was pushed. Move the `ship-remotes.json` read above the row and keep the old `pushed`: replace from `=/  row=json` through the `over:io` that writes `ship-remotes.json` with:
+
+```hoon
+  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
+  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  =/  old=json  (fall (~(get by rm) key) [%o ~])
+  =/  kept=json  =/(p (gj:orr old 'pushed') ?:(?=([%o *] p) p [%o ~]))
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p u.host)]
+        ['id' s+id]
+        ['target' s+target]
+        ['mode' s+(gs:orr u.offer 'mode')]
+        ['base' s+(gs:orr u.offer 'base')]
+        ['pushed' kept]
+        ['last' s+'']
+        ['error' s+'']
+    ==
+  ;<  ~  bind:m  (over:io (rf 1 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key row)]])
+```
+
+In `+sync-rows`, the write back keeps only the pass fields, so a mode change that landed during the pass survives. Replace the `merged` binding with:
+
+```hoon
+    =/  merged=(map @t json)
+      %+  roll  ~(tap by done)
+      |=  [[key=@t row=json] acc=_cur]
+      =/  live=(unit json)  (~(get by acc) key)
+      ?~  live  acc
+      ?.  &(?=([%o *] u.live) ?=([%o *] row))  acc
+      =/  keep=(list [@t json])
+        ~[['last' (gj:orr row 'last')] ['error' (gj:orr row 'error')] ['pushed' (gj:orr row 'pushed')]]
+      (~(put by acc) key [%o (~(gas by p.u.live) keep)])
+```
+
+In `+apply-carried`, cap the retractions the way the observations are capped: `(retract-each up src (scag max-obs:orr gone))`.
+
+In `+remote-poke-wait` and `+peek-remote-wait`, the timer wire gets a nonce so a stale wake from an earlier wait cannot end this one: bind `;<  tw=wire  bind:m  (nonce:io /remote)` right after the `now` line, use `tw` in `set-timer:io` and `cancel-timer:io`, and match the wake with `=(tw !<(path q.sage.u.in))` instead of `?=([%remote *] ...)`.
+
 - [ ] **Step 3: Deploy to both ships and watch one round trip**
 
 Write `app.hoon` to wex and feb with the fast loop, reload both instances, bang `None` on both. Then, with the bodies and the share from Task 3 Step 7 in place (re-share if the smoke ended with a revoke):
@@ -1226,11 +1308,19 @@ peer('POST', '/sync')
 time.sleep(10)
 check('the host does not see the peer mood in read mode', attr(host, 'person/sarah', 'mood') is None, attr(host, 'person/sarah', 'mood'))
 
-print('== edit mode carries it back')
+print('== edit mode needs a fresh accept')
 code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'edit'})
 check('re-share in edit mode answers ok', code == 200 and dictish(d).get('ok') is True, d)
-wait('the peer row turns to edit', lambda: dictish(dictish(shares(peer).get('accepted')).get(KEY)).get('mode') == 'edit', 30)
-check('no second offer', KEY not in dictish(shares(peer).get('offers')), shares(peer))
+offer = dictish(wait('an edit offer reaches the peer', lambda: dictish(shares(peer).get('offers')).get(KEY), 30))
+check('the offer asks for edit', offer.get('mode') == 'edit', offer)
+check('the row stays read until accepted', dictish(dictish(shares(peer).get('accepted')).get(KEY)).get('mode') == 'read', shares(peer))
+peer('POST', '/sync')
+time.sleep(10)
+check('nothing is pushed before the accept', attr(host, 'person/sarah', 'mood') is None, attr(host, 'person/sarah', 'mood'))
+code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/sarah'})
+check('accept the edit share', code == 200 and dictish(d).get('target') == 'person/me', d)
+s = shares(peer)
+check('the row turns to edit and the offer is gone', dictish(dictish(s.get('accepted')).get(KEY)).get('mode') == 'edit' and KEY not in dictish(s.get('offers')), s)
 peer('POST', '/sync')
 hrow = dictish(wait('the mood reaches the host', lambda: attr(host, 'person/sarah', 'mood'), 90))
 check('the host row is the peer claim', hrow.get('by') == PEERNAME and dictish(hrow.get('source')).get('kind') == 'ship' and source_id(hrow).startswith(PEERNAME + '/') and hrow.get('value') == 'tired', hrow)
@@ -1243,6 +1333,11 @@ code, d = retract(peer, prow)
 check('peer retracts mood', code == 200, d)
 peer('POST', '/sync')
 wait('the retraction reaches the host', lambda: attr(host, 'person/sarah', 'mood') is None, 90)
+
+print('== a narrower share applies at once')
+code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})
+check('re-share in read mode answers ok', code == 200, d)
+wait('the row turns to read without an offer', lambda: dictish(dictish(shares(peer).get('accepted')).get(KEY)).get('mode') == 'read' and KEY not in dictish(shares(peer).get('offers')), 30)
 
 print('== revoke keeps the data')
 code, d = observe(host, 'person/sarah', 'plan', 'dinner at seven', T0, 'share-3')
@@ -1293,7 +1388,7 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 ```
 
-Expected: `ALL OK (38 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on feb (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
+Expected: `ALL OK (44 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on feb (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
 
 - [ ] **Step 3: Rerun the phase 1 gate on wex**
 
@@ -1335,7 +1430,7 @@ A body and its observations can be shared with another ship: read mode mirrors w
 ## How it works
 
 - `POST /apps/orrery/api/share` with `{"id": "person/sarah", "ship": "~feb", "mode": "read"}` (or `"edit"`) records the share in `shares.json`, lets `~feb` read the body's directory (a usergroup named `orrery-person-sarah` with one peek grant), and pokes an offer into `~feb`'s inbox. The answer's `notified` says whether the offer was acknowledged within thirty seconds; a false is worth a look at the other ship, not a retry.
-- On `~feb`, `GET /apps/orrery/api/shares` lists `offers`, `accepted` and `shares` (what this ship shares out). `POST /api/accept` with `{"host": "~wex", "id": "person/sarah"}` takes an offer. When the shared body's `ship` is `~feb` itself, it lands on `person/me`; otherwise on a body with the same id, created with the offered name and ship if absent. `POST /api/decline` drops an offer.
+- On `~feb`, `GET /apps/orrery/api/shares` lists `offers`, `accepted` and `shares` (what this ship shares out). `POST /api/accept` with `{"host": "~wex", "id": "person/sarah"}` takes an offer. The first hop assumes the other ship installed orrery at the standard desk path; a ship that did not answers `notified` false. When the shared body's `ship` is `~feb` itself, it lands on `person/me`; otherwise on a body with the same id, created with the offered name and ship if absent. `POST /api/decline` drops an offer.
 - The follower runs every five minutes, on every accept and on `POST /api/sync`. It reads each accepted body whole from the host and submits the host's own observations to the local writer with `by` set to the host and `source` `{"kind": "ship", "id": "~wex/<host observation id>"}`. A row the host retracts is retracted here. A row the host itself mirrored from a third ship is not carried on: one hop.
 - In edit mode the follower also sends the local observations on that body (the ones not mirrored from a ship) to the host's inbox, where they land with `by` set to the sender and the same source shape. Retractions travel the same way. The host's inbox checks the share record before it applies anything; the sender is the transport's, never the payload's.
 - `DELETE /apps/orrery/api/share/person/sarah/~feb` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
@@ -1345,7 +1440,8 @@ A body and its observations can be shared with another ship: read mode mirrors w
 - The ask grows by poke on `/sys/gall/`, `/sys/behn/`, `/sys/ames/registry` and `/sys/ames/usergroups/`, peek on `/sys/ames/usergroups/` and `/sys/ames/ships/`, make on `/sys/ames/usergroups/`. Refuse them and everything else keeps working; sharing is off.
 - `{"ref"}` values travel verbatim. They name bodies on the ship that observed them. One that names the receiving body itself is refused by the writer and noted in the audit log.
 - The name, aliases and ship of a shared body are copied once, at accept. Later changes to them do not follow; observations do.
-- Every accepted row carries `last` (the last pass) and `error` (empty, or why the host could not be read or would not take the edits).
+- Every accepted row carries `last` (the last attempt, successful or not) and `error` (empty, or why the host could not be read or would not take the edits). In edit mode the host's acknowledgement means it received the rows, not that it kept them: rows sent after the host narrowed the share are dropped there and noted in its audit log.
+- A share can be narrowed by the host at any time and it applies at once. Widening one (read to edit) is a new offer: nothing of yours leaves the ship until you accept it.
 - A ship that is down does not stall the follower: a peek or a poke gives up after thirty seconds and the row records it.
 ```
 
