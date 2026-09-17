@@ -333,7 +333,7 @@ The kernel needs one line, `(published our 'orrery' 'nisfeb/orrery' 'main')` bes
 
 ## 13. Not in v1
 
-The Talon client. Calendar and auspex pushing into orrery. Text evidence of any kind. Body merge. Fuzzy or embedding resolve. Full-text search over values. Stored indexes and a sweeper. Transitive relation queries. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page. Sharing actions across ships.
+The Talon client. Calendar and auspex pushing into orrery. Text evidence of any kind. Embedding resolve (body merge and token resolve landed in version 10). Full-text search over values. Stored indexes and a sweeper. Transitive relation queries. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page. Sharing actions across ships.
 
 ## 14. Decisions recorded
 
