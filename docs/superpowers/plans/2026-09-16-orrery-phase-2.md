@@ -836,7 +836,7 @@ curl -s -b $FK "$F/grubbery/ball$APP/tr/last?raw=1"
 #   {"op":"revoke","ok":true,...,"by":"~wex"}
 ```
 
-If `notified` is false and no offer reaches feb, read `/tr/last` on feb (the inbox notes every poke it refuses) and wex's console pane for a veto line. The two usual causes: a missing `/sys/gall/` grant on wex, or feb's inbox road not laid yet. `lay-inbox-road` runs on every `POST /api/sync` (and on every follower tick once Task 4 lands), so run `curl -s -b $FK -X POST $B/sync` on feb once before the share and confirm `GET $F/grubbery/ball/sys/ames/usergroups/public.grp/how.weir?info=1` answers (the group exists) before retrying.
+If `notified` is false and no offer reaches feb, read `/tr/last` on feb (the inbox notes every poke it refuses) and wex's console pane for a veto line. The two usual causes: a missing `/sys/gall/` grant on wex, or feb's inbox road not laid yet. `lay-inbox-road` runs at the inbox fiber's rise and on every follower tick once Task 4 lands (a request fiber cannot lay it: the registry scopes a `%how` to the poking fiber's directory), so after the consent reload confirm `GET $F/grubbery/ball/sys/ames/usergroups/public.grp/how.weir?info=1` answers (the group exists) before retrying.
 
 - [ ] **Step 8: Commit and push**
 
@@ -999,6 +999,51 @@ Append before the closing `--`:
 
 Two limits to keep, both by design: one hop (a row the host itself mirrored from a third ship is not carried on, so nothing is relabeled as the host's claim), and refs travel verbatim (a `{"ref"}` value names the host's body ids; one that collides with the receiver's subject is refused by the writer's self-reference guard and noted, nothing else is remapped).
 
+- [ ] **Step 2b: Carried from the Task 3 review: the inbox bounds what a peer sends**
+
+Five small edits to Task 3's arms, all in `app.hoon`:
+
+In `+take-inbox`, the unknown-action note no longer echoes the peer's string into the log:
+
+```hoon
+  (note-by 'inbox' | 'unknown action' (scot %p src))
+```
+
+In `+take-offer`, the peer's strings are checked before they land in a grub, and a corrupted accepted row is noted instead of silently dropped. Replace the `?.  ?=([%o *] row)  (pure:m ~)` line with:
+
+```hoon
+    ?.  ?=([%o *] row)  (note-by 'offer' | 'accepted row unreadable' (scot %p src))
+```
+
+and, right after the `mode` line at the top of the arm, add:
+
+```hoon
+  =/  oship=@t  (gs:orr jon 'ship')
+  ?:  &(!=('' oship) ?=(~ (slaw %p oship)))  (note-by 'offer' | 'ship: expected an @p' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-by 'offer' | 'name: over 200 bytes' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-by 'offer' | 'base: over 200 bytes' (scot %p src))
+```
+
+In `+take-edit`, an over-cap batch is refused instead of silently truncated, and the note reports what was received. Replace the `rows` binding and the final note with:
+
+```hoon
+  =/  got=(list json)  (ga:orr jon 'observations')
+  ?:  (gth (lent got) max-obs:orr)  (note-by 'edit' | 'observations: over 200' (scot %p src))
+  =/  rows=(list json)
+    %+  skim  got
+    |=(j=json &(?=([%o *] j) =(id (gs:orr j 'subject'))))
+  ?~  rows  (note-by 'edit' | 'nothing about the shared body' (scot %p src))
+  ;<  n=@ud  bind:m  (apply-carried 0 src `(list json)`rows)
+  =/  why=@t  (rap 3 (scot %ud (lent rows)) ' rows, ' (scot %ud n) ' pokes' ~)
+  (note-by 'edit' & why (scot %p src))
+```
+
+In `+apply-carried`, `gone` filters by subject the way `fresh` does: make the first line of its `murn` gate
+
+```hoon
+    ?.  =(subject (gs:orr j 'subject'))  ~
+```
+
 - [ ] **Step 3: Deploy to both ships and watch one round trip**
 
 Write `app.hoon` to wex and feb with the fast loop, reload both instances, bang `None` on both. Then, with the bodies and the share from Task 3 Step 7 in place (re-share if the smoke ended with a revoke):
@@ -1014,7 +1059,7 @@ curl -s -b $FK "$F/grubbery/ball$APP/ship-remotes.json?raw=1"
 #   the row shows last set and error ""
 ```
 
-If `error` reads "the host did not answer", the peek was vetoed: on wex, `GET $W/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/how.weir?info=1` must show the peek road on the body directory and `who.ships` must hold `~feb`; a missing `/sys/ames/ships/` peek grant on feb shows as a veto line in feb's console pane. Then share in edit mode, observe `mood` on feb's `person/me`, `POST $B/sync`, and read `mood` on wex's `person/sarah`: `by` is `~feb`, the source id starts `~feb/`.
+If `error` reads "the host did not answer", the peek was vetoed: on wex, `GET $W/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/how.weir?info=1` must show the peek road on the body directory and `who.ships` must hold `~feb`; a missing `/sys/ames/ships/` peek grant on feb shows as a veto line in feb's console pane. Then share in edit mode, observe `mood` on feb's `person/me`, `POST $B/sync`, and read `mood` on wex's `person/sarah`: `by` is `~feb`, the source id starts `~feb/`. Then retract that `mood` on feb (`POST $B/retract` with its `obs` id), `POST $B/sync`, and read wex again: `mood` is gone, and wex's `/tr/log` (`?raw=1`) shows a `retract` with the note `retracted on ~feb`. Paste both reads: this is the only live exercise of `take-edit`, `apply-carried` and `retract-each` before the gate.
 
 - [ ] **Step 4: Commit and push**
 
