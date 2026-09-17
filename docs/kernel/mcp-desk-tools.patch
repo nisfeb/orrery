@@ -33,3 +33,97 @@
      ::  +await-tool: look up a compiled tool handler by name
      ::
      ::    Converts underscores to hyphens (get_ship → get-ship).
+--- a/desk/gub/lib/tool-bundle/tools/call-tool.hoon
++++ b/desk/gub/lib/tool-bundle/tools/call-tool.hoon
+@@ -53,13 +53,25 @@
+   ::  Try app namespaces
+   ;<  apps-view=view:nexus  bind:m
+     (peek:io [%& %| /apps] ~)
+-  =/  app-kids=(list @ta)
++  =/  app-dirs=(list path)
+     ?.  ?=([%ball *] apps-view)  ~
+-    (turn ~(tap by dir.ball.apps-view) |=([nam=@ta *] nam))
++    %+  turn  ~(tap by dir.ball.apps-view)
++    |=  [nam=@ta *]
++    (welp ~[%apps nam] /desk/code/lib/tools)
++  ::  desks installed under the shell keep their code one level down
++  ;<  desks-view=view:nexus  bind:m
++    (peek:io [%& %| /apps/'shell.shell'/desks] ~)
++  =/  code-dirs=(list path)
++    ?.  ?=([%ball *] desks-view)  app-dirs
++    %+  weld  app-dirs
++    ^-  (list path)
++    %+  turn  ~(tap by dir.ball.desks-view)
++    |=  [nam=@ta *]
++    (welp ~[%apps %'shell.shell' %desks nam] /desk/code/lib/tools)
+   |-
+-  ?~  app-kids
++  ?~  code-dirs
+     (pure:m [%error (crip "Tool not found: {(trip tool-name)}")])
+-  =/  cp=path  (welp ~[%apps i.app-kids] /desk/code/lib/tools)
++  =/  cp=path  i.code-dirs
+   ;<  ares=built:nexus  bind:m  (get-code-full:io [%& %& cp file-name])
+   =/  app-got=(unit tool:tools)
+     ?.  ?=(%vase -.ares)  ~
+@@ -69,5 +81,5 @@
+     ;<  ~  bind:m
+       (replace:io `tool-state:tools`[tool-name tool-args %start *json ~])
+     handler.u.app-got
+-  $(app-kids t.app-kids)
++  $(code-dirs t.code-dirs)
+ --
+--- a/desk/gub/lib/tool-bundle/tools/list-tools.hoon
++++ b/desk/gub/lib/tool-bundle/tools/list-tools.hoon
+@@ -2,7 +2,8 @@
+ ::  list-tools: list all available MCP tools with optional filtering
+ ::
+ ::    Looks up compiled tools from bins via %code darts.
+-::    Scans root /code/lib/tools and each app's /desk/code/lib/tools.
++::    Scans root /code/lib/tools, each app's /desk/code/lib/tools, and
++::    each shell desk's /desk/code/lib/tools.
+ ::
+ =>  |%
+     ++  strip-hoon
+@@ -85,11 +86,23 @@
+   ::  App namespace tools
+   ;<  apps-view=view:nexus  bind:m
+     (peek:io [%& %| /apps] ~)
+-  =/  app-kids=(list @ta)
++  =/  app-dirs=(list path)
+     ?.  ?=([%ball *] apps-view)  ~
+-    (turn ~(tap by dir.ball.apps-view) |=([nam=@ta *] nam))
++    %+  turn  ~(tap by dir.ball.apps-view)
++    |=  [nam=@ta *]
++    (welp ~[%apps nam] /desk/code/lib/tools)
++  ::  desks installed under the shell keep their code one level down
++  ;<  desks-view=view:nexus  bind:m
++    (peek:io [%& %| /apps/'shell.shell'/desks] ~)
++  =/  code-dirs=(list path)
++    ?.  ?=([%ball *] desks-view)  app-dirs
++    %+  weld  app-dirs
++    ^-  (list path)
++    %+  turn  ~(tap by dir.ball.desks-view)
++    |=  [nam=@ta *]
++    (welp ~[%apps %'shell.shell' %desks nam] /desk/code/lib/tools)
+   |-
+-  ?~  app-kids
++  ?~  code-dirs
+     ::  All pairs collected, now compile and filter
+     =/  all-tools=(list tool:tools)  ~
+     |-
+@@ -144,7 +157,7 @@
+     ?.  ?=(%& -.got)  $(pairs t.pairs)
+     $(pairs t.pairs, all-tools [p.got all-tools])
+   ::  Peek this app's mcp dir and add any tool sources
+-  =/  app-path=path  (welp ~[%apps i.app-kids] /desk/code/lib/tools)
++  =/  app-path=path  i.code-dirs
+   ;<  app-src=view:nexus  bind:m
+     (peek:io [%& %| app-path] ~)
+   =.  pairs
+@@ -155,5 +168,5 @@
+     %+  turn  ~(tap by contents.u.fil.ball.app-src)
+     |=  [n=@ta *]
+     [app-path (strip-hoon n)]
+-  $(app-kids t.app-kids)
++  $(code-dirs t.code-dirs)
+ --
