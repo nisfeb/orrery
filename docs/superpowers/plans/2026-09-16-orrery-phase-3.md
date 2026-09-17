@@ -916,7 +916,7 @@ In `tests/lib/orrery.hoon`, after `test-out-of-scope`:
   ==
 ```
 
-In `code/nex/orrery/app.hoon`, `+view-of` applies both: the body branch becomes `` `l(rows (drop-refs:orr (drop-attrs:orr rows.l hide) kinds.s)) `` and the actions branch becomes
+In `code/nex/orrery/app.hoon`, `+view-of` applies both: the body branch becomes `` `l(rows (veil-refs:orr (drop-attrs:orr rows.l hide) kinds.s)) `` and the actions branch becomes
 
 ```hoon
   %+  turn  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
