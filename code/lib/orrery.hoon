@@ -690,14 +690,17 @@
   |=  [host=@p id=bid]
   ^-  @t
   (rap 3 (scot %p host) '/' id ~)
-::  +mirror-target: where a shared body lands on the peer: our own
-::  person/me when the body's ship is us, else its own id
+::  +mirror-target: where a shared body lands on the peer when no local
+::  body already carries its ship: our own person/me when the body's
+::  ship is us; the host's own person/me becomes person/<host> here (a
+::  ship's self is never our self); any other body keeps its id
 ::
 ++  mirror-target
-  |=  [our=@p ship=(unit @p) id=bid]
+  |=  [our=@p host=@p ship=(unit @p) id=bid]
   ^-  bid
   ?:  &(?=(^ ship) =(our u.ship))  'person/me'
-  id
+  ?.  =('person/me' id)  id
+  (rap 3 'person/' (rsh [3 1] (scot %p host)) ~)
 ::  +group-name: the usergroup that may read one shared body
 ::
 ++  group-name

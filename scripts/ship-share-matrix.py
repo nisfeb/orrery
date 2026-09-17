@@ -30,6 +30,18 @@ def curl(base, jar, method, path, body=None, timeout=60):
     return int(code or 0), data
 
 
+def raw(base, jar, path, timeout=60):
+    """a read of the ship's own tree, outside /apps/orrery/api"""
+    cmd = ['curl', '-s', '-m', str(timeout), '-w', '\n%{http_code}', '-b', jar, base + path]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    text, _, code = out.rpartition('\n')
+    try:
+        data = json.loads(text) if text else None
+    except json.JSONDecodeError:
+        data = text
+    return int(code or 0), data
+
+
 def host(method, path, body=None):
     return curl(HOST, HJAR, method, path, body)
 
@@ -114,15 +126,19 @@ def gone_from(side, section, key):
 
 
 def clean():
-    host('DELETE', '/share/person/sarah/' + PEERNAME)
+    for bid in ('person/sarah', 'person/me', 'person/john'):
+        host('DELETE', '/share/' + bid + '/' + PEERNAME)
     for key in list(dictish(dictish(shares(peer)).get('offers'))):
         h, _, i = key.partition('/')
         peer('POST', '/decline', {'host': h, 'id': i})
-    for side, bid in ((host, 'person/sarah'), (peer, 'person/me')):
+    for side, bid in ((host, 'person/sarah'), (peer, 'person/me'),
+                      (host, 'person/me'), (peer, 'person/' + HOSTNAME[1:])):
         for n in ('location', 'mood', 'plan'):
             row = attr(side, bid, n)
             if row:
                 retract(side, row)
+    host('DELETE', '/body/person/john')
+    peer('DELETE', '/body/person/john')
 
 
 T0 = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -207,6 +223,8 @@ wait('the peer row goes', lambda: gone_from(peer, 'accepted', KEY), 30)
 check('the mirrored plan stays', dictish(attr(peer, 'person/me', 'plan')).get('value') == 'dinner at seven', attr(peer, 'person/me', 'plan'))
 s = shares(host)
 check('the host no longer lists the share', s is not None and PEERNAME not in dictish(dictish(s.get('shares')).get('person/sarah')), s)
+code, d = raw(HOST, HJAR, '/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/who.ships?info=1')
+check('the peer leaves the share group', code == 200 and PEERNAME not in str(dictish(d).get('text')), (code, d))
 
 print('== a re-share works')
 code, d = host('POST', '/share', {'id': 'person/sarah', 'ship': PEERNAME, 'mode': 'read'})
@@ -214,6 +232,47 @@ check('share again', code == 200, d)
 wait('a fresh offer', lambda: dictish(dictish(shares(peer)).get('offers')).get(KEY), 30)
 code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/sarah'})
 check('accept again', code == 200, d)
+
+print("== the host's own self lands on person/<host>")
+SELF = 'person/' + HOSTNAME[1:]
+SELFKEY = HOSTNAME + '/person/me'
+code, d = host('POST', '/share', {'id': 'person/me', 'ship': PEERNAME, 'mode': 'read'})
+check('share the host self', code == 200 and dictish(d).get('ok') is True, d)
+wait('the self offer reaches the peer', lambda: dictish(dictish(shares(peer)).get('offers')).get(SELFKEY), 30)
+code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/me'})
+check('accept lands on ' + SELF, code == 200 and dictish(d).get('target') == SELF, d)
+code, d = observe(host, 'person/me', 'location', 'in the workshop', T0, 'self-1')
+check('host observes its own location', code == 200, d)
+peer('POST', '/sync')
+row = dictish(wait('the host self row mirrors onto ' + SELF, lambda: attr(peer, SELF, 'location'), 90))
+check('the mirrored self row is the host claim', row.get('by') == HOSTNAME and source_id(row).startswith(HOSTNAME + '/') and row.get('value') == 'in the workshop', row)
+code, d = retract(host, dictish(attr(host, 'person/me', 'location')))
+check('the host self location is retracted', code == 200, d)
+code, d = host('DELETE', '/share/person/me/' + PEERNAME)
+check('revoke the self share', code == 200, d)
+wait('the self row goes', lambda: gone_from(peer, 'accepted', SELFKEY), 30)
+
+print('== an existing body keeps its name')
+JOHNKEY = HOSTNAME + '/person/john'
+code, d = host('POST', '/bodies', {'id': 'person/john', 'name': 'John', 'ship': '~zod'})
+check('host person/john carries a third ship', code == 200, d)
+code, d = peer('POST', '/bodies', {'id': 'person/john', 'name': 'Johnny'})
+check('peer person/john is its own, with no ship', code == 200, d)
+code, d = host('POST', '/share', {'id': 'person/john', 'ship': PEERNAME, 'mode': 'read'})
+check('share person/john', code == 200 and dictish(d).get('ok') is True, d)
+wait('the john offer reaches the peer', lambda: dictish(dictish(shares(peer)).get('offers')).get(JOHNKEY), 30)
+code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/john'})
+check('accept keeps the local id', code == 200 and dictish(d).get('target') == 'person/john', d)
+code, d = peer('GET', '/body/person/john')
+check('the peer body keeps its own name', code == 200 and dictish(d).get('name') == 'Johnny', d)
+check('the peer body keeps its own ship', code == 200 and not dictish(d).get('ship'), d)
+code, d = host('DELETE', '/share/person/john/' + PEERNAME)
+check('revoke the john share', code == 200, d)
+wait('the john row goes', lambda: gone_from(peer, 'accepted', JOHNKEY), 30)
+code, d = host('DELETE', '/body/person/john')
+check('the host john goes', code == 200, d)
+code, d = peer('DELETE', '/body/person/john')
+check('the peer john goes', code == 200, d)
 
 print('== refusals')
 code, d = host('POST', '/share', {'id': 'nope', 'ship': PEERNAME})

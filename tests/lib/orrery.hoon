@@ -544,9 +544,12 @@
 ++  test-share-helpers
   ;:  weld
     (expect-eq !>('~wex/person/sarah') !>((share-key:orr ~wex 'person/sarah')))
-    (expect-eq !>('person/me') !>((mirror-target:orr ~feb `~feb 'person/sarah')))
-    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb `~wex 'person/sarah')))
-    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb ~ 'person/sarah')))
+    (expect-eq !>('person/me') !>((mirror-target:orr ~feb ~wex `~feb 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb ~wex `~wex 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb ~wex ~ 'person/sarah')))
+    (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex `~wex 'person/me')))
+    (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex ~ 'person/me')))
+    (expect-eq !>('person/ricsul-bilwyt') !>((mirror-target:orr ~feb ~ricsul-bilwyt `~ricsul-bilwyt 'person/me')))
     (expect-eq !>('orrery-person-sarah') !>((group-name:orr %person %sarah)))
   ==
 ::  a carried observation names the other side's body and carries the
@@ -555,21 +558,37 @@
 ::  sender's claim
 ++  test-carry-and-receive
   =/  r=row:orr  ['1789596300-abcdef01' o1]
-  =/  j=json  (receive-obs:orr ~wex (carry-obs:orr 'person/me' r))
+  =/  carried=json  (carry-obs:orr 'person/me' r)
+  ::  a sender that plants by and source changes nothing: the receiver
+  ::  writes both from the transport it heard the row on
+  =/  lies=json
+    ?.  ?=([%o *] carried)  carried
+    :-  %o
+    %-  ~(gas by p.carried)
+    :~  ['by' s+'liar']
+        ['source' (pairs:enjs:format ~[['kind' s+'talon'] ['id' s+'m9']])]
+    ==
+  =/  j=json  (receive-obs:orr ~wex lies)
   =/  back  (de-obs:orr j t0 'x')
   ?.  ?=(%& -.back)  (expect !>(|))
+  =/  base=obs:orr  o1
+  =/  other=obs:orr  base(source ['ship' '~wexx/1'])
   ;:  weld
     (expect-eq !>('person/me') !>(subject.p.back))
     (expect-eq !>('~wex') !>(by.p.back))
     (expect-eq !>(`source:orr`['ship' '~wex/1789596300-abcdef01']) !>(source.p.back))
     (expect-eq !>(value:o1) !>(value.p.back))
     (expect-eq !>(at:o1) !>(at.p.back))
+    (expect-eq !>(until:o1) !>(until.p.back))
     (expect-eq !>(90) !>(conf.p.back))
+    (expect-eq !>(`json`~) !>((gj:orr carried 'by')))
+    (expect-eq !>(`json`~) !>((gj:orr carried 'source')))
     (expect-eq !>(`json`b+|) !>((gj:orr j 'retracted')))
     (expect !>(!(is-local:orr p.back)))
     (expect !>((is-local:orr o1)))
     (expect !>((from-ship:orr p.back ~wex)))
     (expect !>(!(from-ship:orr p.back ~feb)))
     (expect !>(!(from-ship:orr o1 ~wex)))
+    (expect !>(!(from-ship:orr other ~wex)))
   ==
 --

@@ -134,6 +134,8 @@ docs/                            this spec, releasing.md copied from calendar, u
 
 Repo `nisfeb/orrery`, branch `main`. The desk is hermetic: every lib and marc it uses is inside `code/`, checked by a copy of auspex's `scripts/code-closure.py`.
 
+Phase 2 vendored eight more marcs beside those: `gall-poke`, `poke-ack`, `ships`, `weir`, `timer-set`, `timer-rest`, `timer-wake` and `usergroups/registry-action`.
+
 ## 5. The tree and the writer
 
 ```
@@ -148,6 +150,8 @@ Repo `nisfeb/orrery`, branch `main`. The desk is hermetic: every lib and marc it
 /web.sig  /requests/<id>           binds /apps/orrery, one fiber per request
 /tile.json /icon.svg /link.json /weir.json /orrery.html /orrery.js /orrery.css   replaced on every reload
 ```
+
+Phase 2 added six paths to that tree: `/shares.json`, `/shares.sig`, `/share-offers.json`, `/ship-remotes.json`, `/sync.sig` and `/tr/inbox`, the ring of 500 ship-traffic outcomes.
 
 Everything about a body sits under its own directory, so one deep peek reads a body and one shallow peek lists a kind. Files and subdirectories are separate maps in a ball, so `body` and `obs/` never collide.
 
@@ -229,6 +233,8 @@ One document, css inlined, one script, served no-cache, built the way calendar's
 
 No `/sys/ames/*`, no iris, no behn. Nothing in v1 is ship-to-ship, nothing fetches, and there is no ticker: expiry is computed on read and compaction runs on write.
 
+Phase 2 grew the ask by the sharing roads, which is why `/sys/ames/*` and `/sys/behn/` are in it now; section 11 lists them and `weir.json` says what each one does.
+
 ## 8. The acceptance scenario
 
 Three messages, one analyst step. `scripts/api-matrix.py` runs this over HTTP against `~wex`; phase 2 runs it again from the raw text over MCP with Claude Code as the triager and the analyst, and the state must match.
@@ -295,11 +301,11 @@ The unit shared is a body: its `body` grub and its observations. Calendar's ship
 
 - **Shares.** `shares.json` on the host maps a body id to the ships it is shared with and a mode, `read` or `edit`. Owner routes: `POST /api/share {"id", "ship", "mode"}`, `DELETE /api/share/<id>/<ship>`, `GET /api/shares`. Sharing registers a peek grant for that ship on the body's directory through the usergroup registry, one group per shared body, exactly as calendar keeps one group per shared calendar.
 - **Offer and accept.** Sharing pokes the peer's orrery inbox, `shares.sig`, which rides on the public usergroup so any ship may offer. The offer carries the host, the body id, the body's ship if it has one, the mode, and the host's instance path, since a desk app's path differs per install. The peer stores offers in `share-offers.json`; the owner accepts with `POST /api/accept {"host", "id"}`, which writes a row to `ship-remotes.json`. An offer for a share already accepted narrows the mode at once; a wider mode waits for a new accept, and accepting an already accepted share keeps what was pushed.
-- **The mapping.** An accepted body lands locally by its ship: a body whose ship is our own @p lands on `person/me`; any other body lands under its own id, created if absent with the ship the offer names. So what Jackson's ship knows about Sarah becomes, on Sarah's ship, third-party observations on her own `person/me`, and Jackson's `person/me` becomes her `person/jackson`.
+- **The mapping.** An accepted body lands locally by its ship: a local body already carrying the offered ship is the target, else a body whose ship is our own @p lands on `person/me`, the host's own `person/me` lands on `person/<host>` and any other body lands under its own id. A target that does not exist yet is created with the name and ship the offer names; one that does keeps its own. So what Jackson's ship knows about Sarah becomes, on Sarah's ship, third-party observations on her own `person/me`, and Jackson's `person/me` becomes her `person/jackson`.
 - **Mirroring.** A follower fiber per accepted share polls the host's body directory over `/sys/ames/ships/<host>/root/...` every five minutes on a behn tick and on demand. Each of the host's own observations, not ones the host itself mirrored from a third ship, is written locally with `source = {"kind": "ship", "id": "<host>/<oid>"}`, `by = "<host>"` and a local `seen`; the content hash makes a re-poll a no-op. Retracting a mirrored observation locally is allowed and local; the next poll does not resurrect it because the retracted grub stays.
 - **Edits back.** In `edit` mode the peer may poke the host's inbox with observations about the shared body. The host applies them through the writer with `by` set to the peer's @p from the transport, never from the payload, and refuses any subject outside the share.
 - **Revoke.** Removing a ship from `shares.json` drops the grant and pokes the peer, which removes its offer or accepted row for the body. If the peer cannot be reached, its next poll on that body fails instead and the row's `error` explains why.
-- **The ask grows** by `/sys/gall/` (poke), `/sys/ames/ships/` (peek), `/sys/ames/registry` (poke), `/sys/ames/usergroups/` (poke, peek, make) and `/sys/behn/` (the poll timer), each with calendar's wording. A ship that refuses them keeps everything else.
+- **The ask grows** by `/sys/gall/` (poke), `/sys/ames/ships/` (peek), `/sys/ames/registry` (poke), `/sys/ames/usergroups/` (peek, make) and `/sys/behn/` (the poll timer), each with calendar's wording. A ship that refuses them keeps everything else.
 - **Not in the minimal version:** sharing actions, sharing a situation's participants transitively, conflict resolution beyond "the host's copy is the host's and the mirror is a mirror", and any UI.
 
 ### Phase 3: scoped client keys
