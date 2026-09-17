@@ -1484,13 +1484,14 @@ PY
 git add code/version.json docs README.md
 git commit -m "Sharing with ships: docs, the two-ship gate in the checklist, version 4"
 git push origin main
-curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery","command":"pull"}' $W/grubbery/forge/api/run
+curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.git_repo","command":"pull"}' $W/grubbery/forge/api/run
+#   {"ok": true} within seconds. The repo is named with its .git_repo suffix, as docs/releasing.md says; a bare "orrery" hangs with no answer.
 sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 4}
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 4}; feb polls wex, allow up to five minutes
-for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["bang"], len(d.get("weir",{}).get("poke",[])))'; done
-#   None 7 on both. A shorter weir means the sync replaced the consent: re-approve with Task 3 Step 6's granted object on that ship.
+for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
+#   None [('poke', 7), ('read', 3), ('write', 1)] on both (the info view names peek "read" and make "write"). A shorter weir means the sync replaced the consent: re-approve with Task 3 Step 6's granted object on that ship.
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 #   ALL OK, on the synced code
 ```
