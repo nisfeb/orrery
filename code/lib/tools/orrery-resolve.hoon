@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-resolve'
+++  name  'orrery_resolve'
 ++  description
   'Find bodies whose name or alias matches a phrase: exact matches first, then prefixes, case-insensitive, at most 20. Use it before observing about someone or something named in a message.'
 ++  parameters

@@ -207,15 +207,15 @@ Eight tools, each a `tool:tools` core, reads by absolute peek into the instance,
 | tool | parameters |
 |---|---|
 | `orrery-state` | `at`, `kind` |
-| `orrery-body` | `id` |
+| `orrery-body` | `id`, `at` |
 | `orrery-resolve` | `q` |
 | `orrery-observe` | `bodies`, `observations`, `by` |
-| `orrery-retract` | `id`, `note` |
+| `orrery-retract` | `id`, `note`, `by` |
 | `orrery-act` | `kind`, `title`, `payload`, `about`, `due`, `by` |
-| `orrery-actions` | `status` to list; `id` and `status` to transition, `note` |
+| `orrery-actions` | `status` to list; `id` and `status` to transition, `note` and `by` |
 | `orrery-schema` | none to read; `schema` to replace |
 
-**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location, since `await-tool` takes an absolute source path in place of a name, so `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery. The durable fix is a small patch to `+get-app-mcp-paths` in `gub/nex/mcp.hoon` that also walks `/apps/shell.shell/desks/*/desk/code/lib/tools`, rehearsed on `~wex` and released with the dist branch. Calendar's and auspex's tools could then leave the kernel too. Phase 4 confirms the gap on `~wex` before the patch. Grants are not the blocker there: the mcp instance on `~wex` already holds peek, poke and make on the whole ball, which is also the honest answer to what an MCP analyst can reach today.
+**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location: `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery, because the tools child nexus resolves an absolute source path directly, and `+await-tool` in `nex/mcp.hoon` has no callers and is not on the call path. The durable fix is a patch to three kernel files, `nex/mcp.hoon`'s `+get-app-mcp-paths` and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`; it lives in `docs/kernel`, was rehearsed on `~wex` on 2026-09-17, and reaches production only through the dist branch. `tools/list` stays the kernel's three-tool protocol allowlist by design, so discovery shows instead in the tools tree and in `list_tools`. Calendar's and auspex's tools could then leave the kernel too. Phase 4 confirms the gap on `~wex` before the patch. Grants are not the blocker there: the mcp instance on `~wex` already holds peek, poke and make on the whole ball, which is also the honest answer to what an MCP analyst can reach today.
 
 ### Where the analyst runs, and what it can see
 
@@ -223,7 +223,7 @@ In v1 the analyst runs off the ship: Claude Code, later Talon, holding the owner
 
 ### The page, at `/apps/orrery`
 
-One document, css inlined, one script, served no-cache, built the way calendar's is. Four views: bodies grouped by kind; a body with its attribute table, its situations, its open actions and its timeline with source pointers and a retract button; the actions inbox with approve, dismiss, done and failed; settings with the schema and the policy as editable JSON. It reloads on the beacon. It is a reader with buttons, not an editor: creating bodies and observations by hand is a v2 question.
+One document, css inlined, one script, served no-cache, built the way calendar's is. Four views: bodies grouped by kind; a body with its attribute table, its situations, its open actions and its timeline with source pointers and a retract button; the actions inbox with approve, dismiss, done and failed; settings with the schema and the policy as editable JSON. It reloads on the raw beacon stream, read the way lattice's page reads it. It is a reader with buttons, not an editor: creating bodies and observations by hand is a v2 question.
 
 ## 7. The ask
 

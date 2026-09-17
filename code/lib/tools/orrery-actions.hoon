@@ -10,7 +10,7 @@
 =<
 ^-  tool:tools
 |%
-++  name  'orrery-actions'
+++  name  'orrery_actions'
 ++  description
   'Without an id: list actions, newest first, by status ("open" for proposed and approved, the default; "all"; or one status). With an id and a status: move that action to approved, dismissed, done or failed, with an optional note.'
 ++  parameters

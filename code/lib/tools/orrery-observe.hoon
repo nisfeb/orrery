@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-observe'
+++  name  'orrery_observe'
 ++  description
   'Submit observations, and the bodies they need, in one batch. Each observation: {subject, attr, value, at?, until?, conf?, source: {kind, id}}; each body: {id, name?, aliases?, ship?}. Answers one result per item, in order, with the observation id and whether it already existed. A batch is at most 50 bodies and 200 observations.'
 ++  parameters

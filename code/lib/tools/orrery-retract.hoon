@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-retract'
+++  name  'orrery_retract'
 ++  description
   'Retract one observation by id. The row stays on the timeline marked retracted with the note; the current state is recomputed without it.'
 ++  parameters

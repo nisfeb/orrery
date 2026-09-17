@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-schema'
+++  name  'orrery_schema'
 ++  description
   'Without arguments: the schema (the kinds and their attributes, which attributes are multi-valued). With schema: replace it whole.'
 ++  parameters

@@ -192,6 +192,8 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 3. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
 4. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
 5. `python3 scripts/key-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
-6. `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` prints `ALL OK`.
-7. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-8. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
+6. `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
+7. `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`.
+8. `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` prints `ALL OK`.
+9. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
+10. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.

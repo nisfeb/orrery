@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-act'
+++  name  'orrery_act'
 ++  description
   'Propose an action about the state: a task, a note, a message, or another kind. Policy decides whether it is approved at once or waits in the inbox. An open action with the same kind and title answers the existing one.'
 ++  parameters

@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-state'
+++  name  'orrery_state'
 ++  description
   'The state view of orrery: every body with its current attributes and the situations it is involved in, the open situations, the open actions, the beacon and the schema. Read this first.'
 ++  parameters

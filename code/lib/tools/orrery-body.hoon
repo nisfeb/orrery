@@ -5,7 +5,7 @@
 /<  om  /lib/orrery-mcp.hoon
 ^-  tool:tools
 |%
-++  name  'orrery-body'
+++  name  'orrery_body'
 ++  description
   'One body: its record, current attributes, the situations it is involved in, the open actions about it, and its timeline of observations with source pointers.'
 ++  parameters
