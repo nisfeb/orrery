@@ -1,0 +1,35 @@
+--- a/desk/gub/nex/mcp.hoon
++++ b/desk/gub/nex/mcp.hoon
+@@ -230,6 +230,8 @@
+       ;<  found=(map @t tool:tools)  bind:m  (scan-namespace i.app-paths)
+       ?:  =(~ found)  $(app-paths t.app-paths)
+       =/  app-name=@ta
++        ?:  ?=([%apps %'shell.shell' %desks @ *] i.app-paths)
++          i.t.t.t.i.app-paths
+         ?>  ?=([%apps @ *] i.app-paths)
+         i.t.i.app-paths
+       =/  sub=json  (tools-nest found)
+@@ -689,10 +691,21 @@
+         (peek:io [%& %| /apps] ~)
+       ?.  ?=([%ball *] apps-view)
+         (pure:m ~)
++      =/  apps=(list path)
++        %+  turn  ~(tap by dir.ball.apps-view)
++        |=  [nam=@ta *]
++        (welp ~[%apps nam] /desk/code/lib/tools)
++      ::  desks installed under the shell keep their code one level down
++      ;<  desks-view=view:nexus  bind:m
++        (peek:io [%& %| /apps/'shell.shell'/desks] ~)
++      ?.  ?=([%ball *] desks-view)
++        (pure:m apps)
+       %-  pure:m
+-      %+  turn  ~(tap by dir.ball.apps-view)
++      %+  weld  apps
++      ^-  (list path)
++      %+  turn  ~(tap by dir.ball.desks-view)
+       |=  [nam=@ta *]
+-      (welp ~[%apps nam] /desk/code/lib/tools)
++      (welp ~[%apps %'shell.shell' %desks nam] /desk/code/lib/tools)
+     ::  +await-tool: look up a compiled tool handler by name
+     ::
+     ::    Converts underscores to hyphens (get_ship → get-ship).
