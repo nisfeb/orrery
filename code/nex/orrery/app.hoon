@@ -729,7 +729,7 @@
     %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
     [[/orrery %obs] `stored-obs:orr`[%1 o]]
   ;<  ~  bind:m  (compact kind.u.hit slug.u.hit)
-  ;<  ~  bind:m  (note 'retract' & '')
+  ;<  ~  bind:m  (note-by 'retract' & why (gs:orr jon 'by'))
   (pure:m &)
 ++  do-delete-body
   |=  jon=json
@@ -987,7 +987,7 @@
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
   =/  op=json
-    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why]])
+    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+by.act]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
@@ -1019,6 +1019,7 @@
   =/  stamped=json  ?:(owner.act (fill-act:orr jon now 'http') (fill-act-as:orr jon now by.act))
   =/  got  (de-action:orr stamped now by.act)
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ::  403 here: the key sent the kind itself; a stored id it may not see is a 404
   ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.p.got))
     (send-err eyre-id 403 (cat 3 'not in scope: ' kind.p.got))
   =/  outside=(unit bid:orr)
@@ -1452,7 +1453,9 @@
   ?~  oids  (pure:m ~)
   =/  why=@t  (rap 3 'retracted on ' (scot %p src) ~)
   ;<  ~  bind:m
-    (poke-writer up (pairs:enjs:format ~[['op' s+'retract'] ['id' s+i.oids] ['note' s+why]]))
+    %+  poke-writer  up
+    %-  pairs:enjs:format
+    ~[['op' s+'retract'] ['id' s+i.oids] ['note' s+why] ['by' s+(scot %p src)]]
   (retract-each up src t.oids)
 ::  ==  the share routes, on request fibers
 ::
@@ -1910,8 +1913,10 @@
   ^-  (set @t)
   ?:(owner.act ~ (sensitive-of:orr policy))
 ::  +view-of: what an actor may see: the bodies in its kinds with the
-::  hidden attributes dropped, and the actions in its action kinds. The
-::  owner sees everything.
+::  hidden attributes dropped, and the actions in its action kinds. A
+::  value that refs a body outside the kinds goes too, and an about
+::  naming one is trimmed away: a key never learns such a body exists.
+::  The owner sees everything.
 ::
 ++  view-of
   |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action:orr]) hide=(set @t)]
@@ -1922,8 +1927,9 @@
       |=  l=loaded
       ^-  (unit loaded)
       ?.  (kind-in-scope:orr s kind.body.l)  ~
-      `l(rows (drop-attrs:orr rows.l hide))
-  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
+      `l(rows (drop-refs:orr (drop-attrs:orr rows.l hide) kinds.s))
+  %+  turn  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))
+  |=([id=@ta a=action:orr] [id (scope-about:orr a kinds.s)])
 ::  +deny-observe: why a key may not send this batch, or ~. The owner is
 ::  never denied. A batch with one item outside the scope is refused
 ::  whole, naming the first offender (which the key itself sent).

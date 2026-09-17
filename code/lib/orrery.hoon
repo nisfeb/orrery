@@ -918,6 +918,32 @@
   ^-  (list row)
   ?:  =(~ hide)  rows
   (skip rows |=(r=row (~(has in hide) attr.obs.r)))
+::  +drop-refs: the rows whose value points at a body of a kind outside
+::  the given kinds are dropped, so a key never learns such a body
+::  exists through an attribute value
+::
+++  drop-refs
+  |=  [rows=(list row) kinds=(set @tas)]
+  ^-  (list row)
+  %+  skip  rows
+  |=  r=row
+  =/  target=(unit bid)  (ref-of value.obs.r)
+  ?~  target  |
+  =/  pk  (parse-bid u.target)
+  ?~  pk  |
+  !(~(has in kinds) kind.u.pk)
+::  +scope-about: an action's about trimmed to the given kinds
+::
+++  scope-about
+  |=  [a=action kinds=(set @tas)]
+  ^-  action
+  %=  a
+    about  %-  ~(gas in *(set bid))
+           %+  skim  ~(tap in about.a)
+           |=  b=bid
+           =/  pk  (parse-bid b)
+           ?~(pk | (~(has in kinds) kind.u.pk))
+  ==
 ::  +force-string, +fill-obs-as, +fill-act-as: the key's identity
 ::  replaces whatever by the payload carried
 ::

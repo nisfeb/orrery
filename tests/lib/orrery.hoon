@@ -710,4 +710,19 @@
     (expect-eq !>(`'health') !>((out-of-scope:orr bad-attr sc hide)))
     (expect-eq !>(~) !>((out-of-scope:orr unparsed sc hide)))
   ==
+++  test-drop-refs-and-scope-about
+  =/  base=obs:orr  o1
+  =/  r-place=row:orr  ['1' base(value (pairs:enjs:format ~[['ref' s+'place/home']]))]
+  =/  r-person=row:orr  ['2' base(value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]
+  =/  r-plain=row:orr  ['3' base]
+  =/  kept=(list row:orr)  (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person]))
+  =/  a=action:orr
+    [%task 'Call the shop' ~ (sy ~['thing/subaru' 'person/sarah']) ~ 'mcp' t0 %proposed '' ~]
+  =/  trimmed=action:orr  (scope-about:orr a (sy ~[%person]))
+  ;:  weld
+    (expect-eq !>(~['2' '3']) !>((turn kept |=(r=row:orr id.r))))
+    (expect-eq !>(3) !>((lent (drop-refs:orr ~[r-place r-person r-plain] (sy ~[%person %place])))))
+    (expect-eq !>((sy ~['person/sarah'])) !>(about.trimmed))
+    (expect-eq !>(~) !>(about:(scope-about:orr a ~)))
+  ==
 --
