@@ -1301,7 +1301,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 ## What to know
 
 - The owner cookie is never scoped. Keys are checked in the app, not by eyre, the way calendar checks CalDAV passwords.
-- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (the key reads that attribute as cleared, never as an older value).
+- A key learns nothing about bodies outside its kinds: not their names, not that they exist, not through an action's `about` (trimmed to the key's kinds), not through an attribute whose value points at one (the key reads that attribute as cleared, never as an older value; a veiled row looks exactly like one the owner cleared). Only a top-level `{"ref"}` value is veiled; a body id written inside free-form JSON is not.
 - Last use is recorded at most once an hour per key.
 - At most 50 keys; scope lists of at most 24 kinds each.
 ```
