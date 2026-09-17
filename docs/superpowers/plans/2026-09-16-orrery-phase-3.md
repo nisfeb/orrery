@@ -1350,6 +1350,17 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 
 `git status` should be clean. If the spec edits of Step 3 were made after the commit in Step 4, commit them: `git commit -am "Spec phase 3 matches what landed"` and push.
 
+### Final review fixes (after the whole-branch review)
+
+Four findings from the whole-branch review landed as one fix round; the plan records them so it mirrors the code.
+
+- A key may only relate what it can see: `out-of-scope` also checks a `{"ref"}` value's kind (refused as `not in scope: <ref>`), so a writing key can neither write refs to bodies outside its kinds nor probe `existing` for a veiled target.
+- A veiled row commits to nothing: `veil-refs` gives it a synthetic id `veiled-<n>` from a per-list counter beside the null value, so the real id (a hash over the hidden value) never reaches a key and a retract of the synthetic id finds no grub.
+- A key gets the schema trimmed to its scope: `scope-schema` keeps its kinds only, drops hidden attribute names from every `attrs` list and from `multi`, and trims an `actions` list to its action kinds; `serve-state` passes it for a key.
+- Identity is the owner's to assign: a key never sends `ship`, refused as `not in scope: ship` in an observe batch's `bodies` and on `POST /bodies`.
+
+The key gate gains seven checks for these (a mixed batch refused whole with the in-scope row unwritten, a read-only key with action kinds proposing, the ref-kind refusal and the `existing` probe refused, a veiled row that cannot be retracted, the trimmed schema, `involved` empty for a key that cannot see the situation, `ship` refused), `serve-retract` uses `hidden-for`, and `docs/keys.md` and spec section 6 say what the code does.
+
 ---
 
 ## Self-review
