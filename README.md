@@ -129,8 +129,8 @@ post observe '{
 An action is something to do. An assistant proposes it, and it moves through proposed, approved, done, dismissed or failed.
 
 ```bash
-post act '{"kind": "task", "title": "Call the shop about the Subaru",
-           "about": ["thing/subaru", "place/johns-machine-shop"], "due": "2026-09-17T13:00:00Z"}'
+post act '{"kind": "task", "title": "Ask Sarah about the move to Porto",
+           "about": ["person/sarah"], "due": "2026-10-02T13:00:00Z"}'
 ```
 
 ```json
