@@ -47,7 +47,7 @@ An upsert of an existing id replaces the name if one is given and unions the ali
 | `seen` | time | when the ship recorded it. Set by the ship |
 | `status` | `live` or `retracted` | the only mutable field |
 
-A `{"ref"}` value must name an existing body, and never the subject itself. A ref-valued attribute is a relation: `spouse`, `owner`, `location`, `employer`. There is no separate relation type, and nothing traverses relations: a ref is a value, `involved` is one hop, and actions point at bodies while bodies never point at actions, so a contradictory pair of facts is two entries in two timelines for the analyst to notice, never a loop. A future transitive query gets a hop limit and a visited set.
+A `{"ref"}` value must be a well-formed body id other than the subject itself; it need not exist yet, because bodies can be deleted and observations mirrored from other ships (section 11) may name bodies this ship does not hold. A ref-valued attribute is a relation: `spouse`, `owner`, `location`, `employer`. There is no separate relation type, and nothing traverses relations: a ref is a value, `involved` is one hop, and actions point at bodies while bodies never point at actions, so a contradictory pair of facts is two entries in two timelines for the analyst to notice, never a loop. A future transitive query gets a hop limit and a visited set.
 
 A `null` value clears a single-valued attribute: "no longer stranded" without pretending to know the new state.
 
@@ -153,7 +153,7 @@ Everything about a body sits under its own directory, so one deep peek reads a b
 
 `/bodies` and `/actions` are laid with retention on, so grubbery keeps a version per write of a body's name and aliases and of an action's status. Observations are immutable, so as-of reads never need that history. Every persistent path has a covering `%fall` row in `on-load`; the page, the icon and the two manifests are `%over` so a release replaces them.
 
-**The writer.** `/main.sig` is one long-lived fiber, the shape lattice and auspex use: rise, then loop on take-poke, apply, bump, recurse. It takes `[/ %json]` pokes carrying one op: `observe`, `retract`, `act`, `set-action`, `upsert-body`, `delete-body`, `set-schema`, `set-policy`. It applies with soft makes and overwrites, bumps `/beacon/rev` once per op that changed the tree, compacts the touched bodies, and sends the push for a new action. It never crashes on input: every refusal is a clean branch under `mule` with a `~|` label, written to `/tr/last`, because a crashed writer eats the next poke.
+**The writer.** `/main.sig` is one long-lived fiber, the shape lattice and auspex use: rise, then loop on take-poke, apply, bump, recurse. It takes `[/ %json]` pokes carrying one op: `observe`, `retract`, `act`, `set-action`, `upsert-body`, `delete-body`, `set-schema`, `set-policy`. It applies with soft makes and overwrites, bumps `/beacon/rev` once per op that changed the tree, compacts the touched bodies, and sends the push for a new action. It never crashes on input: every refusal is a clean branch that writes `/tr/last` (fiber code cannot run under `mule`), because a crashed writer eats the next poke.
 
 Orrery keeps no stored index. That is why the callers can answer without a reply channel: a request fiber or a tool validates the op with the pure lib, computes every id it will report, pokes the writer, and answers from its own computation. The one inaccuracy is a race between two callers, which the writer's soft make turns into "already existed" and `/tr/last` records. A reply grub per request is the upgrade if late refusals ever matter.
 
@@ -250,7 +250,7 @@ Assert: the state view shows all of it; `person/sarah`'s `involved` names the si
 
 Assert: the Subaru is at John's and me is home with no status; `?at=2026-09-16T23:00Z` still puts the Subaru on Route 9; the situation is still open; resubmitting message 3's batch changes nothing and answers `existing` on every item.
 
-**The analyst** reads the state, sees an open situation with a car at a shop and no action about it, and proposes `{"kind": "task", "title": "Call John's Machine Shop about the Subaru", "about": ["thing/subaru", "place/johns-machine-shop"], "due": "2026-09-17T13:00Z"}`. Assert: the answer is `approved` because policy auto-approves tasks; the open actions list has it; a second identical proposal answers the same id; `/tr/last` records the push attempt.
+**The analyst** reads the state, sees an open situation with a car at a shop and no action about it, and proposes `{"kind": "task", "title": "Call John's Machine Shop about the Subaru", "about": ["thing/subaru", "place/johns-machine-shop"], "due": "2026-09-17T13:00Z"}`. Assert: the answer is `approved` because policy auto-approves tasks; the open actions list has it; a second identical proposal answers the same id; the act lands in `/tr/last` and the push attempt in `/tr/log`.
 
 **Cleanup checks.** Retract the "riding with the tow" observation: the timeline labels it retracted and the fold ignores it. Mark the task done: it leaves the open list. Set `retention_days` to 0 and write to the Subaru: the superseded observations are culled, the live ones remain.
 

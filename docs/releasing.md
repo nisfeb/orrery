@@ -157,9 +157,9 @@ GET /grubbery/ball/apps/shell.shell/desks/orrery.desk/desk?info=1
 
 ##  6. Desk apps and the kernel are delivered differently
 
-Do not mix these up. Calendar, lattice and auspex are **desk apps**. Grubbery itself is the **kernel**.
+Do not mix these up. Calendar, lattice, auspex and orrery are **desk apps**. Grubbery itself is the **kernel**.
 
-| | desk app (calendar / lattice / auspex) | kernel (grubbery) |
+| | desk app (calendar / lattice / auspex / orrery) | kernel (grubbery) |
 |---|---|---|
 | source of truth | this git repo | nisfeb/grubbery branch |
 | how it reaches ricsul | `git push`, then forge poll or forge pull | `scp` to ricsul's mount, then `\|commit %grubbery` in the dojo |

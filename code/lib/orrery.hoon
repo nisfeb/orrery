@@ -294,6 +294,7 @@
   =/  until=(unit @da)  (gt jon 'until')
   ?:  &(?=(~ until) !=(~ (gj jon 'until')))
     [%| 'until: expected an ISO 8601 UTC time, or null']
+  ?:  ?&(?=(^ until) (lte u.until u.at))  [%| 'until: must be after at']
   =/  conf=(unit @ud)  ?.((has-key jon 'conf') `100 (gn jon 'conf'))
   ?~  conf  [%| 'conf: 0 to 100']
   ?:  (gth u.conf 100)  [%| 'conf: 0 to 100']
@@ -343,6 +344,21 @@
   ?.  ?=([%o *] j)  j
   ?:  (~(has by p.j) k)  j
   [%o (~(put by p.j) k v)]
+::  +with-string: set a key on an object unless it already holds a
+::  non-empty string
+::
+::    An explicit "" or a non-string would otherwise survive to both
+::    decoders, where each falls back to its own default and the two
+::    compute different ids. A string over the cap is left alone, so
+::    the decoder still refuses it by name.
+::
+++  with-string
+  |=  [j=json k=@t v=json]
+  ^-  json
+  ?.  ?=([%o *] j)  j
+  =/  cur=json  (fall (~(get by p.j) k) ~)
+  ?:  ?&(?=([%s *] cur) !=('' p.cur))  j
+  [%o (~(put by p.j) k v)]
 ::  +fill-obs, +fill-act: stamp at (or proposed) and by into a request
 ::  before it goes to the writer, so the id a caller reports and the id
 ::  the writer makes agree
@@ -350,11 +366,11 @@
 ++  fill-obs
   |=  [j=json now=@da by=@t]
   ^-  json
-  (with-default (with-default j 'at' s+(en-iso now)) 'by' s+by)
+  (with-string (with-default j 'at' s+(en-iso now)) 'by' s+by)
 ++  fill-act
   |=  [j=json now=@da by=@t]
   ^-  json
-  (with-default (with-default j 'proposed' s+(en-iso now)) 'by' s+by)
+  (with-string (with-default j 'proposed' s+(en-iso now)) 'by' s+by)
 ::  +prep-observe: every body and observation in an observe request,
 ::  decoded or refused, in order
 ::

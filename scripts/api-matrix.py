@@ -47,6 +47,7 @@ DUE = T0 + timedelta(hours=15)
 SIT = 'situation/' + T0.strftime('%Y-%m-%d') + '-breakdown'
 SHOP = 'place/johns-machine-shop'
 TITLE = "Call John's Machine Shop about the Subaru"
+MSG = "Tell Sarah the car is at John's"
 USER = {'kind': 'user', 'id': 'matrix-setup'}
 
 
@@ -113,7 +114,7 @@ for o in dictish(me).get('observations', []):
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
 code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
-    if a['title'] == TITLE:
+    if a['title'] in (TITLE, MSG):
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
@@ -186,7 +187,8 @@ RIDING = d['observations'][1].get('id', '') if code == 200 and len(dictish(d).ge
 s = state()
 check('subaru is being towed', val(s, 'thing/subaru', 'status') == "being towed to John's Machine Shop", attrs(s, 'thing/subaru'))
 code, r = curl('GET', API + '/resolve?q=the%20shop')
-check('resolve finds the shop by alias', code == 200 and [x['id'] for x in r] == [SHOP], r)
+check('resolve finds the shop by alias', code == 200 and isinstance(r, list)
+      and [dictish(x).get('id') for x in r] == [SHOP], r)
 
 # ── 4. message 3 ────────────────────────────────────────────────────
 print('4. message 3: "home. left the car at john\'s overnight"')
@@ -220,7 +222,8 @@ check('proposal answers 200', code == 200, (code, a))
 check('policy auto-approves a task', code == 200 and a['status'] == 'approved' and not a['existing'], a)
 AID = a['id'] if code == 200 else ''
 code, acts = curl('GET', API + '/actions')
-check('the task is on the open list', code == 200 and any(x['id'] == AID for x in acts), acts)
+check('the task is on the open list', code == 200 and isinstance(acts, list)
+      and any(dictish(x).get('id') == AID for x in acts), acts)
 mine = [x for x in acts if isinstance(x, dict) and x.get('id') == AID] if isinstance(acts, list) else []
 check('the history shows proposed then approved by policy', bool(mine)
       and [(h.get('status'), h.get('by')) for h in mine[0].get('history', [])] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
@@ -229,7 +232,13 @@ check('a second identical proposal answers the same id', code == 200 and a2['id'
 code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
 check('the writer noted the act', code == 200 and isinstance(last, dict) and last.get('op') == 'act' and last.get('ok') is True, last)
 code, bs = body('thing/subaru')
-check('the subaru view lists the open task', code == 200 and any(x['id'] == AID for x in bs['actions']), bs.get('actions') if code == 200 else bs)
+check('the subaru view lists the open task', code == 200 and isinstance(bs, dict)
+      and any(dictish(x).get('id') == AID for x in bs.get('actions', [])), bs.get('actions') if code == 200 else bs)
+code, a3 = curl('POST', API + '/act', {'kind': 'message', 'title': MSG, 'by': 'api-matrix'})
+check('a message waits for a human', code == 200 and dictish(a3).get('status') == 'proposed', (code, a3))
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+check('the audit log holds the push', code == 200 and isinstance(log, list)
+      and any(dictish(x).get('op') == 'push' for x in log), log[-3:] if isinstance(log, list) else log)
 
 # ── 6. retract, done, compact ───────────────────────────────────────
 print('6. retract, done, compact')
@@ -241,7 +250,8 @@ check('the timeline labels it retracted', bool(riding) and riding[0]['status'] =
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'done'})
 check('the task is marked done', code == 200 and d['status'] == 'done', (code, d))
 code, acts = curl('GET', API + '/actions')
-check('it left the open list', code == 200 and not any(x['id'] == AID for x in acts), acts)
+check('it left the open list', code == 200 and isinstance(acts, list)
+      and not any(dictish(x).get('id') == AID for x in acts), acts)
 code, allacts = curl('GET', API + '/actions?status=done')
 done = [x for x in allacts if isinstance(x, dict) and x.get('id') == AID] if isinstance(allacts, list) else []
 hist = done[0].get('history', []) if done else []
@@ -277,6 +287,18 @@ code, d = curl('GET', API + '/state?at=yesterday')
 check('a bad ?at is 400', code == 400, (code, d))
 code, d = curl('POST', API + '/act', {'kind': 'task', 'title': 'x', 'about': ['thing/nothing']})
 check('an unknown about body is 400', code == 400 and str(d.get('error', '')).startswith('about: no such body'), (code, d))
+code, d = curl('POST', API + '/retract', {'id': RIDING, 'note': 'x' * 501})
+check('an over-long retract note is 400', code == 400
+      and dictish(d).get('error') == 'note: over 500 bytes', (code, d))
+code, d = curl('POST', API + f'/actions/{AID}', {'status': 'dismissed', 'note': 'x' * 501})
+check('an over-long action note is 400', code == 400
+      and dictish(d).get('error') == 'note: over 500 bytes', (code, d))
+code, d = curl('POST', API + f'/actions/{AID}', [])
+check('a non-object action body is 400', code == 400
+      and dictish(d).get('error') == 'expected an object', (code, d))
+code, d = curl('POST', API + '/observe', {'bodies': [], 'observations': 'nope'})
+check('a non-array observations is 400', code == 400
+      and dictish(d).get('error') == 'observations: expected an array', (code, d))
 code, d = curl('GET', API + '/nothing')
 check('an unknown route is 404', code == 404, (code, d))
 

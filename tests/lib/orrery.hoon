@@ -150,6 +150,8 @@
     (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":-5,"source":{"kind":"user"}}')))
     (expect-eq !>('conf: 0 to 100') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"conf":"high","source":{"kind":"user"}}')))
     (expect-eq !>('source.kind: required') !>((bad '{"subject":"thing/subaru","attr":"location","value":1}')))
+    (expect-eq !>('until: must be after at') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"2026-09-16T22:05:00Z","until":"2026-09-16T22:05:00Z","source":{"kind":"user"}}')))
+    (expect-eq !>('until: must be after at') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"2026-09-16T22:05:00Z","until":"2026-09-16T21:00:00Z","source":{"kind":"user"}}')))
   ==
 ++  test-de-action-ok
   =/  got
@@ -182,12 +184,26 @@
 ++  test-fill-defaults
   =/  j=json  (fill-obs:orr (jo '{"subject":"person/me","attr":"status","value":1}') t0 'http')
   =/  k=json  (fill-act:orr (jo '{"kind":"task","title":"x","by":"user"}') t0 'http')
+  =/  by-of
+    |=  j=json
+    ^-  @t
+    (gs:orr j 'by')
+  =/  long=@t  (big 65)
+  =/  kept=json
+    %^  fill-act:orr
+      (pairs:enjs:format ~[['kind' s+'task'] ['title' s+'x'] ['by' s+long]])
+    t0  'http'
   ;:  weld
     (expect-eq !>('2026-09-16T22:05:00Z') !>((gs:orr j 'at')))
     (expect-eq !>('http') !>((gs:orr j 'by')))
     (expect-eq !>('keep') !>((gs:orr (fill-obs:orr (jo '{"at":"keep"}') t0 'http') 'at')))
     (expect-eq !>('2026-09-16T22:05:00Z') !>((gs:orr k 'proposed')))
     (expect-eq !>('user') !>((gs:orr k 'by')))
+    (expect-eq !>('http') !>((by-of (fill-obs:orr (jo '{"subject":"person/me","attr":"status","value":1,"by":""}') t0 'http'))))
+    (expect-eq !>('http') !>((by-of (fill-obs:orr (jo '{"subject":"person/me","attr":"status","value":1,"by":5}') t0 'http'))))
+    (expect-eq !>('http') !>((by-of (fill-act:orr (jo '{"kind":"task","title":"x","by":""}') t0 'http'))))
+    (expect-eq !>('http') !>((by-of (fill-act:orr (jo '{"kind":"task","title":"x","by":5}') t0 'http'))))
+    (expect-eq !>(long) !>((by-of kept)))
   ==
 ++  test-prep-observe
   =/  got
@@ -418,6 +434,101 @@
     (expect-eq !>(2) !>((lent ?:(?=([%a *] three) p.three ~))))
     (expect-eq !>(`json`(jo '{"n":2}')) !>(?:(?=([%a *] three) (snag 0 p.three) ~)))
     (expect-eq !>(1) !>((lent ?:(?=([%a *] fresh) p.fresh ~))))
+  ==
+::
+::  ==  the final review: caps, the seen tie-break, an id and an order
+::
+::  +big: a string of n bytes, for the over-cap cases
+::
+++  big  |=(n=@ud ^-(@t `@t`(fil 3 n 'a')))
+++  test-caps-refused
+  =/  bad-body
+    |=  j=json
+    ^-  @t
+    =/  got  (de-body:orr j t0)
+    ?:(?=(%| -.got) p.got 'accepted')
+  =/  bad-obs
+    |=  j=json
+    ^-  @t
+    =/  got  (de-obs:orr j t0 'http')
+    ?:(?=(%| -.got) p.got 'accepted')
+  =/  bad-act
+    |=  j=json
+    ^-  @t
+    =/  got  (de-action:orr j t0 'mcp')
+    ?:(?=(%| -.got) p.got 'accepted')
+  =/  body-with
+    |=  [k=@t v=json]
+    ^-  json
+    (pairs:enjs:format ~[['id' s+'person/x'] [k v]])
+  =/  obs-with
+    |=  [k=@t v=json]
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['subject' s+'thing/subaru']
+        ['attr' s+'location']
+        ['value' s+'Route 9']
+        ['source' (pairs:enjs:format ~[['kind' s+'user'] ['id' s+'m1']])]
+        [k v]
+    ==
+  =/  act-with
+    |=  [k=@t v=json]
+    ^-  json
+    (pairs:enjs:format ~[['kind' s+'task'] ['title' s+'x'] [k v]])
+  ;:  weld
+    (expect-eq !>('name: over 200 bytes') !>((bad-body (body-with 'name' s+(big 201)))))
+    (expect-eq !>('aliases: over 32') !>((bad-body (body-with 'aliases' a+(reap 33 `json`s+'x')))))
+    (expect-eq !>('aliases: each 1 to 100 bytes') !>((bad-body (body-with 'aliases' a+~[`json`s+(big 101)]))))
+    (expect-eq !>('value: a string, number, boolean, null or object, at most 2000 bytes') !>((bad-obs (obs-with 'value' s+(big 2.001)))))
+    (expect-eq !>('source.id: over 200 bytes') !>((bad-obs (obs-with 'source' (pairs:enjs:format ~[['kind' s+'user'] ['id' s+(big 201)]])))))
+    (expect-eq !>('by: over 64 bytes') !>((bad-obs (obs-with 'by' s+(big 65)))))
+    (expect-eq !>('title: 1 to 200 bytes') !>((bad-act (act-with 'title' s+(big 201)))))
+    (expect-eq !>('payload: over 4000 bytes') !>((bad-act (act-with 'payload' (pairs:enjs:format ~[['x' s+(big 4.001)]])))))
+    (expect-eq !>('about: over 20') !>((bad-act (act-with 'about' a+(reap 21 `json`s+'thing/subaru')))))
+  ==
+::  two rows claim the same moment: the one the ship saw later wins,
+::  whichever order the fold reaches them in
+::
+++  test-fold-seen-tie-break
+  =/  a  (r 'a' (mk 'location' s+'Route 9' t0))
+  =/  b  (r 'b' (mk 'location' s+'shop' t0))
+  =.  seen.obs.b  (add t0 ~h1)
+  =/  won
+    |=  rows=(list row:orr)
+    ^-  @t
+    =/  loc=(list row:orr)  (fall (~(get by (fold:orr rows ~ (add t0 ~d1))) 'location') ~)
+    ?~(loc '' id.i.loc)
+  ;:  weld
+    (expect-eq !>('b') !>((won ~[a b])))
+    (expect-eq !>('b') !>((won ~[b a])))
+  ==
+::  the request fiber hashes a proposal, the writer hashes the same
+::  proposal with the policy's approval on it: one id
+::
+++  test-act-id-survives-transition
+  =/  got
+    %^  de-action:orr
+      (jo '{"kind":"task","title":"Call the shop","by":"http","proposed":"2026-09-16T22:05:00Z"}')
+    t0  'http'
+  ?.  ?=(%& -.got)  (expect !>(|))
+  =/  a=action:orr  p.got
+  =/  b=action:orr  (transition:orr a %approved 'policy' '' (add t0 ~s1))
+  ;:  weld
+    (expect-eq !>((act-id:orr a)) !>((act-id:orr b)))
+    (expect-eq !>(%approved) !>(status.b))
+    (expect-eq !>(2) !>((lent history.b)))
+  ==
+::  an exact hit outranks a prefix hit on another body
+::
+++  test-resolve-exact-before-prefix
+  =/  bodies=(list [id=bid:orr =body:orr])
+    :~  ['person/sammy' [%person 'Sammy' ~ t0 ~]]
+        ['person/sam' [%person 'Sam' ~ t0 ~]]
+    ==
+  =/  hits  (resolve:orr 'sam' bodies)
+  ;:  weld
+    (expect-eq !>(`(list bid:orr)`~['person/sam' 'person/sammy']) !>((turn hits |=(h=[id=bid:orr =body:orr match=@tas] id.h))))
+    (expect-eq !>(`(list @tas)`~[%exact %prefix]) !>((turn hits |=(h=[id=bid:orr =body:orr match=@tas] match.h))))
   ==
 ++  test-readers-lift
   =/  old-body  [%1 [%person 'Sarah' (sy ~['Sarah']) t0]]

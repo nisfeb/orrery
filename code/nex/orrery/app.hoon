@@ -231,9 +231,11 @@
     ;<  *  bind:m  (make-gained-soft:io road |+[[[/orrery %body] `stored-body:orr`[%2 fresh]] ~])
     (pure:m &)
   =/  old=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.cur))
+  ::  a grub this build cannot read is left where it is: overwriting it
+  ::  would throw away a body a later shape may still understand
   ?~  old
-    ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%2 fresh]])
-    (pure:m &)
+    ;<  ~  bind:m  (note 'write-body' | 'unreadable body')
+    (pure:m |)
   =/  merged=body:orr  (merge-body:orr u.old new)
   ?:  =(merged u.old)  (pure:m |)
   ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%2 merged]])
@@ -511,6 +513,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  obs-j=json  (gj:orr jon 'observations')
+  ?.  |(?=(~ obs-j) ?=([%a *] obs-j))
+    (send-err eyre-id 400 'observations: expected an array')
   ?:  (gth (lent (ga:orr jon 'bodies')) max-bodies:orr)
     (send-err eyre-id 400 'bodies: over 50')
   ?:  (gth (lent (ga:orr jon 'observations')) max-obs:orr)
@@ -526,6 +531,7 @@
   ;<  bodies-res=(list json)  bind:m  (body-results bodies.prep ~)
   =/  known=(set bid:orr)
     %-  sy
+    :-  'person/me'
     %+  murn  bodies.prep
     |=(e=(each [id=bid:orr =body:orr] @t) ?:(?=(%& -.e) `id.p.e ~))
   ;<  obs-res=(list json)  bind:m  (obs-results obs.prep known ~)
@@ -647,6 +653,9 @@
   =/  m  (fiber:fiber:nexus ,(unit bid:orr))
   ^-  form:m
   ?~  ids  (pure:m ~)
+  ::  person/me always exists by the time the writer reads this: the
+  ::  request queued +ensure-me ahead of its own poke
+  ?:  =('person/me' i.ids)  (first-missing up t.ids)
   =/  pk  (parse-bid:orr i.ids)
   ?~  pk  (pure:m `i.ids)
   ;<  ex=?  bind:m  (peek-exists:io (rf up (body-dir kind.u.pk slug.u.pk) %body))
@@ -689,7 +698,7 @@
   ;<  ~  bind:m  (note-by 'act' & '' by.a)
   (pure:m &)
 ::  +push-soft: a notification through /sys/push. Soft, so a refused
-::  road never fails the writer.
+::  road never fails the writer, and the audit note says which it was.
 ::
 ++  push-soft
   |=  [a=action:orr id=@ta]
@@ -698,10 +707,11 @@
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  title=@t  ?:(=(%approved status.a) 'Orrery filed' 'Orrery proposes')
   =/  tag=@t  (cat 3 'orrery-' id)
-  ;<  *  bind:m
+  ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title title.a ~ `'/apps/orrery' `tag]] eny]]
-  ;<  ~  bind:m  (note-by 'push' & title.a by.a)
+  =/  sent=?  ?=(~ err)
+  ;<  ~  bind:m  (note-by 'push' sent ?:(sent title.a 'push refused') by.a)
   (pure:m ~)
 ++  do-set-action
   |=  jon=json
@@ -847,10 +857,12 @@
   ^-  form:m
   =/  id=@t  (gs:orr jon 'id')
   ?:  =('' id)  (send-err eyre-id 400 'id: required')
+  =/  why=@t  (gs:orr jon 'note')
+  ?:  (gth (met 3 why) max-note:orr)  (send-err eyre-id 400 'note: over 500 bytes')
   ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 1 `@ta`id)
   ?~  hit  (send-err eyre-id 404 'no such observation')
   =/  op=json
-    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+(gs:orr jon 'note')]])
+    (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
@@ -917,7 +929,10 @@
   |=  [eyre-id=@ta id=@ta jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'expected an object')
   =/  want=@t  (gs:orr jon 'status')
+  =/  why=@t  (gs:orr jon 'note')
+  ?:  (gth (met 3 why) max-note:orr)  (send-err eyre-id 400 'note: over 500 bytes')
   ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
   ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
   =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
@@ -926,7 +941,7 @@
     (send-err eyre-id 409 (rap 3 'cannot go from ' status.u.a ' to ' want ~))
   =/  op=json
     %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+(gs:orr jon 'note')] ['by' s+(gs:orr jon 'by')]]
+    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+(gs:orr jon 'by')]]
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['ok' b+&]]))
