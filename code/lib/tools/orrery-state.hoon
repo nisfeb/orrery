@@ -20,6 +20,7 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ;<  ~  bind:m  ensure-me:om
   ;<  now=@da  bind:m  get-time:io
   =/  when=(unit @da)  (when-arg:om args.st now)
   ?~  when  (pure:m (fail:om 'at: expected an ISO 8601 UTC time'))
