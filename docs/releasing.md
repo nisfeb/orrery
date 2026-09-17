@@ -199,3 +199,17 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 10. Open `/apps/orrery` on `~wex` in a browser with the owner cookie: the four views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
 11. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
 12. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
+
+##  9. Ricsul before publishing: installed, unpublished, and open to beta testers
+
+Done 2026-09-17: ricsul runs orrery at version 7 as an ordinary desk, not a stock one. Its forge has `orrery.git_repo` (`{"repo":"nisfeb/orrery","ref":"main","poll":15}`), its desk follows `/apps/forge.git_forge/repos/orrery.git_repo/data/tree/code`, the ask is granted whole (6 pokes, 3 peeks, 1 make), the page and the API answer the owner, and `share.usergroups` is empty, so no other ship can read the desk. There is no `published` line for orrery in `gub/nex/shell.hoon` and nothing in `permit/share.json`.
+
+Updating it is section 1: bump `code/version.json`, push, then either wait for the 15 minute poll or `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}` on ricsul; verify with the four reads in section 4. A change to `ask.json` raises a consent prompt on ricsul; anything else lands on its own.
+
+Opening it to beta testers without publishing it:
+
+1. Make a usergroup for them on ricsul, the way `/family` was made: a `<name>.grp` directory under `/sys/ames/usergroups` with the testers' ships in `who.ships`.
+2. Open the desk to that group: on `/grubbery/desk/orrery`, under "Usergroups allowed to peek /desk/code", add `/<name>`. Over HTTP that is `POST /grubbery/desk/orrery/share {"add":"/<name>"}`, and `{"remove":"/<name>"}` closes it again. The grant is peek on `/desk/code` and the version file, nothing else.
+3. Each tester, on a ship running grubbery: `POST /apps/grubbery/desks/add {"name":"orrery","code":"~ricsul-bilwyt/apps/shell.shell/desks/orrery.desk/desk/code"}`, then approve the ask when the desk prompts, then open `/apps/orrery`. From then on every version bump on ricsul reaches them on its own.
+
+Publishing proper, later, is the stock desk line `(published our 'orrery' 'nisfeb/orrery' 'main')` beside calendar's in `gub/nex/shell.hoon` and opening the desk to `/public`; nothing about the beta group has to be undone first.
