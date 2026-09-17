@@ -1100,12 +1100,13 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
+  ;<  tw=wire  bind:m  (nonce:io /remote)
   =/  req=load:remo:nexus  [[/share-poke lane] %poke [[/ %json] jon]]
   ;<  w=wire  bind:m  (nonce:io /share-poke)
   ;<  ~  bind:m
     %-  send-dart:io
     [%node w &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[target %grubbery] grubbery-load+req]]]
-  ;<  ~  bind:m  (set-timer:io /remote (add now ~s30))
+  ;<  ~  bind:m  (set-timer:io tw (add now ~s30))
   ;<  ok=?  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
@@ -1118,13 +1119,13 @@
       ?~(err.u.in [%wait ~] [%done %.n])
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(?=([%remote *] !<(path q.sage.u.in)) [%skip ~] [%done %.n])
+        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done %.n])
       ?.  =([/ %poke-ack] p.sage.u.in)  [%skip ~]
       =/  [aw=wire err=(unit tang)]  !<([wire (unit tang)] q.sage.u.in)
       ?.  =(w aw)  [%skip ~]
       [%done ?=(~ err)]
     ==
-  ;<  ~  bind:m  (cancel-timer:io /remote)
+  ;<  ~  bind:m  (cancel-timer:io tw)
   (pure:m ok)
 ::  +peek-remote-wait: a deep peek of another ship's file or directory,
 ::  ~ on veto, miss or timeout
@@ -1135,6 +1136,7 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   =/  until=@da  (add now ~s30)
+  ;<  tw=wire  bind:m  (nonce:io /remote)
   ;<  pw=wire  bind:m  (nonce:io /peek)
   =/  rr=road:tarball
     ?-  -.road
@@ -1147,7 +1149,7 @@
         ==
     ==
   ;<  ~  bind:m  (send-dart:io %node pw rr %peek ~ ~ %.y)
-  ;<  ~  bind:m  (set-timer:io /remote until)
+  ;<  ~  bind:m  (set-timer:io tw until)
   ;<  got=(unit view:nexus)  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
@@ -1159,9 +1161,9 @@
       ?.(=(pw wire.u.in) [%skip ~] [%done `view.u.in])
         [~ %poke * *]
       ?.  =([/ %timer-wake] p.sage.u.in)  [%skip ~]
-      ?.(?=([%remote *] !<(path q.sage.u.in)) [%skip ~] [%done ~])
+      ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done ~])
     ==
-  ;<  ~  bind:m  (cancel-timer:io /remote)
+  ;<  ~  bind:m  (cancel-timer:io tw)
   (pure:m got)
 ::  ==  the inbox
 ::
@@ -1183,7 +1185,7 @@
   ?:  =('observe' act)  (take-edit src id jon)
   (note-by 'inbox' | 'unknown action' (scot %p src))
 ::  +take-offer: a host offers a body. An offer for a share already
-::  accepted only updates the row's mode: no second offer.
+::  accepted narrows its mode in place; a wider one waits for an accept.
 ::
 ++  take-offer
   |=  [src=@p key=@t id=bid:orr jon=json]
@@ -1200,9 +1202,20 @@
   ?:  (~(has by rm) key)
     =/  row=json  (fall (~(get by rm) key) ~)
     ?.  ?=([%o *] row)  (note-by 'offer' | 'accepted row unreadable' (scot %p src))
+    ::  a share we accepted: a narrower mode applies at once, a wider
+    ::  one is a new offer, since it would change what we send the host
+    ?:  &(=('edit' mode) !=('edit' (gs:orr row 'mode')))
+      (file-offer src key id mode now jon)
     =/  next=json  [%o (~(put by p.row) 'mode' s+mode)]
     ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
     (note-by 'offer' & 'mode updated' (scot %p src))
+  (file-offer src key id mode now jon)
+::  +file-offer: the offer waits in share-offers.json for an accept
+::
+++  file-offer
+  |=  [src=@p key=@t id=bid:orr mode=@t now=@da jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
   ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
   =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
   ::  a full inbox drops new offers; 200 is far past what a person gets
@@ -1300,7 +1313,7 @@
     ?.  &(=(`json`b+& (gj:orr j 'retracted')) !retracted.u.h)  ~
     `oid.u.h
   ;<  ~  bind:m  (observe-fresh up fresh)
-  ;<  ~  bind:m  (retract-each up src gone)
+  ;<  ~  bind:m  (retract-each up src (scag max-obs:orr gone))
   (pure:m (add ?~(fresh 0 1) (lent gone)))
 ::  +poke-writer: one op to our writer, soft (a refusal is noted there)
 ::
@@ -1439,6 +1452,10 @@
     ==
   ;<  *  bind:m
     (poke-soft:io (rf 1 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' body-j]])])
+  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
+  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  =/  old=json  (fall (~(get by rm) key) [%o ~])
+  =/  kept=json  =/(p (gj:orr old 'pushed') ?:(?=([%o *] p) p [%o ~]))
   =/  row=json
     %-  pairs:enjs:format
     :~  ['host' s+(scot %p u.host)]
@@ -1446,12 +1463,10 @@
         ['target' s+target]
         ['mode' s+(gs:orr u.offer 'mode')]
         ['base' s+(gs:orr u.offer 'base')]
-        ['pushed' [%o ~]]
+        ['pushed' kept]
         ['last' s+'']
         ['error' s+'']
     ==
-  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
-  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
   ;<  ~  bind:m  (over:io (rf 1 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key row)]])
   ;<  ~  bind:m  (over:io (rf 1 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
   ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
@@ -1498,7 +1513,12 @@
     =/  merged=(map @t json)
       %+  roll  ~(tap by done)
       |=  [[key=@t row=json] acc=_cur]
-      ?.((~(has by acc) key) acc (~(put by acc) key row))
+      =/  live=(unit json)  (~(get by acc) key)
+      ?~  live  acc
+      ?.  &(?=([%o *] u.live) ?=([%o *] row))  acc
+      =/  keep=(list [@t json])
+        ~[['last' (gj:orr row 'last')] ['error' (gj:orr row 'error')] ['pushed' (gj:orr row 'pushed')]]
+      (~(put by acc) key [%o (~(gas by p.u.live) keep)])
     (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o merged]])
   ;<  next=json  bind:m  (sync-one row.i.rows)
   (sync-rows t.rows (~(put by done) key.i.rows next))
