@@ -68,6 +68,10 @@
           [%fall %& [/ %'share-offers.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'ship-remotes.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'sync.sig'] [[/ %sig] ~]]
+          ::  clients.json: the minted keys, each a salted hash of its
+          ::  secret with a name, an identity and a scope (spec section 11,
+          ::  phase 3)
+          [%fall %& [/ %'clients.json'] [[/ %json] [%o ~]]]
       ==
     ::
     ++  on-file
@@ -195,6 +199,9 @@
   ?:  =('set-action' op)  (do-set-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
+  ?:  =('add-client' op)  (do-add-client jon)
+  ?:  =('drop-client' op)  (do-drop-client jon)
+  ?:  =('touch-client' op)  (do-touch-client jon)
   (refuse op 'unknown op')
 ::  +refuse: a refusal that leaves the writer standing
 ::
@@ -494,7 +501,10 @@
     (poke-soft:io (rf 1 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'ensure-me']])])
   (pure:m ~)
 ::  +handle-request: one HTTP request, on its own ephemeral fiber.
-::  Owner only: eyre's authenticated flag and src equal to our.
+::  Who is asking is settled by +identify: the owner (eyre's
+::  authenticated flag and src equal to our) or a minted key. Every
+::  route here is wrapped in +own, the owner alone; the scoped routes
+::  open to keys in the next task.
 ::
 ++  handle-request
   |=  eyre-id=@ta
@@ -510,8 +520,11 @@
     ?:  &(?=(^ suffix) =('' (rear `path`suffix)))  (snip `path`suffix)
     suffix
   =/  meth=@t  method.request.req
-  ?.  &(authenticated.req =(src our))
-    (send-err eyre-id 403 'forbidden')
+  ;<  who=(unit actor)  bind:m  (identify req src our)
+  ?~  who  (send-err eyre-id 403 'forbidden')
+  =/  act=actor  u.who
+  ::  +own: a route the owner alone may take
+  =/  own  |=(f=form:m ^-(form:m ?:(owner.act f (send-err eyre-id 403 'owner only'))))
   ;<  ~  bind:m  ensure-me-from-request
   =/  jon=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
@@ -519,26 +532,29 @@
   =/  s3=@ta  ?:(?=([@ @ @ @ *] suffix) i.t.t.t.suffix %$)
   =/  s4=@ta  ?:(?=([@ @ @ @ @ *] suffix) i.t.t.t.t.suffix %$)
   =/  args=quay:eyre  args.parsed
-  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))        (serve-state eyre-id args)
-  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))     (serve-body eyre-id s2 s3 args)
-  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))  (serve-delete-body eyre-id s2 s3)
-  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))      (serve-resolve eyre-id args)
-  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))     (serve-observe eyre-id jon)
-  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))     (serve-retract eyre-id jon)
-  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))      (serve-bodies eyre-id jon)
-  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))         (serve-act eyre-id jon)
-  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))      (serve-actions eyre-id args)
-  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))   (serve-set-action eyre-id s2 jon)
-  ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))       (serve-doc eyre-id %'schema.json')
-  ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))       (serve-set-doc eyre-id 'set-schema' jon)
-  ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))       (serve-doc eyre-id %'policy.json')
-  ?:  &(=('PUT' meth) ?=([%api %policy ~] suffix))       (serve-set-doc eyre-id 'set-policy' jon)
-  ?:  &(=('POST' meth) ?=([%api %share ~] suffix))          (serve-share eyre-id jon)
-  ?:  &(=('DELETE' meth) ?=([%api %share @ @ @ ~] suffix))  (serve-revoke eyre-id s2 s3 s4)
-  ?:  &(=('GET' meth) ?=([%api %shares ~] suffix))          (serve-shares eyre-id)
-  ?:  &(=('POST' meth) ?=([%api %accept ~] suffix))         (serve-accept eyre-id jon)
-  ?:  &(=('POST' meth) ?=([%api %decline ~] suffix))        (serve-decline eyre-id jon)
-  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))           (serve-sync eyre-id)
+  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))           (own (serve-state eyre-id args))
+  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))        (own (serve-body eyre-id s2 s3 args))
+  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))     (own (serve-delete-body eyre-id s2 s3))
+  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))         (own (serve-resolve eyre-id args))
+  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))        (own (serve-observe eyre-id jon))
+  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))        (own (serve-retract eyre-id jon))
+  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))         (own (serve-bodies eyre-id jon))
+  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))            (own (serve-act eyre-id jon))
+  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))         (own (serve-actions eyre-id args))
+  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))      (own (serve-set-action eyre-id s2 jon))
+  ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))          (own (serve-doc eyre-id %'schema.json'))
+  ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))          (own (serve-set-doc eyre-id 'set-schema' jon))
+  ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))          (own (serve-doc eyre-id %'policy.json'))
+  ?:  &(=('PUT' meth) ?=([%api %policy ~] suffix))          (own (serve-set-doc eyre-id 'set-policy' jon))
+  ?:  &(=('POST' meth) ?=([%api %share ~] suffix))          (own (serve-share eyre-id jon))
+  ?:  &(=('DELETE' meth) ?=([%api %share @ @ @ ~] suffix))  (own (serve-revoke eyre-id s2 s3 s4))
+  ?:  &(=('GET' meth) ?=([%api %shares ~] suffix))          (own (serve-shares eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %accept ~] suffix))         (own (serve-accept eyre-id jon))
+  ?:  &(=('POST' meth) ?=([%api %decline ~] suffix))        (own (serve-decline eyre-id jon))
+  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))           (own (serve-sync eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %clients ~] suffix))        (own (serve-mint eyre-id jon))
+  ?:  &(=('GET' meth) ?=([%api %clients ~] suffix))         (own (serve-clients eyre-id))
+  ?:  &(=('DELETE' meth) ?=([%api %clients @ ~] suffix))    (own (serve-drop-client eyre-id s2))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1698,4 +1714,147 @@
   =/  next=(map @t json)
     (roll batch |=([r=row:orr acc=_pushed] (~(put by acc) id.r b+retracted.obs.r)))
   (pure:m [& next])
+::  ==  the writer: keys
+::
+::  +do-add-client: one minted key, refused when the id is taken or the
+::  table is full. The row arrives hashed; the writer never sees a
+::  secret. Keys are not model state, so no beacon bump.
+::
+++  do-add-client
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  c=(unit client:orr)  (de-client:orr (gj:orr jon 'client'))
+  ?~  c  (refuse 'add-client' 'client: bad')
+  ;<  clients=json  bind:m  (read-json (rf 0 / %'clients.json'))
+  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  ?:  (~(has by cm) id.u.c)  (refuse 'add-client' 'id: taken')
+  ?:  (gte ~(wyt by cm) max-clients:orr)  (refuse 'add-client' 'clients: over 50')
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(put by cm) id.u.c (en-client-row:orr u.c))]])
+  ;<  ~  bind:m  (note 'add-client' & name.u.c)
+  (pure:m |)
+::  +do-drop-client: a revoked key is gone; nothing else changes
+::
+++  do-drop-client
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ;<  clients=json  bind:m  (read-json (rf 0 / %'clients.json'))
+  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  ?.  (~(has by cm) id)  (refuse 'drop-client' 'no such client')
+  ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(del by cm) id)]])
+  ;<  ~  bind:m  (note 'drop-client' & id)
+  (pure:m |)
+::  +do-touch-client: last use, stamped by the writer's clock. No note:
+::  one an hour per key would only fill the ring.
+::
+++  do-touch-client
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ;<  clients=json  bind:m  (read-json (rf 0 / %'clients.json'))
+  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  =/  row=json  (fall (~(get by cm) id) ~)
+  ?.  ?=([%o *] row)  (pure:m |)
+  ;<  now=@da  bind:m  get-time:io
+  =/  next=json  [%o (~(put by p.row) 'used' (en-time:orr now))]
+  ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(put by cm) id next)]])
+  (pure:m |)
+::  ==  who is asking
+::
+::  an actor: the owner (the cookie, writing as "http"), or a key with
+::  its identity and its scope
+::
++$  actor  [owner=? by=@t scope=(unit scope:orr)]
+::  +identify: the owner cookie, else a valid bearer token, else ~. A
+::  key's last use is stamped through the writer at most hourly.
+::
+++  identify
+  |=  [req=inbound-request:eyre src=@p our=@p]
+  =/  m  (fiber:fiber:nexus ,(unit actor))
+  ^-  form:m
+  ?:  &(authenticated.req =(src our))  (pure:m `[& 'http' ~])
+  =/  au=(unit @t)  (get-header:http 'authorization' header-list.request.req)
+  ?~  au  (pure:m ~)
+  =/  tok=(unit [id=@t secret=@t])  (parse-bearer:orr u.au)
+  ?~  tok  (pure:m ~)
+  ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
+  =/  c=(unit client:orr)  (de-client:orr (gj:orr clients id.u.tok))
+  ?~  c  (pure:m ~)
+  ?.  (client-ok:orr u.c secret.u.tok)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m
+    ?:  &(?=(^ used.u.c) (lth now (add u.used.u.c ~h1)))  (pure:(fiber:fiber:nexus ,~) ~)
+    (poke-writer 1 (pairs:enjs:format ~[['op' s+'touch-client'] ['id' s+id.u.c]]))
+  (pure:m `[| by.u.c `scope.u.c])
+::  ==  keys: the client routes, owner only
+::
+::  +serve-mint: a new key. The secret is answered once and stored only
+::  as a salted hash; the row goes through the writer. The id and the
+::  cap are checked here too, so the answer is honest without a read
+::  back.
+::
+++  serve-mint
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  name=@t  (gs:orr jon 'name')
+  ?:  |(=('' name) (gth (met 3 name) max-name:orr))  (send-err eyre-id 400 'name: 1 to 200 bytes')
+  =/  who=@t  (gs:orr jon 'by')
+  ?:  |(=('' who) (gth (met 3 who) max-by:orr))  (send-err eyre-id 400 'by: 1 to 64 bytes')
+  =/  sc  (de-scope:orr (gj:orr jon 'scope'))
+  ?:  ?=(%| -.sc)  (send-err eyre-id 400 p.sc)
+  ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
+  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  ?:  (gte ~(wyt by cm) max-clients:orr)  (send-err eyre-id 409 'clients: over 50')
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  now=@da  bind:m  get-time:io
+  =/  id=@t  (id-of:orr eny)
+  ?:  (~(has by cm) id)  (send-err eyre-id 409 'id: taken, try again')
+  =/  salt=@t  (scot %uv (end [3 10] (rsh [3 5] eny)))
+  =/  secret=@t  (secret-of:orr (rsh [3 15] eny))
+  =/  c=client:orr  [id name who p.sc salt (hash-token:orr salt secret) now ~]
+  =/  op=json  (pairs:enjs:format ~[['op' s+'add-client'] ['client' (en-client-row:orr c)]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['id' s+id]
+      ['name' s+name]
+      ['by' s+who]
+      ['scope' (en-scope:orr p.sc)]
+      ['token' s+(rap 3 id '.' secret ~)]
+      ['made' (en-time:orr now)]
+  ==
+::  +serve-clients: the keys as the owner sees them: no salt, no hash
+::
+++  serve-clients
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
+  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  =/  rows=(list json)
+    %+  murn  ~(tap by cm)
+    |=  [id=@t j=json]
+    ^-  (unit json)
+    =/  c=(unit client:orr)  (de-client:orr j)
+    ?~(c ~ `(en-client-view:orr u.c))
+  (send-json eyre-id 200 a+rows)
+::  +serve-drop-client: a key revoked by id
+::
+++  serve-drop-client
+  |=  [eyre-id=@ta id=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
+  ?~  (gj:orr clients id)  (send-err eyre-id 404 'no such client')
+  =/  op=json  (pairs:enjs:format ~[['op' s+'drop-client'] ['id' s+id]])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 --
