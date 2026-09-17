@@ -538,4 +538,38 @@
     (expect-eq !>(`(unit (list step:orr))`[~ ~[[t0 %approved 'mcp']]]) !>((bind (read-action:orr old-act) |=(a=action:orr history.a))))
     (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
   ==
+::
+::  ==  sharing
+::
+++  test-share-helpers
+  ;:  weld
+    (expect-eq !>('~wex/person/sarah') !>((share-key:orr ~wex 'person/sarah')))
+    (expect-eq !>('person/me') !>((mirror-target:orr ~feb `~feb 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb `~wex 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb ~ 'person/sarah')))
+    (expect-eq !>('orrery-person-sarah') !>((group-name:orr %person %sarah)))
+  ==
+::  a carried observation names the other side's body and carries the
+::  sender's grub name; the receiver sets by and source from the ship
+::  it heard it from, so a decode on the receiving side reads as the
+::  sender's claim
+++  test-carry-and-receive
+  =/  r=row:orr  ['1789596300-abcdef01' o1]
+  =/  j=json  (receive-obs:orr ~wex (carry-obs:orr 'person/me' r))
+  =/  back  (de-obs:orr j t0 'x')
+  ?.  ?=(%& -.back)  (expect !>(|))
+  ;:  weld
+    (expect-eq !>('person/me') !>(subject.p.back))
+    (expect-eq !>('~wex') !>(by.p.back))
+    (expect-eq !>(`source:orr`['ship' '~wex/1789596300-abcdef01']) !>(source.p.back))
+    (expect-eq !>(value:o1) !>(value.p.back))
+    (expect-eq !>(at:o1) !>(at.p.back))
+    (expect-eq !>(90) !>(conf.p.back))
+    (expect-eq !>(`json`b+|) !>((gj:orr j 'retracted')))
+    (expect !>(!(is-local:orr p.back)))
+    (expect !>((is-local:orr o1)))
+    (expect !>((from-ship:orr p.back ~wex)))
+    (expect !>(!(from-ship:orr p.back ~feb)))
+    (expect !>(!(from-ship:orr o1 ~wex)))
+  ==
 --

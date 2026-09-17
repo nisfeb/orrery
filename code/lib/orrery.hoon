@@ -682,4 +682,67 @@
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'calendar'] |=(t=@t `json`s+t))]
   ==
+::  ==  sharing (spec section 11)
+::
+::  +share-key: how a peer keys what one host sent it about one body
+::
+++  share-key
+  |=  [host=@p id=bid]
+  ^-  @t
+  (rap 3 (scot %p host) '/' id ~)
+::  +mirror-target: where a shared body lands on the peer: our own
+::  person/me when the body's ship is us, else its own id
+::
+++  mirror-target
+  |=  [our=@p ship=(unit @p) id=bid]
+  ^-  bid
+  ?:  &(?=(^ ship) =(our u.ship))  'person/me'
+  id
+::  +group-name: the usergroup that may read one shared body
+::
+++  group-name
+  |=  [kind=@tas slug=@ta]
+  ^-  @t
+  (rap 3 'orrery-' kind '-' slug ~)
+::  +carry-obs: an observation as one ship sends it to another: the
+::  other side's body id as subject, the sender's grub name as oid, and
+::  whether the sender retracted it. by and source are deliberately
+::  absent: the receiver sets them from the transport, never from here.
+::
+++  carry-obs
+  |=  [subject=bid r=row]
+  ^-  json
+  =/  o=obs  obs.r
+  %-  pairs:enjs:format
+  :~  ['subject' s+subject]
+      ['attr' s+attr.o]
+      ['value' value.o]
+      ['at' (en-time at.o)]
+      ['until' (en-maybe-time until.o)]
+      ['conf' (numb:enjs:format conf.o)]
+      ['oid' s+id.r]
+      ['retracted' b+retracted.o]
+  ==
+::  +receive-obs: a carried observation as the receiver stores it: the
+::  sender ship is the asserter, and the source is the sender and the
+::  sender's grub name
+::
+++  receive-obs
+  |=  [sender=@p j=json]
+  ^-  json
+  ?.  ?=([%o *] j)  j
+  =/  sid=@t  (rap 3 (scot %p sender) '/' (gs j 'oid') ~)
+  =/  src=json  (pairs:enjs:format ~[['kind' s+'ship'] ['id' s+sid]])
+  [%o (~(gas by p.j) ~[['by' s+(scot %p sender)] ['source' src]])]
+::  +is-local: made here, not mirrored from a ship
+::
+++  is-local  |=(o=obs ^-(? !=('ship' kind.source.o)))
+::  +from-ship: mirrored from this ship (its source id starts "~ship/")
+::
+++  from-ship
+  |=  [o=obs who=@p]
+  ^-  ?
+  ?.  =('ship' kind.source.o)  |
+  =/  pre=@t  (rap 3 (scot %p who) '/' ~)
+  =(pre (end [3 (met 3 pre)] id.source.o))
 --
