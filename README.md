@@ -198,7 +198,7 @@ If your analyst runs on the ship's MCP server, orrery ships eight tools with the
 
 ## Install
 
-Orrery is a desk in the grubbery shell, published by `~ricsul-bilwyt`. Run grubbery from ricsul, then add the desk through the shell.
+Orrery is a desk in the grubbery shell, distributed by `~ricsul-bilwyt`. Today it runs on ricsul unpublished: only ships in its beta usergroup can read the desk, and it is not yet a stock desk. Once your ship is in that group (or once orrery is published), run grubbery from ricsul and add the desk through the shell.
 
 ```dojo
 |install ~ricsul-bilwyt %grubbery
@@ -210,6 +210,45 @@ curl -s -b jar -H 'content-type: application/json' -X POST $SHIP/apps/grubbery/d
 ```
 
 The desk syncs within a few minutes, and a consent prompt asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off. Then open `/apps/orrery`. Updates arrive on their own whenever ricsul republishes `code/version.json`.
+
+### Updating ricsul
+
+Ricsul's forge tracks this repository and polls it every 15 minutes. Its desk follows the forge's tree and pulls only when `code/version.json` differs from its own, so the one thing that ships a change is the version number.
+
+1. Bump `code/version.json` by one and push to `main`. A push without the bump reaches the forge and stops there, with nothing to tell you.
+2. Wait for the poll, or pull now:
+
+```bash
+curl -s -b jar -H 'content-type: application/json' -X POST https://urbit.sneagan.com/grubbery/forge/api/run \
+  -d '{"repo": "orrery.git_repo", "command": "pull"}'
+```
+
+3. Check that it landed: the desk's `version.json` reads the new number and the instance's `bang` is null.
+
+```bash
+R=https://urbit.sneagan.com
+curl -s -b jar "$R/grubbery/ball/apps/shell.shell/desks/orrery.desk/version.json?raw=1"
+curl -s -b jar "$R/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app?info=1" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bang"])'
+```
+
+A release that adds a road to the ask raises a consent prompt on ricsul. Anything else lands on its own, and every ship following ricsul's desk syncs the new version by itself. `docs/releasing.md` has the failure modes and how to get out of each.
+
+### Opening it to beta testers
+
+The desk stays unpublished. Testers get it through a usergroup that may read the desk's code, and nothing else on ricsul.
+
+1. Make a usergroup for them on ricsul: a `<name>.grp` directory under `/sys/ames/usergroups` with the testers' ships in its `who.ships`, the way `/family` was made.
+2. Open the desk to that group: on `/grubbery/desk/orrery`, under "Usergroups allowed to peek /desk/code", add `/<name>`. Over HTTP:
+
+```bash
+curl -s -b jar -H 'content-type: application/json' -X POST https://urbit.sneagan.com/grubbery/desk/orrery/share -d '{"add": "/<name>"}'
+```
+
+`{"remove": "/<name>"}` closes it again. The grant is peek on the code and the version file, nothing else.
+
+3. Each tester runs the install above on a ship running grubbery, approves the ask when the desk prompts, and opens `/apps/orrery`. Every later version bump reaches them on its own.
+
+Publishing proper, when it is time, is the stock desk line beside calendar's in grubbery's `gub/nex/shell.hoon` and opening the desk to `/public`. Nothing about the beta group has to be undone first.
 
 ## Under the hood
 
