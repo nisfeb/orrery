@@ -397,26 +397,25 @@
   ;<  vw=view:nexus  bind:m  (peek:io road ~)
   ?.  ?=([%file *] vw)  (pure:m [%o ~])
   (pure:m (fall (mole |.(!<(json (need-vase:tarball sang.vw)))) [%o ~]))
-+$  loaded  [id=bid:orr =body:orr rows=(list row:orr)]
 ::  +load-bodies: every body under /bodies with its observation rows
 ::
 ++  load-bodies
   |=  up=@ud
-  =/  m  (fiber:fiber:nexus ,(list loaded))
+  =/  m  (fiber:fiber:nexus ,(list loaded:orr))
   ^-  form:m
   ;<  vw=view:nexus  bind:m  (peek:io (rv up /bodies) ~)
   ?.  ?=([%ball *] vw)  (pure:m ~)
   (pure:m (bodies-in ball.vw))
 ++  bodies-in
   |=  b=ball:tarball
-  ^-  (list loaded)
+  ^-  (list loaded:orr)
   %-  zing
   %+  turn  ~(tap by dir.b)
   |=  [kind=@ta kb=ball:tarball]
-  ^-  (list loaded)
+  ^-  (list loaded:orr)
   %+  murn  ~(tap by dir.kb)
   |=  [slug=@ta sb=ball:tarball]
-  ^-  (unit loaded)
+  ^-  (unit loaded:orr)
   =/  bf=(unit body:orr)  (body-in sb)
   ?~  bf  ~
   `[(rap 3 kind '/' slug ~) u.bf (rows-in sb)]
@@ -439,34 +438,6 @@
   =/  o=(unit obs:orr)  (read-obs:orr (sang-noun:tarball sang.c))
   ?~  o  ~
   `[nam u.o]
-::  +en-attr-row, +en-attrs: a body's current attributes as JSON. A
-::  single-valued attr is one object; a multi-valued one an array; a
-::  cleared attr (null winner) is absent.
-::
-++  en-attr-row
-  |=  r=row:orr
-  ^-  json
-  %-  pairs:enjs:format
-  :~  ['value' value.obs.r]
-      ['at' (en-time:orr at.obs.r)]
-      ['until' (en-maybe-time:orr until.obs.r)]
-      ['conf' (numb:enjs:format conf.obs.r)]
-      ['source' (en-source:orr source.obs.r)]
-      ['by' s+by.obs.r]
-      ['obs' s+id.r]
-  ==
-++  en-attrs
-  |=  [winners=(map @t (list row:orr)) multi=(set @t)]
-  ^-  json
-  :-  %o
-  %-  ~(gas by *(map @t json))
-  %+  murn  ~(tap by winners)
-  |=  [attr=@t rs=(list row:orr)]
-  ^-  (unit [@t json])
-  ?:  (~(has in multi) attr)  `[attr a+(turn rs en-attr-row)]
-  ?~  rs  ~
-  ?~  value.obs.i.rs  ~
-  `[attr (en-attr-row i.rs)]
 ::  ==  HTTP
 ::
 ++  send-json
@@ -570,50 +541,18 @@
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
-  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
-  =/  all=(list loaded)  all.seen
+  =/  all=(list loaded:orr)  all.seen
   =/  acts=(list [id=@ta a=action:orr])  acts.seen
-  =/  multi=(set @t)  (multi-of:orr schema)
-  =/  folded=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
-    (turn all |=(l=loaded [id.l body.l (fold:orr rows.l multi u.when)]))
-  =/  sits=(list [id=bid:orr winners=(map @t (list row:orr))])
-    %+  murn  folded
-    |=  [id=bid:orr =body:orr winners=(map @t (list row:orr))]
-    ?:(=(%situation kind.body) `[id winners] ~)
-  =/  open-sits=(list [id=bid:orr winners=(map @t (list row:orr))])
-    (skim sits |=([* winners=(map @t (list row:orr))] !(is-closed:orr winners)))
-  =/  shown
-    ?:  =('' kind)  folded
-    (skim folded |=(f=[id=bid:orr =body:orr winners=(map @t (list row:orr))] =(kind `@t`kind.body.f)))
-  =/  bodies-json=json
-    :-  %a
-    %+  turn  shown
-    |=  [id=bid:orr =body:orr winners=(map @t (list row:orr))]
-    ^-  json
-    =/  base=json  (en-body:orr id body)
-    ?.  ?=([%o *] base)  base
-    :-  %o
-    %-  ~(gas by p.base)
-    :~  ['attrs' (en-attrs winners multi)]
-        ['involved' a+(turn (involved:orr id sits) |=(b=bid:orr `json`s+b))]
-    ==
   ::  a key gets the schema trimmed to its scope: GET /schema is the
   ::  owner's, so the state view must not hand the whole document over
   =/  shown-schema=json
     ?~  scope.act  schema
     (scope-schema:orr schema u.scope.act (hidden-for act policy))
-  %^  send-json  eyre-id  200
-  %-  pairs:enjs:format
-  :~  ['rev' rev]
-      ['at' (en-time:orr u.when)]
-      ['me' s+'person/me']
-      ['bodies' bodies-json]
-      ['situations' a+(turn open-sits |=([id=bid:orr *] `json`s+id))]
-      ['actions' a+(murn acts |=([id=@ta a=action:orr] ?.((is-open:orr a) ~ `(en-action:orr id a))))]
-      ['schema' shown-schema]
-  ==
+  =/  multi=(set @t)  (multi-of:orr schema)
+  (send-json eyre-id 200 (state-json:orr all acts multi u.when kind rev shown-schema))
 ::  +serve-observe: decode, answer per item, hand the stamped request to
 ::  the writer. The ids reported here are the ids the writer makes,
 ::  because at and by are stamped before either side decodes.
@@ -696,7 +635,7 @@
   |=  [up=@ud id=@ta]
   =/  m  (fiber:fiber:nexus ,(unit [kind=@tas slug=@ta r=row:orr]))
   ^-  form:m
-  ;<  all=(list loaded)  bind:m  (load-bodies up)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies up)
   %-  pure:m
   |-
   ?~  all  ~
@@ -712,8 +651,8 @@
   ?:  =(id.i.rs id)  `i.rs
   $(rs t.rs)
 ++  find-loaded
-  |=  [all=(list loaded) id=bid:orr]
-  ^-  (unit loaded)
+  |=  [all=(list loaded:orr) id=bid:orr]
+  ^-  (unit loaded:orr)
   ?~  all  ~
   ?:  =(id.i.all id)  `i.all
   $(all t.all)
@@ -917,36 +856,15 @@
   ?~  (parse-bid:orr id)  (send-err eyre-id 400 'expected <kind>/<slug>')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
-  =/  multi=(set @t)  (multi-of:orr schema)
-  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
-  =/  all=(list loaded)  all.seen
+  =/  all=(list loaded:orr)  all.seen
   =/  acts=(list [id=@ta a=action:orr])  acts.seen
-  =/  mine=(unit loaded)  (find-loaded all id)
+  =/  mine=(unit loaded:orr)  (find-loaded all id)
   ?~  mine  (send-err eyre-id 404 'no such body')
-  =/  winners  (fold:orr rows.u.mine multi u.when)
-  =/  sits=(list [id=bid:orr winners=(map @t (list row:orr))])
-    %+  murn  all
-    |=  l=loaded
-    ?.(=(%situation kind.body.l) ~ `[id.l (fold:orr rows.l multi u.when)])
-  =/  about-me=(list json)
-    %+  murn  acts
-    |=  [aid=@ta a=action:orr]
-    ?.(&((is-open:orr a) (~(has in about.a) id)) ~ `(en-action:orr aid a))
-  =/  base=json  (en-body:orr id body.u.mine)
-  ?.  ?=([%o *] base)  (send-err eyre-id 500 'encoder')
-  %^  send-json  eyre-id  200
-  :-  %o
-  %-  ~(gas by p.base)
-  :~  ['attrs' (en-attrs winners multi)]
-      ['involved' a+(turn (involved:orr id sits) |=(b=bid:orr `json`s+b))]
-      ['actions' a+about-me]
-      :-  'observations'
-      :-  %a
-      %+  turn  (timeline:orr rows.u.mine winners u.when)
-      |=([r=row:orr status=@tas] (en-obs:orr r status))
-  ==
+  =/  multi=(set @t)  (multi-of:orr schema)
+  (send-json eyre-id 200 (body-json:orr u.mine (situations:orr all multi u.when) acts multi u.when))
 ++  serve-delete-body
   |=  [eyre-id=@ta kind=@ta slug=@ta]
   =/  m  (fiber:fiber:nexus ,~)
@@ -964,9 +882,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  q=@t  (fall (get-key:kv:html-utils 'q' args) '')
-  ;<  all0=(list loaded)  bind:m  (load-bodies 1)
-  =/  all=(list loaded)  all:(view-of act all0 ~ ~)
-  =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded [id.l body.l]))
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  all=(list loaded:orr)  all:(view-of act all0 ~ ~)
+  =/  bodies=(list [id=bid:orr =body:orr])  (turn all |=(l=loaded:orr [id.l body.l]))
   %^  send-json  eyre-id  200
   :-  %a
   %+  turn  (resolve:orr q bodies)
@@ -1564,10 +1482,10 @@
   =/  oship=(unit @p)  (slaw %p (gs:orr u.offer 'ship'))
   ::  a ship is an identity: a local body already carrying the offered
   ::  ship is the body the offer is about, whatever either side calls it
-  ;<  all=(list loaded)  bind:m  (load-bodies 1)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
   =/  same-ship=(unit bid:orr)
     ?~  oship  ~
-    =/  hits=(list loaded)  (skim all |=(l=loaded =(oship ship.body.l)))
+    =/  hits=(list loaded:orr)  (skim all |=(l=loaded:orr =(oship ship.body.l)))
     ?~(hits ~ `id.i.hits)
   =/  target=bid:orr  (fall same-ship (mirror-target:orr our u.host oship id))
   =/  tpk  (parse-bid:orr target)
@@ -1927,13 +1845,13 @@
 ::  never learns such a body exists. The owner sees everything.
 ::
 ++  view-of
-  |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action:orr]) hide=(set @t)]
-  ^-  [all=(list loaded) acts=(list [id=@ta a=action:orr])]
+  |=  [act=actor all=(list loaded:orr) acts=(list [id=@ta a=action:orr]) hide=(set @t)]
+  ^-  [all=(list loaded:orr) acts=(list [id=@ta a=action:orr])]
   ?~  scope.act  [all acts]
   =/  s=scope:orr  u.scope.act
   :-  %+  murn  all
-      |=  l=loaded
-      ^-  (unit loaded)
+      |=  l=loaded:orr
+      ^-  (unit loaded:orr)
       ?.  (kind-in-scope:orr s kind.body.l)  ~
       `l(rows (veil-refs:orr (drop-attrs:orr rows.l hide) kinds.s))
   %+  turn  (skim acts |=([* a=action:orr] (action-in-scope:orr s kind.a)))

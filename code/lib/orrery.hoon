@@ -1040,4 +1040,115 @@
   ?~  tk  ~
   ?:  (kind-in-scope s kind.u.tk)  ~
   `u.target
+::  ==  the view encoders shared by the HTTP API, the tools and the page
+::
+::  a loaded body: its id, its record and every observation row
+::
++$  loaded  [id=bid =body rows=(list row)]
+::  +en-attr-row, +en-attrs: a body's current attributes as JSON. A
+::  single-valued attr is one object; a multi-valued one an array; a
+::  cleared attr (null winner) is absent.
+::
+++  en-attr-row
+  |=  r=row
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['value' value.obs.r]
+      ['at' (en-time at.obs.r)]
+      ['until' (en-maybe-time until.obs.r)]
+      ['conf' (numb:enjs:format conf.obs.r)]
+      ['source' (en-source source.obs.r)]
+      ['by' s+by.obs.r]
+      ['obs' s+id.r]
+  ==
+++  en-attrs
+  |=  [winners=(map @t (list row)) multi=(set @t)]
+  ^-  json
+  :-  %o
+  %-  ~(gas by *(map @t json))
+  %+  murn  ~(tap by winners)
+  |=  [attr=@t rs=(list row)]
+  ^-  (unit [@t json])
+  ?:  (~(has in multi) attr)  `[attr a+(turn rs en-attr-row)]
+  ?~  rs  ~
+  ?~  value.obs.i.rs  ~
+  `[attr (en-attr-row i.rs)]
+::  +situations: every situation body's winners, for involved
+::
+++  situations
+  |=  [all=(list loaded) multi=(set @t) when=@da]
+  ^-  (list [id=bid winners=(map @t (list row))])
+  %+  murn  all
+  |=  l=loaded
+  ?.(=(%situation kind.body.l) ~ `[id.l (fold rows.l multi when)])
+::  +body-json: one body's view: the record, its attributes, the
+::  situations it is involved in, the open actions about it, and its
+::  timeline
+::
+++  body-json
+  |=  $:  l=loaded
+          sits=(list [id=bid winners=(map @t (list row))])
+          acts=(list [id=@ta a=action])
+          multi=(set @t)
+          when=@da
+      ==
+  ^-  json
+  =/  winners=(map @t (list row))  (fold rows.l multi when)
+  =/  about-me=(list json)
+    %+  murn  acts
+    |=  [aid=@ta a=action]
+    ?.(&((is-open a) (~(has in about.a) id.l)) ~ `(en-action aid a))
+  =/  base=json  (en-body id.l body.l)
+  ?.  ?=([%o *] base)  base
+  :-  %o
+  %-  ~(gas by p.base)
+  :~  ['attrs' (en-attrs winners multi)]
+      ['involved' a+(turn (involved id.l sits) |=(b=bid `json`s+b))]
+      ['actions' a+about-me]
+      :-  'observations'
+      :-  %a
+      %+  turn  (timeline rows.l winners when)
+      |=([r=row status=@tas] (en-obs r status))
+  ==
+::  +state-json: the state view: every body (or those of one kind) with
+::  its attributes and involvements, the open situations, the open
+::  actions, the beacon and the schema
+::
+++  state-json
+  |=  $:  all=(list loaded)
+          acts=(list [id=@ta a=action])
+          multi=(set @t)
+          when=@da
+          kind=@t
+          rev=json
+          schema=json
+      ==
+  ^-  json
+  =/  sits=(list [id=bid winners=(map @t (list row))])  (situations all multi when)
+  =/  open-sits=(list [id=bid winners=(map @t (list row))])
+    (skim sits |=([* winners=(map @t (list row))] !(is-closed winners)))
+  =/  shown=(list loaded)
+    ?:  =('' kind)  all
+    (skim all |=(l=loaded =(kind `@t`kind.body.l)))
+  =/  bodies=(list json)
+    %+  turn  shown
+    |=  l=loaded
+    ^-  json
+    =/  winners=(map @t (list row))  (fold rows.l multi when)
+    =/  base=json  (en-body id.l body.l)
+    ?.  ?=([%o *] base)  base
+    :-  %o
+    %-  ~(gas by p.base)
+    :~  ['attrs' (en-attrs winners multi)]
+        ['involved' a+(turn (involved id.l sits) |=(b=bid `json`s+b))]
+    ==
+  %-  pairs:enjs:format
+  :~  ['rev' rev]
+      ['at' (en-time when)]
+      ['me' s+'person/me']
+      ['bodies' a+bodies]
+      ['situations' a+(turn open-sits |=([id=bid *] `json`s+id))]
+      ['actions' a+(murn acts |=([id=@ta a=action] ?.((is-open a) ~ `(en-action id a))))]
+      ['schema' schema]
+  ==
 --

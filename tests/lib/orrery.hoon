@@ -770,4 +770,39 @@
     (expect !>((lien multi |=(t=@t =('participants' t)))))
     (expect-eq !>(~['task']) !>(acts))
   ==
+::
+::  ==  the shared view encoders
+::
+++  test-state-and-body-json
+  =/  base=obs:orr  o1
+  =/  car=loaded:orr
+    ['thing/subaru' [%thing 'the Subaru' (sy ~['the car']) t0 ~] ~[['1' base]]]
+  =/  me=loaded:orr
+    :+  'person/me'  [%person 'me' ~ t0 `~wex]
+    ~[['2' base(subject 'person/me', attr 'spouse', value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]]
+  =/  sit=loaded:orr
+    :+  'situation/2026-09-16-breakdown'  [%situation 'breakdown' ~ t0 ~]
+    :~  ['3' base(subject 'situation/2026-09-16-breakdown', attr 'status', value s+'open')]
+        ['4' base(subject 'situation/2026-09-16-breakdown', attr 'participants', value (pairs:enjs:format ~[['ref' s+'thing/subaru']]))]
+    ==
+  =/  a=action:orr
+    [%task 'Call the shop' ~ (sy ~['thing/subaru']) ~ 'mcp' t0 %approved '' ~]
+  =/  all=(list loaded:orr)  ~[car me sit]
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  when=@da  (add t0 ~m1)
+  =/  st=json  (state-json:orr all ~[['a1' a]] multi when '' (numb:enjs:format 7) [%o ~])
+  =/  only-things=json  (state-json:orr all ~ multi when 'thing' (numb:enjs:format 7) [%o ~])
+  =/  bj=json  (body-json:orr car (situations:orr all multi when) ~[['a1' a]] multi when)
+  ;:  weld
+    (expect-eq !>(3) !>((lent (ga:orr st 'bodies'))))
+    (expect-eq !>(1) !>((lent (ga:orr only-things 'bodies'))))
+    (expect-eq !>(`json`a+~[s+'situation/2026-09-16-breakdown']) !>((gj:orr st 'situations')))
+    (expect-eq !>(1) !>((lent (ga:orr st 'actions'))))
+    (expect-eq !>(`json`(numb:enjs:format 7)) !>((gj:orr st 'rev')))
+    (expect-eq !>(`json`s+'thing/subaru') !>((gj:orr bj 'id')))
+    (expect-eq !>(`json`s+'Route 9') !>((gj:orr (gj:orr (gj:orr bj 'attrs') 'location') 'value')))
+    (expect-eq !>(`json`a+~[s+'situation/2026-09-16-breakdown']) !>((gj:orr bj 'involved')))
+    (expect-eq !>(1) !>((lent (ga:orr bj 'actions'))))
+    (expect-eq !>(1) !>((lent (ga:orr bj 'observations'))))
+  ==
 --
