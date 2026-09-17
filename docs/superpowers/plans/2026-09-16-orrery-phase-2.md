@@ -33,6 +33,8 @@ Everything from phase 1's "Working with `~wex`" section still applies (login, th
 
 **The fast loop on the peer** is the same `write-text` and `reload-nexus` sequence against `F`; the desk on feb follows wex's desk over ames (Task 1), so a version bump on wex reaches feb on its own, but during development each ship's code tree is written directly and both must be kept identical to the repo file.
 
+**The library must be written to both ships too.** The fast loop writes `code/lib/orrery.hoon` to `$D/code/lib/orrery.hoon` on each ship whenever the library changed (Task 3 found the ships still compiling against the phase 1 library after Task 2).
+
 **Unit tests** run on `~wex` only, as in phase 1.
 
 ---
@@ -876,6 +878,8 @@ In `+on-file`, after the `[~ %'shares.sig']` case, add:
 ```
 
 The timer wake is itself a poke, so one `take-poke-from` waits for the tick or a prod, whichever comes first; the cancel after a wake is harmless.
+
+Also remove the `lay-inbox-road` line from `+serve-sync` (Task 3 learned that the kernel registry scopes a `%how` to the poking fiber's own directory, so a request fiber's call is refused with `%how-rejected-not-registered`; the inbox fiber lays the road at its rise and the follower lays it on every tick, both root fibers, which is where calendar calls it too).
 
 - [ ] **Step 2: The pass**
 
