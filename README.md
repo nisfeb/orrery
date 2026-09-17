@@ -1,12 +1,266 @@
 # orrery
 
-A model of one person's world, kept on their Urbit ship as a grubbery desk app. The people, places, things and situations around them, what is currently true about each, where every fact came from, and what the assistant proposes to do about it.
+Orrery keeps track of what is going on in your life, on your own Urbit ship. It remembers the people, places, things and situations around you, what is currently true about each of them, where every fact came from, and what your assistant proposes to do about it.
 
-The ship holds the state and its history and runs no AI. Clients triage messages, mail and calendar events into observations and submit them; a larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows.
+The ship stores the facts and their history. It runs no AI. The thinking happens in clients: a small model on your phone or laptop turns messages, mail and calendar events into facts and sends them in, and a larger model reads the picture back and proposes actions. You approve them, or let a policy approve the routine ones for you.
 
-- Design: `docs/superpowers/specs/2026-09-16-orrery-design.md`. Phase 1 plan: `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`. Sharing: `docs/sharing.md`. Keys: `docs/keys.md`. MCP tools: `docs/mcp.md`. Kernel patch: `docs/kernel/README.md`.
-- `code/` is the desk: the nexus at `code/nex/orrery/app.hoon`, the model in `code/lib/orrery.hoon`, the marcs under `code/mar`. `code/version.json` is what replicates.
-- The HTTP API lives under `/apps/orrery/api`: `state`, `body/<kind>/<slug>`, `resolve`, `observe`, `retract`, `bodies`, `act`, `actions`, `schema`, `policy`, `share`, `shares`, `accept`, `decline`, `share/<id>/<ship>`, `sync`, `clients`, `clients/<id>`. The owner cookie or a minted key. Spec section 6 has the table.
-- The page is at `/apps/orrery`, owner cookie.
-- Gates, against `~wex`: `tests/lib/orrery.hoon` with `-test`, `scripts/api-matrix.py`, `scripts/key-matrix.py`, `scripts/mcp-matrix.py`, and `scripts/page-smoke.py`. Against `~wex` and `~feb`: `scripts/ship-share-matrix.py`. Releasing: `docs/releasing.md`.
+The name is the instrument: a mechanical model of bodies in motion, read to know where everything is now and where it was.
+
+## A day with orrery
+
+At 10pm you text Sarah: "car died on route 9, stranded waiting for a tow". Your triager reads that message and records a few facts on the ship: you are stranded and waiting for a tow, you are on Route 9, the Subaru is broken down on Route 9, and there is a new situation, the breakdown, with you, Sarah and the car as its participants.
+
+At 11:40pm: "tow guy is here, taking it to john's machine shop". The triager looks the shop up, finds nothing, creates it, and records that the car is being towed there and that you are riding along.
+
+At 2:10am: "home. left the car at john's overnight, they'll look at it in the morning". Now the car is at the shop awaiting diagnosis, you are home, and your status is cleared. Not stranded, not anything.
+
+In the morning your assistant reads the state: an open situation, a car at a shop, and nothing being done about it. It proposes a task, "Call the shop about the Subaru", due at 9am. Your policy says tasks are approved the moment they are proposed, so it lands on your todo list with no question asked. A proposed text message to Sarah would wait for your approval instead.
+
+Ask the ship what was true at 11pm and it still puts the car on Route 9. Ask it why it thinks the car is at the shop and it points at the 2:10am message. None of the messages themselves were stored, only the facts, each with a pointer back to where it came from.
+
+## Try it
+
+Everything below talks to the HTTP API with the ship's owner cookie. Log in once and keep the cookie jar.
+
+```bash
+SHIP=http://localhost:8080          # your ship's web address
+curl -s -c jar -X POST -d "password=$CODE" $SHIP/~/login    # $CODE is what +code prints in the dojo
+API=$SHIP/apps/orrery/api
+post() { curl -s -b jar -H 'content-type: application/json' -X POST "$API/$1" -d "$2"; echo; }
+```
+
+### Record a fact
+
+A fact is an observation: one claim about one body, with where it came from. This one creates Sarah and says where she is.
+
+```bash
+post observe '{
+  "bodies": [{"id": "person/sarah", "name": "Sarah", "aliases": ["wife"]}],
+  "observations": [
+    {"subject": "person/sarah", "attr": "location", "value": "Lisbon",
+     "source": {"kind": "user", "id": "readme"}}
+  ]
+}'
+```
+
+The answer has one line per item, so a client can fix the one it got wrong.
+
+```json
+{"bodies": [{"id": "person/sarah", "ok": true, "existing": false}],
+ "observations": [{"id": "1758110400-3b9ac1f0", "ok": true, "existing": false}]}
+```
+
+### Read it back
+
+```bash
+curl -s -b jar $API/body/person/sarah          # one body: attributes, situations, actions, timeline
+curl -s -b jar "$API/resolve?q=wife"           # find bodies by name or alias
+curl -s -b jar $API/state                      # everything at once: the view an assistant reads
+```
+
+The body view shows the current attributes and, below them, every observation ever made about her, newest first, each labelled live, superseded, expired or retracted.
+
+```json
+{"id": "person/sarah", "kind": "person", "name": "Sarah", "aliases": ["wife"], "created": "2026-09-17T12:00:00Z", "ship": null,
+ "attrs": {"location": {"value": "Lisbon", "at": "2026-09-17T12:00:00Z", "until": null, "conf": 100,
+                        "source": {"kind": "user", "id": "readme"}, "by": "user", "obs": "1758110400-3b9ac1f0"}},
+ "involved": [], "actions": [],
+ "observations": [{"id": "1758110400-3b9ac1f0", "attr": "location", "value": "Lisbon", "status": "live", "...": "..."}]}
+```
+
+### Facts change
+
+Record a newer location and it wins. The old one stays in the timeline as superseded, and the question "what was true then" is a query, not a guess.
+
+```bash
+post observe '{"observations": [
+  {"subject": "person/sarah", "attr": "location", "value": "Porto",
+   "at": "2026-10-01T09:00:00Z", "source": {"kind": "user", "id": "readme-2"}}]}'
+curl -s -b jar $API/body/person/sarah                                  # Porto
+curl -s -b jar "$API/body/person/sarah?at=2026-09-20T00:00:00Z"        # Lisbon
+```
+
+The rule is that the fact with the latest `at` wins, not the one that arrived last. A tow receipt that arrives at 11pm saying the car was picked up at 7:30pm cannot overwrite the 9pm fact that it is at the shop.
+
+Three more ways a fact changes:
+
+- `"until": "2026-09-17T02:00:00Z"` says when the fact is expected to stop being true. After that it is expired and no longer counts.
+- `"value": null` clears an attribute. "No longer stranded" without pretending to know the new state.
+- A wrong fact is retracted, never edited: `post retract '{"id": "1758110400-3b9ac1f0", "note": "wrong Sarah"}'`. It stays in the timeline, labelled retracted.
+
+Sending the same observation twice is a no-op. The id is a hash of the claim and its source, so the answer says `existing: true` and nothing is written.
+
+### Relations
+
+A value can point at another body. Nothing follows these pointers for you; they are values a reader can look up.
+
+```bash
+post observe '{
+  "bodies": [{"id": "place/home", "name": "Home"}],
+  "observations": [
+    {"subject": "person/me", "attr": "spouse", "value": {"ref": "person/sarah"}, "source": {"kind": "user", "id": "readme"}},
+    {"subject": "person/me", "attr": "home",   "value": {"ref": "place/home"},   "source": {"kind": "user", "id": "readme"}}
+  ]
+}'
+```
+
+`person/me` is you. It exists from the first load, with your ship's name on it, and you or a client rename it.
+
+### Situations
+
+A situation is a body like any other, of kind `situation`, whose `participants` name the bodies involved. While it is open, every participant's view lists it under `involved`, so Sarah's page shows the breakdown without anyone writing a fact about Sarah.
+
+```bash
+post observe '{
+  "bodies": [{"id": "situation/2026-09-16-breakdown", "name": "The breakdown"}],
+  "observations": [
+    {"subject": "situation/2026-09-16-breakdown", "attr": "status",       "value": "open",                   "source": {"kind": "talon-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/me"},    "source": {"kind": "talon-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/sarah"}, "source": {"kind": "talon-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "location",     "value": "Route 9",                "source": {"kind": "talon-dm", "id": "msg-1"}}
+  ]
+}'
+```
+
+`participants` is multi-valued: each observation adds a value instead of replacing the last one. The schema says which attributes work that way. Set the situation's `status` to `closed` when it is over and it leaves everyone's `involved` list.
+
+### Actions
+
+An action is something to do. An assistant proposes it, and it moves through proposed, approved, done, dismissed or failed.
+
+```bash
+post act '{"kind": "task", "title": "Call the shop about the Subaru",
+           "about": ["thing/subaru", "place/johns-machine-shop"], "due": "2026-09-17T13:00:00Z"}'
+```
+
+```json
+{"id": "1758110400-9c2e41aa", "status": "approved", "existing": false}
+```
+
+It is `approved` at once because the starter policy auto-approves tasks and notes. A `message` or a `calendar` action answers `proposed` and waits for you. Proposing the same kind and title again answers the existing id instead of making a second one.
+
+```bash
+curl -s -b jar "$API/actions?status=open"                  # proposed and approved, the todo list
+post actions/1758110400-9c2e41aa '{"status": "done"}'      # or dismissed, or failed with a note
+```
+
+Every action carries its history: who proposed it, who approved it (you, or `policy`), and when. The audit question is answered by the action itself.
+
+### Where facts come from
+
+Every observation names its `source`, a kind and an opaque id such as the message it was read from, and its `by`, who asserted it. The text is never stored. Confidence (`conf`, 0 to 100) says how sure the asserter was.
+
+The writer keeps a trail of its last 500 outcomes: the op, whether it applied, why not, when, and who asked. It is read through the ball browser at `GET /grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/tr/log?raw=1`, with the last outcome alone at `tr/last`.
+
+### The page
+
+`/apps/orrery` on your ship, owner only: bodies grouped by kind, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, and settings with the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
+
+### The vocabulary
+
+`GET` and `PUT /schema` hold the vocabulary the models are advised to use: the kinds, the attributes each kind commonly has, the action kinds, and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted; adding a new kind of fact never changes a type.
+
+`GET` and `PUT /policy` hold the rules: `auto`, the action kinds approved on proposal; `push`, when to send a notification (`proposed`, `all` or `none`); `retention_days`, how long superseded, expired and retracted rows are kept; and `sensitive`, the attribute names a client key never sees.
+
+## Sharing a body with another ship
+
+Sarah runs her own ship. Share her body with her and her ship mirrors what you know about her. In edit mode, what she records about herself comes back to yours.
+
+```bash
+post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
+post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
+```
+
+On her ship, `GET /api/shares` lists the offer and `post accept '{"host": "~your-ship", "id": "person/sarah"}'` takes it. Because the body carries her ship's name it lands on her own `person/me`. Her ship reads the body every five minutes and on demand (`POST /api/sync`), and every mirrored fact names its origin: `by` is your ship, and `source` is `{"kind": "ship", "id": "~your-ship/<observation id>"}`.
+
+The unit of sharing is one body. Nothing else on your ship is visible to her. `DELETE /api/share/person/sarah/~sampel-palnet` ends it. A share carries the body whole, every attribute on it, so a body holding facts you would not share is not a body to share; the one filter is on the way back, where attributes named in `policy.sensitive` are never sent to the host. The whole protocol is in `docs/sharing.md`.
+
+## Keys for clients that do not run a ship
+
+A phone app, a triager or a bot gets a key instead of your cookie. A key has a name, an identity it writes as, and a scope.
+
+```bash
+post clients '{"name": "Talon on the phone", "by": "talon",
+               "scope": {"kinds": ["person", "place", "thing", "situation"], "actions": ["task"], "write": true}}'
+```
+
+The answer carries the `token` once; the ship keeps only a salted hash. The client sends it as `Authorization: Bearer <token>` with no cookie.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" $API/state
+```
+
+What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The rules are in `docs/keys.md`.
+
+## Tools for an AI analyst
+
+If your analyst runs on the ship's MCP server, orrery ships eight tools with the owner's views and writes: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions` and `orrery_schema`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
+
+## Install
+
+Orrery is a desk in the grubbery shell, published by `~ricsul-bilwyt`. Run grubbery from ricsul, then add the desk through the shell.
+
+```dojo
+|install ~ricsul-bilwyt %grubbery
+```
+
+```bash
+curl -s -b jar -H 'content-type: application/json' -X POST $SHIP/apps/grubbery/desks/add \
+  -d '{"name": "orrery", "code": "~ricsul-bilwyt/apps/shell.shell/desks/orrery.desk/desk/code"}'
+```
+
+The desk syncs within a few minutes, and a consent prompt asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, and the sharing roads (behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off. Then open `/apps/orrery`. Updates arrive on their own whenever ricsul republishes `code/version.json`.
+
+## Under the hood
+
+### The three shapes
+
+Everything orrery stores is one of three shapes; everything else is a directory or a JSON file.
+
+- A **body** is something that exists: a person, a place, a thing, an org, a situation or a note. Its id is `<kind>/<slug>`, and it carries a name, aliases, when it was created and, when it has one, its @p.
+- An **observation** is one immutable claim about one body: `subject.attr = value`, with `at` (when it became true), `until`, `conf`, `source`, `by` and `seen` (when the ship recorded it). Its only mutable field is `status`, live or retracted.
+- An **action** is something to do: a task or a note the ship holds, or a client-executed kind such as a message. It carries `kind`, `title`, `payload`, `about`, `due`, `by`, `status`, `note` and its `history`.
+
+Body kinds, attribute names, action kinds and source kinds are all open strings and values are JSON, so a new kind of fact never needs a migration.
+
+### How current state is computed
+
+State is never stored. It is a fold over the live observations, computed on every read.
+
+- A single-valued attribute takes the observation with the latest `at`, ties broken by the latest `seen`.
+- A multi-valued attribute collects the distinct values of its live observations. Reasserting a value refreshes it; removing one is retracting its observations.
+- An observation whose `until` has passed is expired. One that lost the fold is superseded. Neither is stored as such; both are labels in the timeline.
+- A `null` value wins its slot and clears it.
+- `?at=<time>` folds only observations with `at` at or before that time.
+
+An observation's id is the unix seconds of `at`, a hyphen, and eight hex digits of a hash over subject, attribute, value, time and source, so the same claim from the same source is one row however often it is sent. Retraction keeps the row. On each write to a body, its superseded, expired and retracted rows older than `retention_days`, by the later of when they were true and when the ship recorded them, are culled; a live row never is.
+
+### The HTTP API
+
+Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cookie or a key within its scope; anything else is 403.
+
+| method and path | does |
+|---|---|
+| `GET /state?at=&kind=` | every body with its attributes and involvements, the open situations, the open actions, the beacon and the schema |
+| `GET /body/<kind>/<slug>?at=` | one body with its timeline |
+| `GET /resolve?q=` | bodies whose name or alias matches, exact first then prefix, at most 20 |
+| `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations |
+| `POST /retract` | `{"id", "note"}` |
+| `POST /bodies` | upsert one body |
+| `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |
+| `POST /act` | propose; answers `{"id", "status", "existing"}` |
+| `GET /actions?status=` | `open` by default (proposed and approved), `all`, or one status |
+| `POST /actions/<id>` | `{"status", "note"}`: a transition |
+| `GET` and `PUT /schema`, `/policy` | the whole document; owner only |
+| `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only |
+| `POST /clients`, `GET /clients`, `DELETE /clients/<id>` | keys; owner only |
+
+Live updates come from the instance's change beacon, streamed through grubbery's keep-SSE at `/grubbery/api/keep/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/beacon/rev`. It moves once per write that changed something, and a client that sees it move refetches what it shows. A write answers before the writer applies it, so read the state view for the new `rev`.
+
+### The repository
+
+- `code/` is the desk: the nexus at `code/nex/orrery/app.hoon` with the page beside it, the model in `code/lib/orrery.hoon` (pure, import-free, unit-tested), the MCP tools under `code/lib/tools`, the marcs under `code/mar`. `code/version.json` is what replicates.
+- `tests/lib/orrery.hoon` is the unit suite for the model, run with `-test` on a dev ship.
+- `scripts/` holds the gates, all against a dev ship: `api-matrix.py` (the story above, over HTTP), `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py` with `page-test.js`, and `ship-share-matrix.py` across two ships.
+- `docs/`: the design at `docs/superpowers/specs/2026-09-16-orrery-design.md` and the plans under `docs/superpowers/plans`; `docs/sharing.md`, `docs/keys.md`, `docs/mcp.md`; `docs/releasing.md` for how a release reaches ricsul and its subscribers; `docs/kernel` for the MCP discovery patch.
 - Family: [lattice](https://github.com/nisfeb/lattice), [auspex](https://github.com/nisfeb/auspex), [calendar](https://github.com/nisfeb/calendar), installed from `~ricsul-bilwyt` the same way.
