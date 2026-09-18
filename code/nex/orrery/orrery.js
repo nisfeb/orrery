@@ -31,6 +31,11 @@
     }).join(', ');
   }
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
+  // a table: its head row, then labelled cells, so that on a phone, where
+  // the table stacks one row per card, each cell still says which column
+  // it came from
+  function thead(cols) { return '<table><thead><tr>' + cols.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'; }
+  function cell(label, html) { return '<td data-label="' + esc(label) + '">' + html + '</td>'; }
 
   // a situation's phase from its times: closed or cancelled when status says
   // so, over once its (actual or scheduled) end has passed, under way once its
@@ -138,17 +143,16 @@
     out += '<div class="card"><h2>Now</h2>';
     if (!attrs.length) out += '<p class="muted">No current attributes.</p>';
     else {
-      out += '<table><tr><th scope="col">attribute</th><th scope="col">value</th><th scope="col">since</th>' +
-        '<th scope="col">by</th><th scope="col">source</th></tr>';
+      out += thead(['attribute', 'value', 'since', 'by', 'source']);
       attrs.forEach(function (a) {
         var rows = v.attrs[a];
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
           if (!r) return;
-          out += '<tr><td>' + esc(a) + '</td><td>' + fmtValue(r.value) + '</td><td>' + fmtTime(r.at) +
-            '</td><td>' + esc(r.by || '') + '</td><td>' + source(r.source) + '</td></tr>';
+          out += '<tr>' + cell('attribute', esc(a)) + cell('value', fmtValue(r.value)) + cell('since', fmtTime(r.at)) +
+            cell('by', esc(r.by || '')) + cell('source', source(r.source)) + '</tr>';
         });
       });
-      out += '</table>';
+      out += '</tbody></table>';
     }
     out += '</div>';
     if (v.involved && v.involved.length) out += '<div class="card"><h2>Involved in</h2>' + situationCards(v.involved, state) + '</div>';
@@ -160,15 +164,14 @@
     out += '<div class="card"><h2>Timeline</h2>';
     if (!v.observations || !v.observations.length) out += '<p class="muted">No observations.</p>';
     else {
-      out += '<table><tr><th scope="col">at</th><th scope="col">attribute</th><th scope="col">value</th>' +
-        '<th scope="col">status</th><th scope="col">by</th><th scope="col">source</th><th scope="col"></th></tr>';
+      out += thead(['at', 'attribute', 'value', 'status', 'by', 'source', '']);
       v.observations.forEach(function (o) {
-        out += '<tr class="' + esc(o.status) + '"><td>' + fmtTime(o.at) + '</td><td>' + esc(o.attr) + '</td><td>' + fmtValue(o.value) +
-          '</td><td>' + badge(o.status) + (o.note ? ' <span class="muted">' + esc(o.note) + '</span>' : '') +
-          '</td><td>' + esc(o.by || '') + '</td><td>' + source(o.source) + '</td><td>' +
-          (o.status === 'live' ? '<button class="danger" data-retract="' + esc(o.id) + '">retract</button>' : '') + '</td></tr>';
+        out += '<tr class="' + esc(o.status) + '">' + cell('at', fmtTime(o.at)) + cell('attribute', esc(o.attr)) + cell('value', fmtValue(o.value)) +
+          cell('status', badge(o.status) + (o.note ? ' <span class="muted">' + esc(o.note) + '</span>' : '')) +
+          cell('by', esc(o.by || '')) + cell('source', source(o.source)) +
+          cell('', o.status === 'live' ? '<button class="danger" data-retract="' + esc(o.id) + '">retract</button>' : '') + '</tr>';
       });
-      out += '</table>';
+      out += '</tbody></table>';
     }
     out += '</div>';
     return out;
@@ -235,31 +238,30 @@
     if (!clients || !clients.length) out += '<p class="muted">No keys yet.</p>';
     else {
       var rows = clients.slice().sort(function (a, b) { return (a.made || '') < (b.made || '') ? 1 : -1; });
-      out += '<table><tr><th scope="col">name</th><th scope="col">writes as</th><th scope="col">scope</th>' +
-        '<th scope="col">made</th><th scope="col">last used</th><th scope="col"></th></tr>';
+      out += thead(['name', 'writes as', 'scope', 'made', 'last used', '']);
       rows.forEach(function (c) {
-        out += '<tr><td>' + esc(c.name || '') + '<span class="id">' + esc(c.id || '') + '</span></td><td>' + esc(c.by || '') +
-          '</td><td>' + esc(scopeText(c.scope)) + '</td><td>' + fmtTime(c.made) +
-          '</td><td>' + (c.used ? fmtTime(c.used) : '<span class="muted">never</span>') +
-          '</td><td><button class="danger" data-revoke="' + esc(c.id || '') + '" data-name="' + esc(c.name || c.id || '') + '">revoke</button></td></tr>';
+        out += '<tr>' + cell('name', esc(c.name || '') + '<span class="id">' + esc(c.id || '') + '</span>') + cell('writes as', esc(c.by || '')) +
+          cell('scope', esc(scopeText(c.scope))) + cell('made', fmtTime(c.made)) +
+          cell('last used', c.used ? fmtTime(c.used) : '<span class="muted">never</span>') +
+          cell('', '<button class="danger" data-revoke="' + esc(c.id || '') + '" data-name="' + esc(c.name || c.id || '') + '">revoke</button>') + '</tr>';
       });
-      out += '</table><p class="muted">Use is recorded to the hour. A revoked key is refused within a second.</p>';
+      out += '</tbody></table><p class="muted">Use is recorded to the hour. A revoked key is refused within a second.</p>';
     }
     out += '</div>';
     var kinds = Object.keys((schema && schema.kinds) || {}).sort();
     var actions = schema && Array.isArray(schema.actions) && schema.actions.length ? schema.actions : ['task', 'note', 'message', 'home', 'calendar'];
     function boxes(name, list, on) {
       return list.map(function (k) {
-        return '<label><input type="checkbox" name="' + name + '" value="' + esc(k) + '"' + (on ? ' checked' : '') + '> ' + esc(k) + '</label>';
+        return '<label class="box"><input type="checkbox" name="' + name + '" value="' + esc(k) + '"' + (on ? ' checked' : '') + '> ' + esc(k) + '</label>';
       }).join(' ');
     }
     out += '<div class="card"><h2>Mint a key</h2><div id="mint">' +
-      '<p><label>name <input name="name" maxlength="200" placeholder="Talon on the phone"></label> ' +
-      '<label>writes as <input name="by" maxlength="64" placeholder="talon"></label></p>' +
+      '<p><label class="field">name <input name="name" maxlength="200" placeholder="Talon on the phone"></label> ' +
+      '<label class="field">writes as <input name="by" maxlength="64" placeholder="talon"></label></p>' +
       '<p><span class="muted">sees</span> ' + boxes('kinds', kinds, true) + '</p>' +
       '<p><span class="muted">may propose</span> ' + boxes('actions', actions, false) + '</p>' +
-      '<p><label><input type="checkbox" name="write"> may write</label> ' +
-      '<label><input type="checkbox" name="sensitive"> may file the sensitive attributes it never reads (needs write)</label></p>' +
+      '<p><label class="box"><input type="checkbox" name="write"> may write</label> ' +
+      '<label class="box wide"><input type="checkbox" name="sensitive"> may file the sensitive attributes it never reads (needs write)</label></p>' +
       '<p><button data-mint="1">mint</button></p></div></div>';
     return out;
   }

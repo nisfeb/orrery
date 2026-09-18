@@ -1,5 +1,6 @@
 :root { --ink: #101541; --amber: #f9a804; --muted: #6b6f80; --line: #e2e4ec; --bg: #fbfbfd; --card: #ffffff; --bad: #b3261e; }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
 header { display: flex; align-items: center; gap: 1.5rem; padding: .6rem 1rem; border-bottom: 2px solid var(--amber); background: var(--card); position: sticky; top: 0; }
 header .brand { font-weight: 700; color: var(--ink); text-decoration: none; letter-spacing: .02em; }
@@ -17,6 +18,7 @@ h2 { font-size: 1.05rem; margin: 1.2rem 0 .4rem; color: var(--muted); text-trans
 .bodies a { display: block; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); text-decoration: none; }
 .bodies a:hover { border-color: var(--amber); }
 .id { display: block; color: var(--muted); font-size: .8em; }
+td, .id, h1 { overflow-wrap: anywhere; }
 table { width: 100%; border-collapse: collapse; font-size: .92em; }
 th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; }
@@ -30,9 +32,33 @@ button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); bo
 button:hover { border-color: var(--amber); }
 button.danger:hover { border-color: var(--bad); color: var(--bad); }
 input:not([type]) { font: inherit; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 5px; }
-#mint label { margin-right: .5rem; white-space: nowrap; }
+#mint .box { display: inline-block; margin-right: .5rem; white-space: nowrap; }
+#mint .box.wide { white-space: normal; }
+#mint .field { display: inline-block; margin-right: .8rem; }
 .token code { display: inline-block; padding: .3rem .5rem; font-size: 1.05em; user-select: all; word-break: break-all; }
 textarea { width: 100%; min-height: 14rem; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; }
 .actions li { margin-bottom: .5rem; }
 code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius: 3px; }
-@media (max-width: 600px) { header { gap: .8rem; flex-wrap: wrap; } .status { margin-left: 0; width: 100%; } }
+/* a phone: the header wraps, every table stacks one row per card with the
+   column name in front of each cell, buttons grow to a finger's width,
+   inputs stay at 16px so iOS does not zoom into them, and the mint form's
+   text fields take the whole line */
+@media (max-width: 600px) {
+  header { gap: .8rem; flex-wrap: wrap; }
+  header nav a { margin-right: .7rem; }
+  .status { margin-left: 0; width: 100%; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  thead { display: none; }
+  tr { padding: .45rem 0; border-bottom: 1px solid var(--line); }
+  td { display: flex; gap: .6rem; padding: .1rem 0; border: 0; }
+  td::before { content: attr(data-label); flex: 0 0 5.5em; color: var(--muted); font-size: .85em; padding-top: .15em; }
+  td:empty, td[data-label=""]::before { display: none; }
+  td > * { min-width: 0; }
+  tr.retracted td { text-decoration: none; }
+  button { padding: .5rem .9rem; margin: 0 .3rem .3rem 0; }
+  input, textarea { font-size: 16px; }
+  #mint .field { display: block; margin: 0 0 .5rem; }
+  #mint .field input { display: block; width: 100%; margin-top: .2rem; }
+  ul.actions { padding-left: 0; list-style: none; }
+  .bodies { grid-template-columns: 1fr; }
+}
