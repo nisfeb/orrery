@@ -31,17 +31,56 @@
     var kinds = Object.keys(byKind).sort();
     var out = '<h1>Bodies</h1>';
     if (state.situations && state.situations.length) {
-      out += '<div class="card"><strong>Open situations:</strong> ' + links(state.situations) + '</div>';
+      // the open situations by name, soonest first (a start in the past is
+      // ongoing and comes before one still ahead), then the ones with the
+      // most open actions, then by name; never in id order
+      var byId = Object.create(null);
+      (state.bodies || []).forEach(function (b) { byId[b.id] = b; });
+      var pending = Object.create(null);
+      (state.actions || []).forEach(function (a) { (a.about || []).forEach(function (id) { pending[id] = (pending[id] || 0) + 1; }); });
+      function startOf(b) { var st = b && b.attrs && b.attrs.started; return st && !Array.isArray(st) && typeof st.value === 'string' ? st.value : ''; }
+      var open = state.situations.map(function (id) { return byId[id] || { id: id, name: id, attrs: {} }; });
+      open.sort(function (a, b) {
+        var sa = startOf(a), sb = startOf(b);
+        if (sa !== sb) { if (!sa) return 1; if (!sb) return -1; return sa < sb ? -1 : 1; }
+        var na = pending[a.id] || 0, nb = pending[b.id] || 0;
+        if (na !== nb) return nb - na;
+        return (a.name || a.id).toLowerCase() < (b.name || b.id).toLowerCase() ? -1 : 1;
+      });
+      out += '<div class="card"><h2>Open situations</h2><div class="bodies">';
+      open.forEach(function (b) {
+        var n = pending[b.id] || 0;
+        out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
+          (startOf(b) ? ' <span class="muted">' + fmtTime(startOf(b)) + '</span>' : '') +
+          (n ? ' <span class="muted">' + n + ' open action' + (n === 1 ? '' : 's') + '</span>' : '') +
+          '<span class="id">' + esc(b.id) + '</span></a>';
+      });
+      out += '</div></div>';
+    }
+    function card(b) {
+      var n = Object.keys(b.attrs || {}).length;
+      return '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
+        (b.ship ? ' <span class="muted">' + esc(b.ship) + '</span>' : '') +
+        '<span class="id">' + esc(b.id) + (n ? ' &middot; ' + n + ' attr' + (n === 1 ? '' : 's') : '') + '</span></a>';
+    }
+    function closed(b) {
+      var st = b.attrs && b.attrs.status;
+      return !!(st && !Array.isArray(st) && st.value === 'closed');
     }
     kinds.forEach(function (k) {
+      var all = byKind[k].sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+      // a situation that is over stays on the ship with its timeline, but it
+      // is not something to look at every day: it folds under "past"
+      var past = k === 'situation' ? all.filter(closed) : [];
+      var live = k === 'situation' ? all.filter(function (b) { return !closed(b); }) : all;
       out += '<h2>' + esc(k) + '</h2><div class="bodies">';
-      byKind[k].sort(function (a, b) { return a.id < b.id ? -1 : 1; }).forEach(function (b) {
-        var n = Object.keys(b.attrs || {}).length;
-        out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
-          (b.ship ? ' <span class="muted">' + esc(b.ship) + '</span>' : '') +
-          '<span class="id">' + esc(b.id) + (n ? ' &middot; ' + n + ' attr' + (n === 1 ? '' : 's') : '') + '</span></a>';
-      });
+      live.forEach(function (b) { out += card(b); });
       out += '</div>';
+      if (past.length) {
+        out += '<details class="past"><summary>past situations (' + past.length + ')</summary><div class="bodies">';
+        past.forEach(function (b) { out += card(b); });
+        out += '</div></details>';
+      }
     });
     if (!kinds.length) out += '<p class="muted">Nothing observed yet.</p>';
     return out;

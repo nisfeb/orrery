@@ -844,19 +844,49 @@
 ++  starter-schema
   ^-  json
   =/  kind
-    |=  attrs=(list @t)
+    |=  [attrs=(list @t) notes=(list [@t @t])]
     ^-  json
-    (pairs:enjs:format ~[['attrs' a+(turn attrs |=(t=@t `json`s+t))]])
+    =/  names=json  a+(turn attrs |=(t=@t `json`s+t))
+    ?~  notes  (pairs:enjs:format ~[['attrs' names]])
+    =/  said=json  (pairs:enjs:format (turn `(list [@t @t])`notes |=([a=@t t=@t] [a `json`s+t])))
+    (pairs:enjs:format ~[['attrs' names] ['notes' said]])
   %-  pairs:enjs:format
   :~  :-  'kinds'
       %-  pairs:enjs:format
-      :~  ['person' (kind ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income'])]
-          ['place' (kind ~['type' 'address' 'phone' 'hours' 'geo'])]
-          ['thing' (kind ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until'])]
-          ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'])]
-          ['situation' (kind ~['status' 'participants' 'location' 'started' 'ended' 'summary'])]
-          ['activity' (kind ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next'])]
-          ['note' (kind ~['text'])]
+      :~  :-  'person'
+          %+  kind
+            ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
+          :~  ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
+              ['location' 'where the person is: a place body as a ref when the ship has one, else a short place name; null when they have left and the new place is unknown']
+              ['relationship' 'how they relate to the owner: wife, son, boss, neighbour']
+              ['health' 'a medical fact about the person; kept from client keys by policy']
+              ['income' 'a money fact about the person; kept from client keys by policy']
+          ==
+          ['place' (kind ~['type' 'address' 'phone' 'hours' 'geo'] ~)]
+          :-  'thing'
+          %+  kind
+            ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until']
+          :~  ['status' 'the state the thing is in right now: broken down, at the shop, shipped, delivered']
+              ['location' 'where the thing is: a place body as a ref or a short place name; null when unknown']
+          ==
+          ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
+          :-  'situation'
+          %+  kind
+            ~['status' 'participants' 'location' 'started' 'ended' 'summary']
+          :~  ['status' 'open while it is going on; closed when it is over or cancelled; nothing else']
+              ['started' 'when it began or begins, ISO 8601 UTC']
+              ['ended' 'when it ended or ends, ISO 8601 UTC']
+              ['participants' 'one observation per body involved, each a ref']
+          ==
+          :-  'activity'
+          %+  kind
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next']
+          :~  ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
+              ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
+              ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
+              ['cadence' 'weekly, twice a week, monthly']
+          ==
+          ['note' (kind ~['text'] ~)]
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'calendar'] |=(t=@t `json`s+t))]

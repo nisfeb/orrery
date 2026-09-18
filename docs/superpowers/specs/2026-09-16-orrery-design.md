@@ -96,7 +96,7 @@ The state view is every body with its current attributes, the open situations, t
 
 ### schema.json and policy.json
 
-`schema.json` is advisory vocabulary for the models: the kinds, the attributes each kind commonly has, the action kinds, and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted. The user edits it; a client may too. It is seeded once and edits survive reloads.
+`schema.json` is advisory vocabulary for the models: the kinds, the attributes each kind commonly has, a `notes` block per kind saying what an attribute means where a name alone misleads (a person's `status` is a circumstance, never a feeling), the action kinds, and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted. The user edits it; a client may too. It is seeded once and edits survive reloads.
 
 The starter schema:
 
