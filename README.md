@@ -202,7 +202,7 @@ The answer carries the `token` once; the ship keeps only a salted hash. The clie
 curl -s -H "Authorization: Bearer $TOKEN" $API/state
 ```
 
-What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The rules are in `docs/keys.md`.
+What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The rules are in `docs/keys.md`.
 
 ## Tools for an AI analyst
 

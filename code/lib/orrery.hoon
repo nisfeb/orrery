@@ -965,9 +965,11 @@
 ::  ==  scoped client keys (spec section 11, phase 3)
 ::
 ::  a scope: the body kinds a key may read (and, with write, observe),
-::  the action kinds it may propose, and whether it may write at all
+::  the action kinds it may propose, whether it may write at all, and
+::  whether it may observe the attributes the policy marks sensitive,
+::  which every view goes on hiding from it
 ::
-+$  scope  [kinds=(set @tas) actions=(set @tas) write=?]
++$  scope  [kinds=(set @tas) actions=(set @tas) write=? sensitive=?]
 ::  a client: one minted key. The secret is never stored, only a salted
 ::  sha-256 of it; used is the last use, at most hourly.
 ::
@@ -985,8 +987,10 @@
 ::
 ++  max-clients      50
 ++  max-scope-kinds  24
-::  +de-scope: {"kinds": [...], "actions": [...], "write": bool}. Absent
-::  lists are empty, absent write is false. Every name must be a kind.
+::  +de-scope: {"kinds": [...], "actions": [...], "write": bool,
+::  "sensitive": "none" | "write"}. Absent lists are empty, absent write
+::  is false, and a missing or unknown sensitive reads as "none", so a
+::  row stored before version 13 parses. Every name must be a kind.
 ::
 ++  de-scope
   |=  j=json
@@ -1003,7 +1007,10 @@
   ?~  actions  [%| 'scope.actions: each a kind name']
   =/  w=json  (gj j 'write')
   ?.  ?|(?=(~ w) ?=([%b *] w))  [%| 'scope.write: expected true or false']
-  [%& u.kinds u.actions ?:(?=([%b *] w) p.w |)]
+  =/  write=?  ?:(?=([%b *] w) p.w |)
+  =/  sensitive=?  =('write' (gs j 'sensitive'))
+  ?:  &(sensitive !write)  [%| 'sensitive: write needs write']
+  [%& u.kinds u.actions write sensitive]
 ::  +de-kinds: kind names as a set, ~ when one is not a kind
 ::
 ++  de-kinds
@@ -1024,6 +1031,7 @@
   :~  ['kinds' a+(turn ~(tap in kinds.s) |=(k=@tas `json`s+k))]
       ['actions' a+(turn ~(tap in actions.s) |=(k=@tas `json`s+k))]
       ['write' b+write.s]
+      ['sensitive' s+`@t`?:(sensitive.s 'write' 'none')]
   ==
 ++  kind-in-scope    |=([s=scope k=@tas] ^-(? (~(has in kinds.s) k)))
 ++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))

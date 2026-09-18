@@ -740,6 +740,17 @@
   =/  bad-write  (de-scope:orr (pairs:enjs:format ~[['write' s+'yes']]))
   =/  many=json  (pairs:enjs:format ~[['kinds' a+(reap 25 `json`s+'person')]])
   =/  empty  (de-scope:orr [%o ~])
+  ::  the sensitive leg: "write" needs write, anything else is "none",
+  ::  and the codec round trips
+  =/  sens=json
+    %-  pairs:enjs:format
+    :~  ['kinds' a+~[s+'person']]
+        ['write' b+&]
+        ['sensitive' s+'write']
+    ==
+  =/  got-sens  (de-scope:orr sens)
+  =/  no-write  (de-scope:orr (pairs:enjs:format ~[['sensitive' s+'write']]))
+  =/  odd  (de-scope:orr (pairs:enjs:format ~[['write' b+&] ['sensitive' s+'maybe']]))
   ;:  weld
     (expect !>(?=(%& -.got)))
     (expect-eq !>((sy ~['person' 'thing'])) !>(?:(?=(%& -.got) kinds.p.got ~)))
@@ -751,10 +762,17 @@
     (expect !>(?=(%& -.empty)))
     (expect-eq !>(|) !>(?:(?=(%& -.empty) write.p.empty &)))
     (expect-eq !>([%| 'scope: expected an object']) !>((de-scope:orr s+'x')))
-    (expect !>((kind-in-scope:orr [(sy ~[%person]) ~ |] %person)))
-    (expect !>(!(kind-in-scope:orr [(sy ~[%person]) ~ |] %place)))
-    (expect !>((action-in-scope:orr [~ (sy ~[%task]) &] %task)))
-    (expect !>(!(action-in-scope:orr [~ (sy ~[%task]) &] %note)))
+    (expect !>((kind-in-scope:orr [(sy ~[%person]) ~ | |] %person)))
+    (expect !>(!(kind-in-scope:orr [(sy ~[%person]) ~ | |] %place)))
+    (expect !>((action-in-scope:orr [~ (sy ~[%task]) & |] %task)))
+    (expect !>(!(action-in-scope:orr [~ (sy ~[%task]) & |] %note)))
+    (expect-eq !>(&) !>(?:(?=(%& -.got-sens) sensitive.p.got-sens |)))
+    (expect-eq !>([%| 'sensitive: write needs write']) !>(no-write))
+    (expect-eq !>(|) !>(?:(?=(%& -.odd) sensitive.p.odd &)))
+    (expect-eq !>(|) !>(?:(?=(%& -.empty) sensitive.p.empty &)))
+    (expect-eq !>(|) !>(?:(?=(%& -.got) sensitive.p.got &)))
+    (expect-eq !>(got-sens) !>((de-scope:orr (en-scope:orr [(sy ~[%person]) ~ & &]))))
+    (expect-eq !>(empty) !>((de-scope:orr (en-scope:orr [~ ~ | |]))))
   ==
 ++  test-parse-bearer
   ;:  weld
@@ -785,14 +803,27 @@
     (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'salt' 'other'))))
   ==
 ++  test-client-roundtrip
-  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
+  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) & |]
   =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
   =/  c2=client:orr  c(used `t0)
+  =/  c3=client:orr  c(scope sc(sensitive &))
   =/  back=(unit client:orr)  (de-client:orr (en-client-row:orr c))
   =/  view=json  (en-client-view:orr c)
+  ::  a row stored before version 13 has no sensitive field in its
+  ::  scope: it reads as "none", never as a crash
+  =/  old=json
+    =/  row=json  (en-client-row:orr c)
+    ?.  ?=([%o *] row)  row
+    =/  sj=json  (gj:orr row 'scope')
+    ?.  ?=([%o *] sj)  row
+    [%o (~(put by p.row) 'scope' [%o (~(del by p.sj) 'sensitive')])]
   ;:  weld
     (expect-eq !>(`c) !>(back))
     (expect-eq !>(`c2) !>((de-client:orr (en-client-row:orr c2))))
+    (expect-eq !>(`c3) !>((de-client:orr (en-client-row:orr c3))))
+    (expect-eq !>(`c) !>((de-client:orr old)))
+    (expect-eq !>(`json`s+'none') !>((gj:orr (en-scope:orr sc) 'sensitive')))
+    (expect-eq !>(`json`s+'write') !>((gj:orr (en-scope:orr sc(sensitive &)) 'sensitive')))
     (expect !>((client-ok:orr c 'secret')))
     (expect !>(!(client-ok:orr c 'wrong')))
     (expect-eq !>(~) !>((gj:orr view 'hash')))
@@ -822,7 +853,7 @@
     (expect-eq !>(`json`s+(en-iso:orr t0)) !>((gj:orr (fill-obs-as:orr j t0 'talon') 'at')))
   ==
 ++  test-out-of-scope
-  =/  sc=scope:orr  [(sy ~[%person]) ~ &]
+  =/  sc=scope:orr  [(sy ~[%person]) ~ & |]
   =/  hide=(set @t)  (sy ~['health'])
   =/  ok=json
     %-  pairs:enjs:format
@@ -844,7 +875,7 @@
     =/  one=json
       (pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+'home'] ['value' v]])
     (pairs:enjs:format ~[['observations' a+~[one]]])
-  =/  wide=scope:orr  [(sy ~[%person %place]) ~ &]
+  =/  wide=scope:orr  [(sy ~[%person %place]) ~ & |]
   =/  ship-body=json
     (pairs:enjs:format ~[['bodies' a+~[(pairs:enjs:format ~[['id' s+'person/sam'] ['ship' s+'~zod']])]]])
   ;:  weld
@@ -891,7 +922,7 @@
   =/  schema=json
     ?.  ?=([%o *] base)  base
     [%o (~(put by p.base) 'actions' a+~[s+'task' s+'note'])]
-  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
+  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) & |]
   ::  likes is both a person attr and a multi name: it pins that the
   ::  hidden names leave multi too, not only the attrs lists
   =/  hide=(set @t)  (sy ~['health' 'status' 'likes'])

@@ -364,9 +364,10 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   =/  prep  (prep-observe:orr jon now 'writer')
   ;<  c1=?  bind:m  (write-bodies bodies.prep |)
-  ;<  c2=?  bind:m  (write-obs obs.prep |)
+  ;<  c2=?  bind:m  (write-obs obs.prep (sensitive-of:orr policy) |)
   =/  subjects=(list bid:orr)
     %~  tap  in
     %-  sy
@@ -397,27 +398,30 @@
   ;<  c=?  bind:m  (write-body 0 kind.u.pk slug.u.pk body.p.i.items)
   (write-bodies t.items |(changed c))
 ::  +write-obs: one grub per observation, under its subject. An unknown
-::  subject is noted and skipped; an existing id is a no-op.
+::  subject is noted and skipped; an existing id is a no-op. A repeat on
+::  an attribute in sens still counts as a change, so the beacon moves
+::  for it as it does for a fresh row and rev tells a key that may write
+::  a sensitive attribute nothing about whether its claim was held.
 ::
 ++  write-obs
-  |=  [items=(list (each obs:orr @t)) changed=?]
+  |=  [items=(list (each obs:orr @t)) sens=(set @t) changed=?]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ?~  items  (pure:m changed)
-  ?:  ?=(%| -.i.items)  (write-obs t.items changed)
+  ?:  ?=(%| -.i.items)  (write-obs t.items sens changed)
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
-  ?~  pk  (write-obs t.items changed)
+  ?~  pk  (write-obs t.items sens changed)
   ;<  has=?  bind:m  (peek-exists:io (rf 0 (body-dir kind.u.pk slug.u.pk) %body))
   ?.  has
     ;<  ~  bind:m  (note 'observe' | (cat 3 'unknown subject ' subject.o))
-    (write-obs t.items changed)
+    (write-obs t.items sens changed)
   =/  road=road:tarball  (rf 0 (obs-dir kind.u.pk slug.u.pk) (obs-id:orr o))
   ;<  ex=?  bind:m  (peek-exists:io road)
-  ?:  ex  (write-obs t.items changed)
+  ?:  ex  (write-obs t.items sens |(changed (~(has in sens) attr.o)))
   ;<  err=(unit tang)  bind:m
     (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 o]] ~])
-  (write-obs t.items |(changed ?=(~ err)))
+  (write-obs t.items sens |(changed ?=(~ err)))
 ::  +do-upsert-body: lay or replace one body. The decoder's refusal is
 ::  the refusal, so the writer and the route agree on what is valid.
 ::
@@ -611,10 +615,13 @@
   =/  all=(list loaded:orr)  all.seen
   =/  acts=(list [id=@ta a=action:orr])  acts.seen
   ::  a key gets the schema trimmed to its scope: GET /schema is the
-  ::  owner's, so the state view must not hand the whole document over
+  ::  owner's, so the state view must not hand the whole document over.
+  ::  A key that may write the sensitive attributes is told their names,
+  ::  so it knows what it may write; it still reads no value of one.
   =/  shown-schema=json
     ?~  scope.act  schema
-    (scope-schema:orr schema u.scope.act (hidden-for act policy))
+    =/  hide=(set @t)  ?:(sensitive.u.scope.act ~ (hidden-for act policy))
+    (scope-schema:orr schema u.scope.act hide)
   =/  multi=(set @t)  (multi-of:orr schema)
   (send-json eyre-id 200 (state-json:orr all acts multi u.when kind rev shown-schema))
 ::  +serve-observe: decode, answer per item, hand the stamped request to
@@ -668,7 +675,10 @@
     :-  'person/me'
     %+  murn  bodies.prep
     |=(e=(each [id=bid:orr =body:orr] @t) ?:(?=(%& -.e) `id.p.e ~))
-  ;<  obs-res=(list json)  bind:m  (obs-results items known ~ ~)
+  ::  a key's answer on an attribute it may write but never read says
+  ::  nothing about whether the row was already there
+  =/  hush=(set @t)  (hidden-for act policy)
+  ;<  obs-res=(list json)  bind:m  (obs-results items known hush ~ ~)
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] stamped])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
@@ -699,11 +709,14 @@
   %^  body-results  t.items  (~(put in seen) bd)  [entry acc]
 ::  +obs-results: one answer per observation in the same batch. known
 ::  carries the bodies the batch is laying, so a row about one of them
-::  is not an unknown subject.
+::  is not an unknown subject. hush names the attributes the actor may
+::  not read: their rows answer without existing, since that flag would
+::  tell a writing key whether its exact claim was already held.
 ::
 ++  obs-results
   |=  $:  items=(list (each obs:orr @t))
           known=(set bid:orr)
+          hush=(set @t)
           seen=(set @ta)
           acc=(list json)
       ==
@@ -712,24 +725,25 @@
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
     =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
-    (obs-results t.items known seen [entry acc])
+    (obs-results t.items known hush seen [entry acc])
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
     =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']])
-    (obs-results t.items known seen [entry acc])
+    (obs-results t.items known hush seen [entry acc])
   ;<  has=?  bind:m
     ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,?) &)
     (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   ?.  has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
     =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+why]])
-    (obs-results t.items known seen [entry acc])
+    (obs-results t.items known hush seen [entry acc])
   =/  id=@ta  (obs-id:orr o)
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (obs-dir kind.u.pk slug.u.pk) id))
   =/  entry=json
+    ?:  (~(has in hush) attr.o)  (pairs:enjs:format ~[['id' s+id] ['ok' b+&]])
     (pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+|(ex (~(has in seen) id))]])
-  (obs-results t.items known (~(put in seen) id) [entry acc])
+  (obs-results t.items known hush (~(put in seen) id) [entry acc])
 ::  +find-obs: the body holding an observation id, by a sweep
 ::
 ++  find-obs
@@ -2228,14 +2242,17 @@
   |=([id=@ta a=action:orr] [id (scope-about:orr a kinds.s)])
 ::  +deny-observe: why a key may not send this batch, or ~. The owner is
 ::  never denied. A batch with one item outside the scope is refused
-::  whole, naming the first offender (which the key itself sent).
+::  whole, naming the first offender (which the key itself sent). A key
+::  whose scope says sensitive may observe the attributes the policy
+::  marks sensitive; every view goes on hiding them from it.
 ::
 ++  deny-observe
   |=  [act=actor jon=json policy=json]
   ^-  (unit @t)
   ?~  scope.act  ~
   ?.  write.u.scope.act  `'read only key'
-  =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act (hidden-for act policy))
+  =/  hide=(set @t)  ?:(sensitive.u.scope.act ~ (hidden-for act policy))
+  =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act hide)
   ?~  bad  ~
   `(cat 3 'not in scope: ' u.bad)
 ::  +deny-write: why a key may not write a body of this kind, or ~

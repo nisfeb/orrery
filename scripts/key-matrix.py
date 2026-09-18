@@ -2,8 +2,9 @@
 """key-matrix.py HOST JAR
 The key gate for orrery (spec section 11, phase 3) against a fake ship.
 The owner (JAR, from POST /~/login) marks health sensitive, mints a
-triage key, a todo key, a narrow key and two read-only keys, and the
-keys then see and write exactly their scope and nothing sensitive.
+triage key, a key that writes the sensitive attributes, a todo key, a
+narrow key and two read-only keys, and the keys then see and write
+exactly their scope and read nothing sensitive.
 Exits 1 on any failure. Safe to rerun: it revokes what it minted,
 retracts what it observed, deletes the bodies it made and restores the
 starter policy and the schema it found."""
@@ -100,6 +101,7 @@ def clean():
         if isinstance(c, dict) and str(c.get('name', '')).startswith('key-gate '):
             owner('DELETE', '/clients/' + str(c.get('id')))
     retract_all('person/me', ('health', 'status', 'mood', 'spouse', 'home'))
+    retract_all('person/me', ('health',))  # a full run leaves two live: the owner's and the writing key's
     retract_all('thing/subaru', ('status',))
     owner('PUT', '/policy', STARTER)
     if STARTER_SCHEMA[0] is not None:
@@ -112,6 +114,7 @@ def clean():
 
 
 T0 = datetime.now(timezone.utc) - timedelta(hours=1)
+T1 = T0 + timedelta(minutes=30)  # later than T0, so the key's row wins over the owner's
 print('== setup')
 clean()
 code, d = owner('POST', '/bodies', {'id': 'thing/subaru', 'name': 'the Subaru'})
@@ -240,6 +243,58 @@ code, d = triage('POST', '/retract', {'id': health_obs, 'note': 'key gate'})
 check('a sensitive observation reads as no such observation', code == 404, d)
 code, d = triage('POST', '/retract', {'id': mood_obs, 'note': 'key gate'})
 check('the triage key retracts its own observation', code == 200, d)
+
+print('== a key that writes what it can never read')
+code, d = owner('POST', '/clients', {'name': 'key-gate writer', 'by': 'writer',
+                                     'scope': {'kinds': ['person', 'thing', 'place', 'situation'], 'actions': [],
+                                               'write': True, 'sensitive': 'write'}})
+check('mint a key that may write the sensitive attributes', code == 200 and '.' in str(dictish(d).get('token', '')), d)
+writer_id = dictish(d).get('id')
+writer = as_key(str(dictish(d).get('token', '')))
+code, d = owner('POST', '/clients', {'name': 'key-gate no-write', 'by': 'x',
+                                     'scope': {'kinds': ['person'], 'actions': [], 'write': False, 'sensitive': 'write'}})
+check('a sensitive write without write is 400',
+      code == 400 and dictish(d).get('error') == 'sensitive: write needs write', (code, d))
+code, d = owner('GET', '/clients')
+rows = {c.get('id'): c for c in listish(d) if isinstance(c, dict)}
+check('the owner lists the field, write for the one key and none for the other',
+      code == 200 and dictish(dictish(rows.get(writer_id)).get('scope')).get('sensitive') == 'write'
+      and dictish(dictish(rows.get(triage_id)).get('scope')).get('sensitive') == 'none', rows.get(writer_id))
+code, d = writer('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'health', 'better', T1, 'kg-16')]})
+first = dictish((listish(dictish(d).get('observations')) or [{}])[0])
+check('the writing key observes a sensitive attribute', code == 200 and first.get('ok') is True, d)
+check('the answer on a sensitive row has an id and no existing', bool(first.get('id')) and 'existing' not in first, first)
+time.sleep(1)
+code, d = writer('GET', '/state')
+me = dictish({b.get('id'): b for b in listish(dictish(d).get('bodies')) if isinstance(b, dict)}.get('person/me'))
+check('the state still hides health from the key that wrote it', code == 200 and 'health' not in dictish(me.get('attrs'))
+      and 'status' in dictish(me.get('attrs')), me)
+wsch = listish(dictish(dictish(dictish(dictish(d).get('schema')).get('kinds')).get('person')).get('attrs'))
+check('the state schema names health, so the key knows it may write it', 'health' in wsch, wsch)
+code, d = triage('GET', '/state')
+tsch = listish(dictish(dictish(dictish(dictish(d).get('schema')).get('kinds')).get('person')).get('attrs'))
+check('the state schema still drops health for a key without the field', code == 200 and 'health' not in tsch, tsch)
+code, a = attrs_of(writer, 'person/me')
+check('the body view still hides health', code == 200 and a is not None and 'health' not in a and 'status' in a, a)
+code, d = writer('GET', '/body/person/me')
+tl = [o.get('attr') for o in listish(dictish(d).get('observations')) if isinstance(o, dict)]
+check('the timeline omits the sensitive row', code == 200 and 'health' not in tl and 'status' in tl, tl)
+code, a = attrs_of(owner, 'person/me')
+health = dictish(dictish(a).get('health'))
+check('the owner reads the row, under the key identity',
+      code == 200 and health.get('value') == 'better' and health.get('by') == 'writer', health)
+written = str(health.get('obs', ''))
+code, d = writer('POST', '/retract', {'id': written, 'note': 'key gate'})
+check('the key cannot retract the row it wrote',
+      code == 404 and dictish(d).get('error') == 'no such observation', (code, d))
+code, d = writer('GET', '/state')
+rev0 = dictish(d).get('rev')
+code, d = writer('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'health', 'better', T1, 'kg-16')]})
+check('the same sensitive row again is ok', code == 200 and all_ok(d, 'observations', 1), d)
+time.sleep(1)
+code, d = writer('GET', '/state')
+check('rev moves for a repeat of a sensitive row, as it does for a new one',
+      code == 200 and bool(rev0) and dictish(d).get('rev') != rev0, (rev0, dictish(d).get('rev')))
 
 print('== a key relates only what it can see')
 code, d = owner('POST', '/clients', {'name': 'key-gate narrow', 'by': 'narrow',
