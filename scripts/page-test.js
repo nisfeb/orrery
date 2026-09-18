@@ -91,6 +91,22 @@ const settings = render.settings({ kinds: { person: { attrs: ['status'] } } }, {
 ok('the schema is editable JSON', settings.includes('id="schema"') && settings.includes('&quot;person&quot;'));
 ok('the policy is editable JSON', settings.includes('id="policy"') && settings.includes('&quot;health&quot;'));
 
+const keyRows = [
+  { id: '2q2i2cl8', name: 'action generator', by: 'generator', scope: { kinds: ['person', 'situation'], actions: ['task', 'note'], write: false, sensitive: 'none' }, made: '2026-09-18T15:00:00Z', used: '2026-09-18T16:00:00Z' },
+  { id: 'abc123', name: 'mail <b>reader</b>', by: 'mail', scope: { kinds: ['person'], actions: [], write: true, sensitive: 'write' }, made: '2026-09-17T10:00:00Z', used: null },
+];
+const keysHtml = render.keys(keyRows, { kinds: { person: {}, thing: {} }, actions: ['task', 'home'] });
+ok('keys are listed newest first with name, identity, scope, made and last used', keysHtml.indexOf('action generator') < keysHtml.indexOf('mail &lt;b&gt;reader&lt;/b&gt;')
+  && keysHtml.includes('<td>generator</td>') && keysHtml.includes('person, situation \u00b7 actions task, note \u00b7 read-only')
+  && keysHtml.includes('<td>2026-09-18 15:00:00</td><td>2026-09-18 16:00:00</td>'));
+ok('a key never used says never, a sensitive writer says so', keysHtml.includes('<span class="muted">never</span>') && keysHtml.includes('person \u00b7 no actions \u00b7 writes \u00b7 writes sensitive'));
+ok('every key has a revoke button by id, named for the confirm', keysHtml.includes('data-revoke="2q2i2cl8" data-name="action generator"') && keysHtml.includes('data-revoke="abc123"'));
+ok('the mint form offers the schema kinds, checked, and its action kinds, unchecked', keysHtml.includes('name="kinds" value="person" checked') && keysHtml.includes('name="kinds" value="thing" checked')
+  && keysHtml.includes('name="actions" value="home">') && !keysHtml.includes('name="actions" value="message"'));
+ok('no token is shown unless one was just minted', !keysHtml.includes('id="token"'));
+const mintedHtml = render.keys(keyRows, { kinds: {} }, { id: 'n3w', name: 'phone', by: 'talon', token: 'n3w.s3cr3t<x>' });
+ok('a minted token is shown once, escaped, with copy and dismiss', mintedHtml.includes('<code id="token">n3w.s3cr3t&lt;x&gt;</code>') && mintedHtml.includes('data-copy="token"') && mintedHtml.includes('data-dismiss-token'));
+ok('an empty key list says so and the form falls back to the five action kinds', render.keys([], { kinds: {} }).includes('No keys yet') && render.keys([], {}).includes('name="actions" value="calendar"'));
 const hostile = render.inbox([{ id: 'h1', kind: 'task', title: 'Call <b>the</b> shop', status: 'proposed', proposed: '2026-09-17T02:10:00Z', by: '<i>who</i>', about: [], history: [] }]);
 ok('titles and actors are escaped in the inbox', !hostile.includes('<b>the</b>') && hostile.includes('&lt;b&gt;the&lt;/b&gt;') && hostile.includes('&lt;i&gt;who&lt;/i&gt;'));
 const hostileBody = render.body(Object.assign({}, view, { observations: [Object.assign({}, view.observations[2], { note: 'wrong <script>car</script>', by: '<x>' })] }));

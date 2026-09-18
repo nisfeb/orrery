@@ -16,7 +16,7 @@ h2 { font-size: 1.05rem; margin: 1.2rem 0 .4rem; color: var(--muted); text-trans
 .bodies { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .5rem; }
 .bodies a { display: block; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); text-decoration: none; }
 .bodies a:hover { border-color: var(--amber); }
-.bodies .id { display: block; color: var(--muted); font-size: .8em; }
+.id { display: block; color: var(--muted); font-size: .8em; }
 table { width: 100%; border-collapse: collapse; font-size: .92em; }
 th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; }
@@ -29,6 +29,9 @@ tr.superseded td, tr.expired td, tr.future td { color: var(--muted); }
 button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); cursor: pointer; margin-right: .3rem; }
 button:hover { border-color: var(--amber); }
 button.danger:hover { border-color: var(--bad); color: var(--bad); }
+input:not([type]) { font: inherit; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 5px; }
+#mint label { margin-right: .5rem; white-space: nowrap; }
+.token code { display: inline-block; padding: .3rem .5rem; font-size: 1.05em; user-select: all; word-break: break-all; }
 textarea { width: 100%; min-height: 14rem; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; }
 .actions li { margin-bottom: .5rem; }
 code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius: 3px; }

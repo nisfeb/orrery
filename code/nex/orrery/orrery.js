@@ -208,6 +208,62 @@
       '<p><button data-save="policy">save policy</button></p></div>';
   }
 
+  // a key's scope in words: what it sees, what it may propose, whether it
+  // writes, and whether it may file the sensitive attributes it never reads
+  function scopeText(sc) {
+    sc = sc || {};
+    var parts = [sc.kinds && sc.kinds.length ? sc.kinds.join(', ') : 'no kinds',
+      sc.actions && sc.actions.length ? 'actions ' + sc.actions.join(', ') : 'no actions',
+      sc.write ? 'writes' : 'read-only'];
+    if (sc.sensitive === 'write') parts.push('writes sensitive');
+    return parts.join(' \u00b7 ');
+  }
+  // the keys: each with its identity, scope, when it was made and last
+  // used (the ship records use to the hour), and a revoke; a mint form
+  // built from the schema's kinds and action kinds; a token just minted
+  // shown once, until dismissed or the view is left, and never again
+  function keys(clients, schema, minted) {
+    var out = '<h1>Keys</h1>';
+    if (minted) {
+      out += '<div class="card token"><h2>New key</h2><p>' + esc(minted.name || '') + ' <span class="muted">' + esc(minted.id || '') +
+        ' \u00b7 writes as ' + esc(minted.by || '') + '</span></p>' +
+        '<p>Its token, shown once. The ship keeps only a hash: put it in the client now.</p>' +
+        '<p><code id="token">' + esc(minted.token || '') + '</code></p>' +
+        '<p><button data-copy="token">copy</button><button data-dismiss-token="1">dismiss</button></p></div>';
+    }
+    out += '<div class="card"><h2>Minted keys</h2>';
+    if (!clients || !clients.length) out += '<p class="muted">No keys yet.</p>';
+    else {
+      var rows = clients.slice().sort(function (a, b) { return (a.made || '') < (b.made || '') ? 1 : -1; });
+      out += '<table><tr><th scope="col">name</th><th scope="col">writes as</th><th scope="col">scope</th>' +
+        '<th scope="col">made</th><th scope="col">last used</th><th scope="col"></th></tr>';
+      rows.forEach(function (c) {
+        out += '<tr><td>' + esc(c.name || '') + '<span class="id">' + esc(c.id || '') + '</span></td><td>' + esc(c.by || '') +
+          '</td><td>' + esc(scopeText(c.scope)) + '</td><td>' + fmtTime(c.made) +
+          '</td><td>' + (c.used ? fmtTime(c.used) : '<span class="muted">never</span>') +
+          '</td><td><button class="danger" data-revoke="' + esc(c.id || '') + '" data-name="' + esc(c.name || c.id || '') + '">revoke</button></td></tr>';
+      });
+      out += '</table><p class="muted">Use is recorded to the hour. A revoked key is refused within a second.</p>';
+    }
+    out += '</div>';
+    var kinds = Object.keys((schema && schema.kinds) || {}).sort();
+    var actions = schema && Array.isArray(schema.actions) && schema.actions.length ? schema.actions : ['task', 'note', 'message', 'home', 'calendar'];
+    function boxes(name, list, on) {
+      return list.map(function (k) {
+        return '<label><input type="checkbox" name="' + name + '" value="' + esc(k) + '"' + (on ? ' checked' : '') + '> ' + esc(k) + '</label>';
+      }).join(' ');
+    }
+    out += '<div class="card"><h2>Mint a key</h2><div id="mint">' +
+      '<p><label>name <input name="name" maxlength="200" placeholder="Talon on the phone"></label> ' +
+      '<label>writes as <input name="by" maxlength="64" placeholder="talon"></label></p>' +
+      '<p><span class="muted">sees</span> ' + boxes('kinds', kinds, true) + '</p>' +
+      '<p><span class="muted">may propose</span> ' + boxes('actions', actions, false) + '</p>' +
+      '<p><label><input type="checkbox" name="write"> may write</label> ' +
+      '<label><input type="checkbox" name="sensitive"> may file the sensitive attributes it never reads (needs write)</label></p>' +
+      '<p><button data-mint="1">mint</button></p></div></div>';
+    return out;
+  }
+
   function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function route(hash) {
     var h = String(hash || '').replace(/^#/, '') || 'bodies';
@@ -227,7 +283,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
@@ -238,6 +294,7 @@
   var statusEl = document.getElementById('status');
   var countEl = document.getElementById('inbox-count');
   var lastRev = null;
+  var minted = null;
 
   function say(msg, bad) { statusEl.textContent = msg; statusEl.className = 'status' + (bad ? ' bad' : ''); }
   function api(path, opts) {
@@ -260,10 +317,12 @@
     refreshing = true;
     var r = route(location.hash);
     var p;
+    if (r.name !== 'keys') minted = null;
     function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
     else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy')]).then(function (d) { view.innerHTML = settings(d[0], d[1]); });
+    else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
       countEl.textContent = a.length ? String(a.length) : '';
@@ -291,8 +350,30 @@
       var parsed;
       try { parsed = JSON.parse(document.getElementById(which).value); } catch (e) { say(which + ': ' + e.message, true); return; }
       post('/' + which, parsed, 'PUT').then(function () { say(which + ' saved'); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.revoke) {
+      if (!confirm('Revoke "' + b.dataset.name + '"? Its next request is refused.')) return;
+      api('/clients/' + seg(b.dataset.revoke), { method: 'DELETE' }).then(later).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.mint) {
+      post('/clients', mintForm()).then(function (d) { minted = d; refresh(); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.copy) {
+      var text = document.getElementById(b.dataset.copy).textContent;
+      if (!navigator.clipboard) { say('copy by hand: the browser offers no clipboard here', true); return; }
+      navigator.clipboard.writeText(text).then(function () { say('copied'); }, function () { say('copy failed: select it by hand', true); });
+    } else if (b.dataset.dismissToken) {
+      minted = null;
+      refresh();
     }
   });
+  // the mint form as the API takes it; sensitive: write only rides with write
+  function mintForm() {
+    function val(name) { var el = view.querySelector('#mint input[name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    function picked(name) {
+      return Array.prototype.map.call(view.querySelectorAll('#mint input[name="' + name + '"]:checked'), function (el) { return el.value; });
+    }
+    var write = picked('write').length > 0;
+    return { name: val('name'), by: val('by'),
+      scope: { kinds: picked('kinds'), actions: picked('actions'), write: write, sensitive: write && picked('sensitive').length ? 'write' : 'none' } };
+  }
   window.addEventListener('hashchange', refresh);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 
@@ -300,11 +381,12 @@
   // /rev", which EventSource cannot subscribe to; it carries the current
   // rev, so a bump missed while nobody watched shows as a difference) ----
   var timer = null;
-  // a re-render replaces the settings textareas, so a bump waits while
-  // one of them has focus; the next bump after blur refreshes
+  // a re-render replaces the settings textareas and the mint form, so a
+  // bump waits while one of them has focus; the next bump after blur
+  // refreshes
   function editing() {
     var el = document.activeElement;
-    return !!(el && el.tagName === 'TEXTAREA' && view.contains(el));
+    return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && view.contains(el));
   }
   function bumped() {
     if (editing()) return;

@@ -166,7 +166,7 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 
 ### The page
 
-`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, and settings with the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
+`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, keys with each key's scope, when it was made and last used, a revoke per key and a form that mints one and shows its token once, and settings with the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
 
 ### The vocabulary
 
@@ -202,7 +202,7 @@ The answer carries the `token` once; the ship keeps only a salted hash. The clie
 curl -s -H "Authorization: Bearer $TOKEN" $API/state
 ```
 
-What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The rules are in `docs/keys.md`.
+What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The page's Keys view does all three: mint with a form, read the token once, revoke with a button. The rules are in `docs/keys.md`.
 
 ## Tools for an AI analyst
 

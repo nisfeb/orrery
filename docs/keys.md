@@ -7,6 +7,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 - `POST /apps/orrery/api/clients` with `{"name": "Talon on the phone", "by": "talon", "scope": {"kinds": ["person", "thing", "place", "situation"], "actions": [], "write": true}}` answers the row and the `token` once. Store it in the client; the ship keeps only a salted hash.
 - `GET /apps/orrery/api/clients` lists the keys with their scope, when they were made and last used (to the hour), never the secret.
 - `DELETE /apps/orrery/api/clients/<id>` revokes one. The next request with it is refused once the writer applies the drop, within a second.
+- The page's Keys view (`/apps/orrery#keys`) is the same three calls with a form: the list with each key's scope, made and last used, a revoke button per key, and a mint form built from the schema's kinds and action kinds whose token is shown once until dismissed or the view is left.
 
 ## What a scope means
 
