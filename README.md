@@ -122,7 +122,7 @@ post observe '{
 }'
 ```
 
-`participants` is multi-valued: each observation adds a value instead of replacing the last one. The schema says which attributes work that way. Set the situation's `status` to `closed` when it is over and it leaves everyone's `involved` list.
+`participants` is multi-valued: each observation adds a value instead of replacing the last one. The schema says which attributes work that way. A situation's schedule is `starts` and `ends`; `started` and `ended` are written once it has happened; its `status` is only ever `open`, `closed` or `cancelled`, and the page reads upcoming, under way or over off the times. Set `status` to `closed` when it is over and it leaves everyone's `involved` list.
 
 A situation happens once. Something that keeps happening is an `activity`: the weekly game night, the standing Tuesday call, the gym. It carries a `schedule` and a `cadence` alongside the `participants`, so a repeating event is one body with a `next`, not one situation per occurrence.
 

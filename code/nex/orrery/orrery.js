@@ -25,6 +25,26 @@
   function links(ids) { return (ids || []).map(function (b) { return '<a href="#body/' + esc(b) + '">' + esc(b) + '</a>'; }).join(', '); }
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
 
+  // a situation's phase from its times: closed or cancelled when status says
+  // so, over once its (actual or scheduled) end has passed, under way once its
+  // start has, upcoming while its start is ahead; stored status never says
+  // "under way" or "over", the clock does
+  function timeOf(b, name) {
+    var v = b && b.attrs && b.attrs[name];
+    return v && !Array.isArray(v) && typeof v.value === 'string' ? v.value : '';
+  }
+  function phase(b, now) {
+    var st = timeOf(b, 'status');
+    if (st === 'closed' || st === 'cancelled') return st;
+    var end = timeOf(b, 'ended') || timeOf(b, 'ends');
+    var start = timeOf(b, 'started') || timeOf(b, 'starts');
+    now = now || new Date().toISOString();
+    if (end && end <= now) return 'over';
+    if (start && start <= now) return 'under way';
+    if (start) return 'upcoming';
+    return st || 'open';
+  }
+
   function bodies(state) {
     var byKind = Object.create(null);
     (state.bodies || []).forEach(function (b) { (byKind[b.kind] = byKind[b.kind] || []).push(b); });
@@ -38,7 +58,7 @@
       (state.bodies || []).forEach(function (b) { byId[b.id] = b; });
       var pending = Object.create(null);
       (state.actions || []).forEach(function (a) { (a.about || []).forEach(function (id) { pending[id] = (pending[id] || 0) + 1; }); });
-      function startOf(b) { var st = b && b.attrs && b.attrs.started; return st && !Array.isArray(st) && typeof st.value === 'string' ? st.value : ''; }
+      function startOf(b) { return timeOf(b, 'started') || timeOf(b, 'starts'); }
       var open = state.situations.map(function (id) { return byId[id] || { id: id, name: id, attrs: {} }; });
       open.sort(function (a, b) {
         var sa = startOf(a), sb = startOf(b);
@@ -51,7 +71,7 @@
       open.forEach(function (b) {
         var n = pending[b.id] || 0;
         out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
-          (startOf(b) ? ' <span class="muted">' + fmtTime(startOf(b)) + '</span>' : '') +
+          ' <span class="muted">' + esc(phase(b)) + (startOf(b) ? ', ' + fmtTime(startOf(b)) : '') + '</span>' +
           (n ? ' <span class="muted">' + n + ' open action' + (n === 1 ? '' : 's') + '</span>' : '') +
           '<span class="id">' + esc(b.id) + '</span></a>';
       });
@@ -88,6 +108,12 @@
 
   function body(v) {
     var out = '<h1>' + esc(v.name || v.id) + ' <span class="muted">' + esc(v.id) + '</span></h1>';
+    if (v.kind === 'situation') {
+      var ph = phase(v), start = timeOf(v, 'started') || timeOf(v, 'starts'), end = timeOf(v, 'ended') || timeOf(v, 'ends');
+      out += '<p class="phase">' + esc(ph) +
+        (start ? ' <span class="muted">' + (timeOf(v, 'started') ? 'started ' : 'starts ') + fmtTime(start) + '</span>' : '') +
+        (end ? ' <span class="muted">' + (timeOf(v, 'ended') ? 'ended ' : 'ends ') + fmtTime(end) + '</span>' : '') + '</p>';
+    }
     out += '<p class="muted">' + esc(v.kind) + (v.ship ? ' &middot; ' + esc(v.ship) : '') +
       (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(esc).join(', ') : '') + '</p>';
     var attrs = Object.keys(v.attrs || {}).sort();
@@ -181,6 +207,7 @@
   }
 
   var render = {
+    phase: phase,
     bodies: bodies, body: body, inbox: inbox, settings: settings, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent,
   };

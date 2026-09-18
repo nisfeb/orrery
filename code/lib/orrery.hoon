@@ -872,10 +872,12 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'started' 'ended' 'summary']
-          :~  ['status' 'open while it is going on; closed when it is over or cancelled; nothing else']
-              ['started' 'when it began or begins, ISO 8601 UTC']
-              ['ended' 'when it ended or ends, ISO 8601 UTC']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary']
+          :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+              ['starts' 'when it is scheduled to begin, ISO 8601 UTC; may be in the future']
+              ['ends' 'when it is scheduled to end, ISO 8601 UTC; may be in the future']
+              ['started' 'when it actually began, ISO 8601 UTC, written once it has']
+              ['ended' 'when it actually ended, ISO 8601 UTC, written once it has']
               ['participants' 'one observation per body involved, each a ref']
           ==
           :-  'activity'

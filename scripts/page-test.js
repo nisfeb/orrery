@@ -51,6 +51,12 @@ ok('names are escaped', !bodies.includes('<b>Subaru</b>') && bodies.includes('&l
 ok('open situations are listed', bodies.includes('situation/2026-09-16-breakdown'));
 ok('open situations show their names with the id as subtext', bodies.includes('>Dinner at eight') && bodies.indexOf('<h2>Open situations</h2>') < bodies.indexOf('Dinner at eight') && bodies.indexOf('Dinner at eight') < bodies.indexOf('<span class="id">situation/2026-09-20-dinner</span>'));
 ok('open situations come soonest first, undated last', bodies.indexOf('>Dinner at eight') < bodies.indexOf('>breakdown') && bodies.indexOf('>breakdown') < bodies.indexOf('<h2>person</h2>'));
+ok('a situation phase comes from its times, not a stored guess', render.phase({ attrs: { status: { value: 'under way' }, starts: { value: '2026-12-05T19:00:00Z' }, ends: { value: '2026-12-05T20:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'upcoming'
+  && render.phase({ attrs: { starts: { value: '2026-09-18T11:00:00Z' }, ends: { value: '2026-09-18T13:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'under way'
+  && render.phase({ attrs: { starts: { value: '2026-09-18T11:00:00Z' }, ends: { value: '2026-09-18T11:30:00Z' } } }, '2026-09-18T12:00:00Z') === 'over'
+  && render.phase({ attrs: { status: { value: 'closed' }, ends: { value: '2099-01-01T00:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'closed'
+  && render.phase({ attrs: {} }, '2026-09-18T12:00:00Z') === 'open');
+ok('the open situations list shows the phase', bodies.includes('>Dinner at eight <span class="muted">upcoming, '));
 ok('a closed situation folds under past', bodies.includes('<summary>past situations (1)</summary>') && bodies.indexOf('situation/2026-09-01-preop') > bodies.indexOf('<details class="past">'));
 ok('an open situation is not under past', bodies.indexOf('situation/2026-09-16-breakdown') < bodies.indexOf('<details class="past">'));
 
@@ -62,6 +68,8 @@ ok('only a live row gets a retract button', (body.match(/data-retract="/g) || []
 ok('a source pointer is shown', body.includes('talon-dm') && body.includes('m3'));
 ok('the retraction note is shown', body.includes('wrong car'));
 ok('involved and actions are listed', body.includes('situation/2026-09-16-breakdown') && body.includes('Call the shop'));
+const sitView = render.body({ id: 'situation/2026-12-05-meeting', kind: 'situation', name: 'Parent meeting', aliases: [], ship: null, attrs: { starts: { value: '2099-12-05T19:00:00Z', at: '2026-09-18T00:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm1' }, obs: '9-a' }, ends: { value: '2099-12-05T20:00:00Z', at: '2026-09-18T00:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm1' }, obs: '9-b' } }, involved: [], actions: [], observations: [] });
+ok('a situation view says upcoming with its schedule', sitView.includes('<p class="phase">upcoming') && sitView.includes('starts ') && sitView.includes('ends ') && !sitView.includes('ended '));
 
 const inboxHtml = render.inbox(inbox);
 ok('a proposed action offers approve and dismiss', inboxHtml.includes('data-move="p1:approved"') && inboxHtml.includes('data-move="p1:dismissed"') && !inboxHtml.includes('data-move="p1:done"'));

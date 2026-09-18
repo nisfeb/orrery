@@ -107,7 +107,7 @@ The starter schema:
     "place":     {"attrs": ["type", "address", "phone", "hours", "geo"]},
     "thing":     {"attrs": ["type", "status", "location", "owner", "make", "model", "plate", "last-service", "warranty-until"]},
     "org":       {"attrs": ["type", "phone", "email", "website", "contact", "address"]},
-    "situation": {"attrs": ["status", "participants", "location", "started", "ended", "summary"]},
+    "situation": {"attrs": ["status", "participants", "location", "starts", "ends", "started", "ended", "summary"]},
     "activity":  {"attrs": ["status", "schedule", "cadence", "location", "participants", "organizer", "last", "next"]},
     "note":      {"attrs": ["text"]}
   },
