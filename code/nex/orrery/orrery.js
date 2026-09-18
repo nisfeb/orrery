@@ -22,7 +22,14 @@
   }
   function fmtTime(t) { return t ? esc(String(t).replace('T', ' ').replace('Z', '')) : ''; }
   function source(s) { s = s || {}; return '<code>' + esc(s.kind || '') + '</code> ' + esc(s.id || ''); }
-  function links(ids) { return (ids || []).map(function (b) { return '<a href="#body/' + esc(b) + '">' + esc(b) + '</a>'; }).join(', '); }
+  // an inline run of ids: linked by name when the state is at hand, the
+  // id on hover
+  function links(ids, byId) {
+    return (ids || []).map(function (b) {
+      var known = byId && byId[b];
+      return '<a href="#body/' + esc(b) + '" title="' + esc(b) + '">' + esc(known && known.name ? known.name : b) + '</a>';
+    }).join(', ');
+  }
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
 
   // a situation's phase from its times: closed or cancelled when status says
@@ -44,6 +51,39 @@
     if (start) return 'upcoming';
     return st || 'open';
   }
+  function index(state) {
+    var byId = Object.create(null);
+    ((state && state.bodies) || []).forEach(function (b) { byId[b.id] = b; });
+    return byId;
+  }
+  // a list of situations, wherever one is shown: cards by name with the
+  // phase and start, the id as subtext, soonest first (a start in the past
+  // is ongoing and comes before one still ahead), then the ones with the
+  // most open actions, then by name; never in id order and never a run of
+  // bare ids. Without the state each card is named by its id.
+  function situationCards(ids, state) {
+    var byId = index(state);
+    var pending = Object.create(null);
+    ((state && state.actions) || []).forEach(function (a) { (a.about || []).forEach(function (id) { pending[id] = (pending[id] || 0) + 1; }); });
+    function startOf(b) { return timeOf(b, 'started') || timeOf(b, 'starts'); }
+    var open = (ids || []).map(function (id) { return byId[id] || { id: id, name: id, attrs: {} }; });
+    open.sort(function (a, b) {
+      var sa = startOf(a), sb = startOf(b);
+      if (sa !== sb) { if (!sa) return 1; if (!sb) return -1; return sa < sb ? -1 : 1; }
+      var na = pending[a.id] || 0, nb = pending[b.id] || 0;
+      if (na !== nb) return nb - na;
+      return (a.name || a.id).toLowerCase() < (b.name || b.id).toLowerCase() ? -1 : 1;
+    });
+    var out = '<div class="bodies">';
+    open.forEach(function (b) {
+      var n = pending[b.id] || 0;
+      out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
+        ' <span class="muted">' + esc(phase(b)) + (startOf(b) ? ', ' + fmtTime(startOf(b)) : '') + '</span>' +
+        (n ? ' <span class="muted">' + n + ' open action' + (n === 1 ? '' : 's') + '</span>' : '') +
+        '<span class="id">' + esc(b.id) + '</span></a>';
+    });
+    return out + '</div>';
+  }
 
   function bodies(state) {
     var byKind = Object.create(null);
@@ -51,31 +91,7 @@
     var kinds = Object.keys(byKind).sort();
     var out = '<h1>Bodies</h1>';
     if (state.situations && state.situations.length) {
-      // the open situations by name, soonest first (a start in the past is
-      // ongoing and comes before one still ahead), then the ones with the
-      // most open actions, then by name; never in id order
-      var byId = Object.create(null);
-      (state.bodies || []).forEach(function (b) { byId[b.id] = b; });
-      var pending = Object.create(null);
-      (state.actions || []).forEach(function (a) { (a.about || []).forEach(function (id) { pending[id] = (pending[id] || 0) + 1; }); });
-      function startOf(b) { return timeOf(b, 'started') || timeOf(b, 'starts'); }
-      var open = state.situations.map(function (id) { return byId[id] || { id: id, name: id, attrs: {} }; });
-      open.sort(function (a, b) {
-        var sa = startOf(a), sb = startOf(b);
-        if (sa !== sb) { if (!sa) return 1; if (!sb) return -1; return sa < sb ? -1 : 1; }
-        var na = pending[a.id] || 0, nb = pending[b.id] || 0;
-        if (na !== nb) return nb - na;
-        return (a.name || a.id).toLowerCase() < (b.name || b.id).toLowerCase() ? -1 : 1;
-      });
-      out += '<div class="card"><h2>Open situations</h2><div class="bodies">';
-      open.forEach(function (b) {
-        var n = pending[b.id] || 0;
-        out += '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
-          ' <span class="muted">' + esc(phase(b)) + (startOf(b) ? ', ' + fmtTime(startOf(b)) : '') + '</span>' +
-          (n ? ' <span class="muted">' + n + ' open action' + (n === 1 ? '' : 's') + '</span>' : '') +
-          '<span class="id">' + esc(b.id) + '</span></a>';
-      });
-      out += '</div></div>';
+      out += '<div class="card"><h2>Open situations</h2>' + situationCards(state.situations, state) + '</div>';
     }
     function card(b) {
       var n = Object.keys(b.attrs || {}).length;
@@ -106,7 +122,9 @@
     return out;
   }
 
-  function body(v) {
+  // the state rides along for the names, phases and open-action counts of
+  // the situations the body is involved in
+  function body(v, state) {
     var out = '<h1>' + esc(v.name || v.id) + ' <span class="muted">' + esc(v.id) + '</span></h1>';
     if (v.kind === 'situation') {
       var ph = phase(v), start = timeOf(v, 'started') || timeOf(v, 'starts'), end = timeOf(v, 'ended') || timeOf(v, 'ends');
@@ -133,7 +151,7 @@
       out += '</table>';
     }
     out += '</div>';
-    if (v.involved && v.involved.length) out += '<div class="card"><h2>Involved in</h2>' + links(v.involved) + '</div>';
+    if (v.involved && v.involved.length) out += '<div class="card"><h2>Involved in</h2>' + situationCards(v.involved, state) + '</div>';
     if (v.actions && v.actions.length) {
       out += '<div class="card"><h2>Open actions</h2><ul class="actions">';
       v.actions.forEach(function (a) { out += '<li>' + badge(a.status) + ' ' + esc(a.title) + ' <span class="muted">' + esc(a.kind) + '</span></li>'; });
@@ -163,16 +181,17 @@
     ((a && a.history) || []).forEach(function (h) { if (h && h.status === 'claimed') who = h.by || ''; });
     return who;
   }
-  function inbox(actions) {
+  function inbox(actions, state) {
     var out = '<h1>Inbox</h1>';
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
+    var byId = index(state);
     out += '<ul class="actions">';
     actions.forEach(function (a) {
       out += '<li class="card">' + badge(a.status) +
         (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
         ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + esc(a.by || '') + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' +
-        (a.about && a.about.length ? '<div>about ' + links(a.about) + '</div>' : '') + '<div>';
+        (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
         out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
       });
@@ -241,10 +260,11 @@
     refreshing = true;
     var r = route(location.hash);
     var p;
-    if (r.name === 'body') p = api('/body/' + seg(r.id)).then(function (v) { view.innerHTML = body(v); });
-    else if (r.name === 'inbox') p = api('/actions?status=open').then(function (a) { view.innerHTML = inbox(a); });
+    function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
+    if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
+    else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
     else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy')]).then(function (d) { view.innerHTML = settings(d[0], d[1]); });
-    else p = api('/state').then(function (s) { view.innerHTML = bodies(s); if (typeof s.rev === 'number') lastRev = String(s.rev); });
+    else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
       countEl.textContent = a.length ? String(a.length) : '';
       say('');
