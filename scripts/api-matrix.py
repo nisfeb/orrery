@@ -456,10 +456,10 @@ STUB_PORT = 8099
 # a title unlike any earlier run's, since a dismissed one stays decided
 # for ever and the validator drops a rewording of it
 import secrets
-FRESH = 'Gate task %s %s' % (secrets.token_hex(3), secrets.token_hex(3))
+FRESH = 'Errand %s %s %s' % (secrets.token_hex(3), secrets.token_hex(3), secrets.token_hex(3))
 CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
-    {'kind': 'task', 'title': FRESH, 'about': ['thing/subaru'], 'why': 'gate'},
-    {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']},
+    {'kind': 'task', 'title': FRESH, 'about': ['thing/gate-car'], 'why': 'gate'},
+    {'kind': 'task', 'title': 'Open item for the gate car', 'about': ['thing/gate-car']},
     {'kind': 'task', 'title': 'Buy a new car', 'about': ['thing/tesla']}], 'notes': ['stub note']})}}],
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 seen = []
@@ -473,8 +473,10 @@ class Stub(http.server.BaseHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-curl('POST', API + '/observe', {'bodies': [{'id': 'thing/subaru', 'name': 'the Subaru'}], 'observations': []})
-curl('POST', API + '/act', {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']})
+# a body and an open action of the section's own, deleted and dismissed at the end,
+# so nothing here outlives the run for the other gates to trip over
+curl('POST', API + '/observe', {'bodies': [{'id': 'thing/gate-car', 'name': 'the gate car'}], 'observations': []})
+code, twin = curl('POST', API + '/act', {'kind': 'task', 'title': 'Open item for the gate car', 'about': ['thing/gate-car']})
 time.sleep(1)
 curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
 time.sleep(1)
@@ -506,18 +508,22 @@ while time.time() < deadline and len(seen) == n:
     time.sleep(2)
 check('a forced pass runs the model again', len(seen) == n + 1, (n, len(seen)))
 n = len(seen)
-curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
+curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/gate-car', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
 deadline = time.time() + 90
 while time.time() < deadline and len(seen) == n:
     time.sleep(2)
 check('a change wakes the generator on its own', len(seen) == n + 1, (n, len(seen)))
 n = len(seen)
-curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
+curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/gate-car', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
 time.sleep(30)
 check('a repeat that changes nothing the model sees does not run it', len(seen) == n, (n, len(seen)))
 for a in mine:
     curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate'})
+if isinstance(twin, dict) and twin.get('id'):
+    curl('POST', API + '/actions/' + twin['id'], {'status': 'dismissed', 'by': 'gate'})
 curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
+time.sleep(1)
+curl('DELETE', API + '/body/thing/gate-car')
 srv.shutdown()
 
 print()
