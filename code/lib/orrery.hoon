@@ -587,7 +587,9 @@
   ^-  ?
   =/  w=(list row)  (fall (~(get by winners) 'status') ~)
   ?~  w  |
-  =(value.obs.i.w [%s 'closed'])
+  ?|  =(value.obs.i.w [%s 'closed'])
+      =(value.obs.i.w [%s 'cancelled'])
+  ==
 ::  +involved: the open situations whose participants name target
 ::
 ++  involved

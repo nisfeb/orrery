@@ -988,4 +988,13 @@
     (expect-eq !>(1) !>((lent (ga:orr bj 'actions'))))
     (expect-eq !>(1) !>((lent (ga:orr bj 'observations'))))
   ==
+::  a cancelled situation is closed: it leaves the open list and every
+::  involved list, like one the owner closed
+++  test-is-closed-counts-cancelled
+  =/  mk  |=(v=@t ^-((map @t (list row:orr)) (my ~[['status' ~[`row:orr`['x' ['s/x' 'status' s+v ~2026.9.18..12.00.00 ~ 100 ['test' 'fx'] 'test' ~2026.9.18..12.00.00 | '']]]]])))
+  ;:  weld
+    (expect !>((is-closed:orr (mk 'cancelled'))))
+    (expect !>((is-closed:orr (mk 'closed'))))
+    (expect !>(!(is-closed:orr (mk 'open'))))
+  ==
 --
