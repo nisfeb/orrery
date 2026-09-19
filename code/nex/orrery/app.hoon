@@ -108,8 +108,12 @@
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         ;<  changed=?  bind:m  (apply from sage)
+        ::  the beacon is also how the generator hears of the change: the
+        ::  writer never pokes it, since a soft poke waits for its
+        ::  consumption and the generator pokes the writer back, and the
+        ::  two waited on each other for ever (2026-09-19, a pass filing
+        ::  two proposals)
         ;<  ~  bind:m  ?.(changed (pure:m ~) bump-beacon)
-        ;<  ~  bind:m  ?.(changed (pure:m ~) (poke-gen |))
         $
           ::  the HTTP binder. bind-http-self is veto-tolerant: jailed,
           ::  it logs and waits; the approval reload binds for real.
@@ -151,32 +155,33 @@
         ;<  *  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /tick)
         $
-          ::  the generator: woken by the writer after a change and by
-          ::  POST /api/generate. It settles for twenty seconds so a burst
-          ::  of writes is one pass, then runs one; a pass is skipped while
-          ::  the prompt it would send is the one it sent last. Nothing
-          ::  here writes model state: proposals go to the writer as act
-          ::  ops.
+          ::  the generator: woken by the beacon after a change, by a
+          ::  cooldown timer, and by POST /api/generate. It settles for
+          ::  twenty seconds so a burst of writes is one pass, then runs
+          ::  one; a pass is skipped while the prompt it would send is the
+          ::  one it sent last. Nothing here writes model state: proposals
+          ::  go to the writer as act ops. It is never poked by the writer.
           [~ %'gen.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%orrery generator: failed")
+        ;<  *  bind:m  (keep:io /gen (rf 0 /beacon %rev) ~)
         |-
-        ;<  [* =sage:tarball]  bind:m  take-poke-from:io
+        ;<  in=gen-in  bind:m  (take-gen-in /gen)
         ::  a settle timer that fired after its pass began is not a wake;
         ::  a cooldown timer is one, the pass the limits held back
-        =/  wake-path=(unit path)
-          ?.(=([/ %timer-wake] p.sage) ~ (mole |.(!<(path q.sage))))
-        ?:  &(?=(^ wake-path) !?=([%cooldown *] u.wake-path))  $
-        =/  force=?  (force-of sage)
+        ?:  &(?=(%wake -.in) !?=([%cooldown *] path.in))  $
+        =/  force=?  ?:(?=(%poke -.in) (force-of sage.in) |)
         ::  off, and not forced: no settle, so a burst of writes drains
         ::  at once instead of twenty seconds a pair
         ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
         ?.  |(force enabled:(de-config:orr cfg-json))  $
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /settle (add now ~s20))
-        ::  the poke that ends the settle may itself be a run-now
-        ;<  [* second=sage:tarball]  bind:m  take-poke-from:io
+        ::  whatever ends the settle: the timer, more news, or a run-now,
+        ::  which keeps its force
+        ;<  second=gen-in  bind:m  (take-gen-in /gen)
         ;<  ~  bind:m  (cancel-timer:io /settle)
-        ;<  again=(unit @da)  bind:m  (gen-pass |(force (force-of second)))
+        =/  forced=?  |(force ?:(?=(%poke -.second) (force-of sage.second) |))
+        ;<  again=(unit @da)  bind:m  (gen-pass forced)
         ::  held by a limit: wake when it lifts, so the changes made
         ::  meanwhile become one pass then
         ;<  ~  bind:m  ?~(again (pure:m ~) (set-timer:io /cooldown u.again))
@@ -2140,15 +2145,26 @@
   ?.  =([/ %json] p.sage)  |
   =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
   ?=([%b %.y] (gj:orr jon 'force'))
-::  +poke-gen: wake the generator fiber, softly: a jailed install has
-::  no fiber to wake, and the writer must never fail for it
+::  +gen-in, +take-gen-in: what wakes the generator: news on the beacon
+::  it keeps, a poke (run-now), or a timer. The kernel's own
+::  take-news-or-poke, with the timer told apart by its path.
 ::
-++  poke-gen
-  |=  force=?
-  =/  m  (fiber:fiber:nexus ,~)
++$  gen-in  $%([%news wave:nexus] [%poke =sage:tarball] [%wake =path])
+++  take-gen-in
+  |=  news-wire=wire
+  =/  m  (fiber:fiber:nexus ,gen-in)
   ^-  form:m
-  ;<  *  bind:m  (poke-soft:io (rf 0 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+force]])]])
-  (pure:m ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto *]  [%fail (veto-error:io dart.u.in)]
+      [~ %news * *]
+    ?.(=(news-wire wire.u.in) [%skip ~] [%done %news wave.u.in])
+      [~ %poke * *]
+    ?.  =([/ %timer-wake] p.sage.u.in)  [%done %poke sage.u.in]
+    [%done %wake (fall (mole |.(!<(path q.sage.u.in))) /)]
+  ==
 ::  +gen-pass: one pass. Read the settings; off means nothing. Read the
 ::  state the way the state view does, build the prompt, and stop when
 ::  its digest is the last pass's unless forced. Ask the model under a

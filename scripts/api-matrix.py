@@ -457,8 +457,11 @@ STUB_PORT = 8099
 # for ever and the validator drops a rewording of it
 import secrets
 FRESH = 'Errand %s %s %s' % (secrets.token_hex(3), secrets.token_hex(3), secrets.token_hex(3))
+# two survivors: a pass that files two once deadlocked the writer against the fiber
+FRESH2 = 'Chore %s %s %s' % (secrets.token_hex(3), secrets.token_hex(3), secrets.token_hex(3))
 CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
     {'kind': 'task', 'title': FRESH, 'about': ['thing/gate-car'], 'why': 'gate'},
+    {'kind': 'task', 'title': FRESH2, 'about': ['thing/gate-car'], 'why': 'gate too'},
     {'kind': 'task', 'title': 'Open item for the gate car', 'about': ['thing/gate-car']},
     {'kind': 'task', 'title': 'Buy a new car', 'about': ['thing/tesla']}], 'notes': ['stub note']})}}],
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
@@ -492,13 +495,15 @@ while time.time() < deadline:
     if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped'):
         break
     time.sleep(2)
-check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
+check('the pass wrote its record, two filed', isinstance(last, dict) and last.get('filed') == 2 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
 hdrs, body = seen[0] if seen else ({}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
 code, acts = curl('GET', API + '/actions?status=open')
-mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') == FRESH] if isinstance(acts, list) else []
-check('the surviving proposal is filed by generator with its why', len(mine) == 1 and mine[0]['payload'].get('why') == 'gate', mine)
+mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') in (FRESH, FRESH2)] if isinstance(acts, list) else []
+check('both surviving proposals are filed by generator with their why', len(mine) == 2 and sorted(a['payload'].get('why') for a in mine) == ['gate', 'gate too'], mine)
+code, d = curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/gate-car', 'attr': 'status', 'value': 'still writing', 'source': {'kind': 'user', 'id': 'gate'}}]}, timeout=20)
+check('the writer still answers after a pass that filed two', code == 200, (code, d))
 # filing a proposal is itself a change, so one more pass follows on its
 # own and finds nothing new to file; wait for the model calls to settle
 deadline = time.time() + 60
