@@ -2,7 +2,20 @@
 
 The question before the generator moves into Hoon: can a desk hold an outbound HTTPS request open for the minutes a reasoning model takes? The calendar desk already POSTs through `/sys/iris/` (`fetch-hdr` in its app.hoon), and what it shows is that **the ceiling is the app's own timer**: iris carries no request id and no timeout of its own, so the fiber sets a behn timer and answers status 0 when the timer wins. The calendar uses two minutes. The runtime side is the open question: whether the connection itself survives a five-minute wait.
 
-Run it on `~wex`, never on ricsul. Both dev ships were down on 2026-09-19, so this is written and not yet run.
+Run it on `~wex`, never on ricsul.
+
+## Result, 2026-09-19
+
+Run twice on `~wex` (orrery 17, the probe route written into the desk's code tree and taken out again afterwards):
+
+| request | status | seconds |
+|---|---|---|
+| DeepSeek V4 Pro, a combinatorics question, reasoning high | 200 | 6 |
+| DeepSeek V4 Pro, a 6,000-word essay, 16,000-token cap | 200 | 259 |
+
+The runtime held a four-minute outbound request through iris and delivered the whole body (OpenRouter sends keepalive whitespace while it generates, which is what the head of the answer shows). So the ceiling is the app's own timer, not the runtime, and the on-ship generator can run any model at any reasoning level under a ten minute timer. Nothing about streaming or smaller budgets is needed.
+
+Two things learned about the fast loop on the way: a forge pull does not put a `write-text` edit back, because the version gate sees 17 = 17 and syncs nothing, so the restore is another `write-text` of the committed file; and the ball's data tree has no delete action, so `probe.json` was overwritten with `{}` rather than removed.
 
 ## 1. The key and the request, as a data file
 
