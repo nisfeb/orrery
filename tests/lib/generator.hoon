@@ -1,7 +1,7 @@
 ::  Unit tests for /lib/generator: the pure half of the on-ship
 ::  generator, on fixtures. Nothing here touches the ship.
 ::
-/+  *test, orr=orrery, gen=generator
+/+  *test, orr=orrery, gen=orrery
 |%
 ++  jo   |=(t=@t ^-(json (need (de:json:html t))))
 ++  now  ~2026.9.18..12.00.00
