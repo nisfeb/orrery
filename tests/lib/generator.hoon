@@ -92,4 +92,71 @@
     (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5))))
     (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5)))))
   ==
+::  ==  the request and the answer
+::
+++  cfg
+  ^-  config:gen
+  %-  de-config:gen
+  %-  jo
+  '{"enabled":true,"url":"https://openrouter.ai/api/v1","model":"moonshotai/kimi-k3","api_key":"sk-test","reasoning":{"effort":"high"},"max_tokens":32000,"max_actions":5}'
+++  marked  |=(b=json ^-(? ?&(?=([%o *] b) (~(has by p.b) 'cache_control'))))
+++  test-chat-body
+  =/  body=json  (chat-body:gen cfg ~['a' 'b' 'c' 'd' 'e'])
+  =/  msgs=(list json)  (ga:orr body 'messages')
+  =/  sys=json  (snag 0 msgs)
+  =/  usr=json  (snag 1 msgs)
+  =/  blocks=(list json)  (ga:orr usr 'content')
+  ;:  weld
+    (expect-eq !>('moonshotai/kimi-k3') !>((gs:orr body 'model')))
+    (expect-eq !>(`32.000) !>((gn:orr body 'max_tokens')))
+    (expect-eq !>(`json`[%o (my ~[['zdr' b+&]])]) !>((gj:orr body 'provider')))
+    (expect-eq !>(`json`[%o (my ~[['include' b+&]])]) !>((gj:orr body 'usage')))
+    (expect-eq !>(`json`~) !>((gj:orr body 'temperature')))
+    (expect-eq !>(`json`[%o (my ~[['effort' s+'high']])]) !>((gj:orr body 'reasoning')))
+    (expect-eq !>('system') !>((gs:orr sys 'role')))
+    (expect !>((marked (snag 0 (ga:orr sys 'content')))))
+    (expect-eq !>(5) !>((lent blocks)))
+    (expect-eq !>(~[& & & | |]) !>((turn blocks marked)))
+    (expect-eq !>('c') !>((gs:orr (snag 2 blocks) 'text')))
+    (expect !>((has-sub (gs:orr (snag 0 (ga:orr sys 'content')) 'text') 'You are the analyst for orrery')))
+  ==
+++  test-chat-body-no-reasoning
+  =/  base=config:gen  cfg
+  =/  off=config:gen  base(reasoning [%o (my ~[['enabled' b+|]])])
+  =/  body=json  (chat-body:gen off ~['a'])
+  ;:  weld
+    (expect-eq !>(`json`~) !>((gj:orr body 'reasoning')))
+    (expect-eq !>(`0) !>((gn:orr body 'temperature')))
+  ==
+++  test-answer-of
+  =/  resp=json  (jo '{"choices":[{"message":{"content":"{\\"actions\\":[]}"}}],"usage":{"prompt_tokens":8556,"completion_tokens":2125,"cost":0.0959}}')
+  =/  got  (answer-of:gen resp)
+  =/  empty  (answer-of:gen (jo '{"choices":[{"message":{"content":""},"finish_reason":"length"}]}'))
+  =/  bad  (answer-of:gen (jo '{"error":{"message":"no endpoints"}}'))
+  ;:  weld
+    (expect !>(?=(%& -.got)))
+    (expect-eq !>('{"actions":[]}') !>(?>(?=(%& -.got) text.p.got)))
+    (expect-eq !>(`8.556) !>((gn:orr ?>(?=(%& -.got) usage.p.got) 'prompt_tokens')))
+    (expect !>(?=(%| -.bad)))
+    (expect-eq !>('no endpoints') !>(?>(?=(%| -.bad) p.bad)))
+    (expect-eq !>('the model ran out of tokens before answering') !>(?>(?=(%| -.empty) p.empty)))
+  ==
+++  test-parse-answer
+  ;:  weld
+    (expect-eq !>(`(jo '{"actions":[]}')) !>((parse-answer:gen (rap 3 '```json' nl:gen '{"actions":[]}' nl:gen '```' ~))))
+    (expect-eq !>(`(jo '{"a":{"b":1}}')) !>((parse-answer:gen 'Sure: {"a":{"b":1}} hope that helps')))
+    (expect-eq !>(*(unit json)) !>((parse-answer:gen 'not json at all')))
+  ==
+++  test-config
+  =/  shown=json  (en-config-masked:gen cfg)
+  =/  bare=config:gen  (de-config:gen (jo '{}'))
+  ;:  weld
+    (expect-eq !>(`json`~) !>((gj:orr shown 'api_key')))
+    (expect-eq !>(`json`b+&) !>((gj:orr shown 'api_key_set')))
+    (expect-eq !>('moonshotai/kimi-k3') !>((gs:orr shown 'model')))
+    (expect-eq !>(|) !>(enabled.bare))
+    (expect-eq !>(8.000) !>(max-tokens.bare))
+    (expect-eq !>('https://openrouter.ai/api/v1') !>(url.bare))
+    (expect !>((reasoning-on:gen reasoning.bare)))
+  ==
 --
