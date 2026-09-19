@@ -431,6 +431,9 @@ check('the writer noted the merge last',
       code == 200 and dictish(last).get('op') == 'merge' and dictish(last).get('ok') is True, last)
 
 # ---- the on-ship generator: its settings ----
+# a rerun starts from the defaults: a JSON null clears the stored key
+curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'model': 'moonshotai/kimi-k3', 'url': 'https://openrouter.ai/api/v1', 'max_actions': 5, 'max_tokens': 8000, 'reasoning': {'effort': 'high'}})
+time.sleep(0.5)
 code, d = curl('GET', API + '/generator')
 check('generator settings read', code == 200 and dictish(d).get('enabled') is False and 'api_key' not in dictish(d) and dictish(d).get('api_key_set') is False, (code, d))
 code, d = curl('PUT', API + '/generator', {'enabled': False, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-gate-secret', 'max_actions': 2})
@@ -450,8 +453,12 @@ check('the last pass reads as an object', code == 200 and isinstance(d, dict), (
 # ---- the on-ship generator: a pass against a stub model ----
 import http.server, socketserver
 STUB_PORT = 8099
+# a title unlike any earlier run's, since a dismissed one stays decided
+# for ever and the validator drops a rewording of it
+import secrets
+FRESH = 'Gate task %s %s' % (secrets.token_hex(3), secrets.token_hex(3))
 CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
-    {'kind': 'task', 'title': 'Ask the shop for a diagnosis estimate', 'about': ['thing/subaru'], 'why': 'gate'},
+    {'kind': 'task', 'title': FRESH, 'about': ['thing/subaru'], 'why': 'gate'},
     {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']},
     {'kind': 'task', 'title': 'Buy a new car', 'about': ['thing/tesla']}], 'notes': ['stub note']})}}],
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
@@ -459,7 +466,7 @@ seen = []
 class Stub(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get('content-length', 0))
-        seen.append((dict(self.headers), json.loads(self.rfile.read(n))))
+        seen.append(({k.lower(): v for k, v in self.headers.items()}, json.loads(self.rfile.read(n))))
         out = json.dumps(CANNED).encode()
         self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def log_message(self, *a): pass
@@ -469,7 +476,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 curl('POST', API + '/observe', {'bodies': [{'id': 'thing/subaru', 'name': 'the Subaru'}], 'observations': []})
 curl('POST', API + '/act', {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']})
 time.sleep(1)
-curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
+curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
 time.sleep(1)
 code, d = curl('POST', API + '/generate')
 check('a forced pass answers ok', code == 200 and dictish(d).get('ok') is True, (code, d))
@@ -483,9 +490,9 @@ while time.time() < deadline:
 check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error'), last)
 hdrs, body = seen[0] if seen else ({}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
-check('the key went in the header, not the body', hdrs.get('Authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('Authorization'))
+check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
 code, acts = curl('GET', API + '/actions?status=open')
-mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') == 'Ask the shop for a diagnosis estimate'] if isinstance(acts, list) else []
+mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') == FRESH] if isinstance(acts, list) else []
 check('the surviving proposal is filed by generator with its why', len(mine) == 1 and mine[0]['payload'].get('why') == 'gate', mine)
 # filing a proposal is itself a change, so one more pass follows on its
 # own and finds nothing new to file; wait for the model calls to settle
@@ -510,7 +517,7 @@ time.sleep(30)
 check('a repeat that changes nothing the model sees does not run it', len(seen) == n, (n, len(seen)))
 for a in mine:
     curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate'})
-curl('PUT', API + '/generator', {'enabled': False})
+curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
 srv.shutdown()
 
 print()

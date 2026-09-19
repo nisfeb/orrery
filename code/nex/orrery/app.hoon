@@ -2254,8 +2254,8 @@
   (pure:m [status-code.response-header.u.res body secs])
 ::  +do-set-generator: merge the owner's generator settings over the
 ::  stored ones. A blank or missing api_key keeps the stored key, so the
-::  page can save every other field without holding the secret. Settings
-::  are not model state: the beacon does not move.
+::  page can save every other field without holding the secret; a JSON
+::  null clears it. Settings are not model state: the beacon does not move.
 ::
 ++  do-set-generator
   |=  jon=json
@@ -2266,7 +2266,10 @@
   ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  base=(map @t json)  ?:(?=([%o *] cur) p.cur ~)
   =/  incoming=(map @t json)  p.doc
-  =?  incoming  =('' (gs:orr doc 'api_key'))  (~(del by incoming) 'api_key')
+  ::  a blank or missing key keeps the stored one; a JSON null clears it
+  =/  clear=?  ?=([~ ~] (~(get by incoming) 'api_key'))
+  =?  incoming  |(clear =('' (gs:orr doc 'api_key')))  (~(del by incoming) 'api_key')
+  =?  base  clear  (~(del by base) 'api_key')
   =/  merged=json  [%o (~(uni by base) incoming)]
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
