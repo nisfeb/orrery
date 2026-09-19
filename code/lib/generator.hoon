@@ -348,4 +348,71 @@
    "notes": ["anything you noticed that is not an action: a fact that looks wrong, a duplicate, a missing piece"]}
   "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional and short.
   '''
+::  +cass-cord: a cord lowercased
+::
+++  cass-cord  |=(t=@t ^-(@t (crip (cass (trip t)))))
+::  +validate: what the answer keeps. A kind the schema lists (task and
+::  note when it lists none), a title, not a rewording of anything open
+::  or decided, every about body known, every required payload key
+::  present, a due that parses, the why in the payload for the page; at
+::  most limit, looking at twice that. Notes name what was dropped and
+::  carry the model's own notes. Each kept action is the JSON an act op
+::  takes, before fill-act-as stamps proposed and by.
+::
+++  validate
+  |=  [answer=json known=(set @t) taken=(list @t) schema=json limit=@ud]
+  ^-  [acts=(list json) notes=(list @t)]
+  =/  kinds=(set @t)
+    =/  a=(list @t)  (strings:orr (ga:orr schema 'actions'))
+    (sy ?~(a ~['task' 'note'] a))
+  =/  payloads=json  (gj:orr schema 'payloads')
+  =/  todo=(list json)  (scag (mul 2 limit) (ga:orr answer 'actions'))
+  =/  said=(list @t)
+    %+  turn  (scag 10 (ga:orr answer 'notes'))
+    |=(n=json (cat 3 'model note: ' (end [3 200] (ref-or-text n))))
+  =|  acts=(list json)
+  =|  notes=(list @t)
+  |-
+  ?:  |(?=(~ todo) (gte (lent acts) limit))
+    [(flop acts) (weld (flop notes) said)]
+  =/  a=json  i.todo
+  ?.  ?=([%o *] a)  $(todo t.todo)
+  =/  kind=@t  =/(k (cass-cord (gs:orr a 'kind')) ?:(=('' k) 'task' k))
+  =/  title=@t  (end [3 200] (gs:orr a 'title'))
+  ?:  |(!(~(has in kinds) kind) =('' title))
+    $(todo t.todo, notes [(rap 3 'dropped: kind ' kind ' or no title (' (end [3 40] title) ')' ~) notes])
+  ?:  (lien taken |=(t=@t (same-title title t)))
+    $(todo t.todo, notes [(cat 3 'dropped as already open or decided: ' title) notes])
+  =/  about=(list @t)  (turn (strings:orr (ga:orr a 'about')) cass-cord)
+  =/  bad=(list @t)  (skip about |=(b=@t (~(has in known) b)))
+  ?^  bad
+    $(todo t.todo, notes [(rap 3 'dropped ' title ': names bodies that do not exist: ' (join-cords ', ' bad) ~) notes])
+  =/  payload=(map @t json)
+    =/  p=json  (gj:orr a 'payload')
+    ?:(?=([%o *] p) p.p ~)
+  =/  shape=json  (gj:orr payloads kind)
+  =/  missing=(list @t)
+    ?.  ?=([%o *] shape)  ~
+    %+  murn  ~(tap by p.shape)
+    |=  [k=@t v=json]
+    ^-  (unit @t)
+    ?.  ?=([%s *] v)  ~
+    ?.  =('required' (end [3 8] p.v))  ~
+    ?:((~(has by payload) k) ~ `k)
+  ?^  missing
+    $(todo t.todo, notes [(rap 3 'dropped ' title ': payload lacks ' (join-cords ', ' missing) ~) notes])
+  =/  why=@t  (end [3 300] (gs:orr a 'why'))
+  =?  payload  !=('' why)  (~(put by payload) 'why' s+why)
+  =/  due=(unit @da)  (de-iso:orr (gs:orr a 'due'))
+  =/  row=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  :~  ['kind' s+kind]
+            ['title' s+title]
+            ['about' a+(turn (scag 20 about) |=(b=@t `json`s+b))]
+            ['payload' [%o payload]]
+        ==
+        ?~(due ~ ~[['due' (en-time:orr u.due)]])
+    ==
+  $(todo t.todo, acts [row acts], taken [title taken])
 --

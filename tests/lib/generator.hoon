@@ -159,4 +159,41 @@
     (expect-eq !>('https://openrouter.ai/api/v1') !>(url.bare))
     (expect !>((reasoning-on:gen reasoning.bare)))
   ==
+::  ==  the validator: test_run.py's cases, one for one
+::
+++  test-validate
+  =/  f  fixture
+  =/  known=(set @t)  (sy (turn all.f |=(l=loaded:orr id.l)))
+  =/  taken=(list @t)  ~['Call the shop about the Subaru' 'Pay Utility Co $142.50' 'Tell Sarah the car is at the shop']
+  =/  answer=json
+    %-  jo
+    '''
+    {"actions": [
+      {"kind": "task", "title": "Ask the shop for a diagnosis estimate", "about": ["thing/subaru"], "due": "2026-09-19T13:00:00Z", "why": "the car has sat two days"},
+      {"kind": "task", "title": "Call the shop about the Subaru", "about": ["thing/subaru"]},
+      {"kind": "message", "title": "Tell Sarah the car is at the shop", "payload": {"via": "telegram", "to": "person/sarah", "text": "x"}},
+      {"kind": "message", "title": "Wish Sarah luck at jury duty", "about": ["person/sarah"], "payload": {"via": "telegram", "to": "person/sarah", "text": "Good luck today"}},
+      {"kind": "message", "title": "Ping the mechanic", "payload": {"to": "person/mechanic"}},
+      {"kind": "email", "title": "Email the shop"},
+      {"kind": "task", "title": "Buy a new car", "about": ["thing/tesla"]},
+      {"kind": "home", "title": "Porch light on", "payload": {"service": "light.turn_on", "entity_id": "light.porch"}}
+    ], "notes": ["the breakdown situation has no ended"]}
+    '''
+  =/  got  (validate:gen answer known taken schema.f 5)
+  =/  titles=(list @t)  (turn acts.got |=(a=json (gs:orr a 'title')))
+  =/  joined=@t  (join-cords:gen ' ' notes.got)
+  =/  nine=json  (jo '{"actions":[{"kind":"task","title":"Task 1"},{"kind":"task","title":"Task 2"},{"kind":"task","title":"Task 3"},{"kind":"task","title":"Task 4"}]}')
+  ;:  weld
+    (expect-eq !>(~['Ask the shop for a diagnosis estimate' 'Wish Sarah luck at jury duty' 'Porch light on']) !>(titles))
+    (expect-eq !>('the car has sat two days') !>((gs:orr (gj:orr (snag 0 acts.got) 'payload') 'why')))
+    (expect-eq !>('2026-09-19T13:00:00Z') !>((gs:orr (snag 0 acts.got) 'due')))
+    (expect-eq !>('person/sarah') !>((gs:orr (gj:orr (snag 1 acts.got) 'payload') 'to')))
+    (expect !>((has-sub joined 'already open or decided: Call the shop about the Subaru')))
+    (expect !>((has-sub joined 'already open or decided: Tell Sarah the car is at the shop')))
+    (expect !>((has-sub joined 'payload lacks')))
+    (expect !>((has-sub joined 'kind email')))
+    (expect !>((has-sub joined 'thing/tesla')))
+    (expect !>((has-sub joined 'model note: the breakdown situation has no ended')))
+    (expect-eq !>(3) !>((lent acts:(validate:gen nine known ~ schema.f 3))))
+  ==
 --
