@@ -893,7 +893,35 @@
           ['note' (kind ~['text'] ~)]
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]
-      ['actions' a+(turn ~['task' 'note' 'message' 'calendar'] |=(t=@t `json`s+t))]
+      ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar'] |=(t=@t `json`s+t))]
+      :-  'payloads'
+      =/  shape
+        |=  keys=(list [@t @t])
+        ^-  json
+        (pairs:enjs:format (turn keys |=([k=@t t=@t] [k `json`s+t])))
+      %-  pairs:enjs:format
+      :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence']])]
+          ['note' (shape ~[['text' 'required: the note for the owner']])]
+          :-  'message'
+          %-  shape
+          :~  ['via' 'required: one of telegram, mail, chat; the channel the conversation is on']
+              ['to' 'required: the body id of the person, e.g. person/andrea']
+              ['text' 'required: the message, short, in the owner\'s own voice']
+          ==
+          :-  'home'
+          %-  shape
+          :~  ['service' 'required: a Home Assistant service, e.g. light.turn_on']
+              ['entity_id' 'required: the entity, e.g. light.porch']
+              ['data' 'optional: service data, an object']
+          ==
+          :-  'calendar'
+          %-  shape
+          :~  ['title' 'required']
+              ['starts' 'required: ISO 8601 UTC']
+              ['ends' 'optional: ISO 8601 UTC']
+              ['location' 'optional']
+          ==
+      ==
   ==
 ::  ==  sharing (spec section 11)
 ::
