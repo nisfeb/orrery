@@ -161,8 +161,11 @@
         ;<  ~  bind:m  (rise-wait:io prod "%orrery generator: failed")
         |-
         ;<  [* =sage:tarball]  bind:m  take-poke-from:io
-        ::  a settle timer that fired after its pass began is not a wake
-        ?:  =([/ %timer-wake] p.sage)  $
+        ::  a settle timer that fired after its pass began is not a wake;
+        ::  a cooldown timer is one, the pass the limits held back
+        =/  wake-path=(unit path)
+          ?.(=([/ %timer-wake] p.sage) ~ (mole |.(!<(path q.sage))))
+        ?:  &(?=(^ wake-path) !?=([%cooldown *] u.wake-path))  $
         =/  force=?  (force-of sage)
         ::  off, and not forced: no settle, so a burst of writes drains
         ::  at once instead of twenty seconds a pair
@@ -173,7 +176,10 @@
         ::  the poke that ends the settle may itself be a run-now
         ;<  [* second=sage:tarball]  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /settle)
-        ;<  ~  bind:m  (gen-pass |(force (force-of second)))
+        ;<  again=(unit @da)  bind:m  (gen-pass |(force (force-of second)))
+        ::  held by a limit: wake when it lifts, so the changes made
+        ::  meanwhile become one pass then
+        ;<  ~  bind:m  ?~(again (pure:m ~) (set-timer:io /cooldown u.again))
         $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
@@ -2151,14 +2157,24 @@
 ::
 ++  gen-pass
   |=  force=?
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,(unit @da))
   ^-  form:m
   ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  cfg=config:orr  (de-config:orr cfg-json)
   ?.  enabled.cfg  (pure:m ~)
   ;<  rev=json  bind:m  (read-json (rf 0 /beacon %rev))
-  ?:  =('' api-key.cfg)  (gen-record ~ 0 0 ~['no api_key set'] ~ `'no api_key set' 0 | rev)
+  ?:  =('' api-key.cfg)
+    ;<  ~  bind:m  (gen-record ~ 0 0 ~['no api_key set'] ~ `'no api_key set' 0 | rev)
+    (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
+  ::  the limits come before anything is read, and they hold a forced
+  ::  pass too: run-now is a wish, the bill is a fact
+  ;<  last0=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  =/  held=(unit @da)  (held-until:orr cfg last0 now)
+  ?^  held
+    =/  why=@t  (rap 3 'held by the limits until ' (en-iso:orr u.held) ~)
+    ;<  ~  bind:m  (gen-record ~ 0 0 ~[why] ~ ~ 0 & rev)
+    (pure:m held)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
@@ -2175,16 +2191,24 @@
   =/  dg=@ux  (digest:orr parts)
   ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
   ?:  &(!force =((gs:orr last 'digest') (scot %ux dg)))
-    (gen-record `dg 0 0 ~['nothing the model would see has changed: no pass'] ~ ~ 0 & rev)
+    ;<  ~  bind:m  (gen-record `dg 0 0 ~['nothing the model would see has changed: no pass'] ~ ~ 0 & rev)
+    (pure:m ~)
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (ask-model cfg parts)
+  ::  the call counts against the limits whatever it answered
+  ;<  ~  bind:m  (gen-count now)
   ?.  =(200 status.got)
     =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
-    (gen-record `dg 0 0 ~ ~ `why secs.got | rev)
+    ;<  ~  bind:m  (gen-record `dg 0 0 ~ ~ `why secs.got | rev)
+    (pure:m ~)
   =/  resp=json  (fall (de:json:html body.got) [%o ~])
   =/  ans  (answer-of:orr resp)
-  ?:  ?=(%| -.ans)  (gen-record `dg 0 0 ~ ~ `p.ans secs.got | rev)
+  ?:  ?=(%| -.ans)
+    ;<  ~  bind:m  (gen-record `dg 0 0 ~ ~ `p.ans secs.got | rev)
+    (pure:m ~)
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
-  ?~  parsed  (gen-record `dg 0 0 ~ usage.p.ans `'the answer was not JSON' secs.got | rev)
+  ?~  parsed
+    ;<  ~  bind:m  (gen-record `dg 0 0 ~ usage.p.ans `'the answer was not JSON' secs.got | rev)
+    (pure:m ~)
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
   =/  taken=(list @t)
     %+  weld  (murn acts |=([* a=action:orr] ?.((is-open:orr a) ~ `title.a)))
@@ -2203,7 +2227,8 @@
     ::  fiber again; the digest recorded is of the prompt as it will read
     ::  with them open, so that wake finds nothing new and asks nothing
     =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg)
-    (gen-record `(digest:orr after) filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
+    ;<  ~  bind:m  (gen-record `(digest:orr after) filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
+    (pure:m ~)
   =/  stamped=json  (fill-act-as:orr i.todo now 'generator')
   ;<  err=(unit tang)  bind:m
     (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])])
@@ -2228,6 +2253,9 @@
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['at' (en-time:orr now)]
+        ['called' (gj:orr last 'called')]
+        ['day' (gj:orr last 'day')]
+        ['calls_today' (gj:orr last 'calls_today')]
         ['rev' rev]
         ['digest' s+keep]
         ['skipped' b+skipped]
@@ -2237,6 +2265,24 @@
         ['usage' usage]
         ['error' ?~(error ~ s+u.error)]
         ['seconds' (numb:enjs:format secs)]
+    ==
+  (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
+::  +gen-count: one more model call today, at now, for the limits
+::
+++  gen-count
+  |=  now=@da
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'calls_today') 0) 0)
+  =/  base=(map @t json)  ?:(?=([%o *] last) p.last ~)
+  =/  doc=json
+    :-  %o
+    %-  ~(gas by base)
+    :~  ['called' (en-time:orr now)]
+        ['day' s+day]
+        ['calls_today' (numb:enjs:format +(today))]
     ==
   (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
 ::  +ask-model: one POST to the model with the app's own ten minute

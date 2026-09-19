@@ -478,7 +478,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 curl('POST', API + '/observe', {'bodies': [{'id': 'thing/gate-car', 'name': 'the gate car'}], 'observations': []})
 code, twin = curl('POST', API + '/act', {'kind': 'task', 'title': 'Open item for the gate car', 'about': ['thing/gate-car']})
 time.sleep(1)
-curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
+curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5, 'cooldown_minutes': 0, 'max_daily': 1000})
 time.sleep(1)
 code, before = curl('GET', API + '/generator/last')
 before_at = dictish(before).get('at')
@@ -492,7 +492,7 @@ while time.time() < deadline:
     if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped'):
         break
     time.sleep(2)
-check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error'), last)
+check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
 hdrs, body = seen[0] if seen else ({}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
@@ -524,7 +524,19 @@ for a in mine:
     curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate'})
 if isinstance(twin, dict) and twin.get('id'):
     curl('POST', API + '/actions/' + twin['id'], {'status': 'dismissed', 'by': 'gate'})
-curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
+# the limits hold a forced pass: with a cooldown of a day and a call just made, run-now is held
+curl('PUT', API + '/generator', {'cooldown_minutes': 1440})
+time.sleep(1)
+code, before = curl('GET', API + '/generator/last')
+curl('POST', API + '/generate')
+deadline = time.time() + 60
+while time.time() < deadline:
+    code, last = curl('GET', API + '/generator/last')
+    if dictish(last).get('at') != dictish(before).get('at'):
+        break
+    time.sleep(2)
+check('a cooldown holds even a forced pass', dictish(last).get('skipped') is True and any('held by the limits' in n for n in dictish(last).get('notes', [])), last)
+curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'cooldown_minutes': 60})
 time.sleep(1)
 curl('DELETE', API + '/body/thing/gate-car')
 srv.shutdown()

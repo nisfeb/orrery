@@ -75,6 +75,11 @@
   =/  p2=@t  (snag 2 parts)
   =/  p3=@t  (snag 3 parts)
   =/  p4=@t  (snag 4 parts)
+  =/  dismissed=action:orr
+    :*  %task  'Go to Ballet'  [%o ~]  (sy ~['activity/ballet'])  ~
+        'generator'  now  %dismissed  'just the event'  ~
+    ==
+  =/  p3-with=@t  (snag 3 (build-parts:gen all.f acts.f ~[['d1' dismissed]] schema.f now 'America/New_York' 5))
   ;:  weld
     (expect-eq !>(5) !>((lent parts)))
     (expect !>((has-sub p0 'The owner is person/me. Propose at most 5 actions.')))
@@ -88,6 +93,8 @@
     (expect !>(!(has-sub p2 'situation/2026-09-10-walk')))
     (expect !>((has-sub p3 'Open actions')))
     (expect !>((has-sub p3 'task | Call the shop about the Subaru | about thing/subaru')))
+    (expect !>((has-sub p3-with 'dismissed | task | Go to Ballet | just the event')))
+    (expect !>((has-sub system-prompt:gen 'A dismissed action may carry the owner\'s reason')))
     (expect-eq !>('Now: 2026-09-18T12:00:00Z, timezone America/New_York. Answer with the JSON object.') !>(p4))
     (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5))))
     (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5)))))
@@ -156,6 +163,8 @@
     (expect-eq !>('moonshotai/kimi-k3') !>((gs:orr shown 'model')))
     (expect-eq !>(|) !>(enabled.bare))
     (expect-eq !>(8.000) !>(max-tokens.bare))
+    (expect-eq !>(60) !>(cooldown.bare))
+    (expect-eq !>(24) !>(max-daily.bare))
     (expect-eq !>('https://openrouter.ai/api/v1') !>(url.bare))
     (expect !>((reasoning-on:gen reasoning.bare)))
   ==
@@ -225,5 +234,21 @@
     (expect-eq !>(`(list @t)`~['Pack ballet shoes and tights for the first class' 'Sort out the overlap between ballet and the parent meeting']) !>(`(list @t)`(turn acts.got |=(a=json (gs:orr a 'title')))))
     (expect !>((has-sub joined 'dropped as a todo for an event on the calendar: Ballet (Ballet)')))
     (expect !>((has-sub joined 'Go to the Nutcracker rehearsal (Nutcracker rehearsal)')))
+  ==
+::  ==  the limits
+::
+++  test-held-until
+  =/  c=config:gen  (de-config:gen (jo '{"cooldown_minutes": 60, "max_daily": 2}'))
+  =/  fresh=json  (jo '{}')
+  =/  recent=json  (jo '{"called": "2026-09-18T11:30:00Z", "day": "2026-09-18", "calls_today": 1}')
+  =/  old=json  (jo '{"called": "2026-09-18T10:00:00Z", "day": "2026-09-18", "calls_today": 1}')
+  =/  capped=json  (jo '{"called": "2026-09-18T10:00:00Z", "day": "2026-09-18", "calls_today": 2}')
+  =/  yesterday=json  (jo '{"called": "2026-09-17T23:00:00Z", "day": "2026-09-17", "calls_today": 2}')
+  ;:  weld
+    (expect-eq !>(*(unit @da)) !>((held-until:gen c fresh now)))
+    (expect-eq !>(`~2026.9.18..12.30.00) !>((held-until:gen c recent now)))
+    (expect-eq !>(*(unit @da)) !>((held-until:gen c old now)))
+    (expect-eq !>(`~2026.9.19) !>((held-until:gen c capped now)))
+    (expect-eq !>(*(unit @da)) !>((held-until:gen c yesterday now)))
   ==
 --

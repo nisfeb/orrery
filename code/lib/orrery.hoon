@@ -1577,7 +1577,9 @@
   =/  done=(list @t)
     :-  'Recent decisions (do not propose these again):'
     %+  turn  (slag (sub (lent decided) (min recent (lent decided))) decided)
-    |=([id=@ta a=action] (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~))
+    |=  [id=@ta a=action]
+    =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
+    ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
   =/  p3=@t  (join-cords nl (weld open done))
   =/  p4=@t
     (rap 3 'Now: ' (en-iso now) ', timezone ' ?:(=('' tz) 'unknown' tz) '. Answer with the JSON object.' ~)
@@ -1600,6 +1602,12 @@
       max-tokens=@ud
       max-actions=@ud
       timezone=@t
+      ::  the two limits that keep the bill bounded whatever the state
+      ::  does: no two model calls closer than cooldown minutes (changes
+      ::  meanwhile coalesce into one pass at its end), and no more than
+      ::  max-daily calls in a UTC day
+      cooldown=@ud
+      max-daily=@ud
   ==
 ++  de-config
   |=  j=json
@@ -1612,6 +1620,8 @@
       (fall (gn j 'max_tokens') 8.000)
       (fall (gn j 'max_actions') 5)
       (gs j 'timezone')
+      (fall (gn j 'cooldown_minutes') 60)
+      (fall (gn j 'max_daily') 24)
   ==
 ::  +en-config-masked: what the owner reads back: everything but the key
 ::
@@ -1627,7 +1637,26 @@
       ['max_tokens' (numb:enjs:format max-tokens.c)]
       ['max_actions' (numb:enjs:format max-actions.c)]
       ['timezone' s+timezone.c]
+      ['cooldown_minutes' (numb:enjs:format cooldown.c)]
+      ['max_daily' (numb:enjs:format max-daily.c)]
   ==
+::  +held-until: when the next model call may happen, given the last
+::  record and the limits, or ~ when it may happen now. calls-today
+::  counts the calls made on the UTC day the record names.
+::
+++  held-until
+  |=  [c=config last=json now=@da]
+  ^-  (unit @da)
+  =/  called=(unit @da)  (de-iso (gs last 'called'))
+  =/  day=@t  (end [3 10] (en-iso now))
+  =/  today=@ud  ?:(=(day (gs last 'day')) (fall (gn last 'calls_today') 0) 0)
+  ?:  (gte today max-daily.c)
+    ::  the first moment of tomorrow, UTC
+    =/  d=@da  (add (sub now (mod now ~d1)) ~d1)
+    `d
+  ?~  called  ~
+  =/  next=@da  (add u.called (mul cooldown.c ~m1))
+  ?:((gte now next) ~ `next)
 ::  +reasoning-on: any reasoning object but {"enabled": false}
 ::
 ++  reasoning-on
@@ -1724,6 +1753,8 @@
   "about" names the bodies the action concerns, by id, at most a few. "due" is ISO 8601 UTC, only when the timing matters.
   Respect what the facts say about time: an occurrence in the past is over; a situation that is upcoming has not happened; "last" is the most recent occurrence and "next" the nearest one ahead.
   Do not invent facts, people, places or events. Do not propose things the owner cannot act on. Do not moralise.
+  Common sense, always: no todo for attending an event or a routine activity; no message telling someone what they just said; nothing the owner is already doing; nothing a decision already covered; no reminder for what happens on its own.
+  A dismissed action may carry the owner's reason after its title. Those reasons are the owner's taste, and they generalise: one "just the event" means every todo for attending is unwanted, one "I always do this" means routine chores are unwanted. Read them before proposing.
 
   Answer with one JSON object and nothing else:
   {"actions": [{"kind": "task", "title": "...", "about": ["kind/slug"], "due": "...", "payload": {...}, "why": "one sentence"}],
