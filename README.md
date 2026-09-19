@@ -160,6 +160,8 @@ Every action carries its history: who proposed it, who approved it (you, or `pol
 
 The ship proposes on its own. With the generator on (the Generator card under Settings), every change to the state wakes a pass: the ship builds the prompt from what it holds, asks the model you named through `/sys/iris/`, keeps what the schema allows and files it as proposals signed `generator`. A pass is skipped while the prompt would be the one sent last, so a quiet day costs nothing; `POST /generate` runs one regardless. Dismissing on the page asks for a reason and will not go without one ("just the event", "I always do this"); the reason rides into the next prompt with the decision, where the model generalises from it; that is how the generator learns your taste without a rulebook. The key never leaves the ship and is never read back. `docs/spikes/2026-09-19-iris-probe.md` is why the ship can wait for a slow model, and `orrery-utils/generator` remains the bench and the dry-run harness.
 
+The ship also retires on its own. A calendar event is written with its end and no status, so what is over would sit in the open list until something wrote `closed`. Twice a day, and on `POST /retire`, the ship closes every situation whose end has passed, at that end; a trip with no end a week after it started; and a situation with a start but no end that began more than thirty days ago with nothing seen since. The close is an ordinary observation signed `retire`, at the end time, so the timeline reads as it happened. This is the retire pass of `orrery-utils/common/reconcile.py`, moved on-ship in version 25.
+
 ### Where facts come from
 
 Every observation names its `source`, a kind and an opaque id such as the message it was read from, and its `by`, who asserted it. The text is never stored. Confidence (`conf`, 0 to 100) says how sure the asserter was.
@@ -305,6 +307,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `PUT /generator` | merge settings; an empty or absent `api_key` keeps the stored one; owner only |
 | `GET /generator/last` | what the last pass did: filed, dropped, notes, usage, error, seconds |
 | `POST /generate` | run a pass now, whether or not anything changed; owner only |
+| `POST /retire` | close what is over now, without waiting for the twice-daily pass; owner only |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |

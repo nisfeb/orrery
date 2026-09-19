@@ -1884,4 +1884,87 @@
         ?~(due ~ ~[['due' (en-time u.due)]])
     ==
   $(todo t.todo, acts [row acts], taken [title taken])
+::  ==  retire: closing what is over (reconcile.py retire, on-ship
+::  2026-09-19). The ship's open list goes by status, and a calendar
+::  event is written with its end and no status, so what is over would
+::  sit in the open list until something writes closed. This is that
+::  something, twice a day.
+::
+::  +plan-retire: the situations to close and when. One whose end has
+::  passed closes at its end; a trip with no end a week after it
+::  started; one with a start but no end that began more than stale
+::  ago with nothing seen since closes at its newest observation. The
+::  close time lands one second past a later live status row, so a
+::  reminder that said "open" after the event does not win the fold.
+::
+++  retire-trip   ~d7
+++  retire-stale  ~d30
+++  is-trip
+  |=  id=bid
+  ^-  ?
+  ?&  =(25 (met 3 id))
+      =('situation/' (end [3 10] id))
+      =('-trip' (rsh [3 20] id))
+  ==
+++  plan-retire
+  |=  [all=(list loaded) multi=(set @t) now=@da stale=@dr]
+  ^-  (list [id=bid at=@da why=@t])
+  =/  cutoff=@da  (sub now stale)
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [id=bid at=@da why=@t])
+  ?.  =(%situation kind.body.l)  ~
+  =/  winners=(map @t (list row))  (fold rows.l multi now)
+  ?:  (is-closed winners)  ~
+  =/  status-at=(unit @da)
+    =/  w=(list row)  (fall (~(get by winners) 'status') ~)
+    ?~(w ~ `at.obs.i.w)
+  =/  after
+    |=  at=@da
+    ^-  @da
+    ?~  status-at  at
+    ?:((gte u.status-at at) (add u.status-at ~s1) at)
+  =/  end=(unit @da)
+    =/  e=@t  (winner-text winners 'ended')
+    (de-iso ?:(=('' e) (winner-text winners 'ends') e))
+  =/  start=(unit @da)
+    =/  s=@t  (winner-text winners 'started')
+    (de-iso ?:(=('' s) (winner-text winners 'starts') s))
+  ?^  end
+    ?.  (lth u.end now)  ~
+    `[id.l (after u.end) (cat 3 'ended ' (en-iso u.end))]
+  ?~  start  ~
+  ?:  &((is-trip id.l) (lth (add u.start retire-trip) now))
+    =/  e=@da  (add u.start retire-trip)
+    `[id.l (after e) (rap 3 'a trip started ' (en-iso u.start) ' with no end' ~)]
+  =/  latest=@da
+    %+  roll  rows.l
+    |=  [r=row acc=@da]
+    ?:(retracted.obs.r acc (max seen.obs.r acc))
+  =.  latest  (max latest u.start)
+  ?.  &((lth u.start cutoff) (lth latest cutoff))  ~
+  `[id.l (after latest) (rap 3 'started ' (en-iso u.start) ', nothing since ' (en-iso latest) ~)]
+::  +retire-op: the plans as one observe op for the writer, each a
+::  status closed row at its close time, signed retire
+::
+++  retire-op
+  |=  plans=(list [id=bid at=@da why=@t])
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['op' s+'observe']
+      ['bodies' a+~]
+      :-  'observations'
+      :-  %a
+      %+  turn  plans
+      |=  [id=bid at=@da why=@t]
+      %-  pairs:enjs:format
+      :~  ['subject' s+id]
+          ['attr' s+'status']
+          ['value' s+'closed']
+          ['at' s+(en-iso at)]
+          ['conf' (numb:enjs:format 90)]
+          ['by' s+'retire']
+          ['source' (pairs:enjs:format ~[['kind' s+'retire'] ['id' s+(cat 3 'retire/' id)]])]
+      ==
+  ==
 --

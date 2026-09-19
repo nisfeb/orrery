@@ -251,4 +251,57 @@
     (expect-eq !>(`~2026.9.19) !>((held-until:gen c capped now)))
     (expect-eq !>(*(unit @da)) !>((held-until:gen c yesterday now)))
   ==
+::  ==  retire
+::
+++  sit
+  |=  [id=@t kvs=(list [k=@t v=@t]) seen=@da]
+  ^-  loaded:orr
+  :+  id  [%situation 'x' ~ now ~]
+  %+  turn  kvs
+  |=  [k=@t v=@t]
+  ^-  row:orr
+  [(cat 3 k '-row') [id k s+v seen ~ 100 ['test' 'fx'] 'test' seen | '']]
+++  test-plan-retire
+  =/  ago=@da  (sub now ~d40)
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/2026-09-10-dentist' ~[['ends' '2026-09-10T15:00:00Z']] ago)
+        (sit 'situation/2026-09-20-dentist' ~[['ends' '2026-09-20T15:00:00Z']] ago)
+        (sit 'situation/2026-09-01-done' ~[['ended' '2026-09-01T15:00:00Z'] ['status' 'closed']] ago)
+        (sit 'situation/2026-09-01-trip' ~[['started' '2026-09-01T15:00:00Z']] ago)
+        (sit 'situation/2026-09-15-trip' ~[['started' '2026-09-15T15:00:00Z']] ago)
+        (sit 'situation/2026-07-01-stale' ~[['started' '2026-07-01T15:00:00Z']] ago)
+        (sit 'situation/2026-07-01-alive' ~[['started' '2026-07-01T15:00:00Z']] now)
+        (sit 'situation/2026-09-10-fresh' ~[['starts' '2026-09-10T15:00:00Z']] ago)
+    ==
+  =/  got  (plan-retire:orr all ~ now ~d30)
+  ;:  weld
+    %+  expect-eq
+      !>(`(list @t)`~['situation/2026-09-10-dentist' 'situation/2026-09-01-trip' 'situation/2026-07-01-stale'])
+      !>(`(list @t)`(turn got |=([id=@t *] id)))
+    (expect-eq !>(~2026.9.10..15.00.00) !>(at:(snag 0 got)))
+    (expect-eq !>(~2026.9.8..15.00.00) !>(at:(snag 1 got)))
+    (expect-eq !>(ago) !>(at:(snag 2 got)))
+    (expect-eq !>('ended 2026-09-10T15:00:00Z') !>(why:(snag 0 got)))
+  ==
+++  test-plan-retire-after-status
+  ::  a reminder said open after the event: the close lands a second past it
+  =/  l=loaded:orr
+    (sit 'situation/2026-09-10-dentist' ~[['ends' '2026-09-10T15:00:00Z'] ['status' 'open']] now)
+  =/  got  (plan-retire:orr ~[l] ~ now ~d30)
+  ;:  weld
+    (expect-eq !>(1) !>((lent got)))
+    (expect-eq !>((add now ~s1)) !>(at:(snag 0 got)))
+    (expect !>((is-trip:orr 'situation/2026-09-01-trip')))
+    (expect !>(!(is-trip:orr 'situation/2026-09-01-triple')))
+  ==
+++  test-retire-op
+  =/  op=json  (retire-op:orr ~[['situation/2026-09-10-dentist' ~2026.9.10..15.00.00 'ended']])
+  =/  rows=(list json)  (ga:orr op 'observations')
+  ;:  weld
+    (expect-eq !>('observe') !>((gs:orr op 'op')))
+    (expect-eq !>(1) !>((lent rows)))
+    (expect-eq !>('closed') !>((gs:orr (snag 0 rows) 'value')))
+    (expect-eq !>('2026-09-10T15:00:00Z') !>((gs:orr (snag 0 rows) 'at')))
+    (expect-eq !>('retire/situation/2026-09-10-dentist') !>((gs:orr (gj:orr (snag 0 rows) 'source') 'id')))
+  ==
 --

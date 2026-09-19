@@ -546,6 +546,32 @@ time.sleep(1)
 curl('DELETE', API + '/body/thing/gate-car')
 srv.shutdown()
 
+# ---- the retire pass: what is over closes, on its own and on POST /retire ----
+OVER = 'situation/2026-09-01-gate-over'
+AHEAD = 'situation/2099-09-01-gate-ahead'
+curl('DELETE', API + '/body/' + OVER)
+curl('DELETE', API + '/body/' + AHEAD)
+observe([{'id': OVER, 'name': 'gate over'}, {'id': AHEAD, 'name': 'gate ahead'}], [
+    {'subject': OVER, 'attr': 'ends', 'value': '2026-09-01T15:00:00Z', 'at': '2026-08-25T12:00:00Z', 'source': src('retire-over'), 'by': 'api-matrix'},
+    {'subject': AHEAD, 'attr': 'ends', 'value': '2099-09-01T15:00:00Z', 'at': '2026-08-25T12:00:00Z', 'source': src('retire-ahead'), 'by': 'api-matrix'}])
+s = state()
+check('an over situation is open until retired', OVER in s['situations'] and AHEAD in s['situations'], s['situations'])
+code, d = curl('POST', API + '/retire')
+check('POST /retire answers ok', code == 200 and dictish(d).get('ok') is True, (code, d))
+deadline = time.time() + 30
+while time.time() < deadline:
+    if OVER not in state()['situations']:
+        break
+    time.sleep(1)
+s = state()
+check('the retire pass closes what is over', OVER not in s['situations'], s['situations'])
+check('and leaves what is ahead open', AHEAD in s['situations'], s['situations'])
+code, b = curl('GET', API + '/body/' + OVER)
+st = dictish(dictish(b).get('attrs')).get('status') or {}
+check('closed at its end, by retire', st.get('value') == 'closed' and st.get('at') == '2026-09-01T15:00:00Z' and st.get('by') == 'retire', st)
+curl('DELETE', API + '/body/' + OVER)
+curl('DELETE', API + '/body/' + AHEAD)
+
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
 sys.exit(1 if fails else 0)

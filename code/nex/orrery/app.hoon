@@ -90,6 +90,7 @@
           [%fall %& [/ %'generator.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
           [%fall %& [/ %'generator-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'gen.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'retire.sig'] [[/ %sig] ~]]
       ==
     ::
     ++  on-file
@@ -185,6 +186,20 @@
         ::  held by a limit: wake when it lifts, so the changes made
         ::  meanwhile become one pass then
         ;<  ~  bind:m  ?~(again (pure:m ~) (set-timer:io /cooldown u.again))
+        $
+          ::  the retirer: at rise, twice a day, and on POST /api/retire,
+          ::  close the situations that are over (reconcile's retire pass,
+          ::  moved on-ship 2026-09-19). Nothing here writes: the rows go
+          ::  to the writer as one observe op. It is never poked by the
+          ::  writer.
+          [~ %'retire.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery retire: failed")
+        |-
+        ;<  ~  bind:m  retire-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /tick (add now ~h12))
+        ;<  *  bind:m  take-poke-from:io
+        ;<  ~  bind:m  (cancel-timer:io /tick)
         $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
@@ -641,6 +656,7 @@
   ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))        (own (serve-set-doc eyre-id 'set-generator' jon))
   ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))  (own (serve-doc eyre-id %'generator-last.json'))
   ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (own (serve-generate eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %retire ~] suffix))         (own (serve-retire eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1406,6 +1422,31 @@
     (poke-soft:io (rf 1 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+&]])]])
   ?^  err  (send-err eyre-id 500 'the generator fiber refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-retire: run the retire pass now
+::
+++  serve-retire
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 1 / %'retire.sig') [[/ %json] [%o ~]])
+  ?^  err  (send-err eyre-id 500 'the retire fiber refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +retire-pass: close what is over, as one observe op to the writer.
+::  A pass with nothing to close writes nothing, so the beacon stays
+::  put and the generator sleeps on.
+::
+++  retire-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  plans  (plan-retire:orr all (multi-of:orr schema) now retire-stale:orr)
+  ?~  plans  (pure:m ~)
+  ;<  *  bind:m
+    (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (retire-op:orr plans)])
+  (pure:m ~)
 ::  +serve-generator: the generator's settings without the key
 ::
 ++  serve-generator
