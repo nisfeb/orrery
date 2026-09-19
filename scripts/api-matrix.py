@@ -480,13 +480,16 @@ code, twin = curl('POST', API + '/act', {'kind': 'task', 'title': 'Open item for
 time.sleep(1)
 curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
 time.sleep(1)
+code, before = curl('GET', API + '/generator/last')
+before_at = dictish(before).get('at')
 code, d = curl('POST', API + '/generate')
 check('a forced pass answers ok', code == 200 and dictish(d).get('ok') is True, (code, d))
+# the record changes when the pass ends; an earlier run's record is not it
 deadline = time.time() + 90
 last = {}
 while time.time() < deadline:
     code, last = curl('GET', API + '/generator/last')
-    if isinstance(last, dict) and last.get('at') and not last.get('skipped'):
+    if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped'):
         break
     time.sleep(2)
 check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error'), last)
