@@ -375,10 +375,12 @@
       var move = { status: moveTo, by: 'page' };
       if (moveTo === 'dismissed') {
         // the reason rides in the note and reaches the generator's prompt
-        // with the decision, where it teaches taste, not just this title
-        var why = prompt('Why? Optional, but it teaches the generator: "just the event", "I always do this", "not mine to do".');
+        // with the decision, where it teaches taste, not just this title;
+        // a dismissal without one teaches nothing, so one is required
+        var why = prompt('Why? A few words teach the generator: "just the event", "I always do this", "not mine to do", "already done".');
         if (why === null) return;
-        if (why.trim()) move.note = why.trim().slice(0, 500);
+        if (!why.trim()) { say('a reason is needed to dismiss: it is what the generator learns from', true); return; }
+        move.note = why.trim().slice(0, 500);
       }
       post('/actions/' + seg(moveId), move).then(later).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.save) {
