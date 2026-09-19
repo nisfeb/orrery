@@ -203,8 +203,31 @@
     return out + '</ul>';
   }
 
-  function settings(schema, policy) {
-    return '<h1>Settings</h1>' +
+  // the generator card: every setting but the key, which is written and
+  // never read back; a run-now button; what the last pass did
+  function generatorCard(g, last) {
+    g = g || {}; last = last || {};
+    var effort = g.reasoning && g.reasoning.enabled === false ? 'off' : (g.reasoning && g.reasoning.effort) || '';
+    var out = '<div class="card"><h2>Generator</h2><div id="generator">' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (g.enabled ? ' checked' : '') + '> on: a pass runs when the state changes</label></p>' +
+      '<p><label class="field">API base <input name="url" value="' + esc(g.url || '') + '" placeholder="https://openrouter.ai/api/v1"></label> ' +
+      '<label class="field">model <input name="model" value="' + esc(g.model || '') + '" placeholder="moonshotai/kimi-k3"></label></p>' +
+      '<p><label class="field">API key <input name="api_key" type="password" placeholder="' + (g.api_key_set ? 'a key is set; leave blank to keep it' : 'no key set') + '"></label> ' +
+      '<label class="field">reasoning effort <input name="effort" value="' + esc(effort) + '" placeholder="high, medium, low, or off"></label></p>' +
+      '<p><label class="field">max tokens <input name="max_tokens" value="' + esc(g.max_tokens || '') + '"></label> ' +
+      '<label class="field">max actions <input name="max_actions" value="' + esc(g.max_actions || '') + '"></label></p>' +
+      '<p><button data-save-generator="1">save generator</button><button data-generate="1">run a pass now</button></p></div>';
+    if (last.at) {
+      var u = last.usage || {};
+      out += '<p class="muted">Last pass ' + fmtTime(last.at) + ': ' + (last.skipped ? 'skipped, nothing changed' :
+        (last.error ? 'failed: ' + esc(last.error) : (last.filed || 0) + ' filed, ' + (last.dropped || 0) + ' dropped' +
+        (u.cost != null ? ', $' + Number(u.cost).toFixed(4) : '') + (last.seconds != null ? ', ' + last.seconds + ' s' : ''))) + '</p>';
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -323,7 +346,7 @@
     function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy')]).then(function (d) { view.innerHTML = settings(d[0], d[1]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
@@ -364,8 +387,23 @@
     } else if (b.dataset.dismissToken) {
       minted = null;
       refresh();
+    } else if (b.dataset.saveGenerator) {
+      post('/generator', generatorForm(), 'PUT').then(function () { say('generator saved'); later(); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.generate) {
+      post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(function (e) { say(e.message, true); });
     }
   });
+  // the generator form as the API takes it; a blank key is left out so
+  // the stored one stays; "off" reasoning is {"enabled": false}
+  function generatorForm() {
+    function val(name) { var el = view.querySelector('#generator input[name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    var effort = val('effort').toLowerCase();
+    var g = { enabled: !!view.querySelector('#generator input[name="enabled"]:checked'), url: val('url'), model: val('model'),
+      reasoning: effort === 'off' ? { enabled: false } : { effort: effort || 'high' },
+      max_tokens: parseInt(val('max_tokens'), 10) || 8000, max_actions: parseInt(val('max_actions'), 10) || 5 };
+    if (val('api_key')) g.api_key = val('api_key');
+    return g;
+  }
   // the mint form as the API takes it; sensitive: write only rides with write
   function mintForm() {
     function val(name) { var el = view.querySelector('#mint input[name="' + name + '"]'); return el ? el.value.trim() : ''; }

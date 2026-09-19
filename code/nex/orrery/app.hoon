@@ -85,6 +85,11 @@
           ::  secret with a name, an identity and a scope (spec section 11,
           ::  phase 3)
           [%fall %& [/ %'clients.json'] [[/ %json] [%o ~]]]
+          ::  the on-ship generator: its settings (the key lives here and
+          ::  is never served) and what its last pass did
+          [%fall %& [/ %'generator.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'generator-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'gen.sig'] [[/ %sig] ~]]
       ==
     ::
     ++  on-file
@@ -104,6 +109,7 @@
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         ;<  changed=?  bind:m  (apply from sage)
         ;<  ~  bind:m  ?.(changed (pure:m ~) bump-beacon)
+        ;<  ~  bind:m  ?.(changed (pure:m ~) (poke-gen |))
         $
           ::  the HTTP binder. bind-http-self is veto-tolerant: jailed,
           ::  it logs and waits; the approval reload binds for real.
@@ -145,6 +151,24 @@
         ;<  *  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /tick)
         $
+          ::  the generator: woken by the writer after a change and by
+          ::  POST /api/generate. It settles for twenty seconds so a burst
+          ::  of writes is one pass, then runs one; a pass is skipped while
+          ::  the prompt it would send is the one it sent last. Nothing
+          ::  here writes model state: proposals go to the writer as act
+          ::  ops.
+          [~ %'gen.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery generator: failed")
+        |-
+        ;<  [* =sage:tarball]  bind:m  take-poke-from:io
+        =/  jon=json  ?.(=([/ %json] p.sage) ~ (fall (mole |.(!<(json q.sage))) ~))
+        =/  force=?  ?=([%b %.y] (gj:orr jon 'force'))
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /settle (add now ~s20))
+        ;<  *  bind:m  take-poke-from:io
+        ;<  ~  bind:m  (cancel-timer:io /settle)
+        ;<  ~  bind:m  (gen-pass force)
+        $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%orrery request: failed")
@@ -173,6 +197,7 @@
           (line '/sys/gall/' 'tell another ship you shared a body with it, revoke that, and send it your observations on a body it shared with you in edit mode. Refuse this and sharing with ships is unavailable; everything else works')
           (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
+          (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
       ==
       :-  'peek'
       :-  %a
@@ -213,6 +238,7 @@
   ?:  =('set-action' op)  (do-set-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
+  ?:  =('set-generator' op)  (do-set-generator jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -594,6 +620,10 @@
   ?:  &(=('POST' meth) ?=([%api %clients ~] suffix))        (own (serve-mint eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %clients ~] suffix))         (own (serve-clients eyre-id))
   ?:  &(=('DELETE' meth) ?=([%api %clients @ ~] suffix))    (own (serve-drop-client eyre-id s2))
+  ?:  &(=('GET' meth) ?=([%api %generator ~] suffix))        (own (serve-generator eyre-id))
+  ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))        (own (serve-set-doc eyre-id 'set-generator' jon))
+  ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))  (own (serve-doc eyre-id %'generator-last.json'))
+  ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (own (serve-generate eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1349,6 +1379,24 @@
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / name))
   (send-json eyre-id 200 doc)
+::  +serve-generate: run a pass now, whatever the digest says
+::
+++  serve-generate
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 1 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+&]])]])
+  ?^  err  (send-err eyre-id 500 'the generator fiber refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-generator: the generator's settings without the key
+::
+++  serve-generator
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  (send-json eyre-id 200 (en-config-masked:orr (de-config:orr doc)))
 ::  +serve-set-doc: PUT one of those documents, through the writer
 ::
 ++  serve-set-doc
@@ -2072,6 +2120,157 @@
   (pure:m [& next])
 ::  ==  the writer: keys
 ::
+::  +poke-gen: wake the generator fiber, softly: a jailed install has
+::  no fiber to wake, and the writer must never fail for it
+::
+++  poke-gen
+  |=  force=?
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+force]])]])
+  (pure:m ~)
+::  +gen-pass: one pass. Read the settings; off means nothing. Read the
+::  state the way the state view does, build the prompt, and stop when
+::  its digest is the last pass's unless forced. Ask the model under a
+::  ten minute timer, validate, file each survivor as an act op under
+::  by generator, and record what happened in generator-last.json.
+::
+++  gen-pass
+  |=  force=?
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  cfg=config:orr  (de-config:orr cfg-json)
+  ?.  enabled.cfg  (pure:m ~)
+  ;<  rev=json  bind:m  (read-json (rf 0 /beacon %rev))
+  ?:  =('' api-key.cfg)  (gen-record ~ 0 0 ~['no api_key set'] ~ `'no api_key set' 0 | rev)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  decided=(list [id=@ta a=action:orr])
+    %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
+    |=([[* a=action:orr] [* b=action:orr]] (lth proposed.a proposed.b))
+  =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
+  =/  tz=@t
+    =/  from-me=@t
+      ?~  me  ''
+      (winner-text:orr (fold:orr rows.u.me (multi-of:orr schema) now) 'timezone')
+    ?:(=('' from-me) timezone.cfg from-me)
+  =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg)
+  =/  dg=@ux  (digest:orr parts)
+  ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  ?:  &(!force =((gs:orr last 'digest') (scot %ux dg)))
+    (gen-record `dg 0 0 ~['nothing the model would see has changed: no pass'] ~ ~ 0 & rev)
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (ask-model cfg parts)
+  ?.  =(200 status.got)
+    =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
+    (gen-record `dg 0 0 ~ ~ `why secs.got | rev)
+  =/  resp=json  (fall (de:json:html body.got) [%o ~])
+  =/  ans  (answer-of:orr resp)
+  ?:  ?=(%| -.ans)  (gen-record `dg 0 0 ~ ~ `p.ans secs.got | rev)
+  =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
+  ?~  parsed  (gen-record `dg 0 0 ~ usage.p.ans `'the answer was not JSON' secs.got | rev)
+  =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
+  =/  taken=(list @t)
+    %+  weld  (murn acts |=([* a=action:orr] ?.((is-open:orr a) ~ `title.a)))
+    (turn decided |=([* a=action:orr] title.a))
+  =/  v  (validate:orr u.parsed known taken schema max-actions.cfg)
+  =/  offered=@ud  (lent (ga:orr u.parsed 'actions'))
+  =/  todo=(list json)  acts.v
+  =/  filed=@ud  0
+  |-
+  ?~  todo
+    (gen-record `dg filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
+  =/  stamped=json  (fill-act-as:orr i.todo now 'generator')
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])])
+  $(todo t.todo, filed ?~(err +(filed) filed))
+::  +gen-record: what a pass did, for the page and the next pass. The
+::  digest is kept as text so the skip compares strings; a skip keeps
+::  the last real pass's digest.
+::
+++  gen-record
+  |=  $:  dg=(unit @ux)  filed=@ud  dropped=@ud  notes=(list @t)
+          usage=json  error=(unit @t)  secs=@ud  skipped=?  rev=json
+      ==
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  =/  keep=@t
+    ?:  skipped  (gs:orr last 'digest')
+    ?~(dg (gs:orr last 'digest') (scot %ux u.dg))
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['at' (en-time:orr now)]
+        ['rev' rev]
+        ['digest' s+keep]
+        ['skipped' b+skipped]
+        ['filed' (numb:enjs:format filed)]
+        ['dropped' (numb:enjs:format dropped)]
+        ['notes' a+(turn notes |=(n=@t `json`s+n))]
+        ['usage' usage]
+        ['error' ?~(error ~ s+u.error)]
+        ['seconds' (numb:enjs:format secs)]
+    ==
+  (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
+::  +ask-model: one POST to the model with the app's own ten minute
+::  timer. iris has no timeout: a timer win is status 0. Measured in
+::  docs/spikes/2026-09-19-iris-probe.md: a 259 second answer arrived whole.
+::
+++  ask-model
+  |=  [cfg=config:orr parts=(list @t)]
+  =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
+  ^-  form:m
+  =/  =request:http
+    :^  %'POST'  (cat 3 url.cfg '/chat/completions')
+      :~  ['content-type' 'application/json']
+          ['authorization' (cat 3 'Bearer ' api-key.cfg)]
+      ==
+    `(as-octs:mimes:html (en:json:html (chat-body:orr cfg parts)))
+  ;<  t0=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-request:io request)
+  ;<  ~  bind:m  (set-timer:io /model (add t0 ~m10))
+  ;<  res=(unit client-response:iris)  bind:m
+    |=  input:fiber:nexus
+    :+  ~  q.state
+    ?+  in  [%skip ~]
+        ~  [%wait ~]
+        [~ %veto *]  [%done ~]
+        [~ %poke * *]
+      ?:  =([/ %timer-wake] p.sage.u.in)
+        ?.(?=([%model *] !<(path q.sage.u.in)) [%skip ~] [%done ~])
+      ?.  =([/ %http-response] p.sage.u.in)  [%skip ~]
+      =/  resp=client-response:iris  !<(client-response:iris q.sage.u.in)
+      ?:(?=(%cancel -.resp) [%done ~] [%done `resp])
+    ==
+  ;<  ~  bind:m  (cancel-timer:io /model)
+  ;<  t1=@da  bind:m  get-time:io
+  =/  secs=@ud  (div (sub t1 t0) ~s1)
+  ?~  res  (pure:m [0 'no answer before the timer' secs])
+  ?.  ?=(%finished -.u.res)  (pure:m [0 'not finished' secs])
+  =/  body=@t  ?~(full-file.u.res '' q.data.u.full-file.u.res)
+  (pure:m [status-code.response-header.u.res body secs])
+::  +do-set-generator: merge the owner's generator settings over the
+::  stored ones. A blank or missing api_key keeps the stored key, so the
+::  page can save every other field without holding the secret. Settings
+::  are not model state: the beacon does not move.
+::
+++  do-set-generator
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-generator' 'doc: expected an object')
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  base=(map @t json)  ?:(?=([%o *] cur) p.cur ~)
+  =/  incoming=(map @t json)  p.doc
+  =?  incoming  =('' (gs:orr doc 'api_key'))  (~(del by incoming) 'api_key')
+  =/  merged=json  [%o (~(uni by base) incoming)]
+  ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
+  ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
+  (pure:m |)
 ::  +do-add-client: one minted key, refused when the id is taken or the
 ::  table is full. The row arrives hashed; the writer never sees a
 ::  secret. Keys are not model state, so no beacon bump.

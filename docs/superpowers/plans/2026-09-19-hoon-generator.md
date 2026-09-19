@@ -27,6 +27,8 @@
 
 ## File Structure
 
+> Executed 2026-09-19. One departure from the structure below, found in Task 1: the ball imports libraries with `/<` and clay with `/+`, and one file cannot say both, so the generator's arms live at the end of `code/lib/orrery.hoon` instead of a `generator.hoon` of their own. The tests in `tests/lib/generator.hoon` alias the library as `gen`. Everything else is as written.
+
 - Create `code/lib/generator.hoon`: pure. The system prompt as a cord, `phase`, `norm-words`, `same-title`, `line`, `build-parts`, `digest`, `chat-body`, `answer-of`, `parse-answer`, `validate`, `en-config`, `de-config`.
 - Create `tests/lib/generator.hoon`: unit tests for every arm above, on a fixture state built in the test file.
 - Modify `code/lib/orrery.hoon`: `is-closed` counts `cancelled`.

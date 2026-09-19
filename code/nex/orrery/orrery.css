@@ -31,10 +31,10 @@ tr.superseded td, tr.expired td, tr.future td { color: var(--muted); }
 button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); cursor: pointer; margin-right: .3rem; }
 button:hover { border-color: var(--amber); }
 button.danger:hover { border-color: var(--bad); color: var(--bad); }
-input:not([type]) { font: inherit; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 5px; }
-#mint .box { display: inline-block; margin-right: .5rem; white-space: nowrap; }
-#mint .box.wide { white-space: normal; }
-#mint .field { display: inline-block; margin-right: .8rem; }
+input:not([type]), input[type="password"] { font: inherit; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 5px; }
+#mint .box, #generator .box { display: inline-block; margin-right: .5rem; white-space: nowrap; }
+#mint .box.wide, #generator .box.wide { white-space: normal; }
+#mint .field, #generator .field { display: inline-block; margin-right: .8rem; }
 .token code { display: inline-block; padding: .3rem .5rem; font-size: 1.05em; user-select: all; word-break: break-all; }
 textarea { width: 100%; min-height: 14rem; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; }
 .actions li { margin-bottom: .5rem; }
@@ -57,8 +57,8 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
   tr.retracted td { text-decoration: none; }
   button { padding: .5rem .9rem; margin: 0 .3rem .3rem 0; }
   input, textarea { font-size: 16px; }
-  #mint .field { display: block; margin: 0 0 .5rem; }
-  #mint .field input { display: block; width: 100%; margin-top: .2rem; }
+  #mint .field, #generator .field { display: block; margin: 0 0 .5rem; }
+  #mint .field input, #generator .field input { display: block; width: 100%; margin-top: .2rem; }
   ul.actions { padding-left: 0; list-style: none; }
   .bodies { grid-template-columns: 1fr; }
 }

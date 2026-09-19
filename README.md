@@ -158,6 +158,8 @@ Two claims fired in the same instant both answer ok; the writer keeps the first,
 
 Every action carries its history: who proposed it, who approved it (you, or `policy`), who claimed it, and when. The audit question is answered by the action itself.
 
+The ship proposes on its own. With the generator on (the Generator card under Settings), every change to the state wakes a pass: the ship builds the prompt from what it holds, asks the model you named through `/sys/iris/`, keeps what the schema allows and files it as proposals signed `generator`. A pass is skipped while the prompt would be the one sent last, so a quiet day costs nothing; `POST /generate` runs one regardless. The key never leaves the ship and is never read back. `docs/spikes/2026-09-19-iris-probe.md` is why the ship can wait for a slow model, and `orrery-utils/generator` remains the bench and the dry-run harness.
+
 ### Where facts come from
 
 Every observation names its `source`, a kind and an opaque id such as the message it was read from, and its `by`, who asserted it. The text is never stored. Confidence (`conf`, 0 to 100) says how sure the asserter was.
@@ -166,7 +168,7 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 
 ### The page
 
-`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, keys with each key's scope, when it was made and last used, a revoke per key and a form that mints one and shows its token once, and settings with the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
+`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, keys with each key's scope, when it was made and last used, a revoke per key and a form that mints one and shows its token once, and settings with a Generator card (the model, the key written once and never shown, a run-now button and the last pass) above the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
 
 ### The vocabulary
 
@@ -299,6 +301,10 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /retract` | `{"id", "note"}` |
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |
+| `GET /generator` | the generator's settings, the key masked as `api_key_set`; owner only |
+| `PUT /generator` | merge settings; an empty or absent `api_key` keeps the stored one; owner only |
+| `GET /generator/last` | what the last pass did: filed, dropped, notes, usage, error, seconds |
+| `POST /generate` | run a pass now, whether or not anything changed; owner only |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |

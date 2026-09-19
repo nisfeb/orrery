@@ -430,6 +430,89 @@ code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
 check('the writer noted the merge last',
       code == 200 and dictish(last).get('op') == 'merge' and dictish(last).get('ok') is True, last)
 
+# ---- the on-ship generator: its settings ----
+code, d = curl('GET', API + '/generator')
+check('generator settings read', code == 200 and dictish(d).get('enabled') is False and 'api_key' not in dictish(d) and dictish(d).get('api_key_set') is False, (code, d))
+code, d = curl('PUT', API + '/generator', {'enabled': False, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-gate-secret', 'max_actions': 2})
+check('generator settings written', code == 200, (code, d))
+time.sleep(0.5)
+code, d = curl('GET', API + '/generator')
+check('the key is never read back', code == 200 and 'api_key' not in dictish(d) and dictish(d).get('api_key_set') is True and dictish(d).get('model') == 'moonshotai/kimi-k3' and dictish(d).get('max_actions') == 2, (code, d))
+curl('PUT', API + '/generator', {'model': 'deepseek/deepseek-v4.1-flash'})
+time.sleep(0.5)
+code, d = curl('GET', API + '/generator')
+check('a write without the key keeps it', dictish(d).get('api_key_set') is True and dictish(d).get('model') == 'deepseek/deepseek-v4.1-flash', d)
+code, d = curl('GET', API + '/generator', jar=None)
+check('the settings are the owner\'s', code == 403, (code, d))
+code, d = curl('GET', API + '/generator/last')
+check('the last pass reads as an object', code == 200 and isinstance(d, dict), (code, d))
+
+# ---- the on-ship generator: a pass against a stub model ----
+import http.server, socketserver
+STUB_PORT = 8099
+CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
+    {'kind': 'task', 'title': 'Ask the shop for a diagnosis estimate', 'about': ['thing/subaru'], 'why': 'gate'},
+    {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']},
+    {'kind': 'task', 'title': 'Buy a new car', 'about': ['thing/tesla']}], 'notes': ['stub note']})}}],
+    'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+seen = []
+class Stub(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get('content-length', 0))
+        seen.append((dict(self.headers), json.loads(self.rfile.read(n))))
+        out = json.dumps(CANNED).encode()
+        self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
+    def log_message(self, *a): pass
+socketserver.TCPServer.allow_reuse_address = True
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+curl('POST', API + '/observe', {'bodies': [{'id': 'thing/subaru', 'name': 'the Subaru'}], 'observations': []})
+curl('POST', API + '/act', {'kind': 'task', 'title': 'Call the shop about the Subaru', 'about': ['thing/subaru']})
+time.sleep(1)
+curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5})
+time.sleep(1)
+code, d = curl('POST', API + '/generate')
+check('a forced pass answers ok', code == 200 and dictish(d).get('ok') is True, (code, d))
+deadline = time.time() + 90
+last = {}
+while time.time() < deadline:
+    code, last = curl('GET', API + '/generator/last')
+    if isinstance(last, dict) and last.get('at') and not last.get('skipped'):
+        break
+    time.sleep(2)
+check('the pass wrote its record', isinstance(last, dict) and last.get('filed') == 1 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error'), last)
+hdrs, body = seen[0] if seen else ({}, {})
+check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
+check('the key went in the header, not the body', hdrs.get('Authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('Authorization'))
+code, acts = curl('GET', API + '/actions?status=open')
+mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') == 'Ask the shop for a diagnosis estimate'] if isinstance(acts, list) else []
+check('the surviving proposal is filed by generator with its why', len(mine) == 1 and mine[0]['payload'].get('why') == 'gate', mine)
+# filing a proposal is itself a change, so one more pass follows on its
+# own and finds nothing new to file; wait for the model calls to settle
+deadline = time.time() + 60
+while time.time() < deadline and len(seen) < 2:
+    time.sleep(2)
+n = len(seen)
+curl('POST', API + '/generate')
+deadline = time.time() + 60
+while time.time() < deadline and len(seen) == n:
+    time.sleep(2)
+check('a forced pass runs the model again', len(seen) == n + 1, (n, len(seen)))
+n = len(seen)
+curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
+deadline = time.time() + 90
+while time.time() < deadline and len(seen) == n:
+    time.sleep(2)
+check('a change wakes the generator on its own', len(seen) == n + 1, (n, len(seen)))
+n = len(seen)
+curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/subaru', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
+time.sleep(30)
+check('a repeat that changes nothing the model sees does not run it', len(seen) == n, (n, len(seen)))
+for a in mine:
+    curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate'})
+curl('PUT', API + '/generator', {'enabled': False})
+srv.shutdown()
+
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
 sys.exit(1 if fails else 0)
