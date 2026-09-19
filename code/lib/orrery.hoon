@@ -1717,7 +1717,8 @@
   The time now, and the owner's timezone.
 
   What to propose.
-  Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a preparation for something upcoming, a follow-up on something that stalled. An open situation with nothing being done about it, an activity whose next occurrence needs something, a person whose status calls for a reply, a delivery that never arrived.
+  Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a follow-up on something that stalled. An open situation with nothing being done about it, a person whose status calls for a reply, a delivery that never arrived.
+  An event on the calendar is already known: never propose a task for attending it, and never restate it as a todo. Propose what an event needs beyond showing up, and only when the state gives a reason: a birthday with no gift task, an appointment with a form to bring, a rehearsal with no ride. For the first occurrence of an activity (one with no last), propose one task whose payload "notes" carries a checklist of the equipment and paperwork such an activity usually calls for: what a first sailing session, ballet class or rehearsal needs. When two events are close together or overlap, propose one task to sort out the overlap, naming both. A situation that is over or closed needs nothing.
   Few and good. Zero is a fine answer. Never propose more than the limit given.
   An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short; a home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
   "about" names the bodies the action concerns, by id, at most a few. "due" is ISO 8601 UTC, only when the timing matters.
@@ -1729,19 +1730,44 @@
    "notes": ["anything you noticed that is not an action: a fact that looks wrong, a duplicate, a missing piece"]}
   "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional and short.
   '''
+::  +attend-words: what a title adds when it only says to go to an event
+::
+++  attend-words
+  ^-  (set @t)
+  (sy ~['go' 'to' 'the' 'a' 'an' 'at' 'on' 'for' 'of' 'attend' 'be' 's' 'remember' 'show' 'up' 'dont' 'forget' 'today' 'tomorrow'])
+::  +restates: a title that is a todo for an event: every word of the
+::  event's name, and nothing else but attendance words
+::
+++  restates
+  |=  [title=@t event=@t]
+  ^-  ?
+  =/  kt=(set @t)  (sy (norm-words title))
+  =/  ke=(set @t)  (sy (norm-words event))
+  ?:  =(~ ke)  |
+  ?.  =(~ (~(dif in ke) kt))  |
+  =(~ (~(dif in (~(dif in kt) ke)) attend-words))
+::  +find-first: the first element a gate accepts
+::
+++  find-first
+  |=  [xs=(list @t) f=$-(@t ?)]
+  ^-  (unit @t)
+  ?~  xs  ~
+  ?:((f i.xs) `i.xs $(xs t.xs))
 ::  +cass-cord: a cord lowercased
 ::
 ++  cass-cord  |=(t=@t ^-(@t (crip (cass (trip t)))))
 ::  +validate: what the answer keeps. A kind the schema lists (task and
 ::  note when it lists none), a title, not a rewording of anything open
-::  or decided, every about body known, every required payload key
-::  present, a due that parses, the why in the payload for the page; at
+::  or decided, not a todo for an event the calendar already holds (a
+::  title that reads as an open situation's or an activity's name),
+::  every about body known, every required payload key present, a due
+::  that parses, the why in the payload for the page; at
 ::  most limit, looking at twice that. Notes name what was dropped and
 ::  carry the model's own notes. Each kept action is the JSON an act op
 ::  takes, before fill-act-as stamps proposed and by.
 ::
 ++  validate
-  |=  [answer=json known=(set @t) taken=(list @t) schema=json limit=@ud]
+  |=  [answer=json known=(set @t) taken=(list @t) events=(list @t) schema=json limit=@ud]
   ^-  [acts=(list json) notes=(list @t)]
   =/  kinds=(set @t)
     =/  a=(list @t)  (strings (ga schema 'actions'))
@@ -1764,6 +1790,9 @@
     $(todo t.todo, notes [(rap 3 'dropped: kind ' kind ' or no title (' (end [3 40] title) ')' ~) notes])
   ?:  (lien taken |=(t=@t (same-title title t)))
     $(todo t.todo, notes [(cat 3 'dropped as already open or decided: ' title) notes])
+  =/  restated=(unit @t)  (find-first events |=(e=@t (restates title e)))
+  ?^  restated
+    $(todo t.todo, notes [(rap 3 'dropped as a todo for an event on the calendar: ' title ' (' u.restated ')' ~) notes])
   =/  about=(list @t)  (turn (strings (ga a 'about')) cass-cord)
   =/  bad=(list @t)  (skip about |=(b=@t (~(has in known) b)))
   ?^  bad

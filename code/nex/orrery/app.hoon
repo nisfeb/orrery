@@ -2189,7 +2189,10 @@
   =/  taken=(list @t)
     %+  weld  (murn acts |=([* a=action:orr] ?.((is-open:orr a) ~ `title.a)))
     (turn decided |=([* a=action:orr] title.a))
-  =/  v  (validate:orr u.parsed known taken schema max-actions.cfg)
+  =/  events=(list @t)
+    %+  murn  all
+    |=(l=loaded:orr ?:(?=(?(%situation %activity) kind.body.l) `name.body.l ~))
+  =/  v  (validate:orr u.parsed known taken events schema max-actions.cfg)
   =/  offered=@ud  (lent (ga:orr u.parsed 'actions'))
   =/  todo=(list json)  acts.v
   =/  filed=@ud  0

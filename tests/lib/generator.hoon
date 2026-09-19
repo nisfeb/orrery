@@ -179,7 +179,8 @@
       {"kind": "home", "title": "Porch light on", "payload": {"service": "light.turn_on", "entity_id": "light.porch"}}
     ], "notes": ["the breakdown situation has no ended"]}
     '''
-  =/  got  (validate:gen answer known taken schema.f 5)
+  =/  events=(list @t)  ~['Ballet' 'Parent meeting' 'The breakdown']
+  =/  got  (validate:gen answer known taken events schema.f 5)
   =/  titles=(list @t)  (turn acts.got |=(a=json (gs:orr a 'title')))
   =/  joined=@t  (join-cords:gen ' ' notes.got)
   =/  nine=json  (jo '{"actions":[{"kind":"task","title":"Task 1"},{"kind":"task","title":"Task 2"},{"kind":"task","title":"Task 3"},{"kind":"task","title":"Task 4"}]}')
@@ -194,6 +195,35 @@
     (expect !>((has-sub joined 'kind email')))
     (expect !>((has-sub joined 'thing/tesla')))
     (expect !>((has-sub joined 'model note: the breakdown situation has no ended')))
-    (expect-eq !>(3) !>((lent acts:(validate:gen nine known ~ schema.f 3))))
+    (expect-eq !>(3) !>((lent acts:(validate:gen nine known ~ ~ schema.f 3))))
+  ==
+++  test-restates
+  ;:  weld
+    (expect !>((restates:gen 'Go to Ballet' 'Ballet')))
+    (expect !>((restates:gen 'Attend the Nutcracker rehearsal' 'Nutcracker rehearsal')))
+    (expect !>(!(restates:gen 'Plan Magnus\'s birthday' 'Magnus Birthday')))
+    (expect !>(!(restates:gen 'Pack for the day at Grandma and Grandaddy\'s' 'Grandma and Grandaddy\'s')))
+    (expect !>(!(restates:gen 'Ballet' '')))
+  ==
+++  test-validate-drops-event-todos
+  =/  f  fixture
+  =/  known=(set @t)  (sy (turn all.f |=(l=loaded:orr id.l)))
+  =/  events=(list @t)  ~['Ballet' 'Nutcracker rehearsal' 'Parent meeting']
+  =/  answer=json
+    %-  jo
+    '''
+    {"actions": [
+      {"kind": "task", "title": "Ballet", "about": ["activity/ballet"]},
+      {"kind": "task", "title": "Go to the Nutcracker rehearsal"},
+      {"kind": "task", "title": "Pack ballet shoes and tights for the first class", "about": ["activity/ballet"], "payload": {"notes": "shoes, tights, hair ties"}},
+      {"kind": "task", "title": "Sort out the overlap between ballet and the parent meeting", "about": ["activity/ballet", "situation/2026-12-05-meeting"]}
+    ]}
+    '''
+  =/  got  (validate:gen answer known ~ events schema.f 5)
+  =/  joined=@t  (join-cords:gen ' ' notes.got)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['Pack ballet shoes and tights for the first class' 'Sort out the overlap between ballet and the parent meeting']) !>(`(list @t)`(turn acts.got |=(a=json (gs:orr a 'title')))))
+    (expect !>((has-sub joined 'dropped as a todo for an event on the calendar: Ballet (Ballet)')))
+    (expect !>((has-sub joined 'Go to the Nutcracker rehearsal (Nutcracker rehearsal)')))
   ==
 --
