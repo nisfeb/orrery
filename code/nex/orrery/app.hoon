@@ -161,13 +161,19 @@
         ;<  ~  bind:m  (rise-wait:io prod "%orrery generator: failed")
         |-
         ;<  [* =sage:tarball]  bind:m  take-poke-from:io
-        =/  jon=json  ?.(=([/ %json] p.sage) ~ (fall (mole |.(!<(json q.sage))) ~))
-        =/  force=?  ?=([%b %.y] (gj:orr jon 'force'))
+        ::  a settle timer that fired after its pass began is not a wake
+        ?:  =([/ %timer-wake] p.sage)  $
+        =/  force=?  (force-of sage)
+        ::  off, and not forced: no settle, so a burst of writes drains
+        ::  at once instead of twenty seconds a pair
+        ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
+        ?.  |(force enabled:(de-config:orr cfg-json))  $
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /settle (add now ~s20))
-        ;<  *  bind:m  take-poke-from:io
+        ::  the poke that ends the settle may itself be a run-now
+        ;<  [* second=sage:tarball]  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /settle)
-        ;<  ~  bind:m  (gen-pass force)
+        ;<  ~  bind:m  (gen-pass |(force (force-of second)))
         $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
@@ -2120,6 +2126,14 @@
   (pure:m [& next])
 ::  ==  the writer: keys
 ::
+::  +force-of: whether a poke to the generator asks for a pass now
+::
+++  force-of
+  |=  =sage:tarball
+  ^-  ?
+  ?.  =([/ %json] p.sage)  |
+  =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
+  ?=([%b %.y] (gj:orr jon 'force'))
 ::  +poke-gen: wake the generator fiber, softly: a jailed install has
 ::  no fiber to wake, and the writer must never fail for it
 ::
@@ -2179,12 +2193,19 @@
   =/  offered=@ud  (lent (ga:orr u.parsed 'actions'))
   =/  todo=(list json)  acts.v
   =/  filed=@ud  0
+  =|  sent=(list [id=@ta a=action:orr])
   |-
   ?~  todo
-    (gen-record `dg filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
+    ::  the filings change the open actions, so the writer wakes this
+    ::  fiber again; the digest recorded is of the prompt as it will read
+    ::  with them open, so that wake finds nothing new and asks nothing
+    =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg)
+    (gen-record `(digest:orr after) filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
   =/  stamped=json  (fill-act-as:orr i.todo now 'generator')
   ;<  err=(unit tang)  bind:m
     (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])])
+  =/  parsed-act  (de-action:orr stamped now 'generator')
+  =?  sent  &(?=(~ err) ?=(%& -.parsed-act))  [[(act-id:orr p.parsed-act) p.parsed-act] sent]
   $(todo t.todo, filed ?~(err +(filed) filed))
 ::  +gen-record: what a pass did, for the page and the next pass. The
 ::  digest is kept as text so the skip compares strings; a skip keeps
@@ -2232,26 +2253,27 @@
   ;<  t0=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-request:io request)
   ;<  ~  bind:m  (set-timer:io /model (add t0 ~m10))
-  ;<  res=(unit client-response:iris)  bind:m
+  ;<  res=[why=@t r=(unit client-response:iris)]  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
     ?+  in  [%skip ~]
         ~  [%wait ~]
-        [~ %veto *]  [%done ~]
+        [~ %veto *]  [%done 'the iris road is refused: approve it on the permits page' ~]
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(?=([%model *] !<(path q.sage.u.in)) [%skip ~] [%done ~])
+        ?.(?=([%model *] !<(path q.sage.u.in)) [%skip ~] [%done 'no answer before the ten minute timer' ~])
       ?.  =([/ %http-response] p.sage.u.in)  [%skip ~]
       =/  resp=client-response:iris  !<(client-response:iris q.sage.u.in)
-      ?:(?=(%cancel -.resp) [%done ~] [%done `resp])
+      ?:(?=(%cancel -.resp) [%done 'the request was cancelled' ~] [%done '' `resp])
     ==
   ;<  ~  bind:m  (cancel-timer:io /model)
   ;<  t1=@da  bind:m  get-time:io
   =/  secs=@ud  (div (sub t1 t0) ~s1)
-  ?~  res  (pure:m [0 'no answer before the timer' secs])
-  ?.  ?=(%finished -.u.res)  (pure:m [0 'not finished' secs])
-  =/  body=@t  ?~(full-file.u.res '' q.data.u.full-file.u.res)
-  (pure:m [status-code.response-header.u.res body secs])
+  ?~  r.res  (pure:m [0 why.res secs])
+  =/  resp=client-response:iris  u.r.res
+  ?.  ?=(%finished -.resp)  (pure:m [0 'not finished' secs])
+  =/  body=@t  ?~(full-file.resp '' q.data.u.full-file.resp)
+  (pure:m [status-code.response-header.resp body secs])
 ::  +do-set-generator: merge the owner's generator settings over the
 ::  stored ones. A blank or missing api_key keeps the stored key, so the
 ::  page can save every other field without holding the secret; a JSON
