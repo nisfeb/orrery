@@ -229,8 +229,26 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) +
+  // the reconcile card: what the last run of the on-ship passes did, and
+  // a run-now button; the settings themselves live in policy.reconcile
+  function reconcileCard(last) {
+    last = last || {};
+    var out = '<div class="card"><h2>Reconcile</h2><p class="muted">Twice a day the ship turns repeated situations into activities, ' +
+      'reads people out of titles, proposes merges of bodies that name one person, runs the merges you approved, ' +
+      'moves future facts to the schedule and closes what is over. Settings: <code>reconcile</code> in policy.json ' +
+      '(min_occurrences, stale_days, prune_days).</p><p><button data-reconcile="1">run now</button></p>';
+    if (last.at) {
+      var acts = last.activities || [];
+      out += '<p class="muted">Last run ' + fmtTime(last.at) + ': ' + (last.times || 0) + ' time rows fixed, ' +
+        acts.length + ' activit' + (acts.length === 1 ? 'y' : 'ies') + (acts.length ? ' (' + esc(acts.join(', ')) + ')' : '') + ', ' +
+        (last.people_made || 0) + ' people made, ' + (last.participants || 0) + ' participants added, ' +
+        (last.proposed || 0) + ' merges proposed, ' + (last.merged || 0) + ' merged, ' +
+        (last.retired || 0) + ' retired, ' + (last.pruned || 0) + ' pruned.</p>';
+    }
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last, reconcile) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -349,7 +367,7 @@
     function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
@@ -404,6 +422,8 @@
       post('/generator', generatorForm(), 'PUT').then(function () { say('generator saved'); later(); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.generate) {
       post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.reconcile) {
+      post('/reconcile', {}).then(function () { say('reconcile started; the last run line updates when it ends'); setTimeout(refresh, 15000); }).catch(function (e) { say(e.message, true); });
     }
   });
   // the generator form as the API takes it; a blank key is left out so

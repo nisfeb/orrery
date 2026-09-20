@@ -132,4 +132,8 @@ ok('the limits are on the card', genSettings.includes('name="cooldown_minutes" v
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
 ok('the schema and policy cards still follow', genSettings.indexOf('<h2>Generator</h2>') < genSettings.indexOf('<h2>schema.json</h2>') && genSettings.includes('id="policy"'));
+const recSettings = render.settings({ kinds: {} }, {}, gen, genLast, { at: '2026-09-20T01:00:00Z', times: 2, activities: ['activity/ballet'], people_made: 1, participants: 3, proposed: 1, merged: 0, retired: 20, pruned: 0 });
+ok('the reconcile card follows the generator with a run button and the last run', recSettings.indexOf('<h2>Generator</h2>') < recSettings.indexOf('<h2>Reconcile</h2>') && recSettings.indexOf('<h2>Reconcile</h2>') < recSettings.indexOf('<h2>schema.json</h2>')
+  && recSettings.includes('data-reconcile="1"') && recSettings.includes('1 activity (activity/ballet)') && recSettings.includes('20 retired'));
+ok('a reconcile that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}).includes('Last run'));
 console.log('ALL OK (' + n + ' checks)');

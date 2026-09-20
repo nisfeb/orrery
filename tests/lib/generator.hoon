@@ -295,7 +295,8 @@
     (expect !>(!(is-trip:orr 'situation/2026-09-01-triple')))
   ==
 ++  test-retire-op
-  =/  op=json  (retire-op:orr ~[['situation/2026-09-10-dentist' ~2026.9.10..15.00.00 'ended']])
+  =/  ops=(list json)  (retire-ops:orr ~[['situation/2026-09-10-dentist' ~2026.9.10..15.00.00 'ended']])
+  =/  op=json  (snag 0 ops)
   =/  rows=(list json)  (ga:orr op 'observations')
   ;:  weld
     (expect-eq !>('observe') !>((gs:orr op 'op')))
@@ -303,5 +304,184 @@
     (expect-eq !>('closed') !>((gs:orr (snag 0 rows) 'value')))
     (expect-eq !>('2026-09-10T15:00:00Z') !>((gs:orr (snag 0 rows) 'at')))
     (expect-eq !>('retire/situation/2026-09-10-dentist') !>((gs:orr (gj:orr (snag 0 rows) 'source') 'id')))
+  ==
+::  ==  reconcile
+::
+++  mkb
+  |=  [id=@t kind=@tas name=@t als=(list @t) kvs=(list [k=@t v=json]) at=@da]
+  ^-  loaded:orr
+  :+  id  [kind name (sy als) at ~]
+  %+  turn  kvs
+  |=  [k=@t v=json]
+  ^-  row:orr
+  [(rap 3 id '/' k ~) [id k v at ~ 100 ['test' 'fx'] 'test' at | '']]
+++  ops-of  |=(ops=(list json) ^-((list @t) (turn ops |=(o=json (gs:orr o 'op')))))
+++  test-normalize-title
+  ;:  weld
+    (expect-eq !>('pottery') !>((normalize-title:orr 'Reminder: Pottery @ Thu May 14, 6:00pm')))
+    (expect-eq !>('robin pottery/wheel') !>((normalize-title:orr 'Robin- Pottery/Wheel')))
+    (expect-eq !>('trip') !>((normalize-title:orr 'Fwd: Re: Trip 2026-09-02')))
+    (expect-eq !>('dinner') !>((normalize-title:orr 'Dinner 6 pm Friday 9/12')))
+    (expect-eq !>('ballet') !>((normalize-title:orr 'Ballet Sep 12, 2026')))
+    (expect-eq !>('trip starting') !>((strict-key:orr 'Reminder:  Trip   Starting')))
+    (expect-eq !>('theo-juno-opti-sail') !>((slug:orr 'Theo & Juno: Opti Sail!')))
+    (expect-eq !>('x') !>((slug:orr '---')))
+  ==
+++  test-same-person
+  ;:  weld
+    (expect !>((same-person:orr 'dana' 'Dana Quill')))
+    (expect !>(!(same-person:orr 'dana' 'daniel quill')))
+    (expect !>(!(same-person:orr 'wife' 'dana')))
+    (expect !>((same-person:orr 'Dana Quill' 'Quill, Dana')))
+    (expect !>((person-named:orr [%org 'Dana Quill' ~ now ~])))
+    (expect !>(!(person-named:orr [%org 'Quill Bank' ~ now ~])))
+    (expect !>(!(person-named:orr [%org 'Dana' ~ now ~])))
+    (expect !>((person-named:orr [%person 'x' ~ now ~])))
+  ==
+++  test-names-in
+  ;:  weld
+    (expect-eq !>(`[(list @t) (unit @t)]`[~['Mira'] ~]) !>((names-in:orr 'Mira- Ballet/Tap')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~['Theo' 'Juno'] ~]) !>((names-in:orr 'Theo and Juno- Opti Sail')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~['Felix'] ~]) !>((names-in:orr 'Felix\'s birthday')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~['Felix'] ~]) !>((names-in:orr 'Felix Birthday party')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~ `'Felix']) !>((names-in:orr 'Felix Fencing Lesson')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'trip to Boston')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'FELIX x')))
+  ==
+++  test-cal-uid
+  ;:  weld
+    %+  expect-eq
+      !>(`(unit @t)`[~ 'cal-abc-12345678-1234-1234-1234-123456789abc'])
+      !>((cal-uid:orr 'situation/cal-abc-12345678-1234-1234-1234-123456789abc-20260829t100000'))
+    (expect-eq !>(`(unit @t)`[~ 'cal-12345678-1234-1234-1234-123456789abc']) !>((cal-uid:orr 'situation/cal-12345678-1234-1234-1234-123456789abc')))
+    (expect-eq !>(*(unit @t)) !>((cal-uid:orr 'situation/2026-09-01-dentist')))
+    (expect-eq !>('Ballet') !>((common-title:orr ~['Ballet' 'Ballet Class' 'Ballet' ''])))
+    (expect-eq !>('Tap') !>((common-title:orr ~['Ballet' 'Tap'])))
+  ==
+++  test-plan-times
+  =/  ahead=@da  (add now ~d3)
+  =/  all=(list loaded:orr)
+    :~  (mkb 'situation/2026-09-21-dentist' %situation 'Dentist' ~ ~[['started' s+(en-iso:orr ahead)] ['status' s+'upcoming']] now)
+        (mkb 'activity/ballet' %activity 'Ballet' ~ ~[['next' s+'2026-09-01T15:00:00Z'] ['last' s+(en-iso:orr ahead)]] now)
+        (mkb 'situation/2026-09-01-ok' %situation 'Ok' ~ ~[['ended' s+'2026-09-01T15:00:00Z'] ['status' s+'closed']] now)
+    ==
+  =/  ops=(list json)  (plan-times:orr all now)
+  =/  writes=(list json)  (ga:orr (rear ops) 'observations')
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['retract' 'retract' 'retract' 'observe']) !>((ops-of ops)))
+    (expect-eq !>('situation/2026-09-21-dentist/started') !>((gs:orr (snag 0 ops) 'id')))
+    (expect-eq !>(2) !>((lent writes)))
+    (expect-eq !>('starts') !>((gs:orr (snag 0 writes) 'attr')))
+    (expect-eq !>((en-iso:orr now)) !>((gs:orr (snag 0 writes) 'at')))
+    (expect-eq !>('next') !>((gs:orr (snag 1 writes) 'attr')))
+    (expect-eq !>((en-iso:orr ahead)) !>((gs:orr (snag 1 writes) 'value')))
+    (expect-eq !>((en-iso:orr (add ahead ~d1))) !>((gs:orr (snag 1 writes) 'until')))
+  ==
+++  test-plan-activities
+  =/  ahead=@da  (add now ~d7)
+  =/  loc=[k=@t v=json]  ['location' s+'the studio']
+  =/  all=(list loaded:orr)
+    :~  (mkb 'situation/2026-09-04-ballet' %situation 'Ballet' ~ ~[['started' s+'2026-09-04T15:00:00Z'] loc] now)
+        (mkb 'situation/2026-09-11-ballet' %situation 'Reminder: Ballet' ~ ~[['started' s+'2026-09-11T15:00:00Z'] ['participants' (pairs:enjs:format ~[['ref' s+'person/mira']])]] now)
+        (mkb 'situation/2026-09-25-ballet' %situation 'Ballet' ~ ~[['started' s+(en-iso:orr ahead)]] now)
+        (mkb 'situation/2026-09-05-tap' %situation 'Tap' ~ ~ now)
+        (mkb 'situation/2026-09-01-trip' %situation 'Trip' ~ ~ now)
+    ==
+  =/  got  (plan-activities:orr all (sy ~['participants']) now 3)
+  =/  first=json  (snag 0 ops.got)
+  =/  bodies=(list json)  (ga:orr first 'bodies')
+  =/  rows=(list json)  (ga:orr first 'observations')
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['activity/ballet']) !>(`(list @t)`made.got))
+    (expect-eq !>(`(list @t)`~['observe' 'delete-body' 'delete-body' 'delete-body']) !>((ops-of ops.got)))
+    (expect-eq !>('Ballet') !>((gs:orr (snag 0 bodies) 'name')))
+    (expect-eq !>(`(list @t)`~['Reminder: Ballet']) !>((strings:orr (ga:orr (snag 0 bodies) 'aliases'))))
+    %+  expect-eq
+      !>(`(list @t)`~['status' 'last' 'last' 'last' 'next' 'location' 'participants'])
+      !>((turn rows |=(r=json (gs:orr r 'attr'))))
+    (expect-eq !>('2026-09-04T15:00:00Z') !>((gs:orr (snag 0 rows) 'at')))
+    (expect-eq !>((en-iso:orr ahead)) !>((gs:orr (snag 4 rows) 'value')))
+    (expect-eq !>('situation/2026-09-04-ballet') !>((gs:orr (snag 1 ops.got) 'id')))
+    ::  once the activity exists, no body rides along
+    (expect-eq !>(0) !>((lent (ga:orr (snag 0 ops:(plan-activities:orr [(mkb 'activity/ballet' %activity 'Ballet' ~ ~ now) all] ~ now 3)) 'bodies'))))
+    ::  two occurrences are not an activity
+    (expect-eq !>(0) !>((lent ops:(plan-activities:orr all ~ now 4))))
+  ==
+++  test-plan-participants
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ now)
+        (mkb 'activity/ballet' %activity 'Mira- Ballet/Tap' ~ ~[['participants' (pairs:enjs:format ~[['ref' s+'person/mira-quill']])]] now)
+        (mkb 'situation/2026-10-01-felix-birthday' %situation 'Felix Birthday' ~ ~ now)
+        (mkb 'situation/2026-10-02-felix-fencing' %situation 'Felix Fencing Lesson' ~ ~ now)
+        (mkb 'situation/2026-10-03-trip' %situation 'Trip to Boston' ~ ~ now)
+    ==
+  =/  got  (plan-participants:orr all (sy ~['participants']) now)
+  =/  op=json  (snag 0 ops.got)
+  ;:  weld
+    (expect-eq !>(1) !>(made.got))
+    (expect-eq !>(2) !>(rows.got))
+    (expect-eq !>('person/felix') !>((gs:orr (snag 0 (ga:orr op 'bodies')) 'id')))
+    %+  expect-eq
+      !>(`(list @t)`~['situation/2026-10-01-felix-birthday' 'situation/2026-10-02-felix-fencing'])
+      !>((turn (ga:orr op 'observations') |=(r=json (gs:orr r 'subject'))))
+    (expect-eq !>('person/felix') !>((gs:orr (gj:orr (snag 1 (ga:orr op 'observations')) 'value') 'ref')))
+  ==
+++  test-plan-people
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~ ~[['email' s+'Me@x.org']] now)
+        (mkb 'person/dana' %person 'dana' ~ ~ (sub now ~d9))
+        (mkb 'org/dana-quill' %org 'Dana Quill' ~ ~ now)
+        (mkb 'person/d-quill' %person 'D. Quill' ~ ~[['email' s+'me@x.org']] now)
+        (mkb 'org/quill-bank' %org 'Quill Bank' ~ ~ now)
+    ==
+  =/  got  (plan-people:orr all ~ now)
+  ;:  weld
+    (expect-eq !>(2) !>((lent got)))
+    (expect-eq !>(`[@t @t @t]`['person/d-quill' 'person/me' 'same me@x.org']) !>((snag 0 got)))
+    (expect-eq !>(`[@t @t @t]`['org/dana-quill' 'person/dana' 'the names match: dana and Dana Quill']) !>((snag 1 got)))
+  ==
+++  test-people-ops
+  =/  pay
+    |=  [f=@t i=@t]
+    ^-  json
+    (pairs:enjs:format ~[['from' s+f] ['into' s+i]])
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' [%merge 'Merge org/a into person/a' (pay 'org/a' 'person/a') ~ ~ 'reconcile' now %dismissed 'no' ~]]
+        ['a2' [%merge 'Merge org/b into person/b' (pay 'org/b' 'person/b') ~ ~ 'reconcile' now %done '' ~]]
+        ['a3' [%merge 'Merge org/c into person/c' (pay 'org/c' 'person/c') ~ ~ 'reconcile' now %proposed '' ~]]
+        ['a4' [%merge 'Merge org/gone into person/x' (pay 'org/gone' 'person/x') ~ ~ 'reconcile' now %proposed '' ~]]
+    ==
+  =/  props=(list [from=@t into=@t why=@t])
+    :~  ['org/a' 'person/a' 'names']
+        ['org/b' 'person/b' 'names']
+        ['org/c' 'person/c' 'names']
+        ['org/d' 'person/d' 'names']
+    ==
+  =/  all=(list loaded:orr)
+    %+  turn  ~['org/a' 'person/a' 'org/b' 'person/b' 'org/c' 'person/c' 'org/d' 'person/d' 'person/x']
+    |=(id=@t (mkb id ?:(=('org/' (end [3 4] id)) %org %person) id ~ ~ now))
+  =/  got  (people-ops:orr props acts now)
+  =/  full  (people-pass:orr all acts ~ now)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['merge' 'act']) !>((ops-of ops.got)))
+    (expect-eq !>(1) !>(proposed.got))
+    (expect-eq !>('org/b') !>((gs:orr (snag 0 ops.got) 'from')))
+    (expect-eq !>('Merge org/d into person/d') !>((gs:orr (gj:orr (snag 1 ops.got) 'action') 'title')))
+    (expect-eq !>('reconcile') !>((gs:orr (gj:orr (snag 1 ops.got) 'action') 'by')))
+    ::  the fixture's bodies are named by id, so nothing matches: only the stale dismissal
+    (expect-eq !>(`(list @t)`~['set-action']) !>((ops-of ops.full)))
+    (expect-eq !>('a4') !>((gs:orr (snag 0 ops.full) 'id')))
+    (expect-eq !>(`(list [@ta @t @t])`~[['a2' 'org/b' 'person/b']]) !>((approved-merges:orr [['a2' [%merge 'x' (pay 'org/b' 'person/b') ~ ~ 'u' now %approved '' ~]] acts])))
+  ==
+++  test-plan-prune
+  =/  old=@da  (sub now ~d100)
+  =/  all=(list loaded:orr)
+    :~  (mkb 'situation/2026-06-01-old' %situation 'Old' ~ ~[['ended' s+(en-iso:orr old)] ['status' s+'closed']] old)
+        (mkb 'situation/2026-09-10-recent' %situation 'Recent' ~ ~[['ended' s+'2026-09-10T15:00:00Z'] ['status' s+'closed']] now)
+        (mkb 'situation/2026-06-01-open' %situation 'Open' ~ ~[['ended' s+(en-iso:orr old)]] old)
+    ==
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['situation/2026-06-01-old']) !>(`(list @t)`(plan-prune:orr all ~ now 90)))
+    (expect-eq !>(`(list @t)`~) !>(`(list @t)`(plan-prune:orr all ~ now 0)))
   ==
 --

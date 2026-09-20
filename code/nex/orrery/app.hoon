@@ -90,7 +90,10 @@
           [%fall %& [/ %'generator.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
           [%fall %& [/ %'generator-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'gen.sig'] [[/ %sig] ~]]
-          [%fall %& [/ %'retire.sig'] [[/ %sig] ~]]
+          ::  reconcile: the passes of orrery-utils' reconcile.py on the
+          ::  ship, twice a day; what the last run did
+          [%fall %& [/ %'reconcile.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'reconcile-last.json'] [[/ %json] [%o ~]]]
       ==
     ::
     ++  on-file
@@ -187,15 +190,16 @@
         ::  meanwhile become one pass then
         ;<  ~  bind:m  ?~(again (pure:m ~) (set-timer:io /cooldown u.again))
         $
-          ::  the retirer: at rise, twice a day, and on POST /api/retire,
-          ::  close the situations that are over (reconcile's retire pass,
-          ::  moved on-ship 2026-09-19). Nothing here writes: the rows go
-          ::  to the writer as one observe op. It is never poked by the
-          ::  writer.
-          [~ %'retire.sig']
-        ;<  ~  bind:m  (rise-wait:io prod "%orrery retire: failed")
+          ::  reconcile: at rise, twice a day, and on POST /api/reconcile,
+          ::  the passes of orrery-utils' reconcile.py (times, activities,
+          ::  participants, people, the approved merges, retire, prune),
+          ::  moved on-ship 2026-09-20. Nothing here writes: every change
+          ::  goes to the writer as an op. It is never poked by the writer.
+          [~ %'reconcile.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery reconcile: failed")
+        ;<  *  bind:m  (keep:io /rec (rf 0 /beacon %rev) ~)
         |-
-        ;<  ~  bind:m  retire-pass
+        ;<  ~  bind:m  reconcile-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /tick (add now ~h12))
         ;<  *  bind:m  take-poke-from:io
@@ -656,7 +660,8 @@
   ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))        (own (serve-set-doc eyre-id 'set-generator' jon))
   ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))  (own (serve-doc eyre-id %'generator-last.json'))
   ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (own (serve-generate eyre-id))
-  ?:  &(=('POST' meth) ?=([%api %retire ~] suffix))         (own (serve-retire eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %reconcile ~] suffix))      (own (serve-reconcile eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %reconcile %last ~] suffix))  (own (serve-doc eyre-id %'reconcile-last.json'))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1422,31 +1427,121 @@
     (poke-soft:io (rf 1 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+&]])]])
   ?^  err  (send-err eyre-id 500 'the generator fiber refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
-::  +serve-retire: run the retire pass now
+::  +serve-reconcile: run the reconcile passes now
 ::
-++  serve-retire
+++  serve-reconcile
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  err=(unit tang)  bind:m
-    (poke-soft:io (rf 1 / %'retire.sig') [[/ %json] [%o ~]])
-  ?^  err  (send-err eyre-id 500 'the retire fiber refused the poke')
+    (poke-soft:io (rf 1 / %'reconcile.sig') [[/ %json] [%o ~]])
+  ?^  err  (send-err eyre-id 500 'the reconcile fiber refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
-::  +retire-pass: close what is over, as one observe op to the writer.
-::  A pass with nothing to close writes nothing, so the beacon stays
-::  put and the generator sleeps on.
+::  +file-ops: each op to the writer in turn, as a soft poke, then a
+::  settle: a soft poke resolves when the writer takes it, not when its
+::  write lands, so the next read would see the state before the ops
+::  (a merge claimed at 23:13:09 and never run, 2026-09-19). The count
+::  is what the writer took; a refusal inside the writer is not seen
+::  here, it leaves the writer standing.
 ::
-++  retire-pass
+++  file-ops
+  |=  ops=(list json)
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  =|  n=@ud
+  |-
+  ?~  ops
+    ;<  ~  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,~) ~) settle)
+    (pure:m n)
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 0 / %'main.sig') [[/ %json] i.ops])
+  $(ops t.ops, n ?~(err +(n) n))
+::  +settle: wait until the beacon has been still for two seconds. The
+::  writer bumps it after each change, so a burst of ops is one wait; a
+::  run-now poke arriving meanwhile is taken and dropped, the pass is
+::  already running.
+::
+++  settle
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /quiet (add now ~s2))
+  |-
+  ;<  in=gen-in  bind:m  (take-gen-in /rec)
+  ?:  ?=(%wake -.in)  (pure:m ~)
+  ?:  ?=(%poke -.in)  $
+  ;<  ~  bind:m  (cancel-timer:io /quiet)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /quiet (add now ~s2))
+  $
+::  +run-merges: the approved merge actions, each claimed, merged and
+::  reported: done when from is gone and into remains, failed otherwise.
+::  A claim another executor holds is left alone.
+::
+++  run-merges
+  |=  todo=(list [id=@ta from=bid:orr into=bid:orr])
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  =|  n=@ud
+  |-
+  ?~  todo  (pure:m n)
+  =/  aid=@ta  id.i.todo
+  ;<  *  bind:m  (file-ops ~[(set-action-op:orr aid 'claimed' '')])
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  mine=?
+    %+  lien  acts
+    |=([id=@ta a=action:orr] &(=(id aid) =(%claimed status.a) =('reconcile' (claimant:orr a))))
+  ?.  mine  $(todo t.todo)
+  ;<  *  bind:m  (file-ops ~[(merge-op:orr from.i.todo into.i.todo)])
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  ok=?  &(?=(~ (find-loaded all from.i.todo)) ?=(^ (find-loaded all into.i.todo)))
+  ;<  *  bind:m
+    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' 'the merge was refused'))])
+  $(todo t.todo, n ?:(ok +(n) n))
+::  +reconcile-pass: the passes in order, the bodies re-read between
+::  them since each files changes the next one reads; then the record
+::
+++  reconcile-pass
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  cfg  (reconcile-of:orr policy)
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  =/  plans  (plan-retire:orr all (multi-of:orr schema) now retire-stale:orr)
-  ?~  plans  (pure:m ~)
-  ;<  *  bind:m
-    (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (retire-op:orr plans)])
-  (pure:m ~)
+  =/  times=(list json)  (plan-times:orr all now)
+  ;<  *  bind:m  (file-ops times)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  activities  (plan-activities:orr all multi now min.cfg)
+  ;<  *  bind:m  (file-ops ops.activities)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  parts  (plan-participants:orr all multi now)
+  ;<  *  bind:m  (file-ops ops.parts)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  people  (people-pass:orr all acts multi now)
+  ;<  *  bind:m  (file-ops ops.people)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  merged=@ud  bind:m  (run-merges (approved-merges:orr acts))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  retire  (plan-retire:orr all multi now (mul stale.cfg ~d1))
+  ;<  *  bind:m  (file-ops (retire-ops:orr retire))
+  =/  prune=(list bid:orr)  (plan-prune:orr all multi now prune.cfg)
+  ;<  *  bind:m  (file-ops (turn prune delete-op:orr))
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]
+        ['times' (numb:enjs:format (lent times))]
+        ['activities' a+(turn made.activities |=(b=@t `json`s+b))]
+        ['people_made' (numb:enjs:format made.parts)]
+        ['participants' (numb:enjs:format rows.parts)]
+        ['proposed' (numb:enjs:format proposed.people)]
+        ['merged' (numb:enjs:format merged)]
+        ['retired' (numb:enjs:format (lent retire))]
+        ['pruned' (numb:enjs:format (lent prune))]
+    ==
+  (over:io (rf 0 / %'reconcile-last.json') [[/ %json] doc])
 ::  +serve-generator: the generator's settings without the key
 ::
 ++  serve-generator

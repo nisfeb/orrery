@@ -1898,7 +1898,6 @@
 ::  reminder that said "open" after the event does not win the fold.
 ::
 ++  retire-trip   ~d7
-++  retire-stale  ~d30
 ++  is-trip
   |=  id=bid
   ^-  ?
@@ -1944,27 +1943,805 @@
   =.  latest  (max latest u.start)
   ?.  &((lth u.start cutoff) (lth latest cutoff))  ~
   `[id.l (after latest) (rap 3 'started ' (en-iso u.start) ', nothing since ' (en-iso latest) ~)]
-::  +retire-op: the plans as one observe op for the writer, each a
-::  status closed row at its close time, signed retire
+::  +retire-ops: the plans as observe ops for the writer, each a status
+::  closed row at its close time, signed retire
 ::
-++  retire-op
+++  retire-ops
   |=  plans=(list [id=bid at=@da why=@t])
+  ^-  (list json)
+  %+  observe-ops  ~
+  %+  turn  plans
+  |=  [id=bid at=@da why=@t]
+  (obs-row id 'status' s+'closed' at ~ 90 ['retire' (cat 3 'retire/' id)] 'retire')
+::  ==  reconcile: associating what the readers left apart (the passes of
+::  reconcile.py, on-ship 2026-09-20). Each planner is pure over the
+::  loaded bodies and answers the writer ops to file, in order.
+::
+::  the writer ops
+::
+++  obs-row
+  |=  [subject=bid attr=@t value=json at=@da until=(unit @da) conf=@ud src=source by=@t]
   ^-  json
   %-  pairs:enjs:format
-  :~  ['op' s+'observe']
-      ['bodies' a+~]
-      :-  'observations'
-      :-  %a
-      %+  turn  plans
-      |=  [id=bid at=@da why=@t]
-      %-  pairs:enjs:format
-      :~  ['subject' s+id]
-          ['attr' s+'status']
-          ['value' s+'closed']
+  %-  zing
+  :~  :~  ['subject' s+subject]
+          ['attr' s+attr]
+          ['value' value]
           ['at' s+(en-iso at)]
-          ['conf' (numb:enjs:format 90)]
-          ['by' s+'retire']
-          ['source' (pairs:enjs:format ~[['kind' s+'retire'] ['id' s+(cat 3 'retire/' id)]])]
+          ['conf' (numb:enjs:format conf)]
+          ['by' s+by]
+          ['source' (pairs:enjs:format ~[['kind' s+kind.src] ['id' s+id.src]])]
       ==
+      ?~(until ~ ~[['until' s+(en-iso u.until)]])
   ==
+::  +observe-ops: bodies then rows, in the route's batches of 50 and 200
+::
+++  observe-ops
+  |=  [bodies=(list json) rows=(list json)]
+  ^-  (list json)
+  ?:  &(?=(~ bodies) ?=(~ rows))  ~
+  :-  %-  pairs:enjs:format
+      :~  ['op' s+'observe']
+          ['bodies' a+(scag 50 bodies)]
+          ['observations' a+(scag 200 rows)]
+      ==
+  $(bodies (slag 50 bodies), rows (slag 200 rows))
+++  retract-op
+  |=  [id=@ta why=@t]
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+'reconcile']])
+++  delete-op
+  |=  id=bid
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'delete-body'] ['id' s+id]])
+++  merge-op
+  |=  [from=bid into=bid]
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'merge'] ['from' s+from] ['into' s+into]])
+++  set-action-op
+  |=  [id=@ta status=@t why=@t]
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'reconcile']])
+::  the settings, under policy.reconcile
+::
+++  reconcile-of
+  |=  policy=json
+  ^-  [min=@ud stale=@ud prune=@ud]
+  =/  r=json  (gj policy 'reconcile')
+  :+  (fall (gn r 'min_occurrences') 3)
+    (fall (gn r 'stale_days') 30)
+  (fall (gn r 'prune_days') 0)
+::  tapes
+::
+++  is-letter  |=(c=@ ^-(? |(&((gte c 'a') (lte c 'z')) &((gte c 'A') (lte c 'Z')))))
+++  is-digit   |=(c=@ ^-(? &((gte c '0') (lte c '9'))))
+++  is-alnum   |=(c=@ ^-(? |((is-letter c) (is-digit c) =(c '_'))))
+++  is-digits  |=(t=tape ^-(? ?~(t | (levy `tape`t is-digit))))
+++  is-alpha   |=(t=tape ^-(? ?~(t | (levy `tape`t |=(c=@ &((gte c 'a') (lte c 'z')))))))
+++  skip-spaces
+  |=  t=tape
+  ^-  tape
+  ?:  &(?=(^ t) |(=(' ' i.t) =(9 i.t) =(10 i.t) =(13 i.t)))  $(t t.t)
+  t
+++  trim-tape  |=(t=tape ^-(tape (flop (skip-spaces (flop (skip-spaces t))))))
+++  trim-cord  |=(t=@t ^-(@t (crip (trim-tape (trip t)))))
+::  +split-char: the non-empty runs between one separator
+::
+++  split-char
+  |=  [sep=@ t=tape]
+  ^-  (list tape)
+  =|  cur=tape
+  =|  out=(list tape)
+  |-
+  ?~  t  (flop ?:(=(~ cur) out [(flop cur) out]))
+  ?:  =(sep i.t)  $(t t.t, cur ~, out ?:(=(~ cur) out [(flop cur) out]))
+  $(t t.t, cur [i.t cur])
+++  split-ws
+  |=  t=tape
+  ^-  (list tape)
+  (split-char ' ' (turn t |=(c=@ ?:(|(=(c 9) =(c 10) =(c 13)) ' ' c))))
+::  +strip-noise: a leading Reminder:, Fwd:, Re: and the like, with the
+::  colon and the spaces around it, gone; case-insensitive
+::
+++  noise-prefixes
+  ^-  (list tape)
+  ~["updated invitation" "invitation" "notification" "reminder" "fwd" "fw" "re"]
+++  strip-noise
+  |=  t=tape
+  ^-  tape
+  =/  low=tape  (cass t)
+  =/  ps=(list tape)  noise-prefixes
+  |-
+  ?~  ps  t
+  =/  n=@ud  (lent i.ps)
+  ?.  =(i.ps (scag n low))  $(ps t.ps)
+  =/  after=tape  (skip-spaces (slag n t))
+  ?.  &(?=(^ after) =(':' i.after))  $(ps t.ps)
+  (skip-spaces t.after)
+::  +strip-punct-tail: a token without its trailing , . ;
+::
+++  strip-punct-tail
+  |=  t=tape
+  ^-  tape
+  =/  r=tape  (flop t)
+  |-
+  ?:  &(?=(^ r) |(=(',' i.r) =('.' i.r) =(';' i.r)))  $(r t.r)
+  (flop r)
+++  weekday-heads  ^-((list tape) ~["mon" "tue" "wed" "thu" "fri" "sat" "sun"])
+++  month-heads    ^-((list tape) ~["jan" "feb" "mar" "apr" "may" "jun" "jul" "aug" "sep" "oct" "nov" "dec"])
+++  has-head
+  |=  [t=tape heads=(list tape)]
+  ^-  ?
+  &((is-alpha t) (lien heads |=(h=tape =(h (scag 3 t)))))
+::  +is-clock: 6, 12, 6:00, 12:30
+::
+++  is-clock
+  |=  t=tape
+  ^-  ?
+  =/  n=@ud  (lent t)
+  ?:  &((gte n 1) (lte n 2))  (is-digits t)
+  ?.  &((gte n 4) (lte n 5))  |
+  ?&  (is-digits (scag (sub n 3) t))
+      =(':' (snag (sub n 3) t))
+      (is-digits (slag (sub n 2) t))
+  ==
+++  is-time-token
+  |=  t=tape
+  ^-  ?
+  =/  n=@ud  (lent t)
+  ?:  (lth n 3)  |
+  =/  tail=tape  (slag (sub n 2) t)
+  &(|(=("am" tail) =("pm" tail)) (is-clock (scag (sub n 2) t)))
+++  is-iso-date
+  |=  t=tape
+  ^-  ?
+  ?.  =(10 (lent t))  |
+  ?&  (is-digits (scag 4 t))
+      =('-' (snag 4 t))
+      (is-digits (scag 2 (slag 5 t)))
+      =('-' (snag 7 t))
+      (is-digits (slag 8 t))
+  ==
+++  is-slash-date
+  |=  t=tape
+  ^-  ?
+  =/  parts=(list tape)  (split-char '/' t)
+  ?.  |(=(2 (lent parts)) =(3 (lent parts)))  |
+  ?.  &((is-digits (snag 0 parts)) (lte (lent (snag 0 parts)) 2))  |
+  ?.  &((is-digits (snag 1 parts)) (lte (lent (snag 1 parts)) 2))  |
+  ?:  =(2 (lent parts))  &
+  =/  y=tape  (snag 2 parts)
+  &((is-digits y) (gte (lent y) 2) (lte (lent y) 4))
+::  +drop-dateish: the tokens with weekdays, times, dates and month-day
+::  pairs taken out, lower-cased
+::
+++  drop-dateish
+  |=  toks=(list tape)
+  ^-  (list tape)
+  =|  out=(list tape)
+  |-
+  ?~  toks  (flop out)
+  =/  t=tape  (cass (strip-punct-tail i.toks))
+  =/  nx=tape  ?~(t.toks ~ (cass (strip-punct-tail i.t.toks)))
+  ?:  (has-head t weekday-heads)  $(toks t.toks)
+  ?:  (is-time-token t)  $(toks t.toks)
+  ?:  (is-iso-date t)  $(toks t.toks)
+  ?:  (is-slash-date t)  $(toks t.toks)
+  ?:  &((is-clock t) |(=("am" nx) =("pm" nx)))  $(toks (slag 2 `(list tape)`toks))
+  ?:  &((has-head t month-heads) (is-digits nx) (lte (lent nx) 2))
+    =/  rest=(list tape)  (slag 2 `(list tape)`toks)
+    ?~  rest  $(toks rest)
+    =/  yr=tape  (strip-punct-tail i.rest)
+    $(toks ?:(&((is-digits yr) =(4 (lent yr))) t.rest `(list tape)`rest))
+  $(toks t.toks, out [t out])
+::  +normalize-title: a title with its noise stripped: prefixes like
+::  Reminder:, dates, times and weekdays, punctuation and case.
+::  "Reminder: Pottery @ Thu May 14, 6:00pm" and "Pottery" normalise
+::  alike; "Robin- Pottery/Wheel" stays its own.
+::
+++  normalize-title
+  |=  t=@t
+  ^-  @t
+  =/  s=tape  (strip-noise (strip-noise (trim-tape (trip t))))
+  =/  kept=tape  (join-tapes " " (drop-dateish (split-ws s)))
+  =/  clean=tape
+    %+  turn  (cass kept)
+    |=(c=@ ?:(|(&((gte c 'a') (lte c 'z')) (is-digit c) =(c '/')) c ' '))
+  (crip (join-tapes " " (split-char ' ' clean)))
+::  +strict-key: a title with only its prefix noise and case removed
+::
+++  strict-key
+  |=  t=@t
+  ^-  @t
+  (crip (join-tapes " " (split-ws (cass (strip-noise (trim-tape (trip t)))))))
+::  +slug: a body slug: lowercase letters, digits and hyphens
+::
+++  slug
+  |=  t=@t
+  ^-  @t
+  =/  d=tape
+    %+  turn  (cass (trip t))
+    |=(c=@ ?:(|(&((gte c 'a') (lte c 'z')) (is-digit c)) c '-'))
+  =/  s=tape  (scag max-slug (join-tapes "-" (split-char '-' d)))
+  =/  r=tape  (flop s)
+  =.  r  |-(?:(&(?=(^ r) =('-' i.r)) $(r t.r) r))
+  ?~(r 'x' (crip (flop r)))
+::  people
+::
+++  role-words
+  ^-  (set @t)
+  %-  sy
+  ^-  (list @t)
+  :~  'me'  'i'  'wife'  'husband'  'mom'  'mum'  'dad'  'mother'  'father'  'son'
+      'daughter'  'brother'  'sister'  'boss'  'friend'  'partner'  'mr'  'mrs'  'ms'
+      'dr'  'the'
+  ==
+++  org-words
+  ^-  (set @t)
+  %-  sy
+  ^-  (list @t)
+  :~  'inc'  'llc'  'ltd'  'co'  'corp'  'company'  'bank'  'club'  'church'  'school'
+      'storage'  'support'  'services'  'service'  'group'  'team'  'billing'  'insurance'
+      'store'  'shop'  'market'  'office'  'dept'  'department'  'associates'  'partners'
+      'clinic'  'center'  'centre'
+  ==
+++  person-key
+  |=  n=@t
+  ^-  (set @t)
+  =/  ks=(set @t)  (sy (tokens n))
+  (~(dif in ks) role-words)
+::  +same-person: every word of the shorter name is in the longer one,
+::  and a one-word name is a first name, not a role: "dana" and "dana
+::  quill" are one person, "dana" and "daniel quill" are not, and "wife"
+::  names nobody
+::
+++  same-person
+  |=  [a=@t b=@t]
+  ^-  ?
+  =/  ka=(set @t)  (person-key a)
+  =/  kb=(set @t)  (person-key b)
+  ?:  |(=(~ ka) =(~ kb))  |
+  =/  a-short=?  (lte ~(wyt in ka) ~(wyt in kb))
+  =/  short=(set @t)  ?:(a-short ka kb)
+  =/  long=(set @t)  ?:(a-short kb ka)
+  ?.  =(~ (~(dif in short) long))  |
+  ?.  =(1 ~(wyt in short))  &
+  =/  first=(list @t)  (skip (tokens ?:(a-short a b)) |=(w=@t (~(has in role-words) w)))
+  =/  other=(list @t)  (skip (tokens ?:(a-short b a)) |=(w=@t (~(has in role-words) w)))
+  ?:  |(?=(~ first) ?=(~ other))  |
+  =(i.first i.other)
+::  +name-words: the words of a name, letters with ' . - inside
+::
+++  name-words
+  |=  t=tape
+  ^-  (list tape)
+  =|  out=(list tape)
+  |-
+  ?~  t  (flop out)
+  ?.  (is-letter i.t)  $(t t.t)
+  =/  w=tape  ~[i.t]
+  =/  r=tape  t.t
+  |-
+  ?:  &(?=(^ r) |((is-letter i.r) =('\'' i.r) =('.' i.r) =('-' i.r)))
+    $(r t.r, w [i.r w])
+  ^$(t r, out [(flop w) out])
+::  +person-named: a person, or an org whose name reads like a person's
+::
+++  person-named
+  |=  b=body
+  ^-  ?
+  ?:  =(%person kind.b)  &
+  ?.  =(%org kind.b)  |
+  =/  words=(list tape)  (name-words (trip name.b))
+  =/  n=@ud  (lent words)
+  ?.  &((gte n 2) (lte n 3))  |
+  ?.  (levy words |=(w=tape &((gte (snag 0 w) 'A') (lte (snag 0 w) 'Z'))))  |
+  !(lien words |=(w=tape (~(has in org-words) (crip (cass w)))))
+::  +capword: a leading Capitalised word and the rest, when the title
+::  starts with one and a word boundary follows
+::
+++  capword
+  |=  t=tape
+  ^-  (unit [word=tape rest=tape])
+  ?~  t  ~
+  ?.  &((gte i.t 'A') (lte i.t 'Z'))  ~
+  =/  rest=tape  t.t
+  =|  acc=tape
+  |-
+  ?:  &(?=(^ rest) (gte i.rest 'a') (lte i.rest 'z'))  $(rest t.rest, acc [i.rest acc])
+  ?~  acc  ~
+  ?:  &(?=(^ rest) (is-alnum i.rest))  ~
+  `[[i.t (flop acc)] rest]
+::  +names-in: the names a title is certain about, and a leading first
+::  name to check against the people the ship knows. "Mira- Ballet/Tap"
+::  is certain of Mira, "Theo and Juno- Opti Sail" of both, "Felix
+::  Birthday" of Felix; "Felix Fencing Lesson" only says Felix if the
+::  ship already has a Felix.
+::
+++  names-in
+  |=  title=@t
+  ^-  [sure=(list @t) lead=(unit @t)]
+  =/  t=tape  (trim-tape (trip title))
+  =/  first=(unit [word=tape rest=tape])  (capword t)
+  ?~  first  [~ ~]
+  =/  w1=@t  (crip word.u.first)
+  =/  rest=tape  rest.u.first
+  =/  dash=(unit (list @t))
+    =/  r2=tape  ?:(&(?=(^ rest) =(',' i.rest)) t.rest rest)
+    =/  second=(unit [word=tape rest=tape])
+      ?.  =(" and " (scag 5 r2))  ~
+      (capword (slag 5 r2))
+    =/  names=(list @t)  ?~(second ~[w1] ~[w1 (crip word.u.second)])
+    =/  r3=tape  (skip-spaces ?~(second rest rest.u.second))
+    ?.  &(?=(^ r3) =('-' i.r3))  ~
+    =/  r4=tape  t.r3
+    ?.  &(?=(^ r4) |(=(' ' i.r4) =(9 i.r4)))  ~
+    ?~  (skip-spaces r4)  ~
+    `names
+  ?^  dash  [u.dash ~]
+  =/  bday=?
+    =/  r=tape  ?:(=("'s" (scag 2 rest)) (slag 2 rest) rest)
+    ?.  &(?=(^ r) |(=(' ' i.r) =(9 i.r)))  |
+    =/  r2=tape  (skip-spaces r)
+    ?.  =("birthday" (cass (scag 8 r2)))  |
+    =/  r3=tape  (slag 8 r2)
+    |(?=(~ r3) !(is-alnum i.r3))
+  ?:  bday  [~[w1] ~]
+  [~ `w1]
+::  +cal-uid: the calendar uid an occurrence id carries
+::  (situation/cal-<...><uuid>[-suffix]), or ~
+::
+++  is-hex  |=(c=@ ^-(? |((is-digit c) &((gte c 'a') (lte c 'f')))))
+++  is-uuid
+  |=  t=tape
+  ^-  ?
+  ?.  =(36 (lent t))  |
+  =/  i=@ud  0
+  |-
+  ?~  t  &
+  ?:  |(=(i 8) =(i 13) =(i 18) =(i 23))
+    &(=('-' i.t) $(t t.t, i +(i)))
+  &((is-hex i.t) $(t t.t, i +(i)))
+++  cal-uid
+  |=  id=bid
+  ^-  (unit @t)
+  =/  t=tape  (trip id)
+  ?.  =("situation/cal-" (scag 14 t))  ~
+  =/  rest=tape  (slag 10 t)
+  =/  n=@ud  (lent rest)
+  =/  i=@ud  4
+  |-
+  ?:  (gth (add i 36) n)  ~
+  ?.  (is-uuid (scag 36 (slag i rest)))  $(i +(i))
+  =/  tail=tape  (slag (add i 36) rest)
+  ?.  |(?=(~ tail) =('-' i.tail))  $(i +(i))
+  `(crip (scag (add i 36) rest))
+::  +common-title: the title most of a group carries, ties to the shortest
+::
+++  common-title
+  |=  names=(list @t)
+  ^-  @t
+  =/  counts=(map @t @ud)
+    %+  roll  names
+    |=  [n=@t acc=(map @t @ud)]
+    ?:  =('' n)  acc
+    (~(put by acc) n +((fall (~(get by acc) n) 0)))
+  =/  ranked=(list [n=@t c=@ud])
+    %+  sort  ~(tap by counts)
+    |=  [a=[n=@t c=@ud] b=[n=@t c=@ud]]
+    ?:  =(c.a c.b)  (lth (met 3 n.a) (met 3 n.b))
+    (gth c.a c.b)
+  ?~(ranked '' n.i.ranked)
+++  status-word  |=(t=@t ^-(? |(=('open' t) =('closed' t) =('cancelled' t))))
+::  +timed: a situation's started or ended (or starts, ends) as a time:
+::  the winner, else the timeline's row when the fold hides a future one
+::
+++  timed
+  |=  [l=loaded winners=(map @t (list row)) attr=@t]
+  ^-  (unit @da)
+  =/  v=@t  (winner-text winners attr)
+  ?.  =('' v)  (de-iso v)
+  =/  rs=(list row)
+    (skim rows.l |=(r=row &(!retracted.obs.r =(attr attr.obs.r) ?=([%s *] value.obs.r))))
+  ?~  rs  ~
+  ?.  ?=([%s *] value.obs.i.rs)  ~
+  (de-iso p.value.obs.i.rs)
+::  ==  the passes
+::
+::  +plan-times: the schedule is not the fact. A future started or ended
+::  becomes starts or ends, dated when it was learned; a starts or ends
+::  dated in the future is re-dated now; a situation status that is not
+::  open, closed or cancelled goes; an activity's next that has passed
+::  goes, and the nearest occurrence still ahead takes its place.
+::
+++  plan-times
+  |=  [all=(list loaded) now=@da]
+  ^-  (list json)
+  =|  retracts=(list json)
+  =|  writes=(list json)
+  =/  rest=(list loaded)  all
+  |-
+  ?~  rest  (weld (flop retracts) (observe-ops ~ (flop writes)))
+  =/  l=loaded  i.rest
+  =/  live=(list row)  (skip rows.l |=(r=row retracted.obs.r))
+  ?:  =(%activity kind.body.l)
+    =/  ahead=(list @da)
+      %+  sort
+        %+  murn  live
+        |=  r=row
+        ^-  (unit @da)
+        ?.  &(=('last' attr.obs.r) ?=([%s *] value.obs.r))  ~
+        =/  v=(unit @da)  (de-iso p.value.obs.r)
+        ?~  v  ~
+        ?:((gth u.v now) v ~)
+      lth
+    =/  stale=(list row)
+      %+  skim  live
+      |=  r=row
+      ?.  &(=('next' attr.obs.r) ?=([%s *] value.obs.r))  |
+      =/  v=(unit @da)  (de-iso p.value.obs.r)
+      ?~(v | (lte u.v now))
+    =/  rs=(list json)
+      (turn stale |=(r=row (retract-op id.r 'reconcile: this occurrence has passed')))
+    =/  ws=(list json)
+      ?~  ahead  ~
+      %+  turn  stale
+      |=  r=row
+      (obs-row id.l 'next' s+(en-iso i.ahead) now `(add i.ahead ~d1) 90 ['reconcile' (cat 3 'times/' id.r)] 'reconcile')
+    $(rest t.rest, retracts (weld (flop rs) retracts), writes (weld (flop ws) writes))
+  ?.  =(%situation kind.body.l)  $(rest t.rest)
+  =/  got=[rs=(list json) ws=(list json)]
+    %+  roll  live
+    |=  [r=row acc=[rs=(list json) ws=(list json)]]
+    =/  learned=@da  ?:((lte at.obs.r now) at.obs.r now)
+    =/  a=@t  attr.obs.r
+    =/  src=source  ['reconcile' (cat 3 'times/' id.r)]
+    =/  sv=(unit @da)  ?.(?=([%s *] value.obs.r) ~ (de-iso p.value.obs.r))
+    ?:  &(|(=('started' a) =('ended' a)) ?=(^ sv) (gth u.sv now))
+      :-  [(retract-op id.r 'reconcile: a future time is a schedule, not a fact') rs.acc]
+      [(obs-row id.l ?:(=('started' a) 'starts' 'ends') s+(en-iso u.sv) learned ~ conf.obs.r src 'reconcile') ws.acc]
+    ?:  &(|(=('starts' a) =('ends' a)) ?=([%s *] value.obs.r) (gth at.obs.r now))
+      :-  [(retract-op id.r 'reconcile: a schedule is known when it was learned') rs.acc]
+      [(obs-row id.l a value.obs.r now ~ conf.obs.r src 'reconcile') ws.acc]
+    ?:  &(=('status' a) ?=([%s *] value.obs.r) !(status-word (lower p.value.obs.r)))
+      [[(retract-op id.r 'reconcile: a situation is open, closed or cancelled; the times say the rest') rs.acc] ws.acc]
+    acc
+  $(rest t.rest, retracts (weld rs.got retracts), writes (weld ws.got writes))
+::  +plan-activities: situations that are occurrences of one repeating
+::  event become one activity each, with an observation per occurrence
+::  (its started, or its starts when it is still ahead, as the calendar
+::  pipe writes it), and the occurrences are deleted. A calendar uid groups occurrences
+::  whatever they were called; without one, only identical titles group;
+::  groups whose common title normalises alike are one activity.
+::
+++  plan-activities
+  |=  [all=(list loaded) multi=(set @t) now=@da min=@ud]
+  ^-  [ops=(list json) made=(list bid)]
+  =/  ids=(set @t)  (sy (turn all |=(l=loaded id.l)))
+  =/  cands=(list loaded)
+    (skim all |=(l=loaded &(=(%situation kind.body.l) !(is-trip id.l))))
+  =/  groups=(map @t (list loaded))
+    %+  roll  cands
+    |=  [l=loaded acc=(map @t (list loaded))]
+    =/  key=@t
+      =/  uid=(unit @t)  (cal-uid id.l)
+      ?^  uid  (cat 3 'uid:' u.uid)
+      (cat 3 'title:' (strict-key name.body.l))
+    (~(put by acc) key (snoc (fall (~(get by acc) key) ~) l))
+  =/  by-title=(map @t (list loaded))
+    %+  roll  ~(tap by groups)
+    |=  [[key=@t members=(list loaded)] acc=(map @t (list loaded))]
+    =/  t=@t  (normalize-title (common-title (turn members |=(l=loaded (trim-cord name.body.l)))))
+    (~(put by acc) t (weld (fall (~(get by acc) t) ~) members))
+  =/  titles=(list [t=@t members=(list loaded)])
+    (sort ~(tap by by-title) |=([a=[t=@t *] b=[t=@t *]] (aor t.a t.b)))
+  %+  roll  titles
+  |=  [[t=@t members=(list loaded)] acc=[ops=(list json) made=(list bid)]]
+  ?:  |(=('' t) (lth (lent members) (max 1 min)))  acc
+  =/  plan  (activity-plan t members ids multi now)
+  [(weld ops.acc ops.plan) (snoc made.acc aid.plan)]
+++  activity-plan
+  |=  [t=@t members=(list loaded) ids=(set @t) multi=(set @t) now=@da]
+  ^-  [ops=(list json) aid=bid]
+  =.  members  (sort members |=([a=loaded b=loaded] (aor id.a id.b)))
+  =/  names=(list @t)  (turn members |=(l=loaded (trim-cord name.body.l)))
+  =/  name=@t  (common-title names)
+  =/  other-set=(set @t)  (sy (skip names |=(n=@t |(=('' n) =(n name)))))
+  =/  others=(list @t)  (sort ~(tap in other-set) aor)
+  =/  uid-set=(set @t)  (sy (murn members |=(l=loaded (cal-uid id.l))))
+  =/  uids=(list @t)  (sort ~(tap in uid-set) aor)
+  =/  aid=bid  (cat 3 'activity/' (slug t))
+  =/  aliases=(list @t)  (scag max-aliases (weld others uids))
+  =/  bod=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  ~[['id' s+aid] ['name' s+name]]
+        ?~(aliases ~ ~[['aliases' a+(turn aliases |=(a=@t `json`s+a))]])
+    ==
+  =/  occ=(list [l=loaded start=(unit @da) end=(unit @da) w=(map @t (list row))])
+    %+  turn  members
+    |=  l=loaded
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    =/  st=(unit @da)  (timed l w 'started')
+    =/  en=(unit @da)  (timed l w 'ended')
+    [l ?^(st st (timed l w 'starts')) ?^(en en (timed l w 'ends')) w]
+  =/  starts=(list @da)
+    (sort (murn occ |=(o=[l=loaded start=(unit @da) *] start.o)) lth)
+  =/  base=@da  ?~(starts now i.starts)
+  =/  src0=source  ['reconcile' ?~(members '' id.i.members)]
+  =/  last-rows=(list json)
+    %+  murn  occ
+    |=  o=[l=loaded start=(unit @da) end=(unit @da) w=*]
+    ^-  (unit json)
+    ?~  start.o  ~
+    `(obs-row aid 'last' s+(en-iso u.start.o) u.start.o ~ 90 ['reconcile' (cat 3 'reconcile/' id.l.o)] 'reconcile')
+  =/  ahead=(list [at=@da end=(unit @da) src=@t])
+    %+  sort
+      %+  murn  occ
+      |=  o=[l=loaded start=(unit @da) end=(unit @da) w=*]
+      ^-  (unit [at=@da end=(unit @da) src=@t])
+      ?~  start.o  ~
+      ?.  (gth u.start.o now)  ~
+      `[u.start.o end.o (cat 3 'reconcile/' id.l.o)]
+    |=([a=[at=@da *] b=[at=@da *]] (lth at.a at.b))
+  =/  next-rows=(list json)
+    ?~  ahead  ~
+    :_  ~
+    %-  obs-row
+    :*  aid  'next'  s+(en-iso at.i.ahead)  now
+        `(fall end.i.ahead (add at.i.ahead ~d1))  90
+        ['reconcile' src.i.ahead]  'reconcile'
+    ==
+  =/  location=@t
+    =/  ls=(list @t)
+      %+  skip  (turn occ |=(o=[* * * w=(map @t (list row))] (winner-text w.o 'location')))
+      |=(x=@t =('' x))
+    ?~(ls '' i.ls)
+  =/  parts=(list bid)
+    =/  raw=(list bid)
+      %-  zing
+      %+  turn  occ
+      |=(o=[* * * w=(map @t (list row))] (refs-in (fall (~(get by w.o) 'participants') ~)))
+    =|  seen=(set bid)
+    =|  out=(list bid)
+    |-
+    ?~  raw  (flop out)
+    ?:  (~(has in seen) i.raw)  $(raw t.raw)
+    $(raw t.raw, seen (~(put in seen) i.raw), out [i.raw out])
+  =/  rows=(list json)
+    %-  zing
+    :~  ~[(obs-row aid 'status' s+'active' base ~ 90 src0 'reconcile')]
+        last-rows
+        next-rows
+        ?:(=('' location) ~ ~[(obs-row aid 'location' s+location base ~ 90 src0 'reconcile')])
+        %+  turn  parts
+        |=(p=bid (obs-row aid 'participants' (pairs:enjs:format ~[['ref' s+p]]) base ~ 90 src0 'reconcile'))
+    ==
+  :_  aid
+  %+  weld  (observe-ops ?:((~(has in ids) aid) ~ ~[bod]) rows)
+  (turn members |=(l=loaded (delete-op id.l)))
+::  +plan-participants: people the titles of activities and situations
+::  name, the person bodies to create for the ones the ship lacks, and
+::  the participants rows to write on each titled body
+::
+++  plan-participants
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  [ops=(list json) made=@ud rows=@ud]
+  =/  people=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
+  =/  titled=(list loaded)  (skim all |=(l=loaded ?=(?(%activity %situation) kind.body.l)))
+  =/  words=(list [word=@t id=bid])
+    %-  zing
+    %+  turn  people
+    |=(l=loaded (turn [name.body.l ~(tap in aliases.body.l)] |=(w=@t [w id.l])))
+  =/  known=(map @t bid)
+    %+  roll  words
+    |=  [[word=@t id=bid] acc=(map @t bid)]
+    =/  k=(set @t)  (person-key word)
+    ?:  =(1 ~(wyt in k))
+      =/  w=@t  (snag 0 `(list @t)`~(tap in k))
+      ?:((~(has by acc) w) acc (~(put by acc) w id))
+    ?:  =(~ k)  acc
+    =/  firsts=(list @t)  (skip (tokens word) |=(w=@t (~(has in role-words) w)))
+    ?~  firsts  acc
+    ?:((~(has by acc) i.firsts) acc (~(put by acc) i.firsts id))
+  =/  sure-names=(list @t)  (zing (turn titled |=(l=loaded sure:(names-in name.body.l))))
+  =/  certain=(map @t @t)
+    %+  roll  sure-names
+    |=  [n=@t acc=(map @t @t)]
+    =/  low=@t  (lower n)
+    ?:((~(has by acc) low) acc (~(put by acc) low n))
+  =/  todo=(list [low=@t n=@t])
+    (sort ~(tap by certain) |=([a=[low=@t *] b=[low=@t *]] (aor low.a low.b)))
+  =|  creates=(list json)
+  |-
+  ?^  todo
+    ?:  (~(has by known) low.i.todo)  $(todo t.todo)
+    =/  pid=bid  (cat 3 'person/' (slug n.i.todo))
+    %=  $
+      todo     t.todo
+      known    (~(put by known) low.i.todo pid)
+      creates  (snoc creates (pairs:enjs:format ~[['id' s+pid] ['name' s+n.i.todo]]))
+    ==
+  =/  rows=(list json)
+    %-  zing
+    %+  turn  titled
+    |=  l=loaded
+    ^-  (list json)
+    =/  ni  (names-in name.body.l)
+    =/  who=(list bid)
+      ?^  sure.ni  (murn sure.ni |=(n=@t (~(get by known) (lower n))))
+      ?~  lead.ni  ~
+      (drop (~(get by known) (lower u.lead.ni)))
+    =/  have=(set bid)
+      (sy (refs-in (fall (~(get by (fold rows.l multi now)) 'participants') ~)))
+    %+  murn  who
+    |=  pid=bid
+    ^-  (unit json)
+    ?:  (~(has in have) pid)  ~
+    :-  ~
+    %-  obs-row
+    :*  id.l  'participants'  (pairs:enjs:format ~[['ref' s+pid]])
+        created.body.l  ~  85  ['reconcile' (cat 3 'title/' id.l)]  'reconcile'
+    ==
+  [(observe-ops creates rows) (lent creates) (lent rows)]
+::  +plan-people: merge proposals, (from, into, why), the surer body as
+::  into: a person wins over an org, an older body over a newer one,
+::  and person/me is never merged away
+::
+++  plan-people
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [from=bid into=bid why=@t])
+  =/  people=(list [l=loaded ids=(set @t)])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [l=loaded ids=(set @t)])
+    ?.  (person-named body.l)  ~
+    `[l (sy (identity-values (fold rows.l multi now)))]
+  =|  seen=(set [@t @t])
+  =|  out=(list [from=bid into=bid why=@t])
+  =/  rest=(list [l=loaded ids=(set @t)])  people
+  |-
+  ?~  rest  (flop out)
+  =/  a  i.rest
+  =/  others  t.rest
+  |-
+  ?~  others  ^$(rest t.rest)
+  =/  b  i.others
+  =/  shared=(set @t)  (~(int in ids.a) ids.b)
+  =/  na=@t  name.body.l.a
+  =/  nb=@t  name.body.l.b
+  =/  why=@t
+    ?.  =(~ shared)
+      (cat 3 'same ' (join-cords ', ' (sort ~(tap in shared) aor)))
+    ?:  ?|  (same-person na nb)
+            (lien ~(tap in aliases.body.l.b) |=(x=@t (same-person na x)))
+            (lien ~(tap in aliases.body.l.a) |=(x=@t (same-person nb x)))
+        ==
+      (rap 3 'the names match: ' na ' and ' nb ~)
+    ''
+  ?:  =('' why)  $(others t.others)
+  =/  swap=?
+    ?:  &(!=(%person kind.body.l.a) =(%person kind.body.l.b))  &
+    &(=(kind.body.l.a kind.body.l.b) (lth created.body.l.b created.body.l.a))
+  =/  pair=[from=loaded into=loaded]  ?:(swap [l.a l.b] [l.b l.a])
+  =?  pair  =('person/me' id.from.pair)  [into.pair from.pair]
+  =/  key=[@t @t]  [id.from.pair id.into.pair]
+  ?:  (~(has in seen) key)  $(others t.others)
+  %=  $
+    others  t.others
+    seen    (~(put in seen) key)
+    out     [[id.from.pair id.into.pair why] out]
+  ==
+::  +merge-decided: what the owner already decided about each merge
+::  pair: done, dismissed, open or failed, a merge that ran winning and
+::  a dismissal sticking over an open re-proposal. A dismissal reconcile
+::  made itself (a body in the pair was gone) is nobody's decision.
+::
+++  merge-decided
+  |=  acts=(list [id=@ta a=action])
+  ^-  (map (set @t) @t)
+  =/  seen=(map (set @t) (set @t))
+    %+  roll  acts
+    |=  [[id=@ta a=action] acc=(map (set @t) (set @t))]
+    ?.  =(%merge kind.a)  acc
+    =/  key=(set @t)  (sy `(list @t)`~[(gs payload.a 'from') (gs payload.a 'into')])
+    =/  last-by=@t  ?~(history.a '' by:(rear history.a))
+    =/  st=@t
+      ?:  (is-open a)  'open'
+      ?:  &(=(%dismissed status.a) =('reconcile' last-by))  'stale'
+      status.a
+    (~(put by acc) key (~(put in (fall (~(get by acc) key) ~)) st))
+  %-  ~(run by seen)
+  |=  sts=(set @t)
+  ^-  @t
+  ?:  (~(has in sts) 'done')  'done'
+  ?:  (~(has in sts) 'dismissed')  'dismissed'
+  ?:  (~(has in sts) 'open')  'open'
+  'failed'
+::  +people-ops: the ops for the proposals: a pair dismissed before is
+::  left alone (and any open re-proposal dismissed), a pair merged before
+::  is merged again at once (a reader recreated the duplicate), a pair
+::  already open waits, and the rest are filed as merge actions. Open
+::  merge actions about a body that is gone are dismissed.
+::
+++  people-ops
+  |=  [props=(list [from=bid into=bid why=@t]) acts=(list [id=@ta a=action]) now=@da]
+  ^-  [ops=(list json) proposed=@ud]
+  =/  past=(map (set @t) @t)  (merge-decided acts)
+  =/  open=(list [id=@ta a=action])  (skim acts |=([* a=action] &(=(%merge kind.a) (is-open a))))
+  =/  dismiss-open
+    |=  [key=(set @t) why=@t]
+    ^-  (list json)
+    %+  murn  open
+    |=  [id=@ta a=action]
+    ^-  (unit json)
+    ?.  =(key (sy `(list @t)`~[(gs payload.a 'from') (gs payload.a 'into')]))  ~
+    `(set-action-op id 'dismissed' why)
+  %+  roll  props
+  |=  [[from=bid into=bid why=@t] acc=[ops=(list json) proposed=@ud]]
+  =/  key=(set @t)  (sy `(list @t)`~[from into])
+  =/  was=@t  (fall (~(get by past) key) '')
+  ?:  =('dismissed' was)
+    [(weld ops.acc (dismiss-open key 'reconcile: dismissed before')) proposed.acc]
+  ?:  =('done' was)
+    :_  proposed.acc
+    (weld ops.acc [(merge-op from into) (dismiss-open key 'reconcile: merged again as approved before')])
+  ?:  =('open' was)  acc
+  =/  act=json
+    %-  pairs:enjs:format
+    :~  ['kind' s+'merge']
+        ['title' s+(rap 3 'Merge ' from ' into ' into ~)]
+        ['about' a+`(list json)`~[s+from s+into]]
+        ['payload' (pairs:enjs:format ~[['from' s+from] ['into' s+into] ['why' s+why]])]
+    ==
+  =/  op=json
+    (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as act now 'reconcile')]])
+  [(snoc ops.acc op) +(proposed.acc)]
+::  +people-pass: the stale dismissals, then the proposals' ops
+::
+++  people-pass
+  |=  [all=(list loaded) acts=(list [id=@ta a=action]) multi=(set @t) now=@da]
+  ^-  [ops=(list json) proposed=@ud]
+  =/  ids=(set @t)  (sy (turn all |=(l=loaded id.l)))
+  =/  stale=(list json)
+    %+  murn  (skim acts |=([* a=action] &(=(%merge kind.a) (is-open a))))
+    |=  [id=@ta a=action]
+    ^-  (unit json)
+    ?:  &((~(has in ids) (gs payload.a 'from')) (~(has in ids) (gs payload.a 'into')))  ~
+    `(set-action-op id 'dismissed' 'reconcile: a body in this pair is gone')
+  =/  got  (people-ops (plan-people all multi now) acts now)
+  [(weld stale ops.got) proposed.got]
+::  +approved-merges: the merge actions the owner approved, for the
+::  fiber to claim, run and report
+::
+++  approved-merges
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list [id=@ta from=bid into=bid])
+  %+  murn  acts
+  |=  [id=@ta a=action]
+  ^-  (unit [id=@ta from=bid into=bid])
+  ?.  &(=(%merge kind.a) ?=(?(%approved %claimed) status.a))  ~
+  `[id (gs payload.a 'from') (gs payload.a 'into')]
+::  +plan-prune: closed situations that ended more than days ago, to
+::  delete; off while days is 0
+::
+++  plan-prune
+  |=  [all=(list loaded) multi=(set @t) now=@da days=@ud]
+  ^-  (list bid)
+  ?:  =(0 days)  ~
+  =/  cut=@da  (sub now (mul days ~d1))
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit bid)
+  ?.  =(%situation kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?.  =('closed' (winner-text w 'status'))  ~
+  =/  end=(unit @da)
+    =/  e=(unit @da)  (timed l w 'ended')
+    ?^(e e (timed l w 'ends'))
+  =/  latest=@da
+    %+  roll  rows.l
+    |=([r=row acc=@da] ?:(retracted.obs.r acc (max seen.obs.r acc)))
+  =/  when=@da  ?^(end u.end (max latest created.body.l))
+  ?:((lth when cut) `id.l ~)
 --

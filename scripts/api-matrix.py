@@ -546,31 +546,71 @@ time.sleep(1)
 curl('DELETE', API + '/body/thing/gate-car')
 srv.shutdown()
 
-# ---- the retire pass: what is over closes, on its own and on POST /retire ----
+# ---- reconcile: the passes of reconcile.py on the ship, on POST /reconcile ----
 OVER = 'situation/2026-09-01-gate-over'
 AHEAD = 'situation/2099-09-01-gate-ahead'
-curl('DELETE', API + '/body/' + OVER)
-curl('DELETE', API + '/body/' + AHEAD)
-observe([{'id': OVER, 'name': 'gate over'}, {'id': AHEAD, 'name': 'gate ahead'}], [
+BALLET = ['situation/2026-09-04-gate-ballet', 'situation/2026-09-11-gate-ballet', 'situation/2026-09-18-gate-ballet']
+FUTURE = 'situation/2099-10-02-gate-dentist'
+RUN = time.strftime('%H%M%S')
+# a pair merged in an earlier run is merged again at once, not proposed, so the pair is fresh per run
+ORG, DANA = 'org/gate-dana-quill-' + RUN, 'person/gate-dana-' + RUN
+BDAY = 'situation/2026-10-01-gate-felix-birthday'
+for b in [OVER, AHEAD, FUTURE, ORG, DANA, BDAY, 'activity/gate-ballet', 'person/felix'] + BALLET:
+    curl('DELETE', API + '/body/' + b)
+observe([{'id': OVER, 'name': 'gate over'}, {'id': AHEAD, 'name': 'gate ahead'}, {'id': FUTURE, 'name': 'Gate dentist'},
+         {'id': ORG, 'name': 'Gate Dana Quill'}, {'id': DANA, 'name': 'gate dana'}, {'id': BDAY, 'name': 'Felix Birthday'}]
+        + [{'id': b, 'name': 'Gate Ballet'} for b in BALLET], [
     {'subject': OVER, 'attr': 'ends', 'value': '2026-09-01T15:00:00Z', 'at': '2026-08-25T12:00:00Z', 'source': src('retire-over'), 'by': 'api-matrix'},
-    {'subject': AHEAD, 'attr': 'ends', 'value': '2099-09-01T15:00:00Z', 'at': '2026-08-25T12:00:00Z', 'source': src('retire-ahead'), 'by': 'api-matrix'}])
+    {'subject': AHEAD, 'attr': 'ends', 'value': '2099-09-01T15:00:00Z', 'at': '2026-08-25T12:00:00Z', 'source': src('retire-ahead'), 'by': 'api-matrix'},
+    {'subject': FUTURE, 'attr': 'started', 'value': '2099-10-02T15:00:00Z', 'at': '2026-09-19T12:00:00Z', 'source': src('times-1'), 'by': 'api-matrix'},
+    {'subject': FUTURE, 'attr': 'status', 'value': 'upcoming', 'at': '2026-09-19T12:00:00Z', 'source': src('times-2'), 'by': 'api-matrix'},
+    {'subject': ORG, 'attr': 'phone', 'value': '555-0100', 'at': '2026-09-19T12:00:00Z', 'source': src('people-1'), 'by': 'api-matrix'}]
+    + [{'subject': b, 'attr': 'started', 'value': b.split('/')[1][:10] + 'T15:00:00Z', 'at': b.split('/')[1][:10] + 'T15:00:00Z', 'source': src('act-' + b[-20:-12]), 'by': 'api-matrix'} for b in BALLET])
 s = state()
 check('an over situation is open until retired', OVER in s['situations'] and AHEAD in s['situations'], s['situations'])
-code, d = curl('POST', API + '/retire')
-check('POST /retire answers ok', code == 200 and dictish(d).get('ok') is True, (code, d))
-deadline = time.time() + 30
-while time.time() < deadline:
-    if OVER not in state()['situations']:
-        break
-    time.sleep(1)
+
+
+def reconcile_now():
+    code, before = curl('GET', API + '/reconcile/last')
+    code, d = curl('POST', API + '/reconcile')
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        code2, last = curl('GET', API + '/reconcile/last')
+        if dictish(last).get('at') != dictish(before).get('at'):
+            return d, last
+        time.sleep(2)
+    return d, last
+
+
+d, last = reconcile_now()
+check('POST /reconcile answers ok and the record follows', dictish(d).get('ok') is True and dictish(last).get('at'), (d, last))
 s = state()
-check('the retire pass closes what is over', OVER not in s['situations'], s['situations'])
-check('and leaves what is ahead open', AHEAD in s['situations'], s['situations'])
+ids = {b['id'] for b in s['bodies']}
+check('the retire pass closes what is over and leaves what is ahead', OVER not in s['situations'] and AHEAD in s['situations'], s['situations'])
 code, b = curl('GET', API + '/body/' + OVER)
 st = dictish(dictish(b).get('attrs')).get('status') or {}
 check('closed at its end, by retire', st.get('value') == 'closed' and st.get('at') == '2026-09-01T15:00:00Z' and st.get('by') == 'retire', st)
-curl('DELETE', API + '/body/' + OVER)
-curl('DELETE', API + '/body/' + AHEAD)
+check('three ballets became one activity and the occurrences are gone', 'activity/gate-ballet' in ids and not any(b in ids for b in BALLET), sorted(i for i in ids if 'ballet' in i))
+act = attrs(s, 'activity/gate-ballet') or {}
+check('the activity is active with its last occurrence', dictish(act.get('status')).get('value') == 'active' and dictish(act.get('last')).get('value') == '2026-09-18T15:00:00Z', act)
+fut = attrs(s, FUTURE) or {}
+check('a future started became starts, and the phase word went', dictish(fut.get('starts')).get('value') == '2099-10-02T15:00:00Z' and 'started' not in fut and 'status' not in fut, fut)
+check('a title made a person and a participant', 'person/felix' in ids and any(dictish(p).get('value', {}).get('ref') == 'person/felix' for p in (attrs(s, BDAY) or {}).get('participants', [])), attrs(s, BDAY))
+code, acts = curl('GET', API + '/actions?status=open')
+merges = [a for a in acts if a.get('kind') == 'merge' and dictish(a.get('payload')).get('from') == ORG and dictish(a.get('payload')).get('into') == DANA]
+check('an org named like a person is proposed for a merge into the person', len(merges) == 1 and merges[0]['payload'].get('into') == DANA and merges[0]['status'] == 'proposed', merges)
+if merges:
+    curl('POST', API + '/actions/' + merges[0]['id'], {'status': 'approved', 'by': 'api-matrix'})
+    time.sleep(2)
+    d, last = reconcile_now()
+    s = state()
+    ids = {b['id'] for b in s['bodies']}
+    code, acts = curl('GET', API + '/actions?status=all')
+    mine = [a for a in acts if a.get('id') == merges[0]['id']]
+    check('the approved merge ran: the org is gone, its phone is on the person, the action is done', ORG not in ids and dictish(dictish(attrs(s, DANA)).get('phone')).get('value') == '555-0100' and mine and mine[0]['status'] == 'done', (ORG in ids, attrs(s, DANA), mine))
+    check('the record counts the merge', dictish(last).get('merged') == 1, last)
+for b in [OVER, AHEAD, FUTURE, ORG, DANA, BDAY, 'activity/gate-ballet', 'person/felix'] + BALLET:
+    curl('DELETE', API + '/body/' + b)
 
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
