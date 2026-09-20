@@ -2399,6 +2399,11 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  =/  month=@t  (end [3 7] (en-iso:orr now))
+  =/  spend=@ud
+    =/  prior=@ud  ?:(=(month (gs:orr last 'month')) (fall (gn:orr last 'spend_month_micro') 0) 0)
+    =/  cost=json  (gj:orr usage 'cost')
+    (add prior ?:(?=([%n *] cost) (micro-of:orr p.cost) 0))
   =/  keep=@t
     ?:  skipped  (gs:orr last 'digest')
     ?~(dg (gs:orr last 'digest') (scot %ux u.dg))
@@ -2408,6 +2413,10 @@
         ['called' (gj:orr last 'called')]
         ['day' (gj:orr last 'day')]
         ['calls_today' (gj:orr last 'calls_today')]
+        ::  the month's spend, in micro-dollars, from the model's own
+        ::  cost figure; the page shows it beside the calls
+        ['month' s+month]
+        ['spend_month_micro' (numb:enjs:format spend)]
         ['rev' rev]
         ['digest' s+keep]
         ['skipped' b+skipped]

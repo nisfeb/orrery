@@ -484,4 +484,12 @@
     (expect-eq !>(`(list @t)`~['situation/2026-06-01-old']) !>(`(list @t)`(plan-prune:orr all ~ now 90)))
     (expect-eq !>(`(list @t)`~) !>(`(list @t)`(plan-prune:orr all ~ now 0)))
   ==
+++  test-micro-of
+  ;:  weld
+    (expect-eq !>(22.900) !>((micro-of:orr '0.0229')))
+    (expect-eq !>(22) !>((micro-of:orr '2.29e-05')))
+    (expect-eq !>(2.000.000) !>((micro-of:orr '2')))
+    (expect-eq !>(1.500.000) !>((micro-of:orr '1.5E+0')))
+    (expect-eq !>(0) !>((micro-of:orr '')))
+  ==
 --

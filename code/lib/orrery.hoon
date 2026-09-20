@@ -864,7 +864,11 @@
               ['health' 'a medical fact about the person; kept from client keys by policy']
               ['income' 'a money fact about the person; kept from client keys by policy']
           ==
-          ['place' (kind ~['type' 'address' 'phone' 'hours' 'geo'] ~)]
+          :-  'place'
+          %+  kind
+            ~['type' 'address' 'phone' 'hours' 'geo']
+          :~  ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
+          ==
           :-  'thing'
           %+  kind
             ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until']
@@ -1668,6 +1672,34 @@
       ['cooldown_minutes' (numb:enjs:format cooldown.c)]
       ['max_daily' (numb:enjs:format max-daily.c)]
   ==
+::  +micro-of: a JSON number cord as micro-units, for summing a model's
+::  cost (a fraction of a dollar, sometimes in exponent form) in an
+::  atom: 0.0229 is 22900, 2.29e-05 is 22
+::
+++  micro-of
+  |=  n=@ta
+  ^-  @ud
+  =/  t=tape  (trip n)
+  =/  parts  (split-char 'e' (turn t |=(c=@ ?:(=(c 'E') 'e' c))))
+  =/  mant=tape  ?~(parts "0" i.parts)
+  =/  expo=@sd
+    ?~  parts  --0
+    ?~  t.parts  --0
+    =/  e=tape  i.t.parts
+    ?~  e  --0
+    ?:  =('-' i.e)  (new:si | (fall (rush (crip t.e) dem) 0))
+    (new:si & (fall (rush (crip ?:(=('+' i.e) t.e e)) dem) 0))
+  =/  halves  (split-char '.' mant)
+  =/  whole=@ud  ?~(halves 0 (fall (rush (crip i.halves) dem) 0))
+  =/  frac=tape  ?~(halves "" ?~(t.halves "" i.t.halves))
+  ::  six decimals of the fraction, padded
+  =/  six=tape  (scag 6 (weld frac "000000"))
+  =/  micro=@ud  (add (mul whole 1.000.000) (fall (rush (crip six) dem) 0))
+  =/  e=@sd  expo
+  |-
+  ?:  =(--0 e)  micro
+  ?:  (syn:si e)  $(micro (mul micro 10), e (dif:si e --1))
+  $(micro (div micro 10), e (sum:si e --1))
 ::  +held-until: when the next model call may happen, given the last
 ::  record and the limits, or ~ when it may happen now. calls-today
 ::  counts the calls made on the UTC day the record names.

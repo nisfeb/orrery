@@ -222,6 +222,7 @@
     if (last.at) {
       var u = last.usage || {};
       var calls = last.calls_today != null ? ' Model calls today: ' + last.calls_today + '.' : '';
+      if (last.spend_month_micro != null) calls += ' This month: $' + (last.spend_month_micro / 1e6).toFixed(2) + '.';
       out += '<p class="muted">Last pass ' + fmtTime(last.at) + ': ' + (last.skipped ? 'skipped' :
         (last.error ? 'failed: ' + esc(last.error) : (last.filed || 0) + ' filed, ' + (last.dropped || 0) + ' dropped' +
         (u.cost != null ? ', $' + Number(u.cost).toFixed(4) : '') + (last.seconds != null ? ', ' + last.seconds + ' s' : ''))) + calls + '</p>';

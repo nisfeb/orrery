@@ -123,11 +123,11 @@ ok('sseEvent reads the initial "old /rev" name and its data', first.name === 'ol
 ok('route reads a body hash, and an empty hash is the body list', render.route('#body/person/me').name === 'body' && render.route('#body/person/me').id === 'person/me' && render.route('').name === 'bodies' && render.route('#inbox').name === 'inbox');
 ok('seg encodes each segment and keeps the slash', render.seg('situation/2026-09-16 breakdown') === 'situation/2026-09-16%20breakdown');
 const gen = { enabled: true, url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3', api_key_set: true, reasoning: { effort: 'high' }, max_tokens: 32000, max_actions: 5, timezone: '', cooldown_minutes: 60, max_daily: 24 };
-const genLast = { at: '2026-09-19T01:07:41Z', filed: 3, dropped: 1, skipped: false, notes: ['model note: the trip is stale'], usage: { cost: 0.0229, prompt_tokens: 6621, completion_tokens: 1404 }, seconds: 17, error: null, calls_today: 4 };
+const genLast = { at: '2026-09-19T01:07:41Z', filed: 3, dropped: 1, skipped: false, notes: ['model note: the trip is stale'], usage: { cost: 0.0229, prompt_tokens: 6621, completion_tokens: 1404 }, seconds: 17, error: null, calls_today: 4, month: '2026-09', spend_month_micro: 1234567 };
 const genSettings = render.settings({ kinds: {} }, { auto: [] }, gen, genLast);
 ok('the generator card shows the settings with the key masked', genSettings.includes('<h2>Generator</h2>') && genSettings.includes('name="model" value="moonshotai/kimi-k3"') && genSettings.includes('a key is set') && !genSettings.includes('sk-'));
 ok('the generator card offers a run and a save', genSettings.includes('data-generate="1"') && genSettings.includes('data-save-generator="1"'));
-ok('the last pass is summarised', genSettings.includes('3 filed, 1 dropped') && genSettings.includes('$0.0229') && genSettings.includes('the trip is stale') && genSettings.includes('Model calls today: 4'));
+ok('the last pass is summarised', genSettings.includes('3 filed, 1 dropped') && genSettings.includes('$0.0229') && genSettings.includes('the trip is stale') && genSettings.includes('Model calls today: 4') && genSettings.includes('This month: $1.23'));
 ok('the limits are on the card', genSettings.includes('name="cooldown_minutes" value="60"') && genSettings.includes('name="max_daily" value="24"'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
