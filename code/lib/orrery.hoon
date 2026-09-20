@@ -3293,4 +3293,535 @@
     ==
   %+  join-cords  nl
   ;:  weld  head  attr-lines  note-lines  kind-lines  body-lines  `(list @t)`~['']  msg-lines  ==
+::  ==  the reader's validation: the model's answer as facts the ship
+::  will take, with notes on what was dropped (analyze.validate)
+::
+++  sink-attrs       `(set @t)`(sy `(list @t)`~['mood' 'feeling' 'feelings' 'emotion'])
+++  sensitive-attrs  `(set @t)`(sy `(list @t)`~['health' 'income'])
+++  body-kinds       `(set @t)`(sy `(list @t)`~['person' 'place' 'thing' 'org' 'situation' 'note' 'activity'])
+::  +kind-of: the kind half of a body id, '' when it has no slash
+::
+++  kind-of  |=(id=@t ^-(@t (end [3 (fall (find "/" (trip id)) 0)] id)))
+::  +canon-id: a body id as the fold of duplicate bodies renamed it
+::
+++  canon-id  |=([alias=(map @t @t) id=@t] ^-(@t (fall (~(get by alias) id) id)))
+::  +only-ref: an object whose one key is ref
+::
+++  only-ref
+  |=  v=json
+  ^-  ?
+  ?.  ?=([%o *] v)  |
+  =/  ks=(list @t)  ~(tap in ~(key by p.v))
+  ?~  ks  |
+  ?.  ?=(~ t.ks)  |
+  =('ref' i.ks)
+++  ref-cord  |=(v=json ^-(@t (ref-or-text (gj v 'ref'))))
+::  +dedupe: a list with its later repeats gone, order kept
+::
+++  dedupe
+  |=  xs=(list @t)
+  ^-  (list @t)
+  =|  seen=(set @t)
+  =|  out=(list @t)
+  |-
+  ?~  xs  (flop out)
+  ?:  (~(has in seen) i.xs)  $(xs t.xs)
+  $(xs t.xs, seen (~(put in seen) i.xs), out [i.xs out])
+::  +filled: a payload key python would call truthy
+::
+++  filled
+  |=  u=(unit json)
+  ^-  ?
+  ?~  u  |
+  =/  v=json  u.u
+  ?~  v  |
+  ?-  -.v
+    %s  !=('' p.v)
+    %n  !=('0' p.v)
+    %b  p.v
+    %a  ?=(^ p.v)
+    %o  !=(~ p.v)
+  ==
+::  +de-iso-any: analyze.iso_or_none's parse: a bare date, a naive time,
+::  a Z time or one with a +HH:MM offset, as a @da in UTC
+::
+++  de-iso-any
+  |=  t=@t
+  ^-  (unit @da)
+  =/  s=tape  (trim-tape (trip t))
+  ?:  (is-iso-date s)  (de-iso (crip (weld s "T00:00:00Z")))
+  ?.  (gte (lent s) 19)  ~
+  =/  when=(unit @da)  (de-iso (crip (weld `tape`(scag 19 s) "Z")))
+  ?~  when  ~
+  =/  zone=tape
+    =/  r=tape  (slag 19 s)
+    |-  ^-  tape
+    ?~  r  ~
+    ?:  |(=('.' i.r) (is-digit i.r))  $(r t.r)
+    r
+  ?~  zone  when
+  ?:  |(=('Z' i.zone) =('z' i.zone))  when
+  ?.  |(=('+' i.zone) =('-' i.zone))  ~
+  =/  digits=tape  (skip `tape`t.zone |=(c=@tD =(':' c)))
+  ?.  (is-digits digits)  ~
+  ?.  |(=(2 (lent digits)) =(4 (lent digits)))  ~
+  =/  hh=@ud  (rash (crip (scag 2 digits)) dem)
+  =/  mm=@ud  ?:(=(2 (lent digits)) 0 (rash (crip (slag 2 digits)) dem))
+  =/  off=@dr  `@dr`(add (mul hh ~h1) (mul mm ~m1))
+  ?:  =('-' i.zone)  `(add u.when off)
+  ?:((lth u.when off) ~ `(sub u.when off))
+::  +iso-or-none: a JSON string as orrery writes a time, or ~
+::
+++  iso-or-none
+  |=  j=json
+  ^-  (unit @t)
+  ?.  ?=([%s *] j)  ~
+  =/  d=(unit @da)  (de-iso-any p.j)
+  ?~(d ~ `(en-iso u.d))
+::  +clean-value: analyze.clean_value: a value orrery accepts, or why
+::  it is refused
+::
+++  clean-value
+  |=  v=json
+  ^-  (each json @t)
+  ?~  v  [%& ~]
+  ?-  -.v
+      %b  [%& v]
+      %n  [%& v]
+      %s  [%& `json`s+(end [3 2.000] (trim-cord p.v))]
+      %a
+    ?:  (lte (met 3 (en:json:html v)) 2.000)  [%& v]
+    [%| 'value over 2000 bytes']
+      %o
+    ?:  (only-ref v)
+      =/  r=@t  (ref-cord v)
+      ?~  (parse-bid r)  [%| (cat 3 'ref is not a body id: ' r)]
+      [%& (pairs:enjs:format ~[['ref' s+r]])]
+    ?:  (lte (met 3 (en:json:html v)) 2.000)  [%& v]
+    [%| 'value over 2000 bytes']
+  ==
+::  +one-of: the values a payload key admits, read off its schema line
+::  ("required: one of telegram, mail, chat"), or ~ when it is free
+::
+++  one-of
+  |=  shape=@t
+  ^-  (list @t)
+  =/  s=tape  (trip shape)
+  =/  at=(unit @ud)  (find "one of" s)
+  ?~  at  ~
+  =/  rest=tape  (slag (add u.at 6) s)
+  %+  murn  (split-ws (turn rest |=(c=@tD ^-(@tD ?:(=(',' c) ' ' c)))))
+  |=(w=tape ^-((unit @t) ?:(|(?=(~ w) =("or" w)) ~ `(crip w))))
+::  +fixes-a-time: a day, a date or an hour in the words
+::  (analyze.FIXES_A_TIME)
+::
+++  fixes-a-time
+  |=  text=@t
+  ^-  ?
+  =/  clean=(list tape)  (turn (split-ws (cass (trip text))) strip-punct-tail)
+  =/  words=(set @t)  (sy (turn clean crip))
+  ?:  (lien `(list @t)`~['noon' 'midnight' 'tonight' 'tomorrow' 'today'] |=(w=@t (~(has in words) w)))  &
+  =/  days=(list tape)
+    :~  "mon"  "monday"  "tue"  "tues"  "tuesday"  "wed"  "wednes"  "wednesday"
+        "thu"  "thurs"  "thursday"  "fri"  "friday"  "sat"  "satur"  "saturday"
+        "sun"  "sunday"
+    ==
+  ?:  (lien clean |=(t=tape (lien days |=(d=tape =(d t)))))  &
+  ?:  (lien clean |=(t=tape |((is-time-token t) (is-slash-date t))))  &
+  ?:  (lien clean |=(t=tape &((gte (lent t) 4) (is-clock t))))  &
+  =/  ordinal
+    |=  t=tape
+    ^-  ?
+    ?.  &((gte (lent t) 3) (lte (lent t) 4))  |
+    ?.  (is-digits (scag (sub (lent t) 2) t))  |
+    (lien `(list tape)`~["st" "nd" "rd" "th"] |=(s=tape =(s (slag (sub (lent t) 2) t))))
+  ?:  (lien clean ordinal)  &
+  =/  rest=(list tape)  clean
+  |-
+  ?~  rest  |
+  ?~  t.rest  |
+  =/  a=tape  i.rest
+  =/  b=tape  i.t.rest
+  ?:  &(=("at" a) (is-clock b))  &
+  ?:  &((has-head a month-heads) (is-digits b) (lte (lent b) 2))  &
+  ?:  &((is-clock a) |(=("am" b) =("pm" b)))  &
+  $(rest t.rest)
+::  +plan-problem: analyze.plan_problem: why a calendar action does not
+::  stand against its message, or ~; ends and location are pruned by
+::  +hold-plan once the plan stands
+::
+++  plan-problem
+  |=  [payload=(map @t json) text=@t at=@t]
+  ^-  (unit @t)
+  ?.  (fixes-a-time text)  `'the message fixes no time'
+  =/  words=(set @t)  (sy (skim (tokens text) |=(w=@t (gte (met 3 w) 3))))
+  =/  title=json  (fall (~(get by payload) 'title') `json`~)
+  =/  title-words=(list @t)  (skim (tokens (ref-or-text title)) |=(w=@t (gte (met 3 w) 3)))
+  ?.  (lien title-words |=(w=@t (~(has in words) w)))
+    `'the title is not in the message\'s words'
+  =/  start=(unit @da)  (de-iso-any (ref-or-text (fall (~(get by payload) 'starts') `json`~)))
+  ?~  start  `'starts is not a time'
+  =/  when=@da  (fall (de-iso-any at) u.start)
+  ?:  |((lth u.start (sub when ~h6)) (gth u.start (add when ~d366)))
+    `'starts is not within the year ahead of the message'
+  ~
+::  +hold-plan: the payload with ends and location kept only as the
+::  rules allow: an end after the start and within a fortnight, a place
+::  the message says
+::
+++  hold-plan
+  |=  [payload=(map @t json) text=@t]
+  ^-  (map @t json)
+  =/  start=(unit @da)  (de-iso-any (ref-or-text (fall (~(get by payload) 'starts') `json`~)))
+  =/  end=(unit @da)  (de-iso-any (ref-or-text (fall (~(get by payload) 'ends') `json`~)))
+  =.  payload
+    ?:  ?&  ?=(^ start)  ?=(^ end)
+            (gth u.end u.start)
+            (lte u.end (add u.start ~d14))
+        ==
+      payload
+    (~(del by payload) 'ends')
+  =/  loc=@t  (ref-or-text (fall (~(get by payload) 'location') `json`~))
+  ?:  &(!=('' loc) ?=(^ (find (trip (lower loc)) (trip (lower text)))))  payload
+  (~(del by payload) 'location')
+::  +find-ctx: a context body by id
+::
+++  find-ctx
+  |=  [bodies=(list ctx-body) id=@t]
+  ^-  (unit ctx-body)
+  ?~  bodies  ~
+  ?:(=(id id.i.bodies) `i.bodies $(bodies t.bodies))
+::  +existing-for: analyze.existing_for: a situation or activity with
+::  the same normalised title, or the one person the same words name
+::
+++  existing-for
+  |=  [b=ctx-body pool=(list ctx-body) made=(list ctx-body)]
+  ^-  (unit @t)
+  =/  all=(list ctx-body)  (weld pool made)
+  =/  kind=@t  (kind-of id.b)
+  ?:  |(=('situation' kind) =('activity' kind))
+    =/  key=@t  (normalize-title name.b)
+    ?:  =('' key)  ~
+    =/  hit=(list ctx-body)
+      %+  skim  all
+      |=  x=ctx-body
+      =/  k=@t  (kind-of id.x)
+      &(|(=('situation' k) =('activity' k)) =(key (normalize-title name.x)))
+    ?~(hit ~ `id.i.hit)
+  ?.  =('person' kind)  ~
+  =/  hits=(list ctx-body)
+    %+  skim  all
+    |=  x=ctx-body
+    ?.  =('person/' (end [3 7] id.x))  |
+    ?|  (same-person name.b name.x)
+        (lien aliases.x |=(a=@t (same-person name.b a)))
+    ==
+  ?~  hits  ~
+  ?:  =(1 (lent `(list ctx-body)`hits))  `id.i.hits
+  =/  flat  |=(n=@t ^-(@t (crip (join-tapes " " (split-ws (cass (trip n)))))))
+  =/  exact=(list ctx-body)
+    %+  skim  `(list ctx-body)`hits
+    |=  x=ctx-body
+    |(=((flat name.x) (flat name.b)) (lien aliases.x |=(a=@t =((flat a) (flat name.b)))))
+  ?~  exact  ~
+  ?:(=(1 (lent `(list ctx-body)`exact)) `id.i.exact ~)
+::  +validate-bodies: the bodies an answer proposes, with the ids a
+::  duplicate folds into. known and the fold grow as bodies are taken,
+::  so the observations and actions that follow see them
+::
+++  validate-bodies
+  |=  [raw=(list json) ctx=reader-ctx known=(set @t)]
+  ^-  [bodies=(list json) known=(set @t) alias=(map @t @t) notes=(list @t)]
+  =|  out=(list json)
+  =|  alias=(map @t @t)
+  =|  notes=(list @t)
+  =/  made=(list ctx-body)  ~
+  |-
+  ?~  raw  [(flop out) known alias (flop notes)]
+  =/  b=json  i.raw
+  ?.  ?=([%o *] b)  $(raw t.raw)
+  =/  bid=@t  (lower (trim-cord (gs b 'id')))
+  =/  pk  (parse-bid bid)
+  ?~  pk  $(raw t.raw, notes [(cat 3 'dropped body with a bad id: ' bid) notes])
+  ?.  (~(has in body-kinds) `@t`kind.u.pk)
+    $(raw t.raw, notes [(cat 3 'dropped body of an unknown kind: ' bid) notes])
+  =/  aliases=(list @t)
+    %+  scag  32
+    %+  murn  (ga b 'aliases')
+    |=  a=json
+    ^-  (unit @t)
+    ?.  ?=([%s *] a)  ~
+    =/  t=@t  (trim-cord p.a)
+    ?:(=('' t) ~ `(end [3 100] t))
+  ?:  (~(has in known) bid)
+    =/  have=(set @t)
+      =/  hit=(unit ctx-body)  (find-ctx bodies.ctx bid)
+      ?~(hit ~ (~(put in (sy aliases.u.hit)) name.u.hit))
+    =/  fresh=(list @t)  (skip aliases |=(a=@t (~(has in have) a)))
+    ?~  fresh  $(raw t.raw)
+    =/  row=json
+      %-  pairs:enjs:format
+      :~  ['id' s+bid]
+          ['aliases' a+(turn `(list @t)`fresh |=(a=@t `json`s+a))]
+      ==
+    $(raw t.raw, out [row out])
+  =/  name=@t
+    =/  n=@t  (trim-cord (gs b 'name'))
+    ?.  =('' n)  (end [3 200] n)
+    (crip (turn (trip `@t`slug.u.pk) |=(c=@tD ^-(@tD ?:(=('-' c) ' ' c)))))
+  =/  cb=ctx-body  [bid name aliases]
+  =/  twin=(unit @t)  (existing-for cb bodies.ctx made)
+  ?^  twin
+    %=  $
+      raw    t.raw
+      alias  (~(put by alias) bid u.twin)
+      notes  [(rap 3 bid ' is ' u.twin ~) notes]
+    ==
+  =/  row=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  ~[['id' s+bid] ['name' s+name]]
+        ?~(aliases ~ ~[['aliases' a+(turn `(list @t)`aliases |=(a=@t `json`s+a))]])
+    ==
+  %=  $
+    raw    t.raw
+    out    [row out]
+    known  (~(put in known) bid)
+    made   (snoc made cb)
+  ==
+::  +validate-obs: the observations an answer proposes, in the writer's
+::  shape, with a note for each one dropped
+::
+++  validate-obs
+  |=  $:  raw=(list json)
+          ctx=reader-ctx
+          known=(set @t)
+          alias=(map @t @t)
+          ids=(list @t)
+          context-ids=(set @t)
+          at-of=(map @t @t)
+          last=@t
+      ==
+  ^-  [obs=(list json) notes=(list @t)]
+  =/  new-ids=(set @t)  (sy ids)
+  =|  out=(list json)
+  =|  notes=(list @t)
+  |-
+  ?~  raw  [(flop out) (flop notes)]
+  =/  o=json  i.raw
+  ?.  ?=([%o *] o)  $(raw t.raw)
+  =/  subject=@t  (canon-id alias (lower (trim-cord (gs o 'subject'))))
+  =/  attr=@t  (lower (trim-cord (gs o 'attr')))
+  =/  value=json
+    =/  v=json  (gj o 'value')
+    ?.  (only-ref v)  v
+    (pairs:enjs:format ~[['ref' s+(canon-id alias (lower (trim-cord (ref-cord v))))]])
+  ?.  (~(has in known) subject)
+    $(raw t.raw, notes [(cat 3 'dropped observation on an unknown body: ' subject) notes])
+  ?.  (ok-attr attr)
+    $(raw t.raw, notes [(cat 3 'dropped observation with a bad attr: ' attr) notes])
+  ?:  ?&  =('situation/' (end [3 10] subject))
+          =('status' attr)
+          !(lien `(list @t)`~['open' 'closed' 'cancelled'] |=(s=@t =(s (lower (ref-or-text value)))))
+      ==
+    =/  why=@t
+      %+  rap  3
+      :~  'dropped '  subject  '.status = '  (ref-or-text value)
+          ': a situation is open, closed or cancelled; the times say the rest'
+      ==
+    $(raw t.raw, notes [why notes])
+  ?:  (~(has in sink-attrs) attr)  $(raw t.raw)
+  =/  msg-raw=@t  (gs o 'message')
+  ?:  (~(has in context-ids) msg-raw)  $(raw t.raw)
+  =/  kind=@t  (kind-of subject)
+  =/  listed=(list @t)  (fall (~(get by attrs.ctx) kind) `(list @t)`~)
+  ?:  &(?=(^ listed) !(lien `(list @t)`listed |=(a=@t =(a attr))))
+    =/  why=@t
+      ?:  (~(has in sensitive-attrs) attr)  'the owner\'s policy keeps it from keys'
+      (cat 3 'not an attribute of ' kind)
+    $(raw t.raw, notes [(rap 3 'dropped ' subject '.' attr ': ' why ~) notes])
+  =/  clean=(each json @t)  (clean-value value)
+  ?:  ?=([%| *] clean)
+    $(raw t.raw, notes [(rap 3 'dropped ' subject '.' attr ': ' p.clean ~) notes])
+  =/  msg=@t  ?:((~(has in new-ids) msg-raw) msg-raw last)
+  =/  at=@t
+    =/  given=(unit @t)  (iso-or-none (gj o 'at'))
+    ?^(given u.given (fall (~(get by at-of) msg) ''))
+  =/  conf=@ud
+    =/  n=(unit @ud)  (gn o 'conf')
+    ?~(n 70 (min 100 u.n))
+  =/  until=(unit @t)  (iso-or-none (gj o 'until'))
+  =/  row=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  :~  ['subject' s+subject]
+            ['attr' s+attr]
+            ['value' p.clean]
+            ['at' s+at]
+            ['conf' (numb:enjs:format conf)]
+            ['message' s+msg]
+        ==
+        ?~(until ~ ~[['until' s+u.until]])
+    ==
+  $(raw t.raw, out [row out])
+::  +hold-payload: a payload held to its kind's shape: times as ISO
+::  8601 UTC, the required keys present, a key fixed to a list holding
+::  one of its words, and a recipient that is a body the ship has
+::
+++  hold-payload
+  |=  [pay=(map @t json) shape=json known=(set @t) alias=(map @t @t)]
+  ^-  (each (map @t json) @t)
+  =/  spec=(list [k=@t v=json])
+    %+  sort  ~(tap by ?:(?=([%o *] shape) p.shape ~))
+    |=([a=[@t json] b=[@t json]] (aor -.a -.b))
+  =/  iso-done=(map @t json)
+    =/  rest=(list [k=@t v=json])  spec
+    =/  acc=(map @t json)  pay
+    |-  ^-  (map @t json)
+    ?~  rest  acc
+    =/  v=json  v.i.rest
+    ?.  ?&  ?=([%s *] v)
+            ?=(^ (find "ISO 8601" (trip p.v)))
+            (filled (~(get by acc) k.i.rest))
+        ==
+      $(rest t.rest)
+    =/  n=(unit @t)  (iso-or-none (fall (~(get by acc) k.i.rest) `json`~))
+    ?~  n  $(rest t.rest)
+    $(rest t.rest, acc (~(put by acc) k.i.rest s+u.n))
+  =/  missing=(list @t)
+    %+  murn  spec
+    |=  [k=@t v=json]
+    ^-  (unit @t)
+    ?.  ?=([%s *] v)  ~
+    ?.  =('required' (end [3 8] p.v))  ~
+    ?:((filled (~(get by iso-done) k)) ~ `k)
+  ?^  missing  [%| (cat 3 'payload lacks ' (join-cords ', ' missing))]
+  =/  left=(list [k=@t v=json])  spec
+  =/  held=(map @t json)  iso-done
+  =|  bad=(unit @t)
+  |-
+  ?~  left  ?^(bad [%| u.bad] [%& held])
+  =/  k=@t  k.i.left
+  =/  v=json  v.i.left
+  =/  cur=(unit json)  (~(get by held) k)
+  =/  allowed=(list @t)  ?:(?=([%s *] v) (one-of p.v) ~)
+  ?:  &(?=(^ allowed) (filled cur))
+    =/  lv=@t  (lower (trim-cord (ref-or-text (need cur))))
+    ?:  (lien `(list @t)`allowed |=(x=@t =(x lv)))
+      $(left t.left, held (~(put by held) k s+lv))
+    %=  $
+      left  t.left
+      held  (~(put by held) k s+lv)
+      bad   `(rap 3 k ' is ' lv ', not one of ' (join-cords ', ' `(list @t)`allowed) ~)
+    ==
+  ?:  ?&  =('to' k)
+          ?=([%s *] v)
+          ?=(^ (find "body id" (trip p.v)))
+          (filled cur)
+      ==
+    =/  cv=@t  (canon-id alias (lower (trim-cord (ref-or-text (need cur)))))
+    ?:  (~(has in known) cv)
+      $(left t.left, held (~(put by held) k s+cv))
+    %=  $
+      left  t.left
+      held  (~(put by held) k s+cv)
+      bad   `(cat 3 'to names a body that does not exist: ' cv)
+    ==
+  $(left t.left)
+::  +validate-acts: the actions an answer proposes, with a note for
+::  each one dropped. A calendar action must stand against its own
+::  message, and only one plan comes from one message
+::
+++  validate-acts
+  |=  $:  raw=(list json)
+          ctx=reader-ctx
+          known=(set @t)
+          alias=(map @t @t)
+          ids=(list @t)
+          context-ids=(set @t)
+          at-of=(map @t @t)
+          text-of=(map @t @t)
+          last=@t
+      ==
+  ^-  [acts=(list json) notes=(list @t)]
+  =/  new-ids=(set @t)  (sy ids)
+  =/  kind-list=(list @t)  ?~(kinds.ctx ~['task'] kinds.ctx)
+  =/  kinds=(set @t)  (sy kind-list)
+  =|  out=(list json)
+  =|  notes=(list @t)
+  =|  planned=(set @t)
+  |-
+  ?~  raw  [(flop out) (flop notes)]
+  =/  a=json  i.raw
+  ?.  ?=([%o *] a)  $(raw t.raw)
+  =/  kind=@t
+    =/  k=@t  (lower (trim-cord (gs a 'kind')))
+    ?:(=('' k) 'task' k)
+  =/  title=@t  (end [3 200] (trim-cord (gs a 'title')))
+  =/  msg-raw=@t  (gs a 'message')
+  ?:  (~(has in context-ids) msg-raw)  $(raw t.raw)
+  ?:  |(!(~(has in kinds) kind) =('' title))
+    =/  shown=@t  ?:(=('' title) '(no title)' title)
+    $(raw t.raw, notes [(cat 3 'dropped action: ' shown) notes])
+  =/  about=(list @t)
+    %+  scag  20
+    %-  dedupe
+    %+  skim
+      %+  turn  (ga a 'about')
+      |=(x=json ^-(@t (canon-id alias (lower (trim-cord (ref-or-text x))))))
+    |=(x=@t (~(has in known) x))
+  =/  msg=@t  ?:((~(has in new-ids) msg-raw) msg-raw last)
+  =/  due=(unit @t)  (iso-or-none (gj a 'due'))
+  =/  pay=(map @t json)
+    =/  p=json  (gj a 'payload')
+    ?:(?=([%o *] p) p.p ~)
+  =/  got=(each (map @t json) @t)
+    (hold-payload pay (fall (~(get by payloads.ctx) kind) `json`~) known alias)
+  ?:  ?=([%| *] got)
+    $(raw t.raw, notes [(rap 3 'dropped action ' title ': ' p.got ~) notes])
+  =/  payload=(map @t json)  p.got
+  =/  text=@t  (fall (~(get by text-of) msg) '')
+  =/  cal-why=@t
+    ?.  =('calendar' kind)  ''
+    =/  why=(unit @t)  (plan-problem payload text (fall (~(get by at-of) msg) ''))
+    ?^  why  u.why
+    ?:((~(has in planned) msg) 'a second plan from one message' '')
+  ?.  =('' cal-why)
+    $(raw t.raw, notes [(rap 3 'dropped action ' title ': ' cal-why ~) notes])
+  =.  payload  ?.(=('calendar' kind) payload (hold-plan payload text))
+  =/  row=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  :~  ['kind' s+kind]
+            ['title' s+title]
+            ['about' a+(turn about |=(x=@t `json`s+x))]
+            ['message' s+msg]
+        ==
+        ?~(due ~ ~[['due' s+u.due]])
+        ?:(=(~ payload) ~ ~[['payload' [%o payload]]])
+    ==
+  %=  $
+    raw      t.raw
+    out      [row out]
+    planned  ?:(=('calendar' kind) (~(put in planned) msg) planned)
+  ==
+::  +validate-reader: analyze.validate: the model's answer as the facts
+::  orrery will take, with notes on what was dropped. Escalation is the
+::  analyst's call, not the validator's, so it is left empty here
+::
+++  validate-reader
+  |=  [answer=json rows=(list window-row) ctx=reader-ctx]
+  ^-  tg-facts
+  =/  known=(set @t)  (sy (turn bodies.ctx |=(b=ctx-body id.b)))
+  =/  ids=(list @t)  (turn (skip rows |=(r=window-row context.r)) |=(r=window-row id.r))
+  =/  context-ids=(set @t)
+    (sy (turn (skim rows |=(r=window-row context.r)) |=(r=window-row id.r)))
+  =/  at-of=(map @t @t)  (~(gas by *(map @t @t)) (turn rows |=(r=window-row [id.r at.r])))
+  =/  text-of=(map @t @t)  (~(gas by *(map @t @t)) (turn rows |=(r=window-row [id.r text.r])))
+  =/  last=@t  ?~(ids '' (rear `(list @t)`ids))
+  =/  vb  (validate-bodies (ga answer 'bodies') ctx known)
+  =/  vo  (validate-obs (ga answer 'observations') ctx known.vb alias.vb ids context-ids at-of last)
+  =/  va
+    (validate-acts (ga answer 'actions') ctx known.vb alias.vb ids context-ids at-of text-of last)
+  [bodies.vb obs.vo acts.va :(weld notes.vb notes.vo notes.va) ~]
 --

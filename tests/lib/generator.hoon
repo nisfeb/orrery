@@ -633,4 +633,70 @@
     (expect-eq !>('2026-01-04T10:00:00+00:00') !>((local-iso:orr '2026-01-04T10:00:00Z' 'Europe/London')))
     (expect-eq !>('2026-09-17T16:00:00Z') !>((local-iso:orr '2026-09-17T16:00:00Z' 'Mars/Olympus')))
   ==
+::  ==  the reader's validation
+::
+++  tg-ctx
+  ^-  reader-ctx:orr
+  :*  :~  ['person/me' 'me' ~['I']]
+          ['person/sarah' 'Sarah' ~['wife']]
+          ['place/home' 'Home' ~]
+          ['thing/subaru' 'the Subaru' ~['the car']]
+          ['situation/2026-09-19-x' 'the x situation' ~]
+      ==
+      (my ~[['person' `(list @t)`~['status' 'location' 'health']] ['thing' `(list @t)`~['status' 'location']] ['situation' `(list @t)`~['status' 'starts' 'location']]])
+      ~
+      'person/me'
+      ~['task' 'calendar' 'message']
+      %-  my
+      :~  ['calendar' (jo '{"title": "required", "starts": "required: ISO 8601 UTC", "ends": "optional: ISO 8601 UTC", "location": "optional"}')]
+          ['message' (jo '{"via": "required: one of telegram, mail, chat", "to": "required: the body id of the person", "text": "required"}')]
+      ==
+  ==
+++  tg-rows
+  ^-  (list window-row:orr)
+  :~  ['telegram/1/1' '2026-09-17T16:00:00Z' 'person/me' 'jury duty tomorrow' &]
+      ['telegram/1/2' '2026-09-17T16:10:00Z' 'person/me' 'home now, car is at the shop; dinner with sarah friday at 8 at the usual place' |]
+  ==
+++  test-validate-reader
+  =/  answer=json
+    %-  jo
+    '{"bodies": [{"id": "place/johns-machine-shop", "name": "John\'s Machine Shop"}, {"id": "person/sara", "name": "Sarah"}, {"id": "Person/Me", "aliases": ["the boss"]}, {"id": "cat/x", "name": "x"}], "observations": [{"subject": "person/me", "attr": "location", "value": {"ref": "place/home"}, "conf": 80, "message": "telegram/1/2"}, {"subject": "person/me", "attr": "mood", "value": "tired", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "status", "value": "on jury duty", "message": "telegram/1/1"}, {"subject": "thing/subaru", "attr": "status", "value": "at the shop", "message": "telegram/1/2"}, {"subject": "person/sara", "attr": "status", "value": "x", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "income", "value": 5, "message": "telegram/1/2"}, {"subject": "situation/2026-09-19-x", "attr": "status", "value": "upcoming", "message": "telegram/1/2"}], "actions": [{"kind": "calendar", "title": "Dinner with Sarah", "about": ["person/sarah"], "payload": {"title": "Dinner with Sarah", "starts": "2026-09-19T20:00:00-04:00", "ends": "2026-11-01T00:00:00Z", "location": "the usual place"}, "message": "telegram/1/2"}, {"kind": "message", "title": "Tell Sarah", "payload": {"via": "Telegram", "to": "person/sara", "text": "hi"}, "message": "telegram/1/2"}, {"kind": "home", "title": "Porch", "payload": {"service": "x"}, "message": "telegram/1/2"}, {"kind": "task", "title": "Call the shop", "about": ["thing/subaru", "org/nope"], "due": "2026-09-18", "message": "telegram/1/2"}]}'
+  =/  got=tg-facts:orr  (validate-reader:orr answer tg-rows tg-ctx)
+  ;:  weld
+    ::  bodies: the shop is new and kept (grounding decides later), sara is Sarah, me gains an alias, cat is no kind
+    (expect-eq !>(`(list @t)`~['place/johns-machine-shop' 'person/me']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))
+    (expect-eq !>(`(list @t)`~['the boss']) !>((strings:orr (ga:orr (snag 1 bodies.got) 'aliases'))))
+    (expect !>((lien notes.got |=(n=@t =(n 'person/sara is person/sarah')))))
+    ::  observations: mood is a sink, the context message yields nothing, income is unlisted, an upcoming status goes
+    (expect-eq !>(`(list @t)`~['location' 'status' 'status']) !>((turn obs.got |=(o=json (gs:orr o 'attr')))))
+    (expect-eq !>('person/sarah') !>((gs:orr (snag 2 obs.got) 'subject')))
+    (expect-eq !>('2026-09-17T16:10:00Z') !>((gs:orr (snag 0 obs.got) 'at')))
+    (expect-eq !>(80) !>((need (gn:orr (snag 0 obs.got) 'conf'))))
+    (expect-eq !>(70) !>((need (gn:orr (snag 1 obs.got) 'conf'))))
+    (expect !>((lien notes.got |=(n=@t ?=(^ (find "income" (trip n)))))))
+    (expect !>((lien notes.got |=(n=@t ?=(^ (find "a situation is open, closed or cancelled" (trip n)))))))
+    ::  actions: the plan stands with ends dropped, the message via is lower-cased and to canonised, home is not a reader's kind, the task's about keeps only known bodies
+    (expect-eq !>(`(list @t)`~['calendar' 'message' 'task']) !>((turn acts.got |=(a=json (gs:orr a 'kind')))))
+    (expect-eq !>(`json`~) !>((gj:orr (gj:orr (snag 0 acts.got) 'payload') 'ends')))
+    (expect-eq !>('the usual place') !>((gs:orr (gj:orr (snag 0 acts.got) 'payload') 'location')))
+    (expect-eq !>('2026-09-20T00:00:00Z') !>((gs:orr (gj:orr (snag 0 acts.got) 'payload') 'starts')))
+    (expect-eq !>('telegram') !>((gs:orr (gj:orr (snag 1 acts.got) 'payload') 'via')))
+    (expect-eq !>('person/sarah') !>((gs:orr (gj:orr (snag 1 acts.got) 'payload') 'to')))
+    (expect-eq !>(`(list @t)`~['thing/subaru']) !>((strings:orr (ga:orr (snag 2 acts.got) 'about'))))
+    (expect-eq !>('2026-09-18T00:00:00Z') !>((gs:orr (snag 2 acts.got) 'due')))
+    (expect-eq !>('telegram/1/2') !>((gs:orr (snag 2 acts.got) 'message')))
+  ==
+++  test-plan-problem
+  =/  p  |=(t=@t ^-((map @t json) =/(j=json (jo t) ?:(?=([%o *] j) p.j ~))))
+  =/  at=@t  '2026-09-19T12:00:00Z'
+  ;:  weld
+    (expect-eq !>(`(unit @t)`[~ 'the message fixes no time']) !>((plan-problem:orr (p '{"title": "Dinner", "starts": "2026-09-25T20:00:00Z"}') 'we should get dinner sometime' at)))
+    (expect-eq !>(`(unit @t)`[~ 'the title is not in the message\'s words']) !>((plan-problem:orr (p '{"title": "Haircut", "starts": "2026-09-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
+    (expect-eq !>(`(unit @t)`[~ 'starts is not within the year ahead of the message']) !>((plan-problem:orr (p '{"title": "Dentist", "starts": "2027-11-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
+    (expect-eq !>(*(unit @t)) !>((plan-problem:orr (p '{"title": "Dentist", "starts": "2026-09-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
+    (expect !>((fixes-a-time:orr 'see you tonight')))
+    (expect !>((fixes-a-time:orr 'on the 3rd')))
+    (expect !>((fixes-a-time:orr 'Sep 12 works')))
+    (expect !>(!(fixes-a-time:orr 'sometime soon')))
+  ==
 --
