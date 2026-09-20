@@ -474,7 +474,9 @@ class Stub(http.server.BaseHTTPRequestHandler):
     #  first words), the generator's answered with CANNED
     def answer(self, body):
         seen.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
-        if self.path.startswith('/bot123:abc/'):
+        if self.path.endswith('/setWebhook'):
+            out = {'ok': True, 'result': True, 'description': 'Webhook was set'}
+        elif self.path.startswith('/bot123:abc/'):
             out = {'ok': True, 'result': {'user': {'id': 1001}}}
         elif self.path.endswith('/decisions'):
             out = DECIDER_CANNED
@@ -682,7 +684,13 @@ check('a command writes without the model', hook(update(5, MID + 4, '/at the gat
 hook(update(6, MID + 5, 'still on route 9', business='conn-1'))
 check('a business message from a connection the stub owns is read', dictish(tg_last(6)).get('outcome') in ('facts', 'nothing'), tg_last(6))
 check('the stub was asked the gate, the analyst, the status and the escalate questions', [p for p, _, _ in seen if 'decisions' in p] and any(p.endswith('/chat/completions') for p, _, _ in seen), [p for p, _, _ in seen][-8:])
+code, d = curl('POST', API + '/telegram/webhook')
+check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
+sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
+check('setWebhook carried the public url, the secret and the update kinds', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret-abcdef' and sw[-1].get('allowed_updates') == ['message', 'business_message'], sw[-1:])
 curl('PUT', API + '/telegram', {'enabled': False, 'token': None, 'secret': None})
+code, d = curl('POST', API + '/telegram/webhook')
+check('the webhook is not registered without a token', code == 400, (code, d))
 curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'cooldown_minutes': 60, 'max_urgent': 5})
 curl('DELETE', API + '/body/thing/gate-car'); curl('DELETE', API + '/body/place/gate-shop')
 for a in acts:

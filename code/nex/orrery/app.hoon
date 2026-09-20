@@ -697,6 +697,7 @@
   ?:  &(=('GET' meth) ?=([%api %telegram ~] suffix))         (own (serve-telegram eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))         (own (serve-set-telegram eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
+  ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (own (serve-set-webhook eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1630,6 +1631,31 @@
   ?:  &(!=('' sec) (lth (met 3 sec) 16))
     (send-err eyre-id 400 'secret: 16 bytes at least')
   (serve-set-doc eyre-id 'set-telegram' jon)
+::  +serve-set-webhook: the ship tells Telegram where to send updates:
+::  setWebhook with the public url, the secret and the two update kinds
+::  the reader handles. Telegram's ok and description come back as the
+::  answer, 502 when its status was not 200; a blank token, secret or
+::  public url is a 400 before any call.
+::
+++  serve-set-webhook
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'telegram.json'))
+  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
+  ?:  |(=('' token.cfg) =('' secret.cfg) =('' public-url.cfg))
+    (send-err eyre-id 400 'the token, the secret and the public URL must be set first')
+  =/  body=json
+    %-  pairs:enjs:format
+    :~  ['url' s+(cat 3 public-url.cfg '/apps/orrery/telegram')]
+        ['secret_token' s+secret.cfg]
+        ['allowed_updates' a+~[s+'message' s+'business_message']]
+    ==
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (post-json (rap 3 api-url.cfg '/bot' token.cfg '/setWebhook' ~) '' body ~s30 %webhook)
+  =/  resp=json  (fall (de:json:html body.got) [%o ~])
+  %^  send-json  eyre-id  ?:(=(200 status.got) 200 502)
+  (pairs:enjs:format ~[['ok' (gj:orr resp 'ok')] ['description' (gj:orr resp 'description')]])
 ::  +serve-telegram-hook: an update from Telegram. The secret header must
 ::  equal the stored secret; the update goes to the inbox as its own grub
 ::  and the request answers at once, since Telegram gives up on a slow
