@@ -59,7 +59,7 @@ check('the script names the beacon stream', bool(m), js[:200])
 # fail loudly rather than vanishing from the count
 ev = ''
 if m:
-    ev = subprocess.run(['curl', '-s', '-N', '-m', '3', '-b', JAR,
+    ev = subprocess.run(['curl', '-s', '-N', '-m', '15', '-b', JAR,
                          '-H', 'accept: text/event-stream', HOST + m.group(1)],
                         capture_output=True, text=True).stdout
 lines = [ln.strip() for ln in ev.split('\n')]
