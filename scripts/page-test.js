@@ -13,7 +13,7 @@ const state = {
     { id: 'person/me', kind: 'person', name: 'me', aliases: [], ship: '~wex', attrs: { status: { value: 'home', at: '2026-09-16T22:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm1' }, obs: '1-a' } }, involved: ['situation/2026-09-16-breakdown'] },
     { id: 'thing/subaru', kind: 'thing', name: 'the <b>Subaru</b>', aliases: ['the car'], ship: null, attrs: {}, involved: [] },
     { id: 'situation/2026-09-16-breakdown', kind: 'situation', name: 'breakdown', aliases: [], ship: null, attrs: {}, involved: [] },
-    { id: 'situation/2026-09-20-dinner', kind: 'situation', name: 'Dinner at eight', aliases: [], ship: null, attrs: { started: { value: '2026-09-20T23:00:00Z', at: '2026-09-17T00:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm9' }, obs: '3-c' } }, involved: [] },
+    { id: 'situation/2026-09-20-dinner', kind: 'situation', name: 'Dinner at eight', aliases: [], ship: null, attrs: { started: { value: '2099-09-20T23:00:00Z', at: '2026-09-17T00:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm9' }, obs: '3-c' } }, involved: [] },
     { id: 'situation/2026-09-01-preop', kind: 'situation', name: 'PreOp appointment', aliases: [], ship: null, attrs: { status: { value: 'closed', at: '2026-09-01T14:00:00Z', by: 'reconcile', source: { kind: 'reconcile', id: 'r' }, obs: '2-b' } }, involved: [] },
   ],
   situations: ['situation/2026-09-16-breakdown', 'situation/2026-09-20-dinner'],
@@ -70,7 +70,7 @@ ok('the retraction note is shown', body.includes('wrong car'));
 ok('involved and actions are listed', body.includes('situation/2026-09-16-breakdown') && body.includes('Call the shop'));
 const bodyWithState = render.body(Object.assign({}, view, { involved: ['situation/2026-09-16-breakdown', 'situation/2026-09-20-dinner'] }), state);
 ok('involved situations are the same cards as the bodies page: named, with phase, id as subtext, soonest first',
-  bodyWithState.includes('<h2>Involved in</h2><div class="bodies"><a href="#body/situation/2026-09-20-dinner">Dinner at eight <span class="muted">upcoming, 2026-09-20 23:00:00</span><span class="id">situation/2026-09-20-dinner</span></a>')
+  bodyWithState.includes('<h2>Involved in</h2><div class="bodies"><a href="#body/situation/2026-09-20-dinner">Dinner at eight <span class="muted">upcoming, 2099-09-20 23:00:00</span><span class="id">situation/2026-09-20-dinner</span></a>')
   && bodyWithState.includes('>breakdown <span class="muted">open</span><span class="id">situation/2026-09-16-breakdown</span></a></div>')
   && !bodyWithState.includes('</a>, <a'));
 ok('without the state the involved cards are named by id, never a run of links', body.includes('<div class="bodies"><a href="#body/situation/2026-09-16-breakdown">situation/2026-09-16-breakdown') && !body.includes('</a>, <a'));

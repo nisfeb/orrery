@@ -589,7 +589,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  bod=octs  (as-octs:mimes:html (en:json:html jon))
-  (send-simple:srv eyre-id [[code ['content-type' 'application/json'] ~] `bod])
+  ::  no-store: a browser served the previous /telegram answer after a
+  ::  save and the card showed the public url blank (2026-09-21)
+  (send-simple:srv eyre-id [[code ['content-type' 'application/json'] ['cache-control' 'no-store'] ~] `bod])
 ++  send-err
   |=  [eyre-id=@ta code=@ud msg=@t]
   =/  m  (fiber:fiber:nexus ,~)

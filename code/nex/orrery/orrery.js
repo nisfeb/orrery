@@ -370,7 +370,7 @@
 
   function say(msg, bad) { statusEl.textContent = msg; statusEl.className = 'status' + (bad ? ' bad' : ''); }
   function api(path, opts) {
-    return fetch(API + path, opts).then(function (r) {
+    return fetch(API + path, Object.assign({ cache: 'no-store' }, opts || {})).then(function (r) {
       if (!r.ok) {
         return r.json().catch(function () { return {}; }).then(function (d) {
           // a refusal relayed from Telegram carries its description, not an error
@@ -448,7 +448,8 @@
       dirty = false;
       refresh(true);
     } else if (b.dataset.saveGenerator) {
-      post('/generator', generatorForm(), 'PUT').then(function () { say('generator saved'); later(); }).catch(function (e) { say(e.message, true); });
+      say('saving generator settings');
+      post('/generator', generatorForm(), 'PUT').then(function () { dirty = false; say('generator saved'); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.generate) {
       post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.reconcile) {
@@ -456,8 +457,21 @@
     } else if (b.dataset.saveTelegram) {
       var t = telegramForm();
       if (!t) return;
-      post('/telegram', t, 'PUT').then(function () { say('telegram saved'); later(); }).catch(function (e) { say(e.message, true); });
+      say('saving telegram settings');
+      b.disabled = true;
+      post('/telegram', t, 'PUT').then(function () {
+        // the fields already hold what was saved; only the two masks are
+        // read back, so the card is right at once and the full reload
+        // (six requests, a second each on the ship) comes later
+        var tok = view.querySelector('#telegram input[name="token"]'), sec = view.querySelector('#telegram input[name="secret"]');
+        if (tok && t.token) { tok.value = ''; tok.placeholder = 'a token is set; leave blank to keep it'; }
+        if (sec && t.secret) { sec.value = ''; sec.placeholder = 'a secret is set; leave blank to keep it'; }
+        dirty = false;
+        say('telegram saved');
+        b.disabled = false;
+      }).catch(function (e) { say(e.message, true); b.disabled = false; });
     } else if (b.dataset.webhook) {
+      say('asking Telegram to send updates here');
       post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.makeSecret) {
       // a fresh secret: 32 random bytes as hex, in the field until saved
