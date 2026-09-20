@@ -772,6 +772,23 @@
     ::  the shop is a new body a kept fact points at
     (expect-eq !>(`(list @t)`~['place/johns-machine-shop']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))
   ==
+::  ==  the urgent pass's ids and the decider's route
+::
+++  test-urgent-ids
+  =/  o  |=([s=@t a=@t] `json`(pairs:enjs:format ~[['subject' s+s] ['attr' s+a]]))
+  =/  b  |=(id=@t `json`(pairs:enjs:format ~[['id' s+id]]))
+  =/  things=(list json)  ~[(o 'person/me' 'status') (o 'thing/subaru' 'status') (o 'place/shop' 'phone') (o 'thing/subaru' 'location')]
+  =/  many=(list json)  (turn `(list @t)`~['thing/a' 'thing/b' 'org/c' 'place/d' 'thing/e' 'thing/f'] |=(id=@t (o id 'status')))
+  ;:  weld
+    ::  a situation first, from an observation or a body made alongside
+    (expect-eq !>(`(list @t)`~['situation/2026-09-19-x' 'situation/2026-09-20-y']) !>((urgent-ids:orr [~[(b 'situation/2026-09-20-y')] (weld things ~[(o 'situation/2026-09-19-x' 'status')]) ~ ~ ~])))
+    ::  else the things, places and orgs, unique, in order, never a person
+    (expect-eq !>(`(list @t)`~['thing/subaru' 'place/shop']) !>((urgent-ids:orr [~ things ~ ~ ~])))
+    (expect-eq !>(5) !>((lent (urgent-ids:orr [~ many ~ ~ ~]))))
+    (expect-eq !>(`(list @t)`~) !>((urgent-ids:orr [~ ~[(o 'person/me' 'status')] ~ ~ ~])))
+    (expect-eq !>('https://openrouter.ai/api/alpha/decisions') !>((decider-url:orr 'https://openrouter.ai/api/v1')))
+    (expect-eq !>('http://127.0.0.1:8099/api/alpha/decisions') !>((decider-url:orr 'http://127.0.0.1:8099')))
+  ==
 ::  ==  the decider bodies
 ::
 ++  test-decider-bodies

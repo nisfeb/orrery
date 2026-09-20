@@ -469,11 +469,25 @@ CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 seen = []
 class Stub(http.server.BaseHTTPRequestHandler):
+    #  one stub for the model, the decider and Telegram, told apart by path:
+    #  the analyst's chat request by its system block (the analyst prompt's
+    #  first words), the generator's answered with CANNED
+    def answer(self, body):
+        seen.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
+        if self.path.startswith('/bot123:abc/'):
+            out = {'ok': True, 'result': {'user': {'id': 1001}}}
+        elif self.path.endswith('/decisions'):
+            out = DECIDER_CANNED
+        else:
+            system = ((body.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
+            out = TG_CANNED if system.startswith('You turn') else CANNED
+        out = json.dumps(out).encode()
+        self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
         n = int(self.headers.get('content-length', 0))
-        seen.append(({k.lower(): v for k, v in self.headers.items()}, json.loads(self.rfile.read(n))))
-        out = json.dumps(CANNED).encode()
-        self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
+        self.answer(json.loads(self.rfile.read(n)))
+    def do_GET(self):
+        self.answer({})
     def log_message(self, *a): pass
 socketserver.TCPServer.allow_reuse_address = True
 srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
@@ -500,7 +514,7 @@ while time.time() < deadline:
         break
     time.sleep(2)
 check('the pass wrote its record, two filed', isinstance(last, dict) and last.get('filed') == 2 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
-hdrs, body = seen[0] if seen else ({}, {})
+_, hdrs, body = seen[0] if seen else ('', {}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
 code, acts = curl('GET', API + '/actions?status=open')
@@ -571,7 +585,7 @@ u0 = dictish(before).get('urgent_today') or 0
 code, d, last = urgent_pass()
 check('an urgent request answers ok and says it is urgent', code == 200 and dictish(d).get('urgent') is True, (code, d))
 check('the urgent pass ran past the cooldown and says so', last and not dictish(last).get('skipped') and any(x.startswith('urgent pass: thing/gate-car') for x in dictish(last).get('notes', [])) and dictish(last).get('urgent_today') == u0 + 1, last)
-prompt_seen = json.dumps(seen[-1][1]) if len(seen) == n + 1 else ''
+prompt_seen = json.dumps(seen[-1][2]) if len(seen) == n + 1 else ''
 check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(seen), n))
 for a in curl('GET', API + '/actions?status=proposed')[1] or []:
     if isinstance(a, dict) and a.get('by') == 'generator':
@@ -593,6 +607,93 @@ curl('PUT', API + '/generator', {'max_urgent': 5})
 curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'cooldown_minutes': 60})
 time.sleep(1)
 curl('DELETE', API + '/body/thing/gate-car')
+
+# ---- the telegram reader: a webhook update becomes facts through the stub model and decider ----
+# the window keeps a chat's last messages for a day, and a fact the model
+# hangs on a message id the window already holds is thrown away as written
+# from context, so each run's messages carry ids of their own
+MID = int(time.time()) % 900000
+M1 = 'telegram/1001/%d' % (MID + 1)
+TG_CANNED = {'choices': [{'message': {'content': json.dumps({
+    'bodies': [{'id': 'place/gate-shop', 'name': 'the gate shop'}],
+    'observations': [{'subject': 'person/me', 'attr': 'status', 'value': 'stranded, waiting for a tow', 'conf': 85, 'message': M1},
+                     {'subject': 'thing/gate-car', 'attr': 'status', 'value': 'broken down', 'message': M1},
+                     {'subject': 'thing/gate-car', 'attr': 'location', 'value': {'ref': 'place/gate-shop'}, 'message': M1}],
+    'actions': [{'kind': 'task', 'title': 'Call a tow for the gate car', 'about': ['thing/gate-car'], 'message': M1}]})}}],
+    'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+DECIDER_CANNED = {'answers': {'worth_reading': {'type': 'noul', 'noul': 0.9}, 'needs_help_now': {'type': 'noul', 'noul': 0.9},
+                              'status_0': {'type': 'choice', 'choice': 'circumstance', 'probabilities': {'circumstance': 0.97}}}}
+curl('DELETE', API + '/body/thing/gate-car'); curl('DELETE', API + '/body/place/gate-shop')
+# "car died": grounding keeps a fact about a body the message names, so the car answers to "car"
+observe([{'id': 'thing/gate-car', 'name': 'the gate car', 'aliases': ['gate car', 'car']}], [])
+# the day's urgent count lives on the ship, so the escalation's pass must not meet the cap
+curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'cooldown_minutes': 1440, 'max_daily': 1000, 'max_urgent': 1000})
+curl('PUT', API + '/telegram', {'enabled': True, 'token': '123:abc', 'secret': 'hook-secret-abcdef', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'public_url': 'http://localhost:8080',
+                               'chats': [1001], 'people': {'1001': 'person/me'}, 'gate': 30, 'escalate': 60, 'max_daily_messages': 500})
+time.sleep(1)
+HOOK = HOST + '/apps/orrery/telegram'
+def update(uid, mid, text, chat=1001, user=1001, business=None):
+    msg = {'message_id': mid, 'date': int(time.time()), 'chat': {'id': chat}, 'from': {'id': user}, 'text': text}
+    if business:
+        msg['business_connection_id'] = business
+        return {'update_id': uid, 'business_message': msg}
+    return {'update_id': uid, 'message': msg}
+def hook(body, secret='hook-secret-abcdef'):
+    cmd = ['curl', '-s', '-m', '30', '-X', 'POST', '-w', '\n%{http_code}', HOOK, '-H', 'content-type: application/json', '-d', json.dumps(body)]
+    if secret is not None:
+        cmd += ['-H', 'x-telegram-bot-api-secret-token: ' + secret]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    return int(out.rpartition('\n')[2] or 0)
+def tg_last(after_uid):
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        code, last = curl('GET', API + '/telegram/last')
+        if dictish(last).get('update_id') == after_uid:
+            return last
+        time.sleep(2)
+    return last
+check('a wrong secret is refused', hook(update(1, MID, 'x'), secret='nope') == 403, None)
+check('no secret is refused', hook(update(1, MID, 'x'), secret=None) == 403, None)
+check('a body over 64 KB is refused before the parse', hook({'update_id': 1, 'pad': 'x' * 70000}) == 413, None)
+code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
+check('a short secret is refused', code == 400, (code, d))
+check('the webhook answers 200 at once', hook(update(2, MID + 1, 'car died on route 9, stranded waiting for a tow')) == 200, None)
+last = tg_last(2)
+b = curl('GET', API + '/body/thing/gate-car')[1]
+st = dictish(dictish(b).get('attrs')).get('status') or {}
+check('the message became facts signed telegram with the message as source', st.get('value') == 'broken down' and st.get('by') == 'telegram' and dictish(st.get('source')) == {'kind': 'chat', 'id': M1}, st)
+check('a body the message does not name was dropped with its fact', 'place/gate-shop' not in {x['id'] for x in state()['bodies']} and any('no fact is about it' in n for n in dictish(last).get('notes', [])), last)
+me = dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('status') or {}
+check('the owner\'s status stands, checked as a circumstance', me.get('value') == 'stranded, waiting for a tow', me)
+acts = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if a.get('title') == 'Call a tow for the gate car']
+check('the task was filed by telegram', len(acts) == 1 and acts[0].get('by') == 'telegram', acts)
+# the urgent pass runs on the generator's own fiber after the poke; its record follows the reader's
+deadline = time.time() + 90
+while time.time() < deadline:
+    code, glast = curl('GET', API + '/generator/last')
+    if any(x.startswith('urgent pass') for x in dictish(glast).get('notes', [])):
+        break
+    time.sleep(2)
+check('the escalation ran an urgent pass', any(x.startswith('urgent pass') for x in dictish(glast).get('notes', [])), glast)
+check('the record says what happened', dictish(last).get('outcome') == 'facts' and dictish(last).get('read_today', 0) >= 1, last)
+check('a question yields nothing and is remembered as context', hook(update(3, MID + 2, 'is the shop open?')) == 200 and dictish(tg_last(3)).get('outcome') == 'nothing', None)
+check('a chat not in chats is ignored', hook(update(4, MID + 3, 'hello', chat=9)) == 200 and dictish(tg_last(4)).get('outcome') == 'ignored', None)
+check('a command writes without the model', hook(update(5, MID + 4, '/at the gate shop')) == 200 and dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('location')).get('value') == 'the gate shop', None)
+hook(update(6, MID + 5, 'still on route 9', business='conn-1'))
+check('a business message from a connection the stub owns is read', dictish(tg_last(6)).get('outcome') in ('facts', 'nothing'), tg_last(6))
+check('the stub was asked the gate, the analyst, the status and the escalate questions', [p for p, _, _ in seen if 'decisions' in p] and any(p.endswith('/chat/completions') for p, _, _ in seen), [p for p, _, _ in seen][-8:])
+curl('PUT', API + '/telegram', {'enabled': False, 'token': None, 'secret': None})
+curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'cooldown_minutes': 60, 'max_urgent': 5})
+curl('DELETE', API + '/body/thing/gate-car'); curl('DELETE', API + '/body/place/gate-shop')
+for a in acts:
+    curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
+for a in curl('GET', API + '/actions?status=proposed')[1] or []:
+    if isinstance(a, dict) and a.get('by') == 'generator':
+        curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
+# the owner's status and location came from telegram; the next run's clean slate expects neither
+for o in dictish(curl('GET', API + '/body/person/me')[1]).get('observations', []):
+    if o['source']['id'].startswith('telegram/') and o['status'] != 'retracted':
+        curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
 srv.shutdown()
 
 # ---- reconcile: the passes of reconcile.py on the ship, on POST /reconcile ----

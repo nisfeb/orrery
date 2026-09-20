@@ -1863,13 +1863,20 @@
 ++  chat-body
   |=  [c=config parts=(list @t)]
   ^-  json
+  (chat-body-with c system-prompt parts)
+::  +chat-body-with: the request under any system text: the generator's
+::  prompt above, the analyst's for the telegram reader
+::
+++  chat-body-with
+  |=  [c=config system-text=@t parts=(list @t)]
+  ^-  json
   =/  blocks=(list json)
     =/  n=@ud  0
     |-
     ?~  parts  ~
     [(block i.parts (lth n 3)) $(parts t.parts, n +(n))]
   =/  on=?  (reasoning-on reasoning.c)
-  =/  system=json  [%o (my ~[['role' s+'system'] ['content' a+~[(block system-prompt &)]]])]
+  =/  system=json  [%o (my ~[['role' s+'system'] ['content' a+~[(block system-text &)]]])]
   =/  user=json  [%o (my ~[['role' s+'user'] ['content' a+blocks]])]
   %-  pairs:enjs:format
   %-  zing
@@ -1881,6 +1888,22 @@
       ==
       ?:(on ~[['reasoning' reasoning.c]] ~[['temperature' (numb:enjs:format 0)]])
   ==
+::  +decider-url: the decisions route at the model host: the origin of
+::  the chat url (scheme, host, port) with openrouter's path, so a stub
+::  standing in for the model answers the decider too
+::
+++  decider-url
+  |=  url=@t
+  ^-  @t
+  =/  t=tape  (trip url)
+  =/  origin=tape
+    =/  scheme=(unit @ud)  (find "://" t)
+    ?~  scheme  t
+    =/  rest=tape  (slag (add 3 u.scheme) t)
+    =/  slash=(unit @ud)  (find "/" rest)
+    ?~  slash  t
+    (scag (add 3 (add u.scheme u.slash)) t)
+  (crip (weld origin "/api/alpha/decisions"))
 ::  +answer-of: the model's text and the usage out of a chat completion,
 ::  or why there is none
 ::
@@ -3098,6 +3121,23 @@
       notes=(list @t)
       escalate=(unit (list @t))
   ==
+::  +urgent-ids: analyze.urgent_ids: what the urgent pass looks at
+::  first: the situations the kept facts are about (the bodies made in
+::  the same batch count), else the things, places and orgs they are
+::  about, since a situation the model titled in its own words does not
+::  survive grounding; unique, in order, at most five. Empty is fine:
+::  the pass still runs.
+::
+++  urgent-ids
+  |=  facts=tg-facts
+  ^-  (list @t)
+  =/  subjects=(list @t)
+    %+  weld  (turn obs.facts |=(o=json (gs o 'subject')))
+    (turn bodies.facts |=(b=json (gs b 'id')))
+  =/  sits=(list @t)  (dedupe (skim subjects |=(s=@t =('situation' (kind-of s)))))
+  ?.  =(~ sits)  (scag 5 sits)
+  %+  scag  5
+  (dedupe (skim subjects |=(s=@t ?=(?(%thing %place %org) (kind-of s)))))
 ::  +tg-obs: one observation row in the writer's shape, signed telegram
 ::
 ++  tg-obs

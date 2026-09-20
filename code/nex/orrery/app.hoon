@@ -18,6 +18,8 @@
 ::    /ship-remotes.json               what we accepted, a row per share
 ::    /sync.sig                        the follower: pull, then push
 ::    /clients.json                    the minted keys, salted hashes only
+::    /telegram.sig                    the telegram reader: drains the inbox
+::    /telegram-inbox/<update_id>      an update the webhook took, until read
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
@@ -103,6 +105,8 @@
           [%fall %& [/ %'telegram-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'telegram-connections.json'] [[/ %json] [%o ~]]]
           [%fall %| /telegram-inbox empty-dir:loader]
+          [%fall %& [/telegram-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
+          [%fall %& [/ %'telegram.sig'] [[/ %sig] ~]]
       ==
     ::
     ++  on-file
@@ -217,6 +221,17 @@
         ;<  ~  bind:m  (set-timer:io /tick (add now ~h12))
         ;<  *  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /tick)
+        $
+          ::  the telegram reader (version 29): wakes on the inbox, drains
+          ::  it in update order, runs the bot's pipeline for each and
+          ::  files the facts through the writer. It is never poked by
+          ::  the writer; an urgent message pokes the generator.
+          [~ %'telegram.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery telegram: failed")
+        ;<  *  bind:m  (keep:io /tg (rf 0 /telegram-inbox %rev) ~)
+        |-
+        ;<  ~  bind:m  tg-drain
+        ;<  *  bind:m  (take-gen-in /tg)
         $
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
@@ -618,6 +633,9 @@
     ?:  &(?=(^ suffix0) =('' (rear `path`suffix0)))  (snip `path`suffix0)
     suffix0
   =/  meth=@t  method.request.req
+  ::  the telegram webhook carries no cookie and no key: the secret header
+  ::  is its whole credential, and it is answered before +identify
+  ?:  &(=('POST' meth) ?=([%telegram ~] suffix))  (serve-telegram-hook eyre-id req)
   ;<  who=(unit actor)  bind:m  (identify req src our)
   ?~  who  (send-err eyre-id 403 'forbidden')
   =/  act=actor  u.who
@@ -1480,26 +1498,34 @@
   |=  ops=(list json)
   =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
+  (file-ops-on ops /rec)
+::  +file-ops-on: +file-ops for a fiber keeping its news on another wire
+::
+++  file-ops-on
+  |=  [ops=(list json) wire=path]
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
   =|  n=@ud
   |-
   ?~  ops
-    ;<  ~  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,~) ~) settle)
+    ;<  ~  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,~) ~) (settle wire))
     (pure:m n)
   ;<  err=(unit tang)  bind:m
     (poke-soft:io (rf 0 / %'main.sig') [[/ %json] i.ops])
   $(ops t.ops, n ?~(err +(n) n))
-::  +settle: wait until the beacon has been still for two seconds. The
-::  writer bumps it after each change, so a burst of ops is one wait; a
-::  run-now poke arriving meanwhile is taken and dropped, the pass is
-::  already running.
+::  +settle: wait until the news on the wire has been still for two
+::  seconds. The writer bumps the beacon after each change, so a burst
+::  of ops is one wait for the fiber keeping it; a run-now poke arriving
+::  meanwhile is taken and dropped, the pass is already running.
 ::
 ++  settle
+  |=  wire=path
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  ~  bind:m  (set-timer:io /quiet (add now ~s2))
   |-
-  ;<  in=gen-in  bind:m  (take-gen-in /rec)
+  ;<  in=gen-in  bind:m  (take-gen-in wire)
   ?:  ?=(%wake -.in)  (pure:m ~)
   ?:  ?=(%poke -.in)  $
   ;<  ~  bind:m  (cancel-timer:io /quiet)
@@ -1604,6 +1630,33 @@
   ?:  &(!=('' sec) (lth (met 3 sec) 16))
     (send-err eyre-id 400 'secret: 16 bytes at least')
   (serve-set-doc eyre-id 'set-telegram' jon)
+::  +serve-telegram-hook: an update from Telegram. The secret header must
+::  equal the stored secret; the update goes to the inbox as its own grub
+::  and the request answers at once, since Telegram gives up on a slow
+::  answer and sends the update again. A disabled reader drops it. A
+::  name the inbox has (an update resent) fails the make; the rev bump
+::  still wakes the reader, which handles the file once.
+::
+++  serve-telegram-hook
+  |=  [eyre-id=@ta req=inbound-request:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'telegram.json'))
+  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
+  =/  given=@t
+    (fall (get-header:http 'x-telegram-bot-api-secret-token' header-list.request.req) '')
+  ?:  |(=('' secret.cfg) !=(given secret.cfg))  (send-err eyre-id 403 'forbidden')
+  ?:  &(?=(^ body.request.req) (gth p.u.body.request.req 65.536))
+    (send-err eyre-id 413 'too large')
+  ?.  enabled.cfg
+    (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'the reader is off']]))
+  =/  jon=json  (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
+  =/  uid=@ud  (fall (gn:orr jon 'update_id') 0)
+  ::  twelve digits, so the inbox lists in update order as text
+  =/  name=@ta  `@ta`(crip ((d-co:co 12) uid))
+  ;<  *  bind:m  (make-soft:io (rf 1 /telegram-inbox name) |+[[[/ %json] jon] ~])
+  ;<  ~  bind:m  (over:io (rf 1 /telegram-inbox %rev) [[/ %json] (numb:enjs:format uid)])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +serve-set-doc: PUT one of those documents, through the writer
 ::
 ++  serve-set-doc
@@ -2539,6 +2592,22 @@
           ?:(=('' key) ~ ~[['authorization' (cat 3 'Bearer ' key)]])
       ==
     `(as-octs:mimes:html (en:json:html body))
+  (fetch-json request timeout wire)
+::  +get-json: one GET through iris, no body and no bearer header (the
+::  telegram API takes a GET like a POST), under the same timer
+::
+++  get-json
+  |=  [url=@t timeout=@dr wire=@ta]
+  =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
+  ^-  form:m
+  (fetch-json [%'GET' url ~ ~] timeout wire)
+::  +fetch-json: the request and its answer, what +post-json and
+::  +get-json share
+::
+++  fetch-json
+  |=  [=request:http timeout=@dr wire=@ta]
+  =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
+  ^-  form:m
   ;<  t0=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-request:io request)
   ;<  ~  bind:m  (set-timer:io /[wire] (add t0 timeout))
@@ -2570,8 +2639,9 @@
   =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
   ^-  form:m
   (post-json (cat 3 url.cfg '/chat/completions') api-key.cfg (chat-body:orr cfg parts) ~m10 %model)
-::  +ask-decider: one decisions call with the generator's key and provider
-::  rule; ~ when it fails, so a decider that cannot answer decides nothing
+::  +ask-decider: one decisions call at the model host with the
+::  generator's key and provider rule; ~ when it fails, so a decider that
+::  cannot answer decides nothing
 ::
 ++  ask-decider
   |=  [cfg=config:orr body=json]
@@ -2582,7 +2652,7 @@
       'provider'
     (pairs:enjs:format ~[['zdr' b+&]])
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
-    (post-json 'https://openrouter.ai/api/alpha/decisions' api-key.cfg full ~s30 %decider)
+    (post-json (decider-url:orr url.cfg) api-key.cfg full ~s30 %decider)
   ?.  =(200 status.got)  (pure:m ~)
   =/  resp=json  (fall (de:json:html body.got) ~)
   =/  answers=json  (gj:orr resp 'answers')
@@ -2637,6 +2707,286 @@
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram.json') [[/ %json] [%o merged]])
   ;<  ~  bind:m  (note 'set-telegram' & '')
   (pure:m |)
+::  ==  the telegram reader (version 29): the bot's pipeline on the ship
+::
+::  +tg-drain: every update in the inbox, in order, each handled then
+::  culled, so a crash mid-way leaves the rest for the next wake; then
+::  the inbox again, since an update that arrived while these were
+::  handled woke nothing the settle did not take
+::
+++  tg-drain
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /telegram-inbox) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  =/  names=(list @ta)
+    %+  sort  (skip (turn ~(tap by contents.u.fil.ball.vw) head) |=(n=@ta =(%rev n)))
+    aor
+  ?~  names  (pure:m ~)
+  ;<  culled=?  bind:m  (tg-drain-each names)
+  ::  a file the cull left is not read again until the next wake
+  ?.(culled (pure:m ~) tg-drain)
+::  +tg-drain-each: the named updates in turn; whether every one was culled
+::
+++  tg-drain-each
+  |=  names=(list @ta)
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  culled=?  &
+  |-
+  ?~  names  (pure:m culled)
+  ;<  update=json  bind:m  (read-json (rf 0 /telegram-inbox i.names))
+  ;<  ~  bind:m  (tg-handle update)
+  ;<  ~  bind:m  tg-yield
+  ;<  err=(unit tang)  bind:m  (cull-soft:io (rf 0 /telegram-inbox i.names))
+  $(names t.names, culled &(culled ?=(~ err)))
+::  +tg-yield: the next event. The webhook's request fiber is answered
+::  after its rev write is acked, and a cull in the event of that write
+::  held the ack until another event came along (wex, 2026-09-20: an
+::  update with no model call answered only when the next request hit
+::  the ship), so the cull waits for a timer that fires at once. News
+::  taken meanwhile is nothing lost: +tg-drain lists the inbox again.
+::
+++  tg-yield
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /yield now)
+  |-
+  ;<  in=gen-in  bind:m  (take-gen-in /tg)
+  ?:  ?=([%wake [%yield ~]] in)  (pure:m ~)
+  $
+::  +tg-handle: one update: the filters, then a command or the model, then
+::  the filing, then the window and the record. A held message is not
+::  read and not context; the window is written after a reading whatever
+::  it yielded, so a question rides along as the next message's context.
+::
+++  tg-handle
+  |=  update=json
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
+  =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
+  =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
+  ?~  mu  (tg-record now uid '' '' 'ignored' ~['not a message'])
+  =/  msg=tg-msg:orr  u.mu
+  ?.  (~(has in chats.cfg) chat.msg)
+    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)])
+  =/  who=(unit @t)  (~(get by people.cfg) from.msg)
+  ?~  who
+    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)])
+  ;<  stranger=?  bind:m  (tg-stranger cfg business.msg)
+  ?:  stranger
+    (tg-record now uid chat.msg from.msg 'ignored' ~['business connection of an account not in people'])
+  ?:  =('' text.msg)  (tg-record now uid chat.msg from.msg 'ignored' ~['no text'])
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  =/  cmd=(unit tg-facts:orr)  (tg-command:orr msg u.who)
+  ?^  cmd
+    ;<  ~  bind:m  (tg-file u.cmd u.who now)
+    =/  outcome=@t  ?:(&(=(~ obs.u.cmd) =(~ acts.u.cmd)) 'refused' 'facts')
+    (tg-record now uid chat.msg from.msg outcome notes.u.cmd)
+  ?:  (gte today max-daily.cfg)
+    (tg-record now uid chat.msg from.msg 'held' ~['today\'s messages are spent'])
+  ;<  facts=tg-facts:orr  bind:m  (tg-read cfg msg u.who now)
+  ;<  ~  bind:m  (tg-file facts u.who now)
+  ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  ::  a chat taken out of the settings loses its window
+  =/  window=json
+    =/  r=json  (tg-remember:orr recent msg u.who now)
+    ?.  ?=([%o *] r)  r
+    [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
+  ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
+  =/  outcome=@t  ?:(&(=(~ obs.facts) =(~ bodies.facts) =(~ acts.facts)) 'nothing' 'facts')
+  (tg-record now uid chat.msg from.msg outcome notes.facts)
+::  +tg-read: the gate, the analyst, validation, grounding, the status
+::  check and the escalate question, with the window as context. A
+::  decider that cannot answer reads the message, escalates nothing and
+::  keeps every status, each said in the notes.
+::
+++  tg-read
+  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da]
+  =/  m  (fiber:fiber:nexus ,tg-facts:orr)
+  ^-  form:m
+  =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
+  ?:  q  (pure:m [~ ~ ~ ~['a question states nothing'] ~])
+  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  gen=config:orr  (de-config:orr gen-j)
+  ?:  =('' api-key.gen)
+    (pure:m [~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  =/  rows=(list window-row:orr)
+    %+  snoc
+      (turn (tg-window:orr recent chat.msg) |=([id=@t at=@t w=@t t=@t] ^-(window-row:orr [id at w t &])))
+    ^-  window-row:orr
+    [id:(tg-source:orr msg) (en-iso:orr at.msg) who text.msg |]
+  ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
+  =/  p=@ud  ?~(gate 100 (noul-of:orr u.gate 'worth_reading'))
+  =/  gate-note=@t
+    ?~  gate  'gate unavailable, analyst asked'
+    (rap 3 'gate: ' (crip (a-co:co p)) ?:((lth p gate.cfg) ', not read' ', read') ~)
+  ?:  (lth p gate.cfg)  (pure:m [~ ~ ~ ~[gate-note] ~])
+  =/  tz=@t
+    =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
+    =/  from-me=@t
+      ?~  me  ''
+      (winner-text:orr (fold:orr rows.u.me (multi-of:orr schema) now) 'timezone')
+    ?:(=('' from-me) timezone.gen from-me)
+  =/  small=config:orr
+    gen(model model.cfg, max-tokens max-tokens.cfg, reasoning [%o (my ~[['enabled' b+|]])])
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    %:  post-json
+      (cat 3 url.gen '/chat/completions')
+      api-key.gen
+      (chat-body-with:orr small analyst-prompt:orr ~[(reader-prompt:orr rows ctx tz)])
+      ~m5
+      %reader
+    ==
+  ?.  =(200 status.got)
+    =/  why=@t  (rap 3 'model: ' (crip (a-co:co status.got)) ' ' (end [3 200] body.got) ~)
+    (pure:m [~ ~ ~ ~[gate-note why] ~])
+  =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
+  ?:  ?=(%| -.ans)  (pure:m [~ ~ ~ ~[gate-note p.ans] ~])
+  =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
+  ?~  parsed  (pure:m [~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
+  =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
+  =.  notes.facts  [gate-note notes.facts]
+  ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
+  ;<  esc=(unit json)  bind:m
+    ?:  =(~ obs.facts)  (pure:(fiber:fiber:nexus ,(unit json)) ~)
+    (ask-decider gen (escalate-body:orr rows ctx obs.facts))
+  =/  e=@ud  ?~(esc 0 (noul-of:orr u.esc 'needs_help_now'))
+  =?  notes.facts  ?=(^ esc)  (snoc notes.facts (rap 3 'escalate: ' (crip (a-co:co e)) ~))
+  =?  escalate.facts  &(?=(^ esc) (gte e escalate.cfg))  `(urgent-ids:orr facts)
+  (pure:m facts)
+::  +tg-status-check: analyze.status_check: each status proposed for a
+::  person put to the decider; one it calls a feeling with 60 or more is
+::  dropped with a note
+::
+++  tg-status-check
+  |=  [gen=config:orr rows=(list window-row:orr) facts=tg-facts:orr]
+  =/  m  (fiber:fiber:nexus ,tg-facts:orr)
+  ^-  form:m
+  =/  asked=(list @ud)
+    =/  n=@ud  0
+    |-  ^-  (list @ud)
+    ?~  obs.facts  ~
+    =/  rest  $(obs.facts t.obs.facts, n +(n))
+    ?:  ?&  =('status' (gs:orr i.obs.facts 'attr'))
+            =('person/' (end [3 7] (gs:orr i.obs.facts 'subject')))
+        ==
+      [n rest]
+    rest
+  ?~  asked  (pure:m facts)
+  ;<  ans=(unit json)  bind:m  (ask-decider gen (status-body:orr rows obs.facts))
+  ?~  ans  (pure:m facts(notes (snoc notes.facts 'status check unavailable, kept')))
+  =/  drop=(set @ud)
+    %-  sy
+    %+  skim  `(list @ud)`asked
+    |=  i=@ud
+    =/  c  (choice-of:orr u.ans (crip "status_{(a-co:co i)}"))
+    &(!=('' choice.c) (gte p.c 60) !=('circumstance' choice.c))
+  =/  kept=(list json)
+    =/  n=@ud  0
+    |-  ^-  (list json)
+    ?~  obs.facts  ~
+    =/  rest  $(obs.facts t.obs.facts, n +(n))
+    ?:((~(has in drop) n) rest [i.obs.facts rest])
+  =/  said=(list @t)
+    %+  turn  (sort ~(tap in drop) lth)
+    |=  i=@ud
+    (rap 3 'status "' (ref-or-text:orr (gj:orr (snag i obs.facts) 'value')) '": dropped as a feeling' ~)
+  (pure:m facts(obs kept, notes (weld notes.facts said)))
+::  +tg-file: the facts through the writer, then the urgent pass: the
+::  poke serve-generate sends, force with the ids to look at first
+::
+++  tg-file
+  |=  [facts=tg-facts:orr who=@t now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  obs=(list json)  (turn obs.facts tg-final-row)
+  ;<  *  bind:m  (file-ops-on (observe-ops:orr bodies.facts obs) /tg)
+  =/  act-ops=(list json)
+    %+  turn  acts.facts
+    |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now 'telegram')]]))
+  ;<  *  bind:m  (file-ops-on act-ops /tg)
+  ?~  escalate.facts  (pure:m ~)
+  ;<  *  bind:m
+    %+  poke-soft:io  (rf 0 / %'gen.sig')
+    :-  [/ %json]
+    (pairs:enjs:format ~[['force' b+&] ['about' a+(turn u.escalate.facts |=(x=@t `json`s+x))]])
+  (pure:m ~)
+::  +tg-final-row: a validated observation (subject, attr, value, at,
+::  conf, message, until) as the writer's row: the source is the message
+::  it came from, by telegram, the message key gone. A command's rows
+::  arrive in that shape already and pass unchanged.
+::
+++  tg-final-row
+  |=  o=json
+  ^-  json
+  ?.  ?=([%o *] o)  o
+  =/  msg=@t  (gs:orr o 'message')
+  ?:  =('' msg)  o
+  :-  %o
+  %-  ~(gas by (~(del by p.o) 'message'))
+  :~  ['source' (pairs:enjs:format ~[['kind' s+'chat'] ['id' s+msg]])]
+      ['by' s+'telegram']
+  ==
+::  +tg-stranger: whether a business message comes through a connection
+::  of an account not in people. The connection's owner is read from
+::  telegram-connections.json, or asked of the telegram API once and
+::  remembered there; one the API will not name is a stranger's.
+::
+++  tg-stranger
+  |=  [cfg=tg-config:orr conn=@t]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ?:  =('' conn)  (pure:m |)
+  ;<  known=json  bind:m  (read-json (rf 0 / %'telegram-connections.json'))
+  =/  owner=@t  (gs:orr known conn)
+  ?.  =('' owner)  (pure:m !(~(has by people.cfg) owner))
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    %^    get-json
+        (rap 3 api-url.cfg '/bot' token.cfg '/getBusinessConnection?business_connection_id=' conn ~)
+      ~s30
+    %telegram
+  =/  id=json  (gj:orr (gj:orr (gj:orr (fall (de:json:html body.got) ~) 'result') 'user') 'id')
+  =/  found=@t  ?:(?=([%n *] id) p.id ?:(?=([%s *] id) p.id ''))
+  ?:  |(!=(200 status.got) =('' found))  (pure:m &)
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'telegram-connections.json') [[/ %json] (set-key:orr known conn s+found)])
+  (pure:m !(~(has by people.cfg) found))
+::  +tg-record: what the reader did with the last update, for the page;
+::  read_today counts the messages the model read (facts or nothing),
+::  since the daily cap is about the model
+::
+++  tg-record
+  |=  [now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  =/  read=?  |(=('facts' outcome) =('nothing' outcome))
+  %+  over:io  (rf 0 / %'telegram-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['at' s+(en-iso:orr now)]
+      ['update_id' (numb:enjs:format uid)]
+      ['chat' s+chat]
+      ['from' s+from]
+      ['outcome' s+outcome]
+      ['notes' a+(turn (scag 20 notes) |=(n=@t `json`s+(end [3 300] n)))]
+      ['day' s+day]
+      ['read_today' (numb:enjs:format ?:(read +(today) today))]
+  ==
 ::  +do-add-client: one minted key, refused when the id is taken or the
 ::  table is full. The row arrives hashed; the writer never sees a
 ::  secret. Keys are not model state, so no beacon bump.
