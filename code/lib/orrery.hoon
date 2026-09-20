@@ -300,6 +300,11 @@
   ^-  ?
   ?.  ?=([%o *] jon)  |
   (~(has by p.jon) k)
+++  set-key                                     ::  a key set on an object
+  |=  [jon=json k=@t v=json]
+  ^-  json
+  ?.  ?=([%o *] jon)  [%o (~(gas by *(map @t json)) ~[[k v]])]
+  [%o (~(put by p.jon) k v)]
 ++  gs                                          ::  a string, or ''
   |=  [jon=json k=@t]
   ^-  @t
@@ -3342,14 +3347,25 @@
     %a  ?=(^ p.v)
     %o  !=(~ p.v)
   ==
+::  +no-seconds: a YYYY-MM-DDTHH:MM head with nothing but a zone after it
+::
+++  no-seconds
+  |=  s=tape
+  ^-  ?
+  ?.  (gte (lent s) 16)  |
+  ?:  =(16 (lent s))  &
+  =/  c=@tD  (snag 16 s)
+  |(=('+' c) =('-' c) =('Z' c) =('z' c))
 ::  +de-iso-any: analyze.iso_or_none's parse: a bare date, a naive time,
-::  a Z time or one with a +HH:MM offset, as a @da in UTC
+::  a Z time or one with a +HH:MM offset, as a @da in UTC. A time with
+::  no seconds gets :00, which is how python's fromisoformat reads it.
 ::
 ++  de-iso-any
   |=  t=@t
   ^-  (unit @da)
   =/  s=tape  (trim-tape (trip t))
   ?:  (is-iso-date s)  (de-iso (crip (weld s "T00:00:00Z")))
+  =?  s  (no-seconds s)  (weld `tape`(scag 16 s) (weld ":00" `tape`(slag 16 s)))
   ?.  (gte (lent s) 19)  ~
   =/  when=(unit @da)  (de-iso (crip (weld `tape`(scag 19 s) "Z")))
   ?~  when  ~
@@ -3649,7 +3665,16 @@
     ?^(given u.given (fall (~(get by at-of) msg) ''))
   =/  conf=@ud
     =/  n=(unit @ud)  (gn o 'conf')
-    ?~(n 70 (min 100 u.n))
+    ?^  n  (min 100 u.n)
+    ::  python's int() reads "80" and 80.5 as numbers, where gn reads
+    ::  neither: a string and a fraction are still a confidence
+    =/  v=json  (gj o 'conf')
+    =/  t=@t
+      ?:  ?=([%s *] v)  (trim-cord p.v)
+      ?:  ?=([%n *] v)  p.v
+      ''
+    ?.  &(!=('' t) (is-digit (end [3 1] t)))  70
+    (min 100 (div (micro-of t) 1.000.000))
   =/  until=(unit @t)  (iso-or-none (gj o 'until'))
   =/  row=json
     %-  pairs:enjs:format
@@ -3824,4 +3849,225 @@
   =/  va
     (validate-acts (ga answer 'actions') ctx known.vb alias.vb ids context-ids at-of text-of last)
   [bodies.vb obs.vo acts.va :(weld notes.vb notes.vo notes.va) ~]
+::  ==  the reader's grounding: the facts a message bears out (bot.grounded)
+::
+::  a small model writes what it remembers as readily as what it read, so
+::  a chat fact has to be traceable to its message. Words that put a
+::  message in its author's mouth, and words that point at someone else:
+::  a message with the second and none of the first is about someone
+::  else, whoever sent it ("grandpa's flight got cancelled", from Sarah)
+::
+++  first-person
+  `(set @t)`(sy `(list @t)`~['i' 'i\'m' 'im' 'i\'ve' 'i\'ll' 'i\'d' 'me' 'my' 'mine' 'myself' 'we' 'we\'re' 'we\'ve' 'we\'ll' 'us' 'our' 'ours'])
+++  someone-else
+  `(set @t)`(sy `(list @t)`~['he' 'he\'s' 'him' 'his' 'she' 'she\'s' 'her' 'hers' 'they' 'they\'re' 'them' 'their' 'grandma' 'grandpa' 'granny' 'nana' 'mom' 'mum' 'mother' 'dad' 'father' 'wife' 'husband' 'son' 'daughter' 'brother' 'sister' 'aunt' 'uncle' 'cousin' 'baby' 'kids' 'boss' 'friend'])
+::  a status naming a diagnosis is a medical fact, which goes under
+::  health, out of every key's sight, and nowhere else: moved there when
+::  the key's schema lists health, dropped when it does not
+::
+++  medical-words
+  `(set @t)`(sy `(list @t)`~['covid' 'flu' 'cancer' 'positive' 'diagnosed' 'diagnosis' 'infection' 'fever' 'surgery' 'chemo' 'pregnant' 'hospital' 'hospitalized' 'medication'])
+::  attributes whose value is a paraphrase by design, held to sharing a
+::  word with what was said rather than to being quoted from it
+::
+++  paraphrased  `(set @t)`(sy `(list @t)`~['status' 'health'])
+::  +word-list: the [a-z0-9']+ runs of a text, lower-cased
+::
+++  word-list
+  |=  t=@t
+  ^-  (list @t)
+  =/  low=tape  (cass (trip t))
+  %+  turn  (split-char ' ' (turn low |=(c=@ ?:(|(&((gte c 'a') (lte c 'z')) (is-digit c) =(c '\'')) c ' '))))
+  |=(w=tape ^-(@t (crip w)))
+::  +words: a text as its words, one space between and one at each end,
+::  so a name matches only on whole words
+::
+++  words
+  |=  t=@t
+  ^-  @t
+  (rap 3 ' ' (join-cords ' ' (word-list t)) ' ' ~)
+::  +named-in: bot.named_in: the ids of the bodies a text names, by a
+::  name or an alias as whole words, or a person's first name; three
+::  letters at least, so "me" names nobody
+::
+++  named-in
+  |=  [text=@t bodies=(list ctx-body)]
+  ^-  (set @t)
+  =/  said=@t  (words text)
+  %-  ~(gas in *(set @t))
+  ^-  (list @t)
+  %+  murn  bodies
+  |=  b=ctx-body
+  ^-  (unit @t)
+  =/  names=(list @t)  [name.b aliases.b]
+  =?  names  =('person/' (end [3 7] id.b))
+    =/  first=(list tape)  (split-char ' ' (trip name.b))
+    ?~(first names (snoc names (crip i.first)))
+  ?.  %+  lien  names
+      |=  n=@t
+      ^-  ?
+      =/  w=@t  (words n)
+      ?:  (lth (met 3 (trim-cord n)) 3)  |
+      ?:  =('' (trim-cord w))  |
+      ?=(^ (find (trip w) (trip said)))
+    ~
+  `id.b
+::  +shares-a-word: whether a paraphrase could be of this text: a word
+::  of four letters or more in common
+::
+++  shares-a-word
+  |=  [value=@t text=@t]
+  ^-  ?
+  =/  vs=(list @t)  (word-list value)
+  =/  long=(set @t)  (~(gas in *(set @t)) (skim vs |=(w=@t (gte (met 3 w) 4))))
+  =/  ts=(list @t)  (word-list text)
+  (lien ts |=(w=@t (~(has in long) w)))
+::  +ground: bot.grounded. The model's facts that its messages bear
+::  out: about the author, when the message is theirs to speak for, or
+::  a body the message names; a value other than a status or health
+::  found in the message's words; a status or health not read from the
+::  earlier messages instead; a status naming a diagnosis moved to
+::  health; nothing from a question. The rest is dropped with a note,
+::  and so is a new body no fact kept is about.
+::
+++  ground
+  |=  [facts=tg-facts rows=(list window-row) ctx=reader-ctx]
+  ^-  tg-facts
+  =/  by-id=(map @t window-row)
+    (~(gas by *(map @t window-row)) (turn rows |=(r=window-row [id.r r])))
+  =/  earlier=(list @t)
+    (turn (skim rows |=(r=window-row context.r)) |=(r=window-row text.r))
+  =/  pool=(list ctx-body)
+    %+  weld  bodies.ctx
+    %+  turn  bodies.facts
+    |=(b=json ^-(ctx-body [(gs b 'id') (gs b 'name') (strings (ga b 'aliases'))]))
+  =|  keep=(list json)
+  =|  notes=(list @t)
+  =/  rest=(list json)  obs.facts
+  |-
+  ^-  tg-facts
+  ?~  rest
+    =/  kept=(list json)  (flop keep)
+    ::  a body a kept fact is about: its subject, its ref, an action's about
+    =/  subjects=(list @t)  (turn kept |=(o=json (gs o 'subject')))
+    =/  refs=(list @t)
+      %+  murn  kept
+      |=  o=json
+      ^-  (unit @t)
+      =/  r=@t  (gs (gj o 'value') 'ref')
+      ?:(=('' r) ~ `r)
+    =/  abouts=(list @t)
+      %+  roll  acts.facts
+      |=  [a=json acc=(list @t)]
+      ^-  (list @t)
+      (weld acc `(list @t)`(strings (ga a 'about')))
+    =/  used=(set @t)  (~(gas in *(set @t)) subjects)
+    =.  used  (~(gas in used) refs)
+    =.  used  (~(gas in used) abouts)
+    =/  known=(set @t)
+      (~(gas in *(set @t)) (turn bodies.ctx |=(b=ctx-body id.b)))
+    =/  said=@t
+      %-  words
+      %+  join-cords  ' '
+      (turn (skip rows |=(r=window-row context.r)) |=(r=window-row text.r))
+    =/  bout=[bodies-out=(list json) body-notes=(list @t)]
+      %+  roll  bodies.facts
+      |=  [b=json acc=[bodies-out=(list json) body-notes=(list @t)]]
+      ^-  [bodies-out=(list json) body-notes=(list @t)]
+      =/  id=@t  (gs b 'id')
+      ?:  (~(has in known) id)
+        ::  new names for a body the ship has: only words the messages use
+        =/  als=(list @t)
+          %+  skim  `(list @t)`(strings (ga b 'aliases'))
+          |=  a=@t
+          ^-  ?
+          =/  w=@t  (words a)
+          &(!=('' (trim-cord w)) ?=(^ (find (trip w) (trip said))))
+        ?~  als
+          :-  bodies-out.acc
+          [(rap 3 'dropped new names for ' id ': not in the message' ~) body-notes.acc]
+        =/  fresh=(list json)  (turn `(list @t)`als |=(a=@t `json`s+a))
+        [(snoc bodies-out.acc (set-key b 'aliases' a+fresh)) body-notes.acc]
+      ?:  (~(has in used) id)  [(snoc bodies-out.acc b) body-notes.acc]
+      :-  bodies-out.acc
+      [(rap 3 'dropped body ' id ': no fact is about it' ~) body-notes.acc]
+    :*  bodies-out.bout
+        kept
+        acts.facts
+        :(weld notes.facts (flop notes) (flop body-notes.bout))
+        escalate.facts
+    ==
+  =/  o=json  i.rest
+  =/  m=window-row  (fall (~(get by by-id) (gs o 'message')) *window-row)
+  =/  text=@t  text.m
+  ::  a possessive points as surely as the word: "grandpa's flight" is grandpa's
+  =/  said=(set @t)
+    =/  ws=(list @t)  (word-list text)
+    =/  stems=(list @t)
+      %+  murn  ws
+      |=  w=@t
+      ^-  (unit @t)
+      =/  n=@ud  (met 3 w)
+      ?.  &((gte n 2) =('\'s' (rsh [3 (sub n 2)] w)))  ~
+      `(end [3 (sub n 2)] w)
+    (~(gas in *(set @t)) (weld ws stems))
+  =/  named=(set @t)  (named-in text pool)
+  =/  persons=(list @t)
+    (skim `(list @t)`~(tap in named) |=(n=@t =('person/' (end [3 7] n))))
+  =/  others=(set @t)  (~(del in (~(gas in *(set @t)) persons)) who.m)
+  =/  subject=@t  (gs o 'subject')
+  =/  attr=@t  (gs o 'attr')
+  =/  value=json  (gj o 'value')
+  =/  vtext=@t  (ref-or-text value)
+  =/  medical=?
+    ?.  =('status' attr)  |
+    ?.  ?=([%s *] value)  |
+    (lien `(list @t)`(word-list p.value) |=(w=@t (~(has in medical-words) w)))
+  =/  listed=(list @t)  (fall (~(get by attrs.ctx) (kind-of subject)) `(list @t)`~)
+  =/  why=@t
+    =/  tt=@t  (trim-cord text)
+    ?:  &(!=('' tt) =('?' (rsh [3 (dec (met 3 tt))] tt)))
+      'a question states nothing'
+    ?:  &(!=(subject who.m) !(~(has in named) subject))
+      'not the author and not named in the message'
+    ?:  ?&  =(subject who.m)
+            !(~(has in named) subject)
+            |(!=(~ (~(int in said) someone-else)) !=(~ others))
+            =(~ (~(int in said) first-person))
+        ==
+      'the message is about someone else'
+    ?:  &(medical !(lien listed |=(a=@t =('health' a))))
+      'a medical fact goes under health, which this key may not write'
+    ?:  ?&  !(~(has in paraphrased) attr)
+            ?=([%o *] value)
+            !(~(has in named) (gs value 'ref'))
+        ==
+      (cat 3 'the message does not name ' (gs value 'ref'))
+    ?:  ?&  !(~(has in paraphrased) attr)
+            |(?=([%s *] value) ?=([%n *] value))
+            ?=(~ (find (trip (lower vtext)) (trip (lower text))))
+        ==
+      'the value is not in the message'
+    ?:  ?&  (~(has in paraphrased) attr)
+            ?=([%s *] value)
+            !(shares-a-word vtext text)
+            (lien earlier |=(e=@t (shares-a-word vtext e)))
+        ==
+      'read from the earlier messages'
+    ''
+  ?.  =('' why)
+    $(rest t.rest, notes [(rap 3 'dropped ' subject '.' attr ': ' why ~) notes])
+  =/  fixed=json
+    ::  a chat fact is true from its message, not from midnight: a bare
+    ::  date would lose the fold to anything said earlier that day
+    =/  at=@t  (gs o 'at')
+    =/  stamped=json
+      ?.  &(=('T00:00:00Z' (rsh [3 10] at)) =((end [3 10] at) (end [3 10] at.m)))
+        o
+      (set-key o 'at' s+at.m)
+    ?.  medical  stamped
+    (set-key stamped 'attr' s+'health')
+  =?  notes  medical
+    [(rap 3 'moved ' subject '.status to health: a medical fact' ~) notes]
+  $(rest t.rest, keep [fixed keep])
 --

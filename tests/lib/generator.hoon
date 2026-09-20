@@ -686,6 +686,17 @@
     (expect-eq !>('2026-09-18T00:00:00Z') !>((gs:orr (snag 2 acts.got) 'due')))
     (expect-eq !>('telegram/1/2') !>((gs:orr (snag 2 acts.got) 'message')))
   ==
+::  +conf: a confidence the model wrote as a string or a fraction is still a
+::  number, as python's int() reads it
+++  test-reader-conf
+  =/  answer=json
+    %-  jo
+    '{"bodies": [], "observations": [{"subject": "person/me", "attr": "status", "value": "home", "conf": "80", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "location", "value": {"ref": "place/home"}, "conf": 80.5, "message": "telegram/1/2"}], "actions": []}'
+  =/  got=tg-facts:orr  (validate-reader:orr answer tg-rows tg-ctx)
+  ;:  weld
+    (expect-eq !>(80) !>((need (gn:orr (snag 0 obs.got) 'conf'))))
+    (expect-eq !>(80) !>((need (gn:orr (snag 1 obs.got) 'conf'))))
+  ==
 ++  test-plan-problem
   =/  p  |=(t=@t ^-((map @t json) =/(j=json (jo t) ?:(?=([%o *] j) p.j ~))))
   =/  at=@t  '2026-09-19T12:00:00Z'
@@ -694,9 +705,71 @@
     (expect-eq !>(`(unit @t)`[~ 'the title is not in the message\'s words']) !>((plan-problem:orr (p '{"title": "Haircut", "starts": "2026-09-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
     (expect-eq !>(`(unit @t)`[~ 'starts is not within the year ahead of the message']) !>((plan-problem:orr (p '{"title": "Dentist", "starts": "2027-11-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
     (expect-eq !>(*(unit @t)) !>((plan-problem:orr (p '{"title": "Dentist", "starts": "2026-09-22T14:30:00Z"}') 'dentist tuesday at 2:30' at)))
+    ::  a time with no seconds is a time, as python's fromisoformat has it
+    (expect-eq !>(*(unit @t)) !>((plan-problem:orr (p '{"title": "Dentist", "starts": "2026-09-22T14:30"}') 'dentist tuesday at 2:30' at)))
     (expect !>((fixes-a-time:orr 'see you tonight')))
     (expect !>((fixes-a-time:orr 'on the 3rd')))
     (expect !>((fixes-a-time:orr 'Sep 12 works')))
     (expect !>(!(fixes-a-time:orr 'sometime soon')))
+  ==
+::  ==  the reader's grounding
+::
+++  test-ground
+  =/  answer=json
+    %-  jo
+    '{"bodies": [{"id": "place/johns-machine-shop", "name": "John\'s Machine Shop"}, {"id": "place/home", "aliases": ["the house", "next door"]}], "observations": [{"subject": "person/me", "attr": "location", "value": {"ref": "place/home"}, "conf": 80, "message": "telegram/1/2"}, {"subject": "thing/subaru", "attr": "location", "value": {"ref": "place/johns-machine-shop"}, "message": "telegram/1/2"}, {"subject": "thing/subaru", "attr": "status", "value": "at the shop", "message": "telegram/1/2"}, {"subject": "person/sarah", "attr": "status", "value": "on jury duty", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "status", "value": "on jury duty", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "health", "value": "covid positive", "message": "telegram/1/2"}], "actions": []}'
+  =/  facts=tg-facts:orr  (validate-reader:orr answer tg-rows tg-ctx)
+  =/  got=tg-facts:orr  (ground:orr facts tg-rows tg-ctx)
+  ;:  weld
+    ::  the message names sarah and never the author, so what it says of the
+    ::  author is about someone else; the car and the shop it does not name
+    (expect-eq !>(`(list @t)`~) !>((turn obs.got |=(o=json (gs:orr o 'attr')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/me.location: the message is about someone else')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/me.health: the message is about someone else')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped thing/subaru.location: not the author and not named in the message')))))
+    ::  sarah the message does name, but her status is the earlier message's words
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/sarah.status: read from the earlier messages')))))
+    ::  no fact is left about the shop; home keeps no alias the message does not use
+    (expect-eq !>(`(list json)`~) !>(bodies.got))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped body place/johns-machine-shop: no fact is about it')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped new names for place/home: not in the message')))))
+  ==
+++  test-ground-someone-else
+  =/  rows=(list window-row:orr)  ~[['telegram/1/3' '2026-09-17T16:20:00Z' 'person/sarah' 'grandpa\'s flight got cancelled' |]]
+  =/  facts=tg-facts:orr
+    %-  validate-reader:orr  :_  [rows tg-ctx]
+    (jo '{"bodies": [], "observations": [{"subject": "person/sarah", "attr": "status", "value": "flight cancelled", "message": "telegram/1/3"}], "actions": []}')
+  =/  got=tg-facts:orr  (ground:orr facts rows tg-ctx)
+  =/  ctx=reader-ctx:orr  tg-ctx
+  ;:  weld
+    (expect-eq !>(0) !>((lent obs.got)))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/sarah.status: the message is about someone else')))))
+    (expect-eq !>(' car died on route 9 ') !>((words:orr 'Car died, on Route 9!')))
+    (expect !>((~(has in (named-in:orr 'home now' bodies.ctx)) 'place/home')))
+    (expect !>((~(has in (named-in:orr 'sarah called' bodies.ctx)) 'person/sarah')))
+    (expect !>(!(~(has in (named-in:orr 'me too' bodies.ctx)) 'person/me')))
+  ==
+::  what grounding keeps: a fact the message bears out, a bare date fixed to
+::  the message's hour, a diagnosis moved to health, a new body a fact is about
+++  test-ground-keeps
+  =/  rows=(list window-row:orr)
+    :~  ['telegram/2/1' '2026-09-18T15:00:00Z' 'person/me' 'i tested positive for covid, car is at john\'s machine shop' |]
+        ['telegram/2/2' '2026-09-18T15:05:00Z' 'person/me' 'is the car at the shop?' |]
+    ==
+  =/  answer=json
+    %-  jo
+    '{"bodies": [{"id": "place/johns-machine-shop", "name": "John\'s Machine Shop"}], "observations": [{"subject": "person/me", "attr": "status", "value": "covid positive", "message": "telegram/2/1"}, {"subject": "person/me", "attr": "location", "value": {"ref": "place/johns-machine-shop"}, "at": "2026-09-18", "message": "telegram/2/1"}, {"subject": "person/me", "attr": "location", "value": "Paris", "message": "telegram/2/1"}, {"subject": "person/me", "attr": "status", "value": "at the shop", "message": "telegram/2/2"}, {"subject": "person/me", "attr": "location", "value": {"ref": "place/home"}, "message": "telegram/2/1"}], "actions": []}'
+  =/  facts=tg-facts:orr  (validate-reader:orr answer rows tg-ctx)
+  =/  got=tg-facts:orr  (ground:orr facts rows tg-ctx)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['health' 'location']) !>((turn obs.got |=(o=json (gs:orr o 'attr')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'moved person/me.status to health: a medical fact')))))
+    ::  a bare date is the message's hour, not midnight
+    (expect-eq !>('2026-09-18T15:00:00Z') !>((gs:orr (snag 1 obs.got) 'at')))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/me.location: the value is not in the message')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/me.status: a question states nothing')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped person/me.location: the message does not name place/home')))))
+    ::  the shop is a new body a kept fact points at
+    (expect-eq !>(`(list @t)`~['place/johns-machine-shop']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))
   ==
 --
