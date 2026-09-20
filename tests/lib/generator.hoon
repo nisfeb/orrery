@@ -530,4 +530,44 @@
     (expect-eq !>(`json`b+&) !>((gj:orr shown 'secret_set')))
     (expect-eq !>('x/y') !>((gs:orr shown 'model')))
   ==
+++  test-tg-message
+  =/  up=json  (jo '{"update_id": 7, "message": {"message_id": 13, "date": 1789660800, "chat": {"id": -1001}, "from": {"id": 42}, "text": "  hi there "}}')
+  =/  biz=json  (jo '{"update_id": 8, "business_message": {"message_id": 2, "date": 1789660800, "business_connection_id": "c1", "chat": {"id": 55}, "from": {"id": 55}, "text": "yo"}}')
+  =/  got=(unit tg-msg:orr)  (tg-message:orr up)
+  ;:  weld
+    (expect !>(?=(^ got)))
+    (expect-eq !>('-1001') !>(chat:(need got)))
+    (expect-eq !>('42') !>(from:(need got)))
+    (expect-eq !>('hi there') !>(text:(need got)))
+    (expect-eq !>('13') !>(mid:(need got)))
+    (expect-eq !>('') !>(business:(need got)))
+    (expect-eq !>('2026-09-17T16:00:00Z') !>((en-iso:orr at:(need got))))
+    (expect-eq !>('c1') !>(business:(need (tg-message:orr biz))))
+    (expect-eq !>(*(unit tg-msg:orr)) !>((tg-message:orr (jo '{"update_id": 9, "edited_message": {}}'))))
+    (expect-eq !>(*(unit tg-msg:orr)) !>((tg-message:orr (jo '{"update_id": 10, "message": {"message_id": 1, "date": 1, "text": "x"}}'))))
+    (expect-eq !>(`source:orr`['chat' 'telegram/-1001/13']) !>((tg-source:orr (need got))))
+  ==
+++  test-tg-window
+  =/  m1=tg-msg:orr  ['1001' '42' 'first' (sub now ~h2) '1' '']
+  =/  m2=tg-msg:orr  ['1001' '42' 'second' (sub now ~h1) '2' '']
+  =/  old=tg-msg:orr  ['1001' '42' 'stale' (sub now ~d2) '0' '']
+  =/  cmd=tg-msg:orr  ['1001' '42' '/status x' now '3' '']
+  =/  w=json  (tg-remember:orr (jo '{}') old 'person/me' (sub now ~d2))
+  =.  w  (tg-remember:orr w m1 'person/me' (sub now ~h2))
+  =.  w  (tg-remember:orr w m2 'person/me' (sub now ~h1))
+  =.  w  (tg-remember:orr w cmd 'person/me' now)
+  =/  win  (tg-window:orr w '1001')
+  =/  six=json
+    %+  roll  (gulf 1 6)
+    |=  [n=@ud acc=json]
+    (tg-remember:orr acc ['9' '42' (crip (a-co:co n)) now (crip (a-co:co n)) ''] 'person/me' now)
+  ;:  weld
+    ::  the stale one aged out, the command never went in
+    (expect-eq !>(`(list @t)`~['telegram/1001/1' 'telegram/1001/2']) !>((turn win |=([id=@t *] id))))
+    (expect-eq !>('second') !>(text:(rear win)))
+    (expect-eq !>('person/me') !>(who:(rear win)))
+    (expect-eq !>(5) !>((lent (tg-window:orr six '9'))))
+    (expect-eq !>('2') !>(text:(snag 0 (tg-window:orr six '9'))))
+    (expect-eq !>(`(list [@t @t @t @t])`~) !>((tg-window:orr w '2')))
+  ==
 --

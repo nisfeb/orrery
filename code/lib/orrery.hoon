@@ -2901,4 +2901,67 @@
       ['escalate' (numb:enjs:format escalate.c)]
       ['max_daily_messages' (numb:enjs:format max-daily.c)]
   ==
+::  the update, as far as the reader reads it
++$  tg-msg  [chat=@t from=@t text=@t at=@da mid=@t business=@t]
+++  tg-message
+  |=  update=json
+  ^-  (unit tg-msg)
+  =/  biz=json  (gj update 'business_message')
+  =/  msg=json  ?:(?=([%o *] biz) biz (gj update 'message'))
+  ?.  ?=([%o *] msg)  ~
+  =/  num
+    |=  j=json
+    ^-  @t
+    ?:  ?=([%n *] j)  p.j
+    ?:  ?=([%s *] j)  p.j
+    ''
+  =/  chat=@t  (num (gj (gj msg 'chat') 'id'))
+  =/  from=@t  (num (gj (gj msg 'from') 'id'))
+  ?:  |(=('' chat) =('' from))  ~
+  =/  secs=@ud  (fall (gn msg 'date') 0)
+  :-  ~
+  :*  chat
+      from
+      (crip (trim-tape (trip (gs msg 'text'))))
+      (add ~1970.1.1 (mul secs ~s1))
+      (num (gj msg 'message_id'))
+      ?:(?=([%o *] biz) (gs msg 'business_connection_id') '')
+  ==
+++  tg-source
+  |=  m=tg-msg
+  ^-  source
+  ['chat' (rap 3 'telegram/' chat.m '/' mid.m ~)]
+::  +tg-window: a chat's last free-text messages, oldest first, as the
+::  analyst's context rows
+++  tg-window
+  |=  [recent=json chat=@t]
+  ^-  (list [id=@t at=@t who=@t text=@t])
+  %+  murn  (ga recent chat)
+  |=  r=json
+  ^-  (unit [id=@t at=@t who=@t text=@t])
+  =/  id=@t  (gs r 'id')
+  ?:(=('' id) ~ `[id (gs r 'at') (gs r 'who') (gs r 'text')])
+::  +tg-remember: the window with this message appended: commands and
+::  empty text never go in, five per chat, nothing older than a day
+++  tg-remember
+  |=  [recent=json m=tg-msg who=@t now=@da]
+  ^-  json
+  =/  base=(map @t json)  ?:(?=([%o *] recent) p.recent ~)
+  ?:  |(=('' text.m) =('/' (end [3 1] text.m)))  [%o base]
+  =/  cutoff=@da  (sub now ~d1)
+  =/  kept=(list json)
+    %+  skip  (ga recent chat.m)
+    |=  r=json
+    =/  at=(unit @da)  (de-iso (gs r 'at'))
+    ?~(at & (lth u.at cutoff))
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id:(tg-source m)]
+        ['at' s+(en-iso at.m)]
+        ['who' s+who]
+        ['text' s+(end [3 2.000] text.m)]
+    ==
+  =/  all=(list json)  (snoc kept row)
+  =/  n=@ud  (lent all)
+  [%o (~(put by base) chat.m a+(slag (sub n (min n 5)) all))]
 --
