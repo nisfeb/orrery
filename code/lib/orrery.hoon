@@ -4070,4 +4070,157 @@
   =?  notes  medical
     [(rap 3 'moved ' subject '.status to health: a medical fact' ~) notes]
   $(rest t.rest, keep [fixed keep])
+::  ==  the decider: the questions the reader puts to the decision model
+::  (analyze.gate_state, gate, escalate, status_check), as request bodies
+::
+::  +known-line: analyze.known_line: a body as "id | name | alias, alias"
+::
+++  known-line
+  |=  b=ctx-body
+  ^-  @t
+  (rap 3 id.b ' | ' name.b ?~(aliases.b '' (cat 3 ' | ' (join-cords ', ' aliases.b))) ~)
+::  +rank-bodies: analyze.rank_bodies: the bodies the window names first,
+::  then people, then activities, places and orgs, then situations, then
+::  things; at most a thousand
+::
+++  rank-bodies
+  |=  [bodies=(list ctx-body) rows=(list window-row)]
+  ^-  (list ctx-body)
+  =/  text=@t  (join-cords ' ' (turn rows |=(r=window-row text.r)))
+  =/  named=(set @t)  (named-in text bodies)
+  =/  rank
+    |=  b=ctx-body
+    ^-  @ud
+    ?:  (~(has in named) id.b)  0
+    ?+  (kind-of id.b)  5
+      %person  1
+      %activity  2
+      %place  2
+      %org  2
+      %situation  3
+      %thing  4
+    ==
+  %+  scag  1.000
+  %+  sort  bodies
+  |=([a=ctx-body b=ctx-body] ?:(=((rank a) (rank b)) (aor id.a id.b) (lth (rank a) (rank b))))
+::  +gate-state: analyze.gate_state: the newest message, the earlier ones,
+::  and every known body by name, ranked
+::
+++  gate-state
+  |=  [rows=(list window-row) ctx=reader-ctx]
+  ^-  json
+  =/  new=(list window-row)  (skip rows |=(r=window-row context.r))
+  =/  earlier=(list window-row)  (skim rows |=(r=window-row context.r))
+  %-  pairs:enjs:format
+  :~  ['message' s+?~(new '' text:(rear new))]
+      ['from' s+?~(new '' who:(rear new))]
+      ['earlier' a+(turn earlier |=(r=window-row `json`s+text.r))]
+      ['known_bodies' a+(turn (rank-bodies bodies.ctx rows) |=(b=ctx-body `json`s+(known-line b)))]
+      ['rule' s+'a status is a circumstance, never a feeling; only facts about people, things, places and plans are recorded']
+  ==
+::  +noul-question: a yes-or-no question with its criteria
+::
+++  noul-question
+  |=  [instructions=@t yes=@t no=@t]
+  ^-  json
+  (pairs:enjs:format ~[['type' s+'noul'] ['instructions' s+instructions] ['criteria' (pairs:enjs:format ~[['true' s+yes] ['false' s+no]])]])
+::  +gate-body: analyze.GATE_QUESTION over the gate state: whether the
+::  newest message carries a fact the analyst should read
+::
+++  gate-body
+  |=  [rows=(list window-row) ctx=reader-ctx]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['state' (gate-state rows ctx)]
+      :-  'questions'
+      %-  pairs:enjs:format
+      :_  ~
+      :-  'worth_reading'
+      %^  noul-question
+        'Does the new message state a fact worth recording about a person, thing, place, or a plan, that the analyst should read?'
+        'it says where someone is, what they are dealing with, what happened, or what will happen, to whom and when'
+      'chatter, greetings, feelings, jokes, a question, or a request that carries no fact about anyone'
+  ==
+::  +escalate-body: analyze.ESCALATE_QUESTION over the gate state and the
+::  facts just kept: whether someone needs help within the hour
+::
+++  escalate-body
+  |=  [rows=(list window-row) ctx=reader-ctx facts=(list json)]
+  ^-  json
+  =/  st=json  (gate-state rows ctx)
+  =/  facts-j=json
+    :-  %a
+    %+  turn  (scag 40 facts)
+    |=(o=json (pairs:enjs:format ~[['subject' s+(gs o 'subject')] ['attr' s+(gs o 'attr')] ['value' s+(ref-or-text (gj o 'value'))]]))
+  =.  st  (set-key st 'facts' facts-j)
+  =.  st  (set-key st 'rule' s+'help within the hour means someone must act now; a plan or an update is not that')
+  %-  pairs:enjs:format
+  :~  ['state' st]
+      :-  'questions'
+      %-  pairs:enjs:format
+      :_  ~
+      :-  'needs_help_now'
+      %^  noul-question
+        'Does the new message describe a situation in which the owner, or someone close to them, needs help within the hour?'
+        'a breakdown, an accident, an injury or sudden illness, being stranded, locked out or without power, a child who must be picked up now, a missed or cancelled flight today, an emergency at home or at work'
+      'a plan, news, a routine update, a feeling, a complaint, or anything that can wait until tomorrow'
+  ==
+::  +status-body: analyze.status_check's request: each status proposed
+::  for a person, numbered by its place in the observations, put as a
+::  choice question naming its own proposal
+::
+++  status-body
+  |=  [rows=(list window-row) obs=(list json)]
+  ^-  json
+  =/  new=(list window-row)  (skip rows |=(r=window-row context.r))
+  =/  asked=(list [i=@ud o=json])
+    =/  n=@ud  0
+    |-  ^-  (list [i=@ud o=json])
+    ?~  obs  ~
+    =/  rest  $(obs t.obs, n +(n))
+    ?:  &(=('status' (gs i.obs 'attr')) =('person/' (end [3 7] (gs i.obs 'subject'))))  [[n i.obs] rest]
+    rest
+  %-  pairs:enjs:format
+  :~  :-  'state'
+      %-  pairs:enjs:format
+      :~  ['message' s+?~(new '' text:(rear new))]
+          ['from' s+?~(new '' who:(rear new))]
+          ['proposals' a+(turn asked |=([i=@ud o=json] (pairs:enjs:format ~[['n' (numb:enjs:format i)] ['subject' s+(gs o 'subject')] ['value' s+(ref-or-text (gj o 'value'))]])))]
+          ['rule' s+'status on a person is what they are doing or dealing with right now, in plain words; never a feeling, a quote or a wish']
+      ==
+      :-  'questions'
+      %-  pairs:enjs:format
+      %+  turn  asked
+      |=  [i=@ud o=json]
+      :-  (crip "status_{(a-co:co i)}")
+      %-  pairs:enjs:format
+      :~  ['type' s+'choice']
+          ['instructions' s+(rap 3 'Is this proposed status for the person a circumstance or a feeling? The proposal is n=' (crip (a-co:co i)) ': "' (ref-or-text (gj o 'value')) '".' ~)]
+          :-  'criteria'
+          %-  pairs:enjs:format
+          :~  ['circumstance' s+'what the person is doing or dealing with right now, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick, home with the kids']
+              ['feeling' s+'an emotion, a mood, a quote or a wish: want to scream, exhausted, so happy, wishes it were friday']
+              ['neither' s+'not a status at all: a plan, a location, an event, a thing']
+          ==
+      ==
+  ==
+::  +noul-of: a noul answer's probability in hundredths, 0 when absent
+::
+++  noul-of
+  |=  [answers=json key=@t]
+  ^-  @ud
+  =/  n=json  (gj (gj answers key) 'noul')
+  ?.  ?=([%n *] n)  0
+  (min 100 (div (micro-of p.n) 10.000))
+::  +choice-of: a choice answer and its probability in hundredths;
+::  ['' 0] when there is none
+::
+++  choice-of
+  |=  [answers=json key=@t]
+  ^-  [choice=@t p=@ud]
+  =/  a=json  (gj answers key)
+  =/  c=@t  (gs a 'choice')
+  ?:  =('' c)  ['' 0]
+  =/  p=json  (gj (gj a 'probabilities') c)
+  [c ?.(?=([%n *] p) 0 (min 100 (div (micro-of p.p) 10.000)))]
 --

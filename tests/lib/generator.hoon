@@ -772,4 +772,28 @@
     ::  the shop is a new body a kept fact points at
     (expect-eq !>(`(list @t)`~['place/johns-machine-shop']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))
   ==
+::  ==  the decider bodies
+::
+++  test-decider-bodies
+  =/  g=json  (gate-body:orr tg-rows tg-ctx)
+  =/  st=json  (gj:orr g 'state')
+  =/  e=json  (escalate-body:orr tg-rows tg-ctx ~[(jo '{"subject": "person/me", "attr": "status", "value": "stranded, waiting for a tow"}')])
+  =/  s=json  (status-body:orr tg-rows ~[(jo '{"subject": "person/me", "attr": "status", "value": "on jury duty"}') (jo '{"subject": "thing/subaru", "attr": "status", "value": "broken"}') (jo '{"subject": "person/me", "attr": "status", "value": "fed up"}')])
+  ;:  weld
+    (expect-eq !>('home now, car is at the shop; dinner with sarah friday at 8 at the usual place') !>((gs:orr st 'message')))
+    (expect-eq !>('person/me') !>((gs:orr st 'from')))
+    (expect-eq !>(`(list @t)`~['jury duty tomorrow']) !>((strings:orr (ga:orr st 'earlier'))))
+    ::  ranked: the bodies the message names first, then people
+    (expect-eq !>('person/sarah | Sarah | wife') !>((ref-or-text:orr (snag 0 (ga:orr st 'known_bodies')))))
+    (expect !>((has-key:orr (gj:orr g 'questions') 'worth_reading')))
+    (expect-eq !>('noul') !>((gs:orr (gj:orr (gj:orr g 'questions') 'worth_reading') 'type')))
+    (expect-eq !>('stranded, waiting for a tow') !>((gs:orr (snag 0 (ga:orr (gj:orr e 'state') 'facts')) 'value')))
+    (expect !>((has-key:orr (gj:orr e 'questions') 'needs_help_now')))
+    (expect !>((has-key:orr (gj:orr s 'questions') 'status_0')))
+    (expect !>((has-key:orr (gj:orr s 'questions') 'status_2')))
+    (expect !>(!(has-key:orr (gj:orr s 'questions') 'status_1')))
+    (expect-eq !>(88) !>((noul-of:orr (jo '{"worth_reading": {"type": "noul", "noul": 0.88}}') 'worth_reading')))
+    (expect-eq !>(0) !>((noul-of:orr (jo '{}') 'worth_reading')))
+    (expect-eq !>(`[@t @ud]`['feeling' 95]) !>((choice-of:orr (jo '{"status_2": {"type": "choice", "choice": "feeling", "probabilities": {"feeling": 0.95}}}') 'status_2')))
+  ==
 --

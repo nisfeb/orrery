@@ -2522,23 +2522,26 @@
         ['urgent_today' (numb:enjs:format ?:(urgent +(urgent-today) urgent-today))]
     ==
   (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
-::  +ask-model: one POST to the model with the app's own ten minute
-::  timer. iris has no timeout: a timer win is status 0. Measured in
-::  docs/spikes/2026-09-19-iris-probe.md: a 259 second answer arrived whole.
+::  +post-json: one POST through iris, under the app's own timer (iris
+::  has none): status 0 with why in the body when the timer wins or the
+::  road is refused. Measured in docs/spikes/2026-09-19-iris-probe.md: a
+::  259 second answer arrived whole. An empty key sends no authorization
+::  header. +ask-model and +ask-decider both use it.
 ::
-++  ask-model
-  |=  [cfg=config:orr parts=(list @t)]
+++  post-json
+  |=  [url=@t key=@t body=json timeout=@dr wire=@ta]
   =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
   ^-  form:m
   =/  =request:http
-    :^  %'POST'  (cat 3 url.cfg '/chat/completions')
-      :~  ['content-type' 'application/json']
-          ['authorization' (cat 3 'Bearer ' api-key.cfg)]
+    :^  %'POST'  url
+      %-  zing
+      :~  ~[['content-type' 'application/json']]
+          ?:(=('' key) ~ ~[['authorization' (cat 3 'Bearer ' key)]])
       ==
-    `(as-octs:mimes:html (en:json:html (chat-body:orr cfg parts)))
+    `(as-octs:mimes:html (en:json:html body))
   ;<  t0=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-request:io request)
-  ;<  ~  bind:m  (set-timer:io /model (add t0 ~m10))
+  ;<  ~  bind:m  (set-timer:io /[wire] (add t0 timeout))
   ;<  res=[why=@t r=(unit client-response:iris)]  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
@@ -2547,12 +2550,12 @@
         [~ %veto *]  [%done 'the iris road is refused: approve it on the permits page' ~]
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(?=([%model *] !<(path q.sage.u.in)) [%skip ~] [%done 'no answer before the ten minute timer' ~])
+        ?.(=(/[wire] !<(path q.sage.u.in)) [%skip ~] [%done 'no answer before the timer' ~])
       ?.  =([/ %http-response] p.sage.u.in)  [%skip ~]
       =/  resp=client-response:iris  !<(client-response:iris q.sage.u.in)
       ?:(?=(%cancel -.resp) [%done 'the request was cancelled' ~] [%done '' `resp])
     ==
-  ;<  ~  bind:m  (cancel-timer:io /model)
+  ;<  ~  bind:m  (cancel-timer:io /[wire])
   ;<  t1=@da  bind:m  get-time:io
   =/  secs=@ud  (div (sub t1 t0) ~s1)
   ?~  r.res  (pure:m [0 why.res secs])
@@ -2560,6 +2563,30 @@
   ?.  ?=(%finished -.resp)  (pure:m [0 'not finished' secs])
   =/  body=@t  ?~(full-file.resp '' q.data.u.full-file.resp)
   (pure:m [status-code.response-header.resp body secs])
+::  +ask-model: one POST to the model, ten minutes at most
+::
+++  ask-model
+  |=  [cfg=config:orr parts=(list @t)]
+  =/  m  (fiber:fiber:nexus ,[status=@ud body=@t secs=@ud])
+  ^-  form:m
+  (post-json (cat 3 url.cfg '/chat/completions') api-key.cfg (chat-body:orr cfg parts) ~m10 %model)
+::  +ask-decider: one decisions call with the generator's key and provider
+::  rule; ~ when it fails, so a decider that cannot answer decides nothing
+::
+++  ask-decider
+  |=  [cfg=config:orr body=json]
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  =/  full=json
+    %^  set-key:orr  (set-key:orr body 'model' s+'typesafe/jev-1.13')
+      'provider'
+    (pairs:enjs:format ~[['zdr' b+&]])
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (post-json 'https://openrouter.ai/api/alpha/decisions' api-key.cfg full ~s30 %decider)
+  ?.  =(200 status.got)  (pure:m ~)
+  =/  resp=json  (fall (de:json:html body.got) ~)
+  =/  answers=json  (gj:orr resp 'answers')
+  (pure:m ?.(?=([%o *] answers) ~ `answers))
 ::  +do-set-generator: merge the owner's generator settings over the
 ::  stored ones. A blank or missing api_key keeps the stored key, so the
 ::  page can save every other field without holding the secret; a JSON
