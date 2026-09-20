@@ -225,7 +225,9 @@
           ::  the telegram reader (version 29): wakes on the inbox, drains
           ::  it in update order, runs the bot's pipeline for each and
           ::  files the facts through the writer. It is never poked by
-          ::  the writer; an urgent message pokes the generator.
+          ::  the writer; an urgent message pokes the generator. The
+          ::  owner's wake route pokes it, and a retry timer wakes it
+          ::  when the model could not read an update.
           [~ %'telegram.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%orrery telegram: failed")
         ;<  *  bind:m  (keep:io /tg (rf 0 /telegram-inbox %rev) ~)
@@ -698,6 +700,7 @@
   ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))         (own (serve-set-telegram eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
   ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (own (serve-set-webhook eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-telegram-wake eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1633,7 +1636,9 @@
   (serve-set-doc eyre-id 'set-telegram' jon)
 ::  +serve-set-webhook: the ship tells Telegram where to send updates:
 ::  setWebhook with the public url (a trailing slash trimmed), the
-::  secret and the two update kinds the reader handles. Telegram's ok
+::  secret, the two update kinds the reader handles and one connection
+::  at a time, since the hook's update-id check assumes the updates
+::  arrive in order. Telegram's ok
 ::  and description come back as the answer, 502 when its status was
 ::  not 200; a blank token, secret or public url is a 400 before any
 ::  call.
@@ -1656,12 +1661,26 @@
     :~  ['url' s+(cat 3 base '/apps/orrery/telegram')]
         ['secret_token' s+secret.cfg]
         ['allowed_updates' a+~[s+'message' s+'business_message']]
+        ['max_connections' (numb:enjs:format 1)]
     ==
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
     (post-json (rap 3 api-url.cfg '/bot' token.cfg '/setWebhook' ~) '' body ~s30 %webhook)
   =/  resp=json  (fall (de:json:html body.got) [%o ~])
   %^  send-json  eyre-id  ?:(=(200 status.got) 200 502)
   (pairs:enjs:format ~[['ok' (gj:orr resp 'ok')] ['description' (gj:orr resp 'description')]])
+::  +serve-telegram-wake: the owner pokes the reader: a live one drains
+::  the inbox now (an update the model could not read waits on a five
+::  minute timer otherwise), a crashed one restarts on the poke, since
+::  nothing else pokes it
+::
+++  serve-telegram-wake
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 1 / %'telegram.sig') [[/ %sig] ~])
+  ?^  err  (send-err eyre-id 500 'the telegram fiber refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +serve-telegram-hook: an update from Telegram. The secret header must
 ::  equal the stored secret; the update goes to the inbox as its own grub
 ::  and the request answers at once, since Telegram gives up on a slow
@@ -2760,7 +2779,10 @@
 ::  +tg-drain: every update in the inbox, in order, each handled then
 ::  culled, so a crash mid-way leaves the rest for the next wake; then
 ::  the inbox again, since an update that arrived while these were
-::  handled woke nothing the settle did not take
+::  handled woke nothing the settle did not take. An update the model
+::  could not read stops the drain: it is neither recorded nor culled,
+::  and a retry timer wakes the reader in five minutes (the owner's
+::  wake route sooner).
 ::
 ++  tg-drain
   =/  m  (fiber:fiber:nexus ,~)
@@ -2775,7 +2797,9 @@
   ;<  culled=?  bind:m  (tg-drain-each names)
   ::  a file the cull left is not read again until the next wake
   ?.(culled (pure:m ~) tg-drain)
-::  +tg-drain-each: the named updates in turn; whether every one was culled
+::  +tg-drain-each: the named updates in turn; whether every one was
+::  culled. One the model was down for sets the retry timer (a pending
+::  one cancelled first, so wakes do not stack) and ends the drain.
 ::
 ++  tg-drain-each
   |=  names=(list @ta)
@@ -2785,7 +2809,12 @@
   |-
   ?~  names  (pure:m culled)
   ;<  update=json  bind:m  (read-json (rf 0 /telegram-inbox i.names))
-  ;<  ~  bind:m  (tg-handle update)
+  ;<  down=?  bind:m  (tg-handle update)
+  ?:  down
+    ;<  now=@da  bind:m  get-time:io
+    ;<  ~  bind:m  (cancel-timer:io /retry)
+    ;<  ~  bind:m  (set-timer:io /retry (add now ~m5))
+    (pure:m |)
   ;<  ~  bind:m  tg-yield
   ;<  err=(unit tang)  bind:m  (cull-soft:io (rf 0 /telegram-inbox i.names))
   $(names t.names, culled &(culled ?=(~ err)))
@@ -2809,27 +2838,35 @@
 ::  the filing, then the window and the record. A held message is not
 ::  read and not context; the window is written after a reading whatever
 ::  it yielded, so a question rides along as the next message's context.
+::  Yields whether the update is kept for a retry: the model was down,
+::  so nothing was filed and nothing recorded.
 ::
 ++  tg-handle
   |=  update=json
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
   =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
+  ::  a recorded update is done with
+  =/  done
+    |=  [chat=@t from=@t outcome=@t notes=(list @t) read=?]
+    ^-  form:m
+    ;<  ~  bind:m  (tg-record now uid chat from outcome notes read)
+    (pure:m |)
   =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
-  ?~  mu  (tg-record now uid '' '' 'ignored' ~['not a message'] |)
+  ?~  mu  (done '' '' 'ignored' ~['not a message'] |)
   =/  msg=tg-msg:orr  u.mu
   ?.  (~(has in chats.cfg) chat.msg)
-    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)] |)
+    (done chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)] |)
   =/  who=(unit @t)  (~(get by people.cfg) from.msg)
   ?~  who
-    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)] |)
+    (done chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)] |)
   ;<  stranger=?  bind:m  (tg-stranger cfg business.msg)
   ?:  stranger
-    (tg-record now uid chat.msg from.msg 'ignored' ~['business connection of an account not in people'] |)
-  ?:  =('' text.msg)  (tg-record now uid chat.msg from.msg 'ignored' ~['no text'] |)
+    (done chat.msg from.msg 'ignored' ~['business connection of an account not in people'] |)
+  ?:  =('' text.msg)  (done chat.msg from.msg 'ignored' ~['no text'] |)
   ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
@@ -2837,10 +2874,11 @@
   ?^  cmd
     ;<  ~  bind:m  (tg-file u.cmd u.who now)
     =/  outcome=@t  ?:(&(=(~ obs.u.cmd) =(~ acts.u.cmd)) 'refused' 'facts')
-    (tg-record now uid chat.msg from.msg outcome notes.u.cmd |)
+    (done chat.msg from.msg outcome notes.u.cmd |)
   ?:  (gte today max-daily.cfg)
-    (tg-record now uid chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
-  ;<  [read=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
+    (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
+  ?:  down  (pure:m &)
   ;<  ~  bind:m  (tg-file facts u.who now)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
   ::  a chat taken out of the settings loses its window
@@ -2850,24 +2888,27 @@
     [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
   =/  outcome=@t  ?:(&(=(~ obs.facts) =(~ bodies.facts) =(~ acts.facts)) 'nothing' 'facts')
-  (tg-record now uid chat.msg from.msg outcome notes.facts read)
+  (done chat.msg from.msg outcome notes.facts read)
 ::  +tg-read: the gate, the analyst, validation, grounding, the status
 ::  check and the escalate question, with the window as context. A
 ::  decider that cannot answer reads the message, escalates nothing and
 ::  keeps every status, each said in the notes. The flag says whether
 ::  the analyst was asked (the request sent, whatever it answered): a
-::  question, a missing key and a gate refusal ask nothing.
+::  question, a missing key and a gate refusal ask nothing. The down
+::  flag says the analyst could not answer (unreachable or timed out,
+::  401 to 404, 408, 429, 5xx, the bot's own list), so the update is
+::  worth asking about again.
 ::
 ++  tg-read
   |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da]
-  =/  m  (fiber:fiber:nexus ,[read=? facts=tg-facts:orr])
+  =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
   =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
-  ?:  q  (pure:m [| ~ ~ ~ ~['a question states nothing'] ~])
+  ?:  q  (pure:m [| | ~ ~ ~ ~['a question states nothing'] ~])
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)
-    (pure:m [| ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
+    (pure:m [| | ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
@@ -2882,7 +2923,7 @@
   =/  gate-note=@t
     ?~  gate  'gate unavailable, analyst asked'
     (rap 3 'gate: ' (crip (a-co:co p)) ?:((lth p gate.cfg) ', not read' ', read') ~)
-  ?:  (lth p gate.cfg)  (pure:m [| ~ ~ ~ ~[gate-note] ~])
+  ?:  (lth p gate.cfg)  (pure:m [| | ~ ~ ~ ~[gate-note] ~])
   =/  tz=@t
     =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
     =/  from-me=@t
@@ -2901,11 +2942,19 @@
     ==
   ?.  =(200 status.got)
     =/  why=@t  (rap 3 'model: ' (crip (a-co:co status.got)) ' ' (end [3 200] body.got) ~)
-    (pure:m [& ~ ~ ~ ~[gate-note why] ~])
+    =/  down=?
+      =/  s=@ud  status.got
+      ?|  =(0 s)
+          &((gte s 401) (lte s 404))
+          =(408 s)
+          =(429 s)
+          &((gte s 500) (lte s 599))
+      ==
+    (pure:m [& down ~ ~ ~ ~[gate-note why] ~])
   =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
-  ?:  ?=(%| -.ans)  (pure:m [& ~ ~ ~ ~[gate-note p.ans] ~])
+  ?:  ?=(%| -.ans)  (pure:m [& | ~ ~ ~ ~[gate-note p.ans] ~])
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
-  ?~  parsed  (pure:m [& ~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
+  ?~  parsed  (pure:m [& | ~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
   =.  notes.facts  [gate-note notes.facts]
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
@@ -2915,7 +2964,7 @@
   =/  e=@ud  ?~(esc 0 (noul-of:orr u.esc 'needs_help_now'))
   =?  notes.facts  ?=(^ esc)  (snoc notes.facts (rap 3 'escalate: ' (crip (a-co:co e)) ~))
   =?  escalate.facts  &(?=(^ esc) (gte e escalate.cfg))  `(urgent-ids:orr facts)
-  (pure:m [& facts])
+  (pure:m [& | facts])
 ::  +tg-status-check: analyze.status_check: each status proposed for a
 ::  person put to the decider; one it calls a feeling with 60 or more is
 ::  dropped with a note

@@ -468,12 +468,14 @@ CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
     {'kind': 'task', 'title': 'Buy a new car', 'about': ['thing/tesla']}], 'notes': ['stub note']})}}],
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 seen = []
+DOWN = False  # the analyst answers 503 while set: the reader's model outage
 class Stub(http.server.BaseHTTPRequestHandler):
     #  one stub for the model, the decider and Telegram, told apart by path:
     #  the analyst's chat request by its system block (the analyst prompt's
     #  first words), the generator's answered with CANNED
     def answer(self, body):
         seen.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
+        status = 200
         if self.path.endswith('/setWebhook'):
             out = {'ok': True, 'result': True, 'description': 'Webhook was set'}
         elif self.path.startswith('/bot123:abc/'):
@@ -482,9 +484,12 @@ class Stub(http.server.BaseHTTPRequestHandler):
             out = DECIDER_CANNED
         else:
             system = ((body.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
-            out = TG_CANNED if system.startswith('You turn') else CANNED
+            if system.startswith('You turn') and DOWN:
+                out, status = {'error': {'message': 'the stub is down'}}, 503
+            else:
+                out = TG_CANNED if system.startswith('You turn') else CANNED
         out = json.dumps(out).encode()
-        self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
+        self.send_response(status); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
         n = int(self.headers.get('content-length', 0))
         self.answer(json.loads(self.rfile.read(n)))
@@ -713,10 +718,26 @@ time.sleep(0.5)
 reset = dictish(curl('GET', API + '/telegram/last')[1])
 check('a token change resets the record\'s update id', reset.get('update_id') == 0 and reset.get('at') == before.get('at'), reset)
 check('an update seen under the old token is handled again under the new one', hook(update(U0 + 5, MID + 4, '/at the gate shop')) == 200 and dictish(tg_last(U0 + 5)).get('at') != before.get('at'), tg_last(U0 + 5))
+# a model outage (429, 5xx, no answer) keeps the update: neither recorded
+# nor culled, read again on a retry timer five minutes out; the owner's
+# wake route is how the gate hurries it
+def inbox():
+    return [c.get('name') for c in dictish(curl('GET', INSTANCE + '/telegram-inbox')[1]).get('children', [])]
+DOWN = True
+before = dictish(curl('GET', API + '/telegram/last')[1])
+check('the hook takes an update the model is down for', hook(update(U0 + 7, MID + 6, 'the tow truck is here')) == 200, None)
+time.sleep(6)
+kept, after = inbox(), dictish(curl('GET', API + '/telegram/last')[1])
+check('an update the model was down for is kept: not recorded, still in the inbox', after.get('update_id') == before.get('update_id') and after.get('at') == before.get('at') and '%012d' % (U0 + 7) in kept, (before.get('update_id'), after, kept))
+DOWN = False
+code, d = curl('POST', API + '/telegram/wake')
+check('the owner wakes the reader', code == 200 and dictish(d).get('ok') is True, (code, d))
+woken = dictish(tg_last(U0 + 7))
+check('the woken reader handled the kept update and culled it', woken.get('update_id') == U0 + 7 and woken.get('outcome') in ('facts', 'nothing') and '%012d' % (U0 + 7) not in inbox(), (woken, inbox()))
 code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
-check('setWebhook carried the public url, the secret and the update kinds', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret-abcdef' and sw[-1].get('allowed_updates') == ['message', 'business_message'], sw[-1:])
+check('setWebhook carried the public url, the secret, the update kinds and one connection', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret-abcdef' and sw[-1].get('allowed_updates') == ['message', 'business_message'] and sw[-1].get('max_connections') == 1, sw[-1:])
 curl('PUT', API + '/telegram', {'public_url': 'http://localhost:8080/'})
 time.sleep(0.5)
 curl('POST', API + '/telegram/webhook')
