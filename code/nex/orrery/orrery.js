@@ -217,11 +217,12 @@
       '<p><label class="field">max tokens <input name="max_tokens" value="' + esc(g.max_tokens || '') + '"></label> ' +
       '<label class="field">max actions <input name="max_actions" value="' + esc(g.max_actions || '') + '"></label></p>' +
       '<p><label class="field">minutes between model calls <input name="cooldown_minutes" value="' + esc(g.cooldown_minutes != null ? g.cooldown_minutes : '') + '"></label> ' +
-      '<label class="field">calls per day at most <input name="max_daily" value="' + esc(g.max_daily != null ? g.max_daily : '') + '"></label></p>' +
+      '<label class="field">calls per day at most <input name="max_daily" value="' + esc(g.max_daily != null ? g.max_daily : '') + '"></label> ' +
+      '<label class="field">urgent passes per day <input name="max_urgent" value="' + esc(g.max_urgent != null ? g.max_urgent : '') + '"></label></p>' +
       '<p><button data-save-generator="1">save generator</button><button data-generate="1">run a pass now</button></p></div>';
     if (last.at) {
       var u = last.usage || {};
-      var calls = last.calls_today != null ? ' Model calls today: ' + last.calls_today + '.' : '';
+      var calls = last.calls_today != null ? ' Model calls today: ' + last.calls_today + (last.urgent_today ? ' (' + last.urgent_today + ' urgent)' : '') + '.' : '';
       if (last.spend_month_micro != null) calls += ' This month: $' + (last.spend_month_micro / 1e6).toFixed(2) + '.';
       out += '<p class="muted">Last pass ' + fmtTime(last.at) + ': ' + (last.skipped ? 'skipped' :
         (last.error ? 'failed: ' + esc(last.error) : (last.filed || 0) + ' filed, ' + (last.dropped || 0) + ' dropped' +
@@ -435,7 +436,8 @@
     var g = { enabled: !!view.querySelector('#generator input[name="enabled"]:checked'), url: val('url'), model: val('model'),
       reasoning: effort === 'off' ? { enabled: false } : { effort: effort || 'high' },
       max_tokens: parseInt(val('max_tokens'), 10) || 8000, max_actions: parseInt(val('max_actions'), 10) || 5,
-      cooldown_minutes: parseInt(val('cooldown_minutes'), 10) || 0, max_daily: parseInt(val('max_daily'), 10) || 0 };
+      cooldown_minutes: parseInt(val('cooldown_minutes'), 10) || 0, max_daily: parseInt(val('max_daily'), 10) || 0,
+      max_urgent: parseInt(val('max_urgent'), 10) || 0 };
     if (val('api_key')) g.api_key = val('api_key');
     return g;
   }

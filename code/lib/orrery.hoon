@@ -1640,6 +1640,9 @@
       ::  max-daily calls in a UTC day
       cooldown=@ud
       max-daily=@ud
+      ::  urgent passes a day: a reader that judged a message needs help
+      ::  within the hour asks for one past the cooldown, under this cap
+      max-urgent=@ud
   ==
 ++  de-config
   |=  j=json
@@ -1654,6 +1657,7 @@
       (gs j 'timezone')
       (fall (gn j 'cooldown_minutes') 60)
       (fall (gn j 'max_daily') 24)
+      (fall (gn j 'max_urgent') 5)
   ==
 ::  +en-config-masked: what the owner reads back: everything but the key
 ::
@@ -1671,7 +1675,30 @@
       ['timezone' s+timezone.c]
       ['cooldown_minutes' (numb:enjs:format cooldown.c)]
       ['max_daily' (numb:enjs:format max-daily.c)]
+      ['max_urgent' (numb:enjs:format max-urgent.c)]
   ==
+::  +urgent-held: whether today's urgent passes are spent
+::
+++  urgent-held
+  |=  [c=config last=json now=@da]
+  ^-  ?
+  =/  day=@t  (end [3 10] (en-iso now))
+  =/  today=@ud  ?:(=(day (gs last 'day')) (fall (gn last 'urgent_today') 0) 0)
+  (gte today max-urgent.c)
+::  +urgent-parts: the prompt with the urgent line before the clock, so
+::  the cached prefix is untouched and the model reads it last
+::
+++  urgent-parts
+  |=  [parts=(list @t) about=(list @t)]
+  ^-  (list @t)
+  =/  line=@t
+    %+  rap  3
+    :~  'Urgent: a reader that just wrote these facts judged that the owner may need help within the hour'
+        ?~(about '' (cat 3 ', about ' (join-cords ', ' about)))
+        '. Propose first what helps in the next hour: who to call, what to bring, who to tell. The usual rules hold.'
+    ==
+  ?~  parts  ~[line]
+  (snoc (snoc (snip `(list @t)`parts) line) (rear parts))
 ::  +micro-of: a JSON number cord as micro-units, for summing a model's
 ::  cost (a fraction of a dollar, sometimes in exponent form) in an
 ::  atom: 0.0229 is 22900, 2.29e-05 is 22

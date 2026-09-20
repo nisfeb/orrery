@@ -165,6 +165,7 @@
     (expect-eq !>(8.000) !>(max-tokens.bare))
     (expect-eq !>(60) !>(cooldown.bare))
     (expect-eq !>(24) !>(max-daily.bare))
+    (expect-eq !>(5) !>(max-urgent.bare))
     (expect-eq !>('https://openrouter.ai/api/v1') !>(url.bare))
     (expect !>((reasoning-on:gen reasoning.bare)))
   ==
@@ -491,5 +492,20 @@
     (expect-eq !>(2.000.000) !>((micro-of:orr '2')))
     (expect-eq !>(1.500.000) !>((micro-of:orr '1.5E+0')))
     (expect-eq !>(0) !>((micro-of:orr '')))
+  ==
+++  test-urgent
+  =/  c=config:gen  (de-config:gen (jo '{"max_urgent": 2}'))
+  =/  spent=json  (jo '{"day": "2026-09-18", "urgent_today": 2}')
+  =/  fresh=json  (jo '{"day": "2026-09-17", "urgent_today": 2}')
+  =/  parts=(list @t)  ~['a' 'b' 'clock']
+  =/  got=(list @t)  (urgent-parts:gen parts ~['situation/x'])
+  ;:  weld
+    (expect !>((urgent-held:gen c spent now)))
+    (expect !>(!(urgent-held:gen c fresh now)))
+    (expect !>(!(urgent-held:gen c (jo '{}') now)))
+    (expect-eq !>(4) !>((lent got)))
+    (expect-eq !>('clock') !>((rear got)))
+    (expect !>(?=(^ (find "situation/x" (trip (snag 2 got))))))
+    (expect-eq !>(1) !>((lent (urgent-parts:gen ~ ~))))
   ==
 --

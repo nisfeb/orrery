@@ -174,6 +174,7 @@
         ::  a cooldown timer is one, the pass the limits held back
         ?:  &(?=(%wake -.in) !?=([%cooldown *] path.in))  $
         =/  force=?  ?:(?=(%poke -.in) (force-of sage.in) |)
+        =/  urgent=(unit (list @t))  ?:(?=(%poke -.in) (urgent-of sage.in) ~)
         ::  off, and not forced: no settle, so a burst of writes drains
         ::  at once instead of twenty seconds a pair
         ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
@@ -185,7 +186,10 @@
         ;<  second=gen-in  bind:m  (take-gen-in /gen)
         ;<  ~  bind:m  (cancel-timer:io /settle)
         =/  forced=?  |(force ?:(?=(%poke -.second) (force-of sage.second) |))
-        ;<  again=(unit @da)  bind:m  (gen-pass forced)
+        =/  urg=(unit (list @t))
+          ?^  urgent  urgent
+          ?:(?=(%poke -.second) (urgent-of sage.second) ~)
+        ;<  again=(unit @da)  bind:m  (gen-pass forced urg)
         ::  held by a limit: wake when it lifts, so the changes made
         ::  meanwhile become one pass then
         ;<  ~  bind:m  ?~(again (pure:m ~) (set-timer:io /cooldown u.again))
@@ -659,7 +663,7 @@
   ?:  &(=('GET' meth) ?=([%api %generator ~] suffix))        (own (serve-generator eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))        (own (serve-set-doc eyre-id 'set-generator' jon))
   ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))  (own (serve-doc eyre-id %'generator-last.json'))
-  ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (own (serve-generate eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (serve-generate eyre-id jon act)
   ?:  &(=('POST' meth) ?=([%api %reconcile ~] suffix))      (own (serve-reconcile eyre-id))
   ?:  &(=('GET' meth) ?=([%api %reconcile %last ~] suffix))  (own (serve-doc eyre-id %'reconcile-last.json'))
   (send-err eyre-id 404 'no such route')
@@ -1420,13 +1424,28 @@
 ::  +serve-generate: run a pass now, whatever the digest says
 ::
 ++  serve-generate
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta jon=json act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ::  run-now is the owner's. A key with write in its scope asks for an
+  ::  urgent pass by sending about: the situations to look at first, or
+  ::  an empty list. That pass runs past the cooldown, under max_urgent.
+  =/  urgent=?  (has-key:orr jon 'about')
+  ?:  &(!owner.act !urgent)
+    (send-err eyre-id 403 'run-now is the owner\'s; a key asks for an urgent pass with about')
+  ?:  &(!owner.act |(?=(~ scope.act) !write.u.scope.act))
+    (send-err eyre-id 403 'a key needs write in its scope to ask for an urgent pass')
+  =/  about=(list @t)  (scag 5 (strings:orr (ga:orr jon 'about')))
+  =/  body=json
+    %-  pairs:enjs:format
+    %-  zing
+    :~  ~[['force' b+&]]
+        ?.(urgent ~ ~[['about' a+(turn about |=(a=@t `json`s+a))]])
+    ==
   ;<  err=(unit tang)  bind:m
-    (poke-soft:io (rf 1 / %'gen.sig') [[/ %json] [%o (my ~[['force' b+&]])]])
+    (poke-soft:io (rf 1 / %'gen.sig') [[/ %json] body])
   ?^  err  (send-err eyre-id 500 'the generator fiber refused the poke')
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['urgent' b+urgent]]))
 ::  +serve-reconcile: run the reconcile passes now
 ::
 ++  serve-reconcile
@@ -2281,6 +2300,15 @@
   ?.  =([/ %json] p.sage)  |
   =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
   ?=([%b %.y] (gj:orr jon 'force'))
+::  +urgent-of: the about list of an urgent request, or ~ for any other
+::
+++  urgent-of
+  |=  =sage:tarball
+  ^-  (unit (list @t))
+  ?.  =([/ %json] p.sage)  ~
+  =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
+  ?.  (has-key:orr jon 'about')  ~
+  `(strings:orr (ga:orr jon 'about'))
 ::  +gen-in, +take-gen-in: what wakes the generator: news on the beacon
 ::  it keeps, a poke (run-now), or a timer. The kernel's own
 ::  take-news-or-poke, with the timer told apart by its path.
@@ -2308,7 +2336,7 @@
 ::  by generator, and record what happened in generator-last.json.
 ::
 ++  gen-pass
-  |=  force=?
+  |=  [force=? urgent=(unit (list @t))]
   =/  m  (fiber:fiber:nexus ,(unit @da))
   ^-  form:m
   ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
@@ -2322,11 +2350,16 @@
   ::  the limits come before anything is read, and they hold a forced
   ::  pass too: run-now is a wish, the bill is a fact
   ;<  last0=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
-  =/  held=(unit @da)  (held-until:orr cfg last0 now)
+  ::  an urgent pass goes past the cooldown and the daily cap, under
+  ::  its own: the sixth in a day is held like any other
+  =/  held=(unit @da)  ?^(urgent ~ (held-until:orr cfg last0 now))
   ?^  held
     =/  why=@t  (rap 3 'held by the limits until ' (en-iso:orr u.held) ~)
     ;<  ~  bind:m  (gen-record ~ 0 0 ~[why] ~ ~ 0 & rev)
     (pure:m held)
+  ?:  &(?=(^ urgent) (urgent-held:orr cfg last0 now))
+    ;<  ~  bind:m  (gen-record ~ 0 0 ~['held: today\'s urgent passes are spent'] ~ ~ 0 & rev)
+    (pure:m ~)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
@@ -2340,6 +2373,7 @@
       (winner-text:orr (fold:orr rows.u.me (multi-of:orr schema) now) 'timezone')
     ?:(=('' from-me) timezone.cfg from-me)
   =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg)
+  =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
   ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
   ?:  &(!force =((gs:orr last 'digest') (scot %ux dg)))
@@ -2347,7 +2381,7 @@
     (pure:m ~)
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (ask-model cfg parts)
   ::  the call counts against the limits whatever it answered
-  ;<  ~  bind:m  (gen-count now)
+  ;<  ~  bind:m  (gen-count now ?=(^ urgent))
   ?.  =(200 status.got)
     =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
     ;<  ~  bind:m  (gen-record `dg 0 0 ~ ~ `why secs.got | rev)
@@ -2379,7 +2413,10 @@
     ::  fiber again; the digest recorded is of the prompt as it will read
     ::  with them open, so that wake finds nothing new and asks nothing
     =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg)
-    ;<  ~  bind:m  (gen-record `(digest:orr after) filed (sub offered (min offered filed)) notes.v usage.p.ans ~ secs.got | rev)
+    =/  said=(list @t)
+      ?~  urgent  notes.v
+      [(cat 3 'urgent pass' ?~(u.urgent '' (cat 3 ': ' (join-cords:orr ', ' u.urgent)))) notes.v]
+    ;<  ~  bind:m  (gen-record `(digest:orr after) filed (sub offered (min offered filed)) said usage.p.ans ~ secs.got | rev)
     (pure:m ~)
   =/  stamped=json  (fill-act-as:orr i.todo now 'generator')
   ;<  err=(unit tang)  bind:m
@@ -2413,6 +2450,7 @@
         ['called' (gj:orr last 'called')]
         ['day' (gj:orr last 'day')]
         ['calls_today' (gj:orr last 'calls_today')]
+        ['urgent_today' (gj:orr last 'urgent_today')]
         ::  the month's spend, in micro-dollars, from the model's own
         ::  cost figure; the page shows it beside the calls
         ['month' s+month]
@@ -2431,12 +2469,14 @@
 ::  +gen-count: one more model call today, at now, for the limits
 ::
 ++  gen-count
-  |=  now=@da
+  |=  [now=@da urgent=?]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
-  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'calls_today') 0) 0)
+  =/  same=?  =(day (gs:orr last 'day'))
+  =/  today=@ud  ?:(same (fall (gn:orr last 'calls_today') 0) 0)
+  =/  urgent-today=@ud  ?:(same (fall (gn:orr last 'urgent_today') 0) 0)
   =/  base=(map @t json)  ?:(?=([%o *] last) p.last ~)
   =/  doc=json
     :-  %o
@@ -2444,6 +2484,7 @@
     :~  ['called' (en-time:orr now)]
         ['day' s+day]
         ['calls_today' (numb:enjs:format +(today))]
+        ['urgent_today' (numb:enjs:format ?:(urgent +(urgent-today) urgent-today))]
     ==
   (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
 ::  +ask-model: one POST to the model with the app's own ten minute

@@ -13,9 +13,11 @@ INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/o
 fails = []
 
 
-def curl(method, url, body=None, jar=JAR, timeout=60):
+def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
     cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', url]
-    if jar:
+    if token:
+        cmd += ['-H', 'Authorization: Bearer ' + token]
+    elif jar:
         cmd += ['-b', jar]
     if body is not None:
         cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
@@ -492,7 +494,9 @@ deadline = time.time() + 90
 last = {}
 while time.time() < deadline:
     code, last = curl('GET', API + '/generator/last')
-    if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped'):
+    #  the forced pass's own record carries the stub's usage; a record
+    #  without it is another wake's (the settings write moved the beacon)
+    if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped') and last.get('usage'):
         break
     time.sleep(2)
 check('the pass wrote its record, two filed', isinstance(last, dict) and last.get('filed') == 2 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
@@ -541,6 +545,51 @@ while time.time() < deadline:
         break
     time.sleep(2)
 check('a cooldown holds even a forced pass', dictish(last).get('skipped') is True and any('held by the limits' in n for n in dictish(last).get('notes', [])), last)
+
+
+# ---- the urgent lane: a pass past the cooldown, under its own cap, open to writing keys ----
+def urgent_pass(token=None, about=('thing/gate-car',)):
+    code, before = curl('GET', API + '/generator/last')
+    code, d = curl('POST', API + '/generate', {'about': list(about)}, token=token)
+    if code != 200:
+        return code, d, None
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        code2, last = curl('GET', API + '/generator/last')
+        if dictish(last).get('at') != dictish(before).get('at'):
+            return 200, d, last
+        time.sleep(2)
+    return 200, d, last
+
+
+# the day's urgent count lives on the ship, so it is read before, not assumed zero
+curl('PUT', API + '/generator', {'max_urgent': 1000})
+time.sleep(0.5)
+n = len(seen)
+code, before = curl('GET', API + '/generator/last')
+u0 = dictish(before).get('urgent_today') or 0
+code, d, last = urgent_pass()
+check('an urgent request answers ok and says it is urgent', code == 200 and dictish(d).get('urgent') is True, (code, d))
+check('the urgent pass ran past the cooldown and says so', last and not dictish(last).get('skipped') and any(x.startswith('urgent pass: thing/gate-car') for x in dictish(last).get('notes', [])) and dictish(last).get('urgent_today') == u0 + 1, last)
+prompt_seen = json.dumps(seen[-1][1]) if len(seen) == n + 1 else ''
+check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(seen), n))
+for a in curl('GET', API + '/actions?status=proposed')[1] or []:
+    if isinstance(a, dict) and a.get('by') == 'generator':
+        curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
+code, reader = curl('POST', API + '/clients', {'name': 'gate reader', 'by': 'gate-reader', 'scope': {'kinds': ['person', 'situation', 'thing'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})
+code, looker = curl('POST', API + '/clients', {'name': 'gate looker', 'by': 'gate-looker', 'scope': {'kinds': ['person'], 'actions': [], 'write': False, 'sensitive': 'none'}})
+code, d = curl('POST', API + '/generate', {'about': []}, token=dictish(looker).get('token'))
+check('a key without write may not ask for an urgent pass', code == 403, (code, d))
+code, d = curl('POST', API + '/generate', {}, token=dictish(reader).get('token'))
+check('a key may not run-now', code == 403, (code, d))
+curl('PUT', API + '/generator', {'max_urgent': 1})
+time.sleep(0.5)
+code, d, last = urgent_pass(token=dictish(reader).get('token'), about=[])
+check('a writing key may ask, and the second urgent pass of the day is held by the cap', code == 200 and last and dictish(last).get('skipped') is True and any('urgent passes are spent' in x for x in dictish(last).get('notes', [])), (code, d, last))
+for k in (reader, looker):
+    if dictish(k).get('id'):
+        curl('DELETE', API + '/clients/' + dictish(k)['id'])
+curl('PUT', API + '/generator', {'max_urgent': 5})
 curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'cooldown_minutes': 60})
 time.sleep(1)
 curl('DELETE', API + '/body/thing/gate-car')
