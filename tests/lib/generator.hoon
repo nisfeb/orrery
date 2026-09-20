@@ -570,4 +570,30 @@
     (expect-eq !>('2') !>(text:(snag 0 (tg-window:orr six '9'))))
     (expect-eq !>(`(list [@t @t @t @t])`~) !>((tg-window:orr w '2')))
   ==
+++  test-tg-command
+  =/  at=@da  ~2026.9.17..16.10.00
+  =/  m  |=(t=@t ^-(tg-msg:orr ['1001' '42' t at '5' '']))
+  =/  loc  (need (tg-command:orr (m '/at the shop') 'person/me'))
+  =/  st   (need (tg-command:orr (m '/status - ') 'person/me'))
+  =/  ob   (need (tg-command:orr (m '/obs thing/subaru status at the shop') 'person/me'))
+  =/  tk   (need (tg-command:orr (m '/task Call the shop due 2026-10-02') 'person/me'))
+  =/  bad  (need (tg-command:orr (m '/nope x') 'person/me'))
+  =/  usage  (need (tg-command:orr (m '/at') 'person/me'))
+  ;:  weld
+    (expect-eq !>(*(unit tg-facts:orr)) !>((tg-command:orr (m 'car died') 'person/me')))
+    (expect-eq !>('location') !>((gs:orr (snag 0 obs.loc) 'attr')))
+    (expect-eq !>('the shop') !>((gs:orr (snag 0 obs.loc) 'value')))
+    (expect-eq !>('person/me') !>((gs:orr (snag 0 obs.loc) 'subject')))
+    (expect-eq !>('telegram/1001/5') !>((gs:orr (gj:orr (snag 0 obs.loc) 'source') 'id')))
+    (expect-eq !>('2026-09-17T16:10:00Z') !>((gs:orr (snag 0 obs.loc) 'at')))
+    (expect-eq !>(`json`~) !>((gj:orr (snag 0 obs.st) 'value')))
+    (expect-eq !>('thing/subaru') !>((gs:orr (snag 0 obs.ob) 'subject')))
+    (expect-eq !>('at the shop') !>((gs:orr (snag 0 obs.ob) 'value')))
+    (expect-eq !>('Call the shop') !>((gs:orr (snag 0 acts.tk) 'title')))
+    (expect-eq !>('2026-10-02T00:00:00Z') !>((gs:orr (snag 0 acts.tk) 'due')))
+    (expect-eq !>(`(list @t)`~['commands: /at, /status, /obs, /task']) !>(notes.bad))
+    (expect-eq !>(`(list @t)`~['usage: /at <place>']) !>(notes.usage))
+    (expect-eq !>(`(list @t)`~['usage: /obs <kind>/<slug> <attr> <value>']) !>(notes:(need (tg-command:orr (m '/obs me status ok') 'person/me'))))
+    (expect-eq !>(0) !>((lent obs.usage)))
+  ==
 --

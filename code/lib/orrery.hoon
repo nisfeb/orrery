@@ -2964,4 +2964,81 @@
   =/  all=(list json)  (snoc kept row)
   =/  n=@ud  (lent all)
   [%o (~(put by base) chat.m a+(slag (sub n (min n 5)) all))]
+::  what one message says: bodies and observation rows for the writer,
+::  action rows, notes to answer with, and, when the analyst calls for
+::  it, the ids for an urgent pass (~ means no escalation)
++$  tg-facts
+  $:  bodies=(list json)
+      obs=(list json)
+      acts=(list json)
+      notes=(list @t)
+      escalate=(unit (list @t))
+  ==
+::  +tg-obs: one observation row in the writer's shape, signed telegram
+::
+++  tg-obs
+  |=  [m=tg-msg subject=@t attr=@t value=json conf=@ud]
+  ^-  json
+  (obs-row subject attr value at.m ~ conf (tg-source m) 'telegram')
+::  +parse-value: a command's value: a body id becomes a ref, "-" and
+::  "null" become null, else the text
+::
+++  parse-value
+  |=  t=@t
+  ^-  json
+  ?:  |(=('-' t) =('null' t))  ~
+  ?^  (parse-bid t)  (pairs:enjs:format ~[['ref' s+t]])
+  s+t
+::  +tg-command: the slash grammar, as the bot has it; ~ for free text.
+::  A trailing @botname on the command word is ignored, so /at@orrbot
+::  works in a group. Unlike the bot, /obs takes a body id for its
+::  subject: the writer would drop a name it cannot resolve.
+::
+++  tg-command
+  |=  [m=tg-msg who=@t]
+  ^-  (unit tg-facts)
+  ?.  =('/' (end [3 1] text.m))  ~
+  =/  ws=(list tape)  (split-ws (trip text.m))
+  ?~  ws  ~
+  =/  cmd=@t  (crip (cass (scag (fall (find "@" i.ws) (lent i.ws)) i.ws)))
+  =/  rest=@t  (crip (join-tapes " " t.ws))
+  =/  usage  |=(u=@t ^-((unit tg-facts) `[~ ~ ~ ~[u] ~]))
+  ?:  =('/at' cmd)
+    ?:  =('' rest)  (usage 'usage: /at <place>')
+    `[~ ~[(tg-obs m who 'location' (parse-value rest) 100)] ~ ~ ~]
+  ?:  =('/status' cmd)
+    ?:  =('' rest)  (usage 'usage: /status <text>, or /status - to clear')
+    `[~ ~[(tg-obs m who 'status' ?:(=('-' rest) ~ s+rest) 100)] ~ ~ ~]
+  ?:  =('/obs' cmd)
+    =/  parts=(list tape)  t.ws
+    ?:  (lth (lent parts) 3)  (usage 'usage: /obs <subject> <attr> <value>')
+    =/  subject=@t  (crip (snag 0 parts))
+    ?~  (parse-bid subject)
+      (usage 'usage: /obs <kind>/<slug> <attr> <value>')
+    =/  attr=@t  (crip (cass (snag 1 parts)))
+    ?.  (ok-attr attr)  (usage 'attr must be lowercase letters, digits and hyphens')
+    =/  value=@t  (crip (join-tapes " " (slag 2 parts)))
+    `[~ ~[(tg-obs m subject attr (parse-value value) 100)] ~ ~ ~]
+  ?:  =('/task' cmd)
+    ?:  =('' rest)  (usage 'usage: /task <title> [due YYYY-MM-DD]')
+    =/  parts=(list tape)  t.ws
+    =/  n=@ud  (lent parts)
+    =/  due=(unit @t)
+      ?.  (gte n 3)  ~
+      ?.  =("due" (cass (snag (sub n 2) parts)))  ~
+      =/  d=tape  (snag (dec n) parts)
+      ?.  =(10 (lent d))  ~
+      =/  full=@t  (crip (weld d "T00:00:00Z"))
+      ?~((de-iso full) ~ `full)
+    =/  title=@t
+      ?~  due  rest
+      (crip (join-tapes " " (scag (sub n 2) parts)))
+    =/  act=json
+      %-  pairs:enjs:format
+      %-  zing
+      :~  ~[['kind' s+'task'] ['title' s+(end [3 200] title)]]
+          ?~(due ~ ~[['due' s+u.due]])
+      ==
+    `[~ ~ ~[act] ~ ~]
+  (usage 'commands: /at, /status, /obs, /task')
 --
