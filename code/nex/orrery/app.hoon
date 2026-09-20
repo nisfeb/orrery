@@ -1659,9 +1659,11 @@
 ::  +serve-telegram-hook: an update from Telegram. The secret header must
 ::  equal the stored secret; the update goes to the inbox as its own grub
 ::  and the request answers at once, since Telegram gives up on a slow
-::  answer and sends the update again. A disabled reader drops it. A
-::  name the inbox has (an update resent) fails the make; the rev bump
-::  still wakes the reader, which handles the file once.
+::  answer and sends the update again. A disabled reader drops it. An
+::  update resent is handled once: update ids are monotonic per bot, so
+::  one not past the record's was handled already and is dropped as
+::  seen (its inbox file culled), and one still in the inbox fails the
+::  make on its name; the rev bump still wakes the reader.
 ::
 ++  serve-telegram-hook
   |=  [eyre-id=@ta req=inbound-request:eyre]
@@ -1678,6 +1680,9 @@
     (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'the reader is off']]))
   =/  jon=json  (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
   =/  uid=@ud  (fall (gn:orr jon 'update_id') 0)
+  ;<  last=json  bind:m  (read-json (rf 1 / %'telegram-last.json'))
+  ?.  (gth uid (fall (gn:orr last 'update_id') 0))
+    (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'seen']]))
   ::  twelve digits, so the inbox lists in update order as text
   =/  name=@ta  `@ta`(crip ((d-co:co 12) uid))
   ;<  *  bind:m  (make-soft:io (rf 1 /telegram-inbox name) |+[[[/ %json] jon] ~])
@@ -2797,17 +2802,17 @@
   =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
   =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
   =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
-  ?~  mu  (tg-record now uid '' '' 'ignored' ~['not a message'])
+  ?~  mu  (tg-record now uid '' '' 'ignored' ~['not a message'] |)
   =/  msg=tg-msg:orr  u.mu
   ?.  (~(has in chats.cfg) chat.msg)
-    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)])
+    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)] |)
   =/  who=(unit @t)  (~(get by people.cfg) from.msg)
   ?~  who
-    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)])
+    (tg-record now uid chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)] |)
   ;<  stranger=?  bind:m  (tg-stranger cfg business.msg)
   ?:  stranger
-    (tg-record now uid chat.msg from.msg 'ignored' ~['business connection of an account not in people'])
-  ?:  =('' text.msg)  (tg-record now uid chat.msg from.msg 'ignored' ~['no text'])
+    (tg-record now uid chat.msg from.msg 'ignored' ~['business connection of an account not in people'] |)
+  ?:  =('' text.msg)  (tg-record now uid chat.msg from.msg 'ignored' ~['no text'] |)
   ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
@@ -2815,10 +2820,10 @@
   ?^  cmd
     ;<  ~  bind:m  (tg-file u.cmd u.who now)
     =/  outcome=@t  ?:(&(=(~ obs.u.cmd) =(~ acts.u.cmd)) 'refused' 'facts')
-    (tg-record now uid chat.msg from.msg outcome notes.u.cmd)
+    (tg-record now uid chat.msg from.msg outcome notes.u.cmd |)
   ?:  (gte today max-daily.cfg)
-    (tg-record now uid chat.msg from.msg 'held' ~['today\'s messages are spent'])
-  ;<  facts=tg-facts:orr  bind:m  (tg-read cfg msg u.who now)
+    (tg-record now uid chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
+  ;<  [read=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
   ;<  ~  bind:m  (tg-file facts u.who now)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
   ::  a chat taken out of the settings loses its window
@@ -2828,22 +2833,24 @@
     [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
   =/  outcome=@t  ?:(&(=(~ obs.facts) =(~ bodies.facts) =(~ acts.facts)) 'nothing' 'facts')
-  (tg-record now uid chat.msg from.msg outcome notes.facts)
+  (tg-record now uid chat.msg from.msg outcome notes.facts read)
 ::  +tg-read: the gate, the analyst, validation, grounding, the status
 ::  check and the escalate question, with the window as context. A
 ::  decider that cannot answer reads the message, escalates nothing and
-::  keeps every status, each said in the notes.
+::  keeps every status, each said in the notes. The flag says whether
+::  the analyst was asked (the request sent, whatever it answered): a
+::  question, a missing key and a gate refusal ask nothing.
 ::
 ++  tg-read
   |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da]
-  =/  m  (fiber:fiber:nexus ,tg-facts:orr)
+  =/  m  (fiber:fiber:nexus ,[read=? facts=tg-facts:orr])
   ^-  form:m
   =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
-  ?:  q  (pure:m [~ ~ ~ ~['a question states nothing'] ~])
+  ?:  q  (pure:m [| ~ ~ ~ ~['a question states nothing'] ~])
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)
-    (pure:m [~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
+    (pure:m [| ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
@@ -2858,7 +2865,7 @@
   =/  gate-note=@t
     ?~  gate  'gate unavailable, analyst asked'
     (rap 3 'gate: ' (crip (a-co:co p)) ?:((lth p gate.cfg) ', not read' ', read') ~)
-  ?:  (lth p gate.cfg)  (pure:m [~ ~ ~ ~[gate-note] ~])
+  ?:  (lth p gate.cfg)  (pure:m [| ~ ~ ~ ~[gate-note] ~])
   =/  tz=@t
     =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
     =/  from-me=@t
@@ -2877,11 +2884,11 @@
     ==
   ?.  =(200 status.got)
     =/  why=@t  (rap 3 'model: ' (crip (a-co:co status.got)) ' ' (end [3 200] body.got) ~)
-    (pure:m [~ ~ ~ ~[gate-note why] ~])
+    (pure:m [& ~ ~ ~ ~[gate-note why] ~])
   =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
-  ?:  ?=(%| -.ans)  (pure:m [~ ~ ~ ~[gate-note p.ans] ~])
+  ?:  ?=(%| -.ans)  (pure:m [& ~ ~ ~ ~[gate-note p.ans] ~])
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
-  ?~  parsed  (pure:m [~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
+  ?~  parsed  (pure:m [& ~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
   =.  notes.facts  [gate-note notes.facts]
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
@@ -2891,7 +2898,7 @@
   =/  e=@ud  ?~(esc 0 (noul-of:orr u.esc 'needs_help_now'))
   =?  notes.facts  ?=(^ esc)  (snoc notes.facts (rap 3 'escalate: ' (crip (a-co:co e)) ~))
   =?  escalate.facts  &(?=(^ esc) (gte e escalate.cfg))  `(urgent-ids:orr facts)
-  (pure:m facts)
+  (pure:m [& facts])
 ::  +tg-status-check: analyze.status_check: each status proposed for a
 ::  person put to the decider; one it calls a feeling with 60 or more is
 ::  dropped with a note
@@ -2990,17 +2997,17 @@
     (over:io (rf 0 / %'telegram-connections.json') [[/ %json] (set-key:orr known conn s+found)])
   (pure:m !(~(has by people.cfg) found))
 ::  +tg-record: what the reader did with the last update, for the page;
-::  read_today counts the messages the model read (facts or nothing),
-::  since the daily cap is about the model
+::  read_today counts the messages the analyst was asked about (read),
+::  since the daily cap is about the model: a command, a question, a
+::  gate refusal and an ignored update do not move it
 ::
 ++  tg-record
-  |=  [now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t)]
+  |=  [now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=?]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
-  =/  read=?  |(=('facts' outcome) =('nothing' outcome))
   %+  over:io  (rf 0 / %'telegram-last.json')
   :-  [/ %json]
   %-  pairs:enjs:format

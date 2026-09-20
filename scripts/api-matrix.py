@@ -616,6 +616,9 @@ curl('DELETE', API + '/body/thing/gate-car')
 # from context, so each run's messages carry ids of their own
 MID = int(time.time()) % 900000
 M1 = 'telegram/1001/%d' % (MID + 1)
+# update ids are monotonic per bot and the hook drops one the record has
+# already passed, so each run's ids start past the last run's
+U0 = int(time.time())
 TG_CANNED = {'choices': [{'message': {'content': json.dumps({
     'bodies': [{'id': 'place/gate-shop', 'name': 'the gate shop'}],
     'observations': [{'subject': 'person/me', 'attr': 'status', 'value': 'stranded, waiting for a tow', 'conf': 85, 'message': M1},
@@ -640,12 +643,18 @@ def update(uid, mid, text, chat=1001, user=1001, business=None):
         msg['business_connection_id'] = business
         return {'update_id': uid, 'business_message': msg}
     return {'update_id': uid, 'message': msg}
-def hook(body, secret='hook-secret-abcdef'):
+def hook(body, secret='hook-secret-abcdef', full=False):
     cmd = ['curl', '-s', '-m', '30', '-X', 'POST', '-w', '\n%{http_code}', HOOK, '-H', 'content-type: application/json', '-d', json.dumps(body)]
     if secret is not None:
         cmd += ['-H', 'x-telegram-bot-api-secret-token: ' + secret]
     out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    return int(out.rpartition('\n')[2] or 0)
+    text, _, code = out.rpartition('\n')
+    if full:
+        try:
+            return int(code or 0), json.loads(text)
+        except ValueError:
+            return int(code or 0), text
+    return int(code or 0)
 def tg_last(after_uid):
     deadline = time.time() + 60
     while time.time() < deadline:
@@ -654,13 +663,13 @@ def tg_last(after_uid):
             return last
         time.sleep(2)
     return last
-check('a wrong secret is refused', hook(update(1, MID, 'x'), secret='nope') == 403, None)
-check('no secret is refused', hook(update(1, MID, 'x'), secret=None) == 403, None)
-check('a body over 64 KB is refused before the parse', hook({'update_id': 1, 'pad': 'x' * 70000}) == 413, None)
+check('a wrong secret is refused', hook(update(U0 + 1, MID, 'x'), secret='nope') == 403, None)
+check('no secret is refused', hook(update(U0 + 1, MID, 'x'), secret=None) == 403, None)
+check('a body over 64 KB is refused before the parse', hook({'update_id': U0 + 1, 'pad': 'x' * 70000}) == 413, None)
 code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
 check('a short secret is refused', code == 400, (code, d))
-check('the webhook answers 200 at once', hook(update(2, MID + 1, 'car died on route 9, stranded waiting for a tow')) == 200, None)
-last = tg_last(2)
+check('the webhook answers 200 at once', hook(update(U0 + 2, MID + 1, 'car died on route 9, stranded waiting for a tow')) == 200, None)
+last = tg_last(U0 + 2)
 b = curl('GET', API + '/body/thing/gate-car')[1]
 st = dictish(dictish(b).get('attrs')).get('status') or {}
 check('the message became facts signed telegram with the message as source', st.get('value') == 'broken down' and st.get('by') == 'telegram' and dictish(st.get('source')) == {'kind': 'chat', 'id': M1}, st)
@@ -678,12 +687,22 @@ while time.time() < deadline:
     time.sleep(2)
 check('the escalation ran an urgent pass', any(x.startswith('urgent pass') for x in dictish(glast).get('notes', [])), glast)
 check('the record says what happened', dictish(last).get('outcome') == 'facts' and dictish(last).get('read_today', 0) >= 1, last)
-check('a question yields nothing and is remembered as context', hook(update(3, MID + 2, 'is the shop open?')) == 200 and dictish(tg_last(3)).get('outcome') == 'nothing', None)
-check('a chat not in chats is ignored', hook(update(4, MID + 3, 'hello', chat=9)) == 200 and dictish(tg_last(4)).get('outcome') == 'ignored', None)
-check('a command writes without the model', hook(update(5, MID + 4, '/at the gate shop')) == 200 and dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('location')).get('value') == 'the gate shop', None)
-hook(update(6, MID + 5, 'still on route 9', business='conn-1'))
-check('a business message from a connection the stub owns is read', dictish(tg_last(6)).get('outcome') in ('facts', 'nothing'), tg_last(6))
+read_before = dictish(last).get('read_today')
+check('a question yields nothing and is remembered as context', hook(update(U0 + 3, MID + 2, 'is the shop open?')) == 200 and dictish(tg_last(U0 + 3)).get('outcome') == 'nothing', None)
+check('a chat not in chats is ignored', hook(update(U0 + 4, MID + 3, 'hello', chat=9)) == 200 and dictish(tg_last(U0 + 4)).get('outcome') == 'ignored', None)
+check('a command writes without the model', hook(update(U0 + 5, MID + 4, '/at the gate shop')) == 200 and dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('location')).get('value') == 'the gate shop', None)
+read_after = dictish(tg_last(U0 + 5)).get('read_today')
+check('commands and questions do not count against the day', read_before is not None and read_after == read_before, (read_before, read_after))
+hook(update(U0 + 6, MID + 5, 'still on route 9', business='conn-1'))
+check('a business message from a connection the stub owns is read', dictish(tg_last(U0 + 6)).get('outcome') in ('facts', 'nothing'), tg_last(U0 + 6))
 check('the stub was asked the gate, the analyst, the status and the escalate questions', [p for p, _, _ in seen if 'decisions' in p] and any(p.endswith('/chat/completions') for p, _, _ in seen), [p for p, _, _ in seen][-8:])
+# Telegram resends an update it saw no 200 for; one whose id the record
+# has passed is dropped at the hook, so it is not handled twice
+before = dictish(tg_last(U0 + 6))
+code, d = hook(update(U0 + 2, MID + 1, 'car died on route 9, stranded waiting for a tow'), full=True)
+time.sleep(5)
+after = dictish(curl('GET', API + '/telegram/last')[1])
+check('a resent update after its cull is dropped', code == 200 and dictish(d).get('dropped') == 'seen' and after.get('update_id') == U0 + 6 and after.get('at') == before.get('at'), (code, d, before.get('at'), after))
 code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
