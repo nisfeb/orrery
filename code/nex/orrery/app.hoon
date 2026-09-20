@@ -1632,10 +1632,11 @@
     (send-err eyre-id 400 'secret: 16 bytes at least')
   (serve-set-doc eyre-id 'set-telegram' jon)
 ::  +serve-set-webhook: the ship tells Telegram where to send updates:
-::  setWebhook with the public url, the secret and the two update kinds
-::  the reader handles. Telegram's ok and description come back as the
-::  answer, 502 when its status was not 200; a blank token, secret or
-::  public url is a 400 before any call.
+::  setWebhook with the public url (a trailing slash trimmed), the
+::  secret and the two update kinds the reader handles. Telegram's ok
+::  and description come back as the answer, 502 when its status was
+::  not 200; a blank token, secret or public url is a 400 before any
+::  call.
 ::
 ++  serve-set-webhook
   |=  eyre-id=@ta
@@ -1645,9 +1646,14 @@
   =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
   ?:  |(=('' token.cfg) =('' secret.cfg) =('' public-url.cfg))
     (send-err eyre-id 400 'the token, the secret and the public URL must be set first')
+  =/  base=@t
+    =/  n=@ud  (met 3 public-url.cfg)
+    ?:  &((gth n 0) =('/' (cut 3 [(dec n) 1] public-url.cfg)))
+      (end [3 (dec n)] public-url.cfg)
+    public-url.cfg
   =/  body=json
     %-  pairs:enjs:format
-    :~  ['url' s+(cat 3 public-url.cfg '/apps/orrery/telegram')]
+    :~  ['url' s+(cat 3 base '/apps/orrery/telegram')]
         ['secret_token' s+secret.cfg]
         ['allowed_updates' a+~[s+'message' s+'business_message']]
     ==
@@ -2715,7 +2721,10 @@
 ::  one, so the page can save every other field without holding either
 ::  secret; a JSON null clears it. A secret shorter than 16 bytes is
 ::  refused: that header is all that stands between Telegram's updates
-::  and anyone else's. Settings are not model state: no beacon bump.
+::  and anyone else's. A token that differs from the stored one is a
+::  new bot, whose update ids start over: the record's update_id goes
+::  to 0 so the hook does not drop them as seen. Settings are not model
+::  state: no beacon bump.
 ::
 ++  do-set-telegram
   |=  jon=json
@@ -2736,6 +2745,14 @@
     ?:  &(?=([%s *] v) =('' p.v))  acc
     (~(put by acc) k v)
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram.json') [[/ %json] [%o merged]])
+  =/  token=@t  (gs:orr doc 'token')
+  ;<  ~  bind:m
+    =/  n  (fiber:fiber:nexus ,~)
+    ^-  form:n
+    ?:  |(=('' token) =(token (gs:orr cur 'token')))  (pure:n ~)
+    ;<  last=json  bind:n  (read-json (rf 0 / %'telegram-last.json'))
+    %+  over:io  (rf 0 / %'telegram-last.json')
+    [[/ %json] (set-key:orr last 'update_id' (numb:enjs:format 0))]
   ;<  ~  bind:m  (note 'set-telegram' & '')
   (pure:m |)
 ::  ==  the telegram reader (version 29): the bot's pipeline on the ship

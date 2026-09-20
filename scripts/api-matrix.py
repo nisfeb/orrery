@@ -703,10 +703,25 @@ code, d = hook(update(U0 + 2, MID + 1, 'car died on route 9, stranded waiting fo
 time.sleep(5)
 after = dictish(curl('GET', API + '/telegram/last')[1])
 check('a resent update after its cull is dropped', code == 200 and dictish(d).get('dropped') == 'seen' and after.get('update_id') == U0 + 6 and after.get('at') == before.get('at'), (code, d, before.get('at'), after))
+# a new bot numbers its updates from its own start, so a token change
+# resets the record's high-water mark; the stub answers only for 123:abc,
+# so the token goes back (a change too) before the resend, a command
+curl('PUT', API + '/telegram', {'token': '456:def'})
+time.sleep(0.5)
+curl('PUT', API + '/telegram', {'token': '123:abc'})
+time.sleep(0.5)
+reset = dictish(curl('GET', API + '/telegram/last')[1])
+check('a token change resets the record\'s update id', reset.get('update_id') == 0 and reset.get('at') == before.get('at'), reset)
+check('an update seen under the old token is handled again under the new one', hook(update(U0 + 5, MID + 4, '/at the gate shop')) == 200 and dictish(tg_last(U0 + 5)).get('at') != before.get('at'), tg_last(U0 + 5))
 code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
 check('setWebhook carried the public url, the secret and the update kinds', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret-abcdef' and sw[-1].get('allowed_updates') == ['message', 'business_message'], sw[-1:])
+curl('PUT', API + '/telegram', {'public_url': 'http://localhost:8080/'})
+time.sleep(0.5)
+curl('POST', API + '/telegram/webhook')
+sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
+check('a trailing slash on the public url is trimmed', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram', sw[-1:])
 curl('PUT', API + '/telegram', {'enabled': False, 'token': None, 'secret': None})
 code, d = curl('POST', API + '/telegram/webhook')
 check('the webhook is not registered without a token', code == 400, (code, d))
