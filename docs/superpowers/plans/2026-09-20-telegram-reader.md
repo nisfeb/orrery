@@ -17,6 +17,7 @@
 - Tall `:~` items on one line need two-space gaps. A wet gate (`sy`, `slag`, `levy`) on a `?~`-narrowed list fails with `mull-grow`; bind to a typed face or cast first. `\'` inside a cord; `\{` for a brace in a tape.
 - Facts written by the reader: `by` is `telegram`, source `{"kind": "chat", "id": "telegram/<chat id>/<message id>"}`, identical to the Python bot.
 - No secret is ever served back: the token and the webhook secret read as `token_set` and `secret_set`.
+- The webhook is unauthenticated by design and the secret header is its whole credential: `PUT /telegram` refuses a `secret` shorter than 16 bytes (400, `secret: 16 bytes at least`); the hook compares the header before parsing the body and refuses a body over 64 KB (413) before the parse; the card generates a 32-byte secret on demand (`crypto.getRandomValues`, hex).
 - Never publish grubbery on ricsul; never touch ricsul by dojo or ssh; a release is a forge pull (`POST /grubbery/forge/api/run {"repo": "orrery.git_repo", "command": "pull"}`).
 - Commits as nisfeb, no AI attribution line, no em dashes.
 - Every task ends with the gates that touch it green: `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, and the api gate `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` for tasks that change a route or a fiber.
@@ -1491,6 +1492,9 @@ def tg_last(after_uid):
     return last
 check('a wrong secret is refused', hook(update(1, 500, 'x'), secret='nope') == 403, None)
 check('no secret is refused', hook(update(1, 500, 'x'), secret=None) == 403, None)
+check('a body over 64 KB is refused before the parse', hook({'update_id': 1, 'pad': 'x' * 70000}) == 413, None)
+code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
+check('a short secret is refused', code == 400, (code, d))
 check('the webhook answers 200 at once', hook(update(2, 501, 'car died on route 9, stranded waiting for a tow')) == 200, None)
 last = tg_last(2)
 b = curl('GET', API + '/body/thing/gate-car')[1]
@@ -1541,6 +1545,7 @@ Run the gate: every new check fails (404 on the hook). That is the failing test.
   =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
   =/  given=@t  (fall (get-header:http 'x-telegram-bot-api-secret-token' header-list.request.req) '')
   ?:  |(=('' secret.cfg) !=(given secret.cfg))  (send-err eyre-id 403 'forbidden')
+  ?:  &(?=(^ body.request.req) (gth p.u.body.request.req 65.536))  (send-err eyre-id 413 'too large')
   ?.  enabled.cfg  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'the reader is off']]))
   =/  jon=json  (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
   =/  uid=@ud  (fall (gn:orr jon 'update_id') 0)
