@@ -643,8 +643,11 @@
   |=  winners=(map @t (list row))
   ^-  (list @t)
   =/  rs=(list row)
-    %+  weld  (fall (~(get by winners) 'email') ~)
-    (fall (~(get by winners) 'phone') ~)
+    ;:  weld
+      (fall (~(get by winners) 'email') ~)
+      (fall (~(get by winners) 'phone') ~)
+      (fall (~(get by winners) 'telegram') ~)
+    ==
   %+  turn
     %+  murn  rs
     |=(r=row ^-((unit @t) ?:(?=([%s *] value.obs.r) `p.value.obs.r ~)))
@@ -857,9 +860,10 @@
       %-  pairs:enjs:format
       :~  :-  'person'
           %+  kind
-            ~['status' 'location' 'phone' 'email' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
+            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
           :~  ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
               ['location' 'where the person is: a place body as a ref when the ship has one, else a short place name; null when they have left and the new place is unknown']
+              ['telegram' 'the Telegram chat id the ship reaches this person at, a number as text; identity, like phone']
               ['relationship' 'how they relate to the owner: wife, son, boss, neighbour']
               ['health' 'a medical fact about the person; kept from client keys by policy']
               ['income' 'a money fact about the person; kept from client keys by policy']
@@ -2803,4 +2807,98 @@
     |=([r=row acc=@da] ?:(retracted.obs.r acc (max seen.obs.r acc)))
   =/  when=@da  ?^(end u.end (max latest created.body.l))
   ?:((lth when cut) `id.l ~)
+::  ==  telegram reader (version 29): the settings, the update, the window
+::
+::  gate and escalate are thresholds in hundredths, since a JSON 0.3 is a
+::  cord the ship would otherwise have to parse as a fraction
++$  tg-config
+  $:  enabled=?
+      token=@t
+      secret=@t
+      api-url=@t
+      public-url=@t
+      model=@t
+      max-tokens=@ud
+      chats=(set @t)
+      people=(map @t @t)
+      gate=@ud
+      escalate=@ud
+      max-daily=@ud
+  ==
+::  +hundredths: a JSON number (0.3, "0.6", 1) as hundredths, 0 to 100.
+::  A value at or above 1 is already hundredths, so 30 stays 30 and the
+::  page can read a threshold back and write it again unchanged; 0.3 is
+::  a fraction and becomes 30. 1 is one hundredth: a caller who means
+::  always sends 100.
+::
+++  hundredths
+  |=  [j=json default=@ud]
+  ^-  @ud
+  =/  t=@t
+    ?:  ?=([%n *] j)  p.j
+    ?:  ?=([%s *] j)  p.j
+    ''
+  ?:  =('' t)  default
+  =/  micro=@ud  (micro-of t)
+  ?:  (gte micro 1.000.000)  (min 100 (div micro 1.000.000))
+  (min 100 (div micro 10.000))
+::  +de-tg-config: the stored telegram.json as the reader's settings. A
+::  chat id arrives as a number or a string and is kept as text either
+::  way, since a chat id is a name, not a quantity.
+::
+++  de-tg-config
+  |=  j=json
+  ^-  tg-config
+  =/  chats=(set @t)
+    %-  sy
+    ^-  (list @t)
+    %+  turn  (ga j 'chats')
+    |=  c=json
+    ^-  @t
+    ?:  ?=([%s *] c)  p.c
+    ?:  ?=([%n *] c)  p.c
+    ''
+  =/  people=(map @t @t)
+    =/  p=json  (gj j 'people')
+    ?.  ?=([%o *] p)  ~
+    %-  ~(gas by *(map @t @t))
+    ^-  (list [@t @t])
+    %+  murn  ~(tap by p.p)
+    |=  [k=@t v=json]
+    ^-  (unit [@t @t])
+    ?.(?=([%s *] v) ~ `[k p.v])
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+      (gs j 'token')
+      (gs j 'secret')
+      =/(u (gs j 'api_url') ?:(=('' u) 'https://api.telegram.org' u))
+      (gs j 'public_url')
+      =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
+      (fall (gn j 'max_tokens') 4.000)
+      (~(del in chats) '')
+      people
+      (hundredths (gj j 'gate') 30)
+      (hundredths (gj j 'escalate') 60)
+      (fall (gn j 'max_daily_messages') 500)
+  ==
+::  +en-tg-config-masked: what the owner reads back. The bot token and
+::  the webhook secret are written once and never served again: only
+::  whether each is set.
+::
+++  en-tg-config-masked
+  |=  c=tg-config
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.c]
+      ['token_set' b+!=('' token.c)]
+      ['secret_set' b+!=('' secret.c)]
+      ['api_url' s+api-url.c]
+      ['public_url' s+public-url.c]
+      ['model' s+model.c]
+      ['max_tokens' (numb:enjs:format max-tokens.c)]
+      ['chats' a+(turn ~(tap in chats.c) |=(c=@t `json`s+c))]
+      ['people' [%o (~(run by people.c) |=(v=@t `json`s+v))]]
+      ['gate' (numb:enjs:format gate.c)]
+      ['escalate' (numb:enjs:format escalate.c)]
+      ['max_daily_messages' (numb:enjs:format max-daily.c)]
+  ==
 --

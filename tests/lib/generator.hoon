@@ -508,4 +508,26 @@
     (expect !>(?=(^ (find "situation/x" (trip (snag 2 got))))))
     (expect-eq !>(1) !>((lent (urgent-parts:gen ~ ~))))
   ==
+++  test-tg-config
+  =/  bare=tg-config:orr  (de-tg-config:orr (jo '{}'))
+  =/  full=tg-config:orr
+    %-  de-tg-config:orr
+    %-  jo
+    '{"enabled": true, "token": "123:abc", "secret": "s", "chats": [1001, "-42"], "people": {"1001": "person/me"}, "gate": 0.3, "escalate": 0.6, "max_daily_messages": 20, "model": "x/y", "public_url": "https://ship.example"}'
+  =/  shown=json  (en-tg-config-masked:orr full)
+  ;:  weld
+    (expect-eq !>(|) !>(enabled.bare))
+    (expect-eq !>('https://api.telegram.org') !>(api-url.bare))
+    (expect-eq !>(500) !>(max-daily.bare))
+    (expect-eq !>(30) !>(gate.bare))
+    (expect-eq !>(60) !>(escalate.bare))
+    (expect !>((~(has in chats.full) '1001')))
+    (expect !>((~(has in chats.full) '-42')))
+    (expect-eq !>(`(unit @t)`[~ 'person/me']) !>((~(get by people.full) '1001')))
+    (expect-eq !>(20) !>(max-daily.full))
+    (expect-eq !>(`json`~) !>((gj:orr shown 'token')))
+    (expect-eq !>(`json`b+&) !>((gj:orr shown 'token_set')))
+    (expect-eq !>(`json`b+&) !>((gj:orr shown 'secret_set')))
+    (expect-eq !>('x/y') !>((gs:orr shown 'model')))
+  ==
 --

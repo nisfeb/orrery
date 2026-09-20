@@ -661,6 +661,22 @@ if merges:
 for b in [OVER, AHEAD, FUTURE, ORG, DANA, BDAY, 'activity/gate-ballet', 'person/felix'] + BALLET:
     curl('DELETE', API + '/body/' + b)
 
+# ---- the telegram reader's settings ----
+curl('PUT', API + '/telegram', {'enabled': False, 'token': None, 'secret': None})
+code, d = curl('GET', API + '/telegram')
+check('telegram settings read masked', code == 200 and dictish(d).get('token_set') is False and 'token' not in dictish(d), (code, d))
+code, d = curl('PUT', API + '/telegram', {'token': '123:abc', 'secret': 'hook-secret-abcdef', 'chats': [1001], 'people': {'1001': 'person/me'}, 'gate': 30, 'escalate': 60})
+time.sleep(0.5)
+code, d = curl('GET', API + '/telegram')
+check('the token and secret are set and never served', dictish(d).get('token_set') is True and dictish(d).get('secret_set') is True and '123:abc' not in json.dumps(d) and dictish(d).get('chats') == ['1001'], d)
+check('the thresholds read back as they were written', dictish(d).get('gate') == 30 and dictish(d).get('escalate') == 60, d)
+code, d = curl('PUT', API + '/telegram', {'chats': [1001, 1002]})
+time.sleep(0.5)
+code, d = curl('GET', API + '/telegram')
+check('a write without the token keeps it', dictish(d).get('token_set') is True and sorted(dictish(d).get('chats') or []) == ['1001', '1002'], d)
+code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
+check('a short secret is refused', code == 400, (code, d))
+
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
 sys.exit(1 if fails else 0)

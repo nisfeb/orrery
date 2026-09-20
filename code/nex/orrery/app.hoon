@@ -94,6 +94,15 @@
           ::  ship, twice a day; what the last run did
           [%fall %& [/ %'reconcile.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'reconcile-last.json'] [[/ %json] [%o ~]]]
+          ::  the telegram reader (version 29): settings with the bot token
+          ::  and webhook secret, never served; the context window, the
+          ::  last update handled, the business connections checked, and
+          ::  the inbox the webhook writes into
+          [%fall %& [/ %'telegram.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'telegram-recent.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'telegram-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'telegram-connections.json'] [[/ %json] [%o ~]]]
+          [%fall %| /telegram-inbox empty-dir:loader]
       ==
     ::
     ++  on-file
@@ -279,6 +288,7 @@
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
+  ?:  =('set-telegram' op)  (do-set-telegram jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -666,6 +676,9 @@
   ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))       (serve-generate eyre-id jon act)
   ?:  &(=('POST' meth) ?=([%api %reconcile ~] suffix))      (own (serve-reconcile eyre-id))
   ?:  &(=('GET' meth) ?=([%api %reconcile %last ~] suffix))  (own (serve-doc eyre-id %'reconcile-last.json'))
+  ?:  &(=('GET' meth) ?=([%api %telegram ~] suffix))         (own (serve-telegram eyre-id))
+  ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))         (own (serve-set-telegram eyre-id jon))
+  ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1569,6 +1582,28 @@
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / %'generator.json'))
   (send-json eyre-id 200 (en-config-masked:orr (de-config:orr doc)))
+::  +serve-telegram: the reader's settings without the token or secret
+::
+++  serve-telegram
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'telegram.json'))
+  (send-json eyre-id 200 (en-tg-config-masked:orr (de-tg-config:orr doc)))
+::  +serve-set-telegram: PUT the reader's settings. The route refuses a
+::  short webhook secret itself, as +serve-merge checks what the writer
+::  refuses, so the client hears 400 rather than a silent no in the
+::  trail. A blank or absent secret is not a refusal: it keeps the
+::  stored one, and a JSON null clears it.
+::
+++  serve-set-telegram
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sec=@t  (gs:orr jon 'secret')
+  ?:  &(!=('' sec) (lth (met 3 sec) 16))
+    (send-err eyre-id 400 'secret: 16 bytes at least')
+  (serve-set-doc eyre-id 'set-telegram' jon)
 ::  +serve-set-doc: PUT one of those documents, through the writer
 ::
 ++  serve-set-doc
@@ -2546,6 +2581,34 @@
   =/  merged=json  [%o (~(uni by base) incoming)]
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
+  (pure:m |)
+::  +do-set-telegram: merge the owner's reader settings over the stored
+::  ones. A blank or missing token or webhook secret keeps the stored
+::  one, so the page can save every other field without holding either
+::  secret; a JSON null clears it. A secret shorter than 16 bytes is
+::  refused: that header is all that stands between Telegram's updates
+::  and anyone else's. Settings are not model state: no beacon bump.
+::
+++  do-set-telegram
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-telegram' 'doc: expected an object')
+  =/  sec=@t  (gs:orr doc 'secret')
+  ?:  &(!=('' sec) (lth (met 3 sec) 16))
+    (refuse 'set-telegram' 'secret: 16 bytes at least')
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  base=(map @t json)  ?:(?=([%o *] cur) p.cur ~)
+  =/  merged=(map @t json)
+    %+  roll  ~(tap by p.doc)
+    |=  [[k=@t v=json] acc=_base]
+    ?.  |(=('token' k) =('secret' k))  (~(put by acc) k v)
+    ?:  ?=(~ v)  (~(del by acc) k)
+    ?:  &(?=([%s *] v) =('' p.v))  acc
+    (~(put by acc) k v)
+  ;<  ~  bind:m  (over:io (rf 0 / %'telegram.json') [[/ %json] [%o merged]])
+  ;<  ~  bind:m  (note 'set-telegram' & '')
   (pure:m |)
 ::  +do-add-client: one minted key, refused when the id is taken or the
 ::  table is full. The row arrives hashed; the writer never sees a
