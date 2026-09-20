@@ -249,8 +249,32 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) +
+  // the telegram card: the reader's settings, the token and secret written
+  // and never read back, the webhook registered from here, the last update
+  function telegramCard(t, last) {
+    t = t || {}; last = last || {};
+    var people = t.people ? JSON.stringify(t.people, null, 2) : '{}';
+    var out = '<div class="card"><h2>Telegram</h2><div id="telegram">' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (t.enabled ? ' checked' : '') + '> on: the ship reads the chats below through its webhook</label></p>' +
+      '<p><label class="field">bot token <input name="token" type="password" placeholder="' + (t.token_set ? 'a token is set; leave blank to keep it' : 'no token set') + '"></label> ' +
+      '<label class="field">webhook secret <input name="secret" type="password" placeholder="' + (t.secret_set ? 'a secret is set; leave blank to keep it' : 'no secret set') + '"></label>' +
+      '<button data-make-secret="1" title="fill the secret with 32 random bytes; it is saved with the form">make one</button></p>' +
+      '<p><label class="field">public URL of this ship <input name="public_url" value="' + esc(t.public_url || '') + '" placeholder="https://your.ship"></label> ' +
+      '<label class="field">reader model <input name="model" value="' + esc(t.model || '') + '"></label></p>' +
+      '<p><label class="field">chats (ids, comma separated) <input name="chats" value="' + esc((t.chats || []).join(',')) + '"></label></p>' +
+      '<p><label class="field wide">people (Telegram user id to body id, JSON) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +
+      '<p><label class="field">gate (hundredths) <input name="gate" value="' + esc(t.gate != null ? t.gate : '') + '"></label> ' +
+      '<label class="field">escalate (hundredths) <input name="escalate" value="' + esc(t.escalate != null ? t.escalate : '') + '"></label> ' +
+      '<label class="field">messages per day at most <input name="max_daily_messages" value="' + esc(t.max_daily_messages != null ? t.max_daily_messages : '') + '"></label></p>' +
+      '<p><button data-save-telegram="1">save telegram</button><button data-webhook="1">register the webhook</button></p></div>';
+    if (last.at) {
+      out += '<p class="muted">Last update ' + esc(String(last.update_id)) + ' at ' + fmtTime(last.at) + ' from ' + esc(last.from || '') + ' in ' + esc(last.chat || '') + ': ' + esc(last.outcome || '') + '. Read today: ' + (last.read_today || 0) + '.</p>';
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + telegramCard(telegram, telegramLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -349,7 +373,8 @@
     return fetch(API + path, opts).then(function (r) {
       if (!r.ok) {
         return r.json().catch(function () { return {}; }).then(function (d) {
-          throw new Error(d.error || ('http ' + r.status));
+          // a refusal relayed from Telegram carries its description, not an error
+          throw new Error(d.error || d.description || ('http ' + r.status));
         });
       }
       return r.json();
@@ -369,7 +394,7 @@
     function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
@@ -426,6 +451,19 @@
       post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.reconcile) {
       post('/reconcile', {}).then(function () { say('reconcile started; the last run line updates when it ends'); setTimeout(refresh, 15000); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.saveTelegram) {
+      var t = telegramForm();
+      if (!t) return;
+      post('/telegram', t, 'PUT').then(function () { say('telegram saved'); later(); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.webhook) {
+      post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.makeSecret) {
+      // a fresh secret: 32 random bytes as hex, in the field until saved
+      var bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      var hex = Array.prototype.map.call(bytes, function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+      var secretEl = view.querySelector('#telegram input[name="secret"]');
+      if (secretEl) { secretEl.value = hex; say('a secret is in the field; save telegram to keep it'); }
     }
   });
   // the generator form as the API takes it; a blank key is left out so
@@ -440,6 +478,21 @@
       max_urgent: parseInt(val('max_urgent'), 10) || 0 };
     if (val('api_key')) g.api_key = val('api_key');
     return g;
+  }
+  // the telegram form as the API takes it; a blank token or secret is left
+  // out so the stored one stays; people is JSON, and a parse error stops the
+  // save with the message, so the form answers null
+  function telegramForm() {
+    function val(name) { var el = view.querySelector('#telegram [name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    var people;
+    try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
+    var t = { enabled: !!view.querySelector('#telegram input[name="enabled"]:checked'), public_url: val('public_url'), model: val('model'),
+      chats: val('chats').split(',').map(function (c) { return c.trim(); }).filter(Boolean), people: people,
+      gate: parseInt(val('gate'), 10) || 0, escalate: parseInt(val('escalate'), 10) || 0,
+      max_daily_messages: parseInt(val('max_daily_messages'), 10) || 0 };
+    if (val('token')) t.token = val('token');
+    if (val('secret')) t.secret = val('secret');
+    return t;
   }
   // the mint form as the API takes it; sensitive: write only rides with write
   function mintForm() {

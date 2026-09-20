@@ -136,4 +136,13 @@ const recSettings = render.settings({ kinds: {} }, {}, gen, genLast, { at: '2026
 ok('the reconcile card follows the generator with a run button and the last run', recSettings.indexOf('<h2>Generator</h2>') < recSettings.indexOf('<h2>Reconcile</h2>') && recSettings.indexOf('<h2>Reconcile</h2>') < recSettings.indexOf('<h2>schema.json</h2>')
   && recSettings.includes('data-reconcile="1"') && recSettings.includes('1 activity (activity/ballet)') && recSettings.includes('20 retired'));
 ok('a reconcile that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}).includes('Last run'));
+const tg = { enabled: true, token_set: true, secret_set: false, api_url: 'https://api.telegram.org', public_url: 'https://ship.example', model: 'deepseek/deepseek-v4-flash', max_tokens: 4000, chats: ['1001'], people: { '1001': 'person/me' }, gate: 30, escalate: 60, max_daily_messages: 500 };
+const tgLast = { at: '2026-09-20T13:00:00Z', update_id: 7, chat: '1001', from: '1001', outcome: 'facts', notes: ['gate: 90, read', 'escalate: 12'], day: '2026-09-20', read_today: 3 };
+const tgSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast);
+ok('the telegram card follows reconcile with the token masked and the secret wanted', tgSettings.indexOf('<h2>Reconcile</h2>') < tgSettings.indexOf('<h2>Telegram</h2>') && tgSettings.includes('a token is set') && tgSettings.includes('no secret set') && !tgSettings.includes('123:abc'));
+ok('the card holds chats, people, thresholds and the cap', tgSettings.includes('name="chats" value="1001"') && tgSettings.includes('&quot;1001&quot;: &quot;person/me&quot;') && tgSettings.includes('name="gate" value="30"') && tgSettings.includes('name="max_daily_messages" value="500"'));
+ok('the card offers save and register', tgSettings.includes('data-save-telegram="1"') && tgSettings.includes('data-webhook="1"'));
+ok('the card offers to make a secret', tgSettings.includes('data-make-secret="1"'));
+ok('the last update is summarised', tgSettings.includes('Last update 7') && tgSettings.includes('facts') && tgSettings.includes('Read today: 3') && tgSettings.includes('gate: 90, read'));
+ok('a reader that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}, { enabled: false }, {}).includes('Last update'));
 console.log('ALL OK (' + n + ' checks)');
