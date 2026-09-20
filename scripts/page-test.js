@@ -145,4 +145,11 @@ ok('the card offers save and register', tgSettings.includes('data-save-telegram=
 ok('the card offers to make a secret', tgSettings.includes('data-make-secret="1"'));
 ok('the last update is summarised', tgSettings.includes('Last update 7') && tgSettings.includes('facts') && tgSettings.includes('Read today: 3') && tgSettings.includes('gate: 90, read'));
 ok('a reader that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}, { enabled: false }, {}).includes('Last update'));
+const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
+ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
+  src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
+  && src.includes("view.addEventListener('input'") && src.includes('if (dirty) return true;')
+  && src.includes('dirty = false; setTimeout(function () { refresh(true); }, 300);')
+  && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });")
+  && !src.includes("setInterval(function () { if (!document.hidden) refresh(true); }"));
 console.log('ALL OK (' + n + ' checks)');

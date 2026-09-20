@@ -385,8 +385,9 @@
   }
 
   var refreshing = false, again = false;
-  function refresh() {
+  function refresh(force) {
     if (refreshing) { again = true; return; }
+    if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }
     refreshing = true;
     var r = route(location.hash);
     var p;
@@ -405,7 +406,7 @@
   }
 
   // a write answers before the writer applies, so the refetch waits
-  function later() { setTimeout(refresh, 300); }
+  function later() { dirty = false; setTimeout(function () { refresh(true); }, 300); }
 
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
@@ -432,19 +433,20 @@
       var which = b.dataset.save;
       var parsed;
       try { parsed = JSON.parse(document.getElementById(which).value); } catch (e) { say(which + ': ' + e.message, true); return; }
-      post('/' + which, parsed, 'PUT').then(function () { say(which + ' saved'); }).catch(function (e) { say(e.message, true); });
+      post('/' + which, parsed, 'PUT').then(function () { say(which + ' saved'); dirty = false; }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.revoke) {
       if (!confirm('Revoke "' + b.dataset.name + '"? Its next request is refused.')) return;
       api('/clients/' + seg(b.dataset.revoke), { method: 'DELETE' }).then(later).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.mint) {
-      post('/clients', mintForm()).then(function (d) { minted = d; refresh(); }).catch(function (e) { say(e.message, true); });
+      post('/clients', mintForm()).then(function (d) { minted = d; dirty = false; refresh(true); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.copy) {
       var text = document.getElementById(b.dataset.copy).textContent;
       if (!navigator.clipboard) { say('copy by hand: the browser offers no clipboard here', true); return; }
       navigator.clipboard.writeText(text).then(function () { say('copied'); }, function () { say('copy failed: select it by hand', true); });
     } else if (b.dataset.dismissToken) {
       minted = null;
-      refresh();
+      dirty = false;
+      refresh(true);
     } else if (b.dataset.saveGenerator) {
       post('/generator', generatorForm(), 'PUT').then(function () { say('generator saved'); later(); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.generate) {
@@ -504,7 +506,7 @@
     return { name: val('name'), by: val('by'),
       scope: { kinds: picked('kinds'), actions: picked('actions'), write: write, sensitive: write && picked('sensitive').length ? 'write' : 'none' } };
   }
-  window.addEventListener('hashchange', refresh);
+  window.addEventListener('hashchange', function () { dirty = false; refresh(true); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 
   // ---- the beacon stream, read raw (the initial event is named "old
@@ -514,7 +516,17 @@
   // a re-render replaces the settings textareas and the mint form, so a
   // bump waits while one of them has focus; the next bump after blur
   // refreshes
+  // a re-render replaces every form on the page, so it waits while a
+  // field has focus or while any field holds what has not been saved:
+  // a token pasted into the telegram card was lost to a timed refresh
+  // after a tab switch (2026-09-21). Saving clears the mark.
+  var dirty = false;
+  view.addEventListener('input', function (e) {
+    var el = e.target;
+    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) dirty = true;
+  });
   function editing() {
+    if (dirty) return true;
     var el = document.activeElement;
     return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && view.contains(el));
   }
@@ -556,7 +568,7 @@
       await new Promise(function (r) { setTimeout(r, 3000); });
     }
   }
-  refresh();
+  refresh(true);
   stream();
   setInterval(function () { if (!document.hidden) refresh(); }, 60000);
 })();
