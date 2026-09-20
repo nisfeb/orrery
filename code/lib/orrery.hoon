@@ -171,6 +171,92 @@
   =/  ii=tape  ((d-co:co 2) mi)
   =/  ss=tape  ((d-co:co 2) s)
   (crip "{yy}-{mm}-{dd}T{hh}:{ii}:{ss}Z")
+::  a named zone: how far from UTC its clock stands, in minutes, in
+::  winter and in summer, and which summer rule it keeps. west is the
+::  side of UTC the clock is on.
+::
++$  zone  [west=? std=@ud dst=@ud rule=?(%us %uk %none)]
+::  +zones: the zones the ship can render a local clock for. The owner's
+::  timezone is a name from the generator's config, and any name not
+::  here leaves the time in UTC.
+::
+++  zones
+  ^-  (map @t zone)
+  %-  ~(gas by *(map @t zone))
+  ^-  (list [@t zone])
+  :~  ['America/New_York' & 300 240 %us]
+      ['America/Chicago' & 360 300 %us]
+      ['America/Denver' & 420 360 %us]
+      ['America/Phoenix' & 420 420 %none]
+      ['America/Los_Angeles' & 480 420 %us]
+      ['America/Anchorage' & 540 480 %us]
+      ['Pacific/Honolulu' & 600 600 %none]
+      ['Europe/London' | 0 60 %uk]
+  ==
+::  +dow: the day of the week of a date, 0 for Sunday (Sakamoto's)
+::
+++  dow
+  |=  [y=@ud m=@ud d=@ud]
+  ^-  @ud
+  =/  t=(list @ud)  ~[0 3 2 5 0 3 5 1 4 6 2 4]
+  =/  yy=@ud  ?:((lth m 3) (dec y) y)
+  =/  n=@ud  :(add yy (div yy 4) (div yy 400) (snag (dec m) t) d)
+  (mod (sub n (div yy 100)) 7)
+::  +first-sunday: the day of the month of a month's first Sunday
+::
+++  first-sunday
+  |=  [y=@ud m=@ud]
+  ^-  @ud
+  (add 1 (mod (sub 7 (dow y m 1)) 7))
+::  +last-sunday: the day of the month of the last Sunday, given the
+::  month's last day
+::
+++  last-sunday
+  |=  [y=@ud m=@ud last=@ud]
+  ^-  @ud
+  (sub last (dow y m last))
+::  +in-dst: whether a moment falls in a zone's summer. The US rule runs
+::  from the second Sunday of March to the first Sunday of November and
+::  is judged on the standard clock; the UK rule runs from the last
+::  Sunday of March to the last Sunday of October, both at 01:00 UTC.
+::
+++  in-dst
+  |=  [z=zone when=@da]
+  ^-  ?
+  ?:  ?=(%none rule.z)  |
+  =/  t=@da  ?:(?=(%us rule.z) (sub when (mul std.z ~m1)) when)
+  =/  [[* y=@ud] *]  (yore t)
+  =/  [start=@da end=@da]
+    ?:  ?=(%us rule.z)
+      :-  (year [[& y] 3 (add 7 (first-sunday y 3)) 2 0 0 ~])
+      (year [[& y] 11 (first-sunday y 11) 1 0 0 ~])
+    :-  (year [[& y] 3 (last-sunday y 3 31) 1 0 0 ~])
+    (year [[& y] 10 (last-sunday y 10 31) 1 0 0 ~])
+  &((gte t start) (lth t end))
+::  +local-iso: an ISO UTC time as a named zone's clock reads it, with
+::  its offset: 2026-09-17T16:00:00Z in America/New_York is
+::  2026-09-17T12:00:00-04:00. A message says "until 11:30" against the
+::  clock it was written on, and the model can only read that if it sees
+::  the clock. An unknown zone, or a time that will not parse, stays as
+::  it was.
+::
+++  local-iso
+  |=  [at=@t tz=@t]
+  ^-  @t
+  =/  when=(unit @da)  (de-iso at)
+  ?~  when  at
+  =/  z=(unit zone)  (~(get by zones) tz)
+  ?~  z  (en-iso u.when)
+  =/  mins=@ud  ?:((in-dst u.z u.when) dst.u.z std.u.z)
+  =/  shift=@dr  (mul mins ~m1)
+  =/  local=@da  ?:(west.u.z (sub u.when shift) (add u.when shift))
+  %+  rap  3
+  :~  (end [3 19] (en-iso local))
+      ?:(west.u.z '-' '+')
+      (crip ((d-co:co 2) (div mins 60)))
+      ':'
+      (crip ((d-co:co 2) (mod mins 60)))
+  ==
 ::  ==  ids
 ::
 ::  +hex8: eight lowercase hex digits of a noun's hash
@@ -3041,4 +3127,137 @@
       ==
     `[~ ~ ~[act] ~ ~]
   (usage 'commands: /at, /status, /obs, /task')
+::  ==  the reader's context and prompt
+::
+::  what the model is told the ship already knows: a body per line, the
+::  schema's attribute names and what they mean, the owner, and the
+::  action kinds it may propose with their payload shapes
+::
++$  ctx-body  [id=@t name=@t aliases=(list @t)]
++$  reader-ctx
+  $:  bodies=(list ctx-body)
+      attrs=(map @t (list @t))
+      notes=(map @t (map @t @t))
+      me=@t
+      kinds=(list @t)
+      payloads=(map @t json)
+  ==
+::  one message in the prompt's window; context marks an earlier one,
+::  shown for sense but not to be written from
+::
++$  window-row  [id=@t at=@t who=@t text=@t context=?]
+::  +reader-kinds: what a message may propose, in the order the prompt
+::  names them. Home actions are the generator's.
+::
+++  reader-kinds  `(list @t)`~['task' 'calendar' 'message']
+::  +reader-context: the context block from the loaded bodies and the
+::  schema
+::
+++  reader-context
+  |=  [all=(list loaded) schema=json now=@da]
+  ^-  reader-ctx
+  =/  multi=(set @t)  (multi-of schema)
+  =/  cutoff=@da  (sub now ~d30)
+  =/  bodies=(list ctx-body)
+    %-  scag  :-  300
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit ctx-body)
+    ?:  &(=(%situation kind.body.l) (closed-before l multi cutoff now))  ~
+    `[id.l name.body.l (sort ~(tap in aliases.body.l) aor)]
+  =/  kinds-j=json  (gj schema 'kinds')
+  =/  attrs=(map @t (list @t))
+    ?.  ?=([%o *] kinds-j)  ~
+    %-  ~(run by p.kinds-j)
+    |=(spec=json (strings (ga spec 'attrs')))
+  =/  notes=(map @t (map @t @t))
+    ?.  ?=([%o *] kinds-j)  ~
+    %-  ~(gas by *(map @t (map @t @t)))
+    %+  murn  ~(tap by p.kinds-j)
+    |=  [k=@t spec=json]
+    ^-  (unit [@t (map @t @t)])
+    =/  n=json  (gj spec 'notes')
+    ?.  ?=([%o *] n)  ~
+    :-  ~
+    :-  k
+    %-  ~(gas by *(map @t @t))
+    ^-  (list [@t @t])
+    (murn ~(tap by p.n) |=([a=@t v=json] ?.(?=([%s *] v) ~ `[a p.v])))
+  =/  listed=(set @t)  (sy (strings (ga schema 'actions')))
+  =/  kinds=(list @t)
+    =/  k=(list @t)  (skim reader-kinds |=(x=@t (~(has in listed) x)))
+    ?~(k ~['task'] k)
+  =/  payloads=(map @t json)
+    =/  p=json  (gj schema 'payloads')
+    ?.  ?=([%o *] p)  ~
+    %-  ~(gas by *(map @t json))
+    (skim ~(tap by p.p) |=([k=@t v=json] &(?=([%o *] v) (lien kinds |=(x=@t =(x k))))))
+  [bodies attrs notes 'person/me' kinds payloads]
+::  +closed-before: a situation closed, with its end before the cutoff.
+::  A new message does not refer to something long over.
+::
+++  closed-before
+  |=  [l=loaded multi=(set @t) cutoff=@da now=@da]
+  ^-  ?
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?.  =('closed' (winner-text w 'status'))  |
+  =/  e=(unit @da)  (timed l w 'ended')
+  =/  end=(unit @da)  ?^(e e (timed l w 'ends'))
+  ?~(end (lth created.body.l cutoff) (lth u.end cutoff))
+::  +reader-prompt: the user prompt, line for line as analyze.prompt
+::  writes it
+::
+++  reader-prompt
+  |=  [rows=(list window-row) ctx=reader-ctx tz=@t]
+  ^-  @t
+  =/  head=(list @t)
+    :~  'Channel: telegram'
+        (cat 3 'The owner is ' (cat 3 me.ctx '.'))
+    ==
+  =/  attr-lines=(list @t)
+    ?:  =(~ attrs.ctx)  ~
+    :-  'Attribute names by kind:'
+    %+  turn  (sort ~(tap by attrs.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+    |=([k=@t names=(list @t)] (rap 3 '  ' k ': ' (join-cords ', ' names) ~))
+  =/  note-lines=(list @t)
+    ?:  =(~ notes.ctx)  ~
+    :-  'What the attributes mean:'
+    %-  zing
+    %+  turn  (sort ~(tap by notes.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+    |=  [k=@t ns=(map @t @t)]
+    ^-  (list @t)
+    %+  turn  (sort ~(tap by ns) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+    |=([a=@t t=@t] (rap 3 '  ' k '.' a ': ' t ~))
+  =/  kind-lines=(list @t)
+    :-  (cat 3 'Action kinds you may propose: ' (join-cords ', ' kinds.ctx))
+    %+  turn  (sort ~(tap by payloads.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+    |=([k=@t shape=json] (rap 3 '  ' k ' payload: ' (en:json:html shape) ~))
+  =/  body-lines=(list @t)
+    :-  'Existing bodies (id | name | aliases):'
+    ?~  bodies.ctx  `(list @t)`~['  (none known)']
+    %+  turn  bodies.ctx
+    |=(b=ctx-body (rap 3 '  ' id.b ' | ' name.b ' | ' (join-cords ', ' aliases.b) ~))
+  =/  earlier=(list window-row)  (skim rows |=(r=window-row context.r))
+  =/  fresh=(list window-row)  (skip rows |=(r=window-row context.r))
+  =/  line
+    |=  [r=window-row tag=@t]
+    ^-  @t
+    (rap 3 '--- ' tag ' ' id.r ' | ' (local-iso at.r tz) ' | from ' who.r ~)
+  =/  msg-lines=(list @t)
+    %-  zing
+    ^-  (list (list @t))
+    :~  ?~  earlier  `(list @t)`~['Messages, oldest first:']
+        :-  'Earlier messages, context only, oldest first (write no facts from these):'
+        %-  zing
+        (turn earlier |=(r=window-row `(list @t)`~[(line r 'context') (end [3 8.000] text.r)]))
+      ::
+        ?~(earlier `(list @t)`~ `(list @t)`~['New messages, oldest first:'])
+      ::
+        %-  zing
+        (turn fresh |=(r=window-row `(list @t)`~[(line r 'message') (end [3 8.000] text.r)]))
+      ::
+        `(list @t)`~['---' 'Answer with the JSON object.']
+    ==
+  %+  join-cords  nl
+  ;:  weld  head  attr-lines  note-lines  kind-lines  body-lines  `(list @t)`~['']  msg-lines  ==
 --

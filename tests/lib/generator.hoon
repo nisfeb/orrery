@@ -596,4 +596,41 @@
     (expect-eq !>(`(list @t)`~['usage: /obs <kind>/<slug> <attr> <value>']) !>(notes:(need (tg-command:orr (m '/obs me status ok') 'person/me'))))
     (expect-eq !>(0) !>((lent obs.usage)))
   ==
+++  test-reader-prompt
+  =/  schema=json
+    %-  jo
+    '{"kinds": {"person": {"attrs": ["status", "location"], "notes": {"status": "what they are doing"}}, "situation": {"attrs": ["status"]}}, "actions": ["task", "note", "message", "calendar"], "payloads": {"calendar": {"title": "required", "starts": "required: ISO 8601 UTC"}, "message": {"via": "required: one of telegram, mail, chat", "to": "required: the body id", "text": "required"}, "note": {"text": "required"}}}'
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~['I'] ~ now)
+        (mkb 'person/sarah' %person 'Sarah' ~['wife'] ~ now)
+        (mkb 'situation/2026-05-01-old' %situation 'Old' ~ ~[['status' s+'closed'] ['ended' s+'2026-05-01T00:00:00Z']] (sub now ~d100))
+        (mkb 'situation/2026-09-10-fresh' %situation 'Fresh' ~ ~[['status' s+'closed'] ['ended' s+'2026-09-10T00:00:00Z']] now)
+    ==
+  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  =/  rows=(list window-row:orr)
+    :~  ['telegram/1/1' '2026-09-17T16:00:00Z' 'person/me' 'jury duty tomorrow' &]
+        ['telegram/1/2' '2026-09-17T16:10:00Z' 'person/me' 'home now, car is at the shop' |]
+    ==
+  =/  p=tape  (trip (reader-prompt:orr rows ctx 'America/New_York'))
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['task' 'calendar' 'message']) !>(kinds.ctx))
+    (expect-eq !>(3) !>((lent bodies.ctx)))
+    (expect !>(?=(^ (find "person/sarah | Sarah | wife" p))))
+    (expect !>(?=(^ (find "Channel: telegram" p))))
+    (expect !>(?=(^ (find "person: status, location" p))))
+    (expect !>(?=(^ (find "person.status: what they are doing" p))))
+    (expect !>(?=(^ (find "Action kinds you may propose: task, calendar, message" p))))
+    (expect !>(?=(^ (find "calendar payload: \{\"title\":\"required\"" p))))
+    (expect !>(?=(^ (find "--- context telegram/1/1 | 2026-09-17T12:00:00-04:00 | from person/me" p))))
+    (expect !>(?=(^ (find "New messages, oldest first:" p))))
+    (expect !>(?=(^ (find "--- message telegram/1/2 | 2026-09-17T12:10:00-04:00 | from person/me" p))))
+    (expect !>(?=(~ (find "situation/2026-05-01-old" p))))
+    (expect !>(?=(^ (find "situation/2026-09-10-fresh" p))))
+    (expect-eq !>("Answer with the JSON object.") !>((slag (sub (lent p) 28) p)))
+    ::  winter is standard time, and a zone the table does not name stays UTC
+    (expect-eq !>('2026-01-15T11:00:00-05:00') !>((local-iso:orr '2026-01-15T16:00:00Z' 'America/New_York')))
+    (expect-eq !>('2026-07-04T11:00:00+01:00') !>((local-iso:orr '2026-07-04T10:00:00Z' 'Europe/London')))
+    (expect-eq !>('2026-01-04T10:00:00+00:00') !>((local-iso:orr '2026-01-04T10:00:00Z' 'Europe/London')))
+    (expect-eq !>('2026-09-17T16:00:00Z') !>((local-iso:orr '2026-09-17T16:00:00Z' 'Mars/Olympus')))
+  ==
 --
