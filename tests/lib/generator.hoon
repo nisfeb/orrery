@@ -1072,6 +1072,18 @@
   =/  ref-got  (refine-check:orr refused refine-act 'a1' refine-ctx now)
   =/  bad-got  (refine-check:orr badkind refine-act 'a1' refine-ctx now)
   =/  past-got  (refine-check:orr past refine-act 'a1' refine-ctx now)
+  ::  a recipient named, not id'd, whom the answer creates
+  =/  byname=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": [" K ", ""]}], "action": {"title": "Tell Karl", "payload": {"via": "chat", "to": "Karl", "text": "hi"}, "about": ["person/karl"]}, "extras": [], "refused": ""}')
+  =/  name-got  (refine-check:orr byname refine-act 'a1' refine-ctx now)
+  =/  em=@t  (crip (tufa ~[`@c`0x2014]))
+  =/  dashed=json
+    %-  jo
+    %+  rap  3
+    :~  '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "Rose '
+        em
+        ' call me"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2026-09-25T18:00:00Z", "ends": null}, "about": []}], "refused": ""}'
+    ==
+  =/  dash-got  (refine-check:orr dashed refine-act 'a1' refine-ctx now)
   ;:  weld
     (expect !>(?=(%& -.got)))
     (expect-eq !>('Tell Rose and Susan') !>(?>(?=(%& -.got) title.p.got)))
@@ -1087,11 +1099,22 @@
     (expect-eq !>('no person named Karl on the ship') !>(?>(?=(%| -.ref-got) p.ref-got)))
     ::  an extra of a kind a reader may not propose is dropped, not fatal
     (expect-eq !>(0) !>(?>(?=(%& -.bad-got) (lent extras.p.bad-got))))
-    ::  a calendar extra in the past is dropped
+    ::  a calendar extra in the past is dropped, with a note saying so
     (expect-eq !>(0) !>(?>(?=(%& -.past-got) (lent extras.p.past-got))))
+    (expect-eq !>(`(list @t)`~['dropped extra Dinner: starts is not within the year ahead']) !>(?>(?=(%& -.past-got) notes.p.past-got)))
+    (expect-eq !>(`(list @t)`~['dropped extra Lights: an extra may not be a home']) !>(?>(?=(%& -.bad-got) notes.p.bad-got)))
+    ::  a to written as a name resolves to the body the answer creates,
+    ::  whose aliases are trimmed and the empty one dropped
+    (expect-eq !>('person/karl') !>(?>(?=(%& -.name-got) (gs:orr payload.p.name-got 'to'))))
+    (expect-eq !>(`(list @t)`~['K']) !>(?>(?=(%& -.name-got) (strings:orr (ga:orr (snag 0 bodies.p.name-got) 'aliases')))))
+    ::  an em dash in the revised text becomes a comma, and a null ends
+    ::  on a calendar extra is no end
+    (expect-eq !>('Rose, call me') !>(?>(?=(%& -.dash-got) (gs:orr payload.p.dash-got 'text'))))
+    (expect-eq !>(1) !>(?>(?=(%& -.dash-got) (lent extras.p.dash-got))))
+    (expect !>(?>(?=(%& -.dash-got) !(has-sub (en:json:html (gj:orr (snag 0 extras.p.dash-got) 'payload')) '"ends"'))))
   ==
 ++  test-refine-ops
-  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')]]
+  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')] ~]
   =/  ops=(list json)  (refine-ops:orr r 'a1' 'user' now)
   =/  none=(list json)  (refine-ops:orr r(bodies ~) 'a1' 'user' now)
   ;:  weld

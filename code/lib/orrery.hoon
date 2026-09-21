@@ -4118,8 +4118,8 @@
 ::  where they apply: the payload shape, the bodies, the times.
 ::
 ::  the checked answer: the bodies the ship lacks, each observe-ready,
-::  the four fields the revision rewrites, and each extra as an act-ready
-::  action, not yet stamped
+::  the four fields the revision rewrites, each extra as an act-ready
+::  action, not yet stamped, and a note per extra dropped
 ::
 +$  refined
   $:  bodies=(list json)
@@ -4128,6 +4128,7 @@
       about=(list @t)
       due=(unit @da)
       extras=(list json)
+      notes=(list @t)
   ==
 ::  +refine-prompt: orrery-utils/common/refine-prompt.md, word for
 ::  word; scripts/prompt-drift.py holds it there. Edit the file, not this.
@@ -4139,7 +4140,7 @@
 
   You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, and the note. Answer with one JSON object and nothing else: {"bodies": [...], "action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
 
-  The action keeps its kind and its purpose; the note changes what it says. "Include Susan in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
+  The action keeps its kind and its purpose; the note changes what it says. "Include Susan in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Keep the action's about and due as they are unless the note changes them. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
 
   What the note asks for beyond this action goes in extras, each a complete new action with kind, title, payload in the schema's shape, about and due: "also add a todo the day before to go shopping" is a task due one day before the event's start. Never repeat the action itself as an extra.
 
@@ -4171,21 +4172,25 @@
     `(list @t)`~[(cat 3 'The action: ' (en:json:html (en-action id a)))]
     `(list @t)`~[(cat 3 'The note: ' text)]
   ==
-::  +extra-plan-ok: a calendar extra stands against the clock the way
+::  +hold-extra-plan: a calendar extra stands against the clock the way
 ::  rule 14 holds a plan to its message: a start ahead of now and
-::  within the year, and an end, when given, after the start
+::  within the year, and an end, when given, after the start. An end
+::  the model left null or empty is no end, and goes the way hold-plan
+::  sends one, since de-action would refuse it.
 ::
-++  extra-plan-ok
+++  hold-extra-plan
   |=  [payload=(map @t json) now=@da]
-  ^-  ?
+  ^-  (each (map @t json) @t)
   =/  start=(unit @da)  (de-iso-any (ref-or-text (fall (~(get by payload) 'starts') `json`~)))
-  ?~  start  |
-  ?:  |((lth u.start now) (gth u.start (add now ~d365)))  |
+  ?~  start  [%| 'starts is not a time']
+  ?:  |((lth u.start now) (gth u.start (add now ~d365)))
+    [%| 'starts is not within the year ahead']
   =/  raw=(unit json)  (~(get by payload) 'ends')
-  ?~  raw  &
-  =/  end=(unit @da)  (de-iso-any (ref-or-text u.raw))
-  ?~  end  |
-  (gth u.end u.start)
+  ?.  (filled raw)  [%& (~(del by payload) 'ends')]
+  =/  end=(unit @da)  (de-iso-any (ref-or-text (need raw)))
+  ?~  end  [%| 'ends is not a time']
+  ?.  (gth u.end u.start)  [%| 'ends is not after starts']
+  [%& payload]
 ::  +clean-json-text: the prose rules' last line on a payload: an em
 ::  dash in its text becomes a comma before the payload is filed
 ::
@@ -4207,7 +4212,10 @@
   ^-  (each refined @t)
   =/  refused=@t  (gs answer 'refused')
   ?.  =('' refused)  [%| refused]
-  =/  had=(set @t)  (sy (turn bodies.ctx |=(b=ctx-body id.b)))
+  ::  the original's own links count as known: the context caps its
+  ::  bodies and drops old closed situations, and the model echoes them
+  =/  had=(set @t)
+    (~(gas in (sy (turn bodies.ctx |=(b=ctx-body id.b)))) ~(tap in about.a))
   =/  made=(list json)
     %+  murn  (ga answer 'bodies')
     |=  b=json
@@ -4220,12 +4228,21 @@
     ?.  (~(has by attrs.ctx) `@t`kind.u.pk)  ~
     =/  name=@t  (end [3 120] (trim-cord (gs b 'name')))
     ?:  =('' name)  ~
+    ::  the aliases held to de-body's limits, as validate-bodies holds them
+    =/  aliases=(list @t)
+      %+  scag  32
+      %+  murn  (ga b 'aliases')
+      |=  x=json
+      ^-  (unit @t)
+      ?.  ?=([%s *] x)  ~
+      =/  t=@t  (trim-cord p.x)
+      ?:(=('' t) ~ `(end [3 100] t))
     :-  ~
     %-  pairs:enjs:format
     :~  ['id' s+bid]
         ['kind' s+`@t`kind.u.pk]
         ['name' s+name]
-        ['aliases' a+(turn (strings (ga b 'aliases')) |=(x=@t `json`s+x))]
+        ['aliases' a+(turn aliases |=(x=@t `json`s+x))]
     ==
   =/  known=(set @t)  (~(gas in had) (turn made |=(b=json (gs b 'id'))))
   ::  a name or an alias, lower-cased, stands for its id: the model may
@@ -4263,29 +4280,32 @@
   =/  due=(unit @da)
     =/  d=@t  (gs act 'due')
     ?:(=('' d) ~ (de-iso-any d))
-  =/  extras=(list json)
-    %+  murn  (ga answer 'extras')
+  ::  each extra as an act, or why it is dropped; the revision stands
+  ::  whatever becomes of its extras, so a bad one is a note, not a refusal
+  =/  extra-of
     |=  e=json
-    ^-  (unit json)
-    ?.  ?=([%o *] e)  ~
+    ^-  (each json @t)
+    ?.  ?=([%o *] e)  [%| 'not an object']
     =/  kind=@t  (lower (trim-cord (gs e 'kind')))
-    ?.  (lien kinds.ctx |=(k=@t =(k kind)))  ~
+    ?.  (lien kinds.ctx |=(k=@t =(k kind)))
+      [%| (cat 3 'an extra may not be a ' ?:(=('' kind) '(no kind)' kind))]
     =/  et=@t  (end [3 200] (trim-cord (gs e 'title')))
-    ?:  =('' et)  ~
+    ?:  =('' et)  [%| 'no title']
     =/  eabout=(list @t)
       (skim (turn (ga e 'about') resolve) |=(x=@t (~(has in known) x)))
     =/  epay=(map @t json)
       =/  p=json  (gj e 'payload')
       ?:(?=([%o *] p) p.p ~)
     =/  eheld  (hold-payload epay (fall (~(get by payloads.ctx) kind) `json`~) known alias)
-    ?:  ?=([%| *] eheld)  ~
-    ?:  &(=('calendar' kind) !(extra-plan-ok p.eheld now))  ~
+    ?:  ?=([%| *] eheld)  [%| p.eheld]
+    =/  planned  ?.(=('calendar' kind) eheld (hold-extra-plan p.eheld now))
+    ?:  ?=([%| *] planned)  [%| p.planned]
     =/  edue=(unit @da)
       =/  d=@t  (gs e 'due')
       ?:(=('' d) ~ (de-iso-any d))
-    =/  eabout-all=(list @t)  (dedupe (weld eabout ~(tap in about.a)))
-    =/  epayload=json  (clean-json-text [%o (~(put by p.eheld) 'refined_from' s+id)])
-    :-  ~
+    =/  eabout-all=(list @t)  (scag 20 (dedupe (weld eabout ~(tap in about.a))))
+    =/  epayload=json  (clean-json-text [%o (~(put by p.planned) 'refined_from' s+id)])
+    :-  %&
     %-  pairs:enjs:format
     %-  zing
     :~  :~  ['kind' s+kind]
@@ -4295,10 +4315,21 @@
         ==
         ?~(edue ~ ~[['due' s+(en-iso u.edue)]])
     ==
-  [%& made title (clean-json-text [%o p.held]) about due extras]
+  =/  sorted=[extras=(list json) notes=(list @t)]
+    %+  roll  (ga answer 'extras')
+    |=  [e=json acc=[extras=(list json) notes=(list @t)]]
+    ^-  [extras=(list json) notes=(list @t)]
+    =/  got  (extra-of e)
+    ?:  ?=([%& *] got)  [(snoc extras.acc p.got) notes.acc]
+    =/  shown=@t
+      =/  t=@t  (trim-cord (gs e 'title'))
+      ?:(=('' t) '(no title)' t)
+    [extras.acc (snoc notes.acc (rap 3 'dropped extra ' shown ': ' p.got ~))]
+  [%& made title (clean-json-text [%o p.held]) about due extras.sorted notes.sorted]
 ::  +refine-ops: the writer ops that file a checked answer: an observe
 ::  with the new bodies when there are any, the revision, then one act
-::  per extra, each stamped by the same hand
+::  per extra, each stamped by the same hand. The notes are the route's
+::  to report, not the writer's.
 ::
 ++  refine-ops
   |=  [r=refined id=@ta by=@t now=@da]
