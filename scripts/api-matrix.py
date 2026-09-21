@@ -953,14 +953,16 @@ def approve(aid):
     return curl('POST', API + f'/actions/{aid}', {'status': 'approved'})[0]
 
 
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people']:
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped']:
     curl('DELETE', API + '/body/' + b)
 code, d = observe(
     [{'id': 'person/gate-tg', 'name': 'the gate telegram person'}, {'id': 'person/gate-ship', 'name': 'the gate ship person'},
      {'id': 'person/gate-nobody', 'name': 'the gate person with no channel'}, {'id': 'person/gate-people', 'name': 'the gate person the people map knows'}],
-    [obs('person/gate-tg', 'telegram', '1001', now - timedelta(minutes=1), USER),
-     obs('person/gate-ship', 'ship', '~wex', now - timedelta(minutes=1), USER)])
-check('the four people the executor addresses land', code == 200 and all_ok(d, 'bodies', 4) and all_ok(d, 'observations', 2), (code, d))
+    [obs('person/gate-tg', 'telegram', '1001', now - timedelta(minutes=1), USER)])
+check('the four people the executor addresses land', code == 200 and all_ok(d, 'bodies', 4) and all_ok(d, 'observations', 1), (code, d))
+# the gate ship person's ship attribute is not given yet: the mail test
+# below proposes before it lands, so the channel rule (which only sees
+# what a person has at proposal time) leaves that message via mail
 # the reader's people map is the second way to a chat id, read backwards
 curl('PUT', API + '/telegram', {'people': {'1001': 'person/me', '1002': 'person/gate-people'}})
 code, d = curl('GET', API + '/exec/last', jar=None)
@@ -987,6 +989,26 @@ a = settled(PEOPLEID)
 check('a person the people map knows is sent to that user id', a.get('status') == 'done' and a.get('note') == 'sent to 1002' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
 check('the stub saw the second sendMessage under the chat id from the people map', len(sent) == 2 and sent[1][1].get('chat_id') == '1002' and sent[1][1].get('text') == 'the people map hears this %s' % XRUN, sent)
+# a message to a person with a ship: the channel rule files it via chat before the id is computed, and the rewrite is on the trail
+code, d = observe(
+    [{'id': 'person/gate-shipped', 'name': 'the gate person with a ship'}],
+    [obs('person/gate-shipped', 'ship', '~wex', now - timedelta(minutes=1), USER),
+     obs('person/gate-shipped', 'telegram', '1002', now - timedelta(minutes=1), USER)])
+SHIPID = propose('message', 'Gate shipped %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-shipped', 'text': 'routed to chat'})
+a = action(SHIPID)
+check('a message to a person with a ship is filed via chat', code == 200 and bool(SHIPID) and dictish(a.get('payload')).get('via') == 'chat', (code, SHIPID, a))
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+check('the trail carries the rewrite', code == 200 and isinstance(log, list)
+      and any(dictish(x).get('why') == 'via rewritten to chat: person/gate-shipped has a ship' for x in log), log[-3:] if isinstance(log, list) else log)
+before = exec_last()
+approve(SHIPID)
+time.sleep(8)
+a = action(SHIPID)
+after = exec_last()
+check('approved, it is left for the client that sends chat and the claimed count does not move',
+      a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed'),
+      (a.get('status'), steps(a), before.get('claimed'), after.get('claimed')))
+curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'})
 # a message to a person with no telegram attribute and not in the people map: no address, so no claim; left approved and noted
 NOID = propose('message', 'Gate telegram nobody %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-nobody', 'text': 'nobody hears this'})
 approve(NOID)
@@ -1002,6 +1024,8 @@ last = exec_last(notes=[])
 check('dismissed, it is noted no more', last.get('notes') == [], last)
 # a message via mail: a send poke to auspex's writer, which probes its peer before it lands
 MAILID = propose('message', 'Gate mail %s' % XRUN, payload={'via': 'mail', 'to': 'person/gate-ship', 'text': 'a letter from the gate %s' % XRUN})
+code, d = observe([], [obs('person/gate-ship', 'ship', '~wex', now - timedelta(minutes=1), USER)])
+check('the gate ship person\'s ship lands, after the mail message was proposed via mail', code == 200 and all_ok(d, 'observations', 1), (code, d))
 approve(MAILID)
 a = settled(MAILID, bound=90)
 check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ~wex' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
@@ -1110,7 +1134,7 @@ for t in todos():
 time.sleep(2)
 left = [t['id'] for t in todos() if dictish(t.get('meta')).get('orrery') in MADE]
 check('no todo of this run\'s own tasks is left on the calendar', left == [], left)
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people']:
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped']:
     curl('DELETE', API + '/body/' + b)
 curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()

@@ -1079,6 +1079,22 @@
   ;<  ex=?  bind:m  (peek-exists:io (rf up (body-dir kind.u.pk slug.u.pk) %body))
   ?.  ex  (pure:m `i.ids)
   (first-missing up t.ids)
+::  +body-attr: a body's live string attribute, read fresh from the
+::  store by its id ("kind/slug"); '' when the id does not parse or
+::  the body does not exist.
+::
+++  body-attr
+  |=  [up=@ud id=bid:orr attr=@t]
+  =/  m  (fiber:fiber:nexus ,@t)
+  ^-  form:m
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m '')
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
+  ?.  ?=([%ball *] vw)  (pure:m '')
+  =/  bf=(unit body:orr)  (body-in ball.vw)
+  ?~  bf  (pure:m '')
+  ;<  now=@da  bind:m  get-time:io
+  (pure:m (attr-text:orr ~[[id u.bf (rows-in ball.vw)]] ~ now id attr))
 ::  +open-twin: an open action with this kind and title, if any
 ::
 ++  open-twin
@@ -1105,6 +1121,10 @@
   ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
   =/  auto=?  =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))
   =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
+  ;<  ship=@t  bind:m  (body-attr 0 (gs:orr payload.a 'to') 'ship')
+  =/  routed  (route-message:orr a ship)
+  =.  a  a.routed
+  ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'act' & note.routed))
   =/  id=@ta  (act-id:orr a)
   ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))
   ?:  ex  (note-then-no 'act' 'an action with this id exists')
@@ -1431,6 +1451,11 @@
     %^  send-json  eyre-id  200
     (pairs:enjs:format ~[['id' s+id.u.twin] ['status' s+status.a.u.twin] ['existing' b+&]])
   =/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))
+  ::  the writer's own decode of stamped runs the same channel rule on
+  ::  the same 'to', so this echoes the id the writer will actually
+  ::  store under, ship or no ship
+  ;<  ship=@t  bind:m  (body-attr 1 (gs:orr payload.a 'to') 'ship')
+  =.  a  a:(route-message:orr a ship)
   =/  op=json  (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])
   ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')

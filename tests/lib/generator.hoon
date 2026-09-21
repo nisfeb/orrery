@@ -1020,6 +1020,20 @@
     (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a' em em 'b' ~))))
     (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a ' em ' ' em ' b' ~))))
   ==
+++  test-route-message
+  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "telegram", "to": "person/rose", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
+  =/  got  (route-message:orr m '~sampel-palnet')
+  =/  same  (route-message:orr m '')
+  =/  chat  (route-message:orr m(payload (jo '{"via": "chat", "to": "person/rose", "text": "hi"}')) '~sampel-palnet')
+  =/  task  (route-message:orr m(kind %task) '~sampel-palnet')
+  ;:  weld
+    (expect-eq !>('chat') !>((gs:orr payload.a.got 'via')))
+    (expect-eq !>('via rewritten to chat: person/rose has a ship') !>(note.got))
+    (expect-eq !>('telegram') !>((gs:orr payload.a.same 'via')))
+    (expect-eq !>('') !>(note.same))
+    (expect-eq !>('') !>(note.chat))
+    (expect-eq !>('') !>(note.task))
+  ==
 ::  the first calendar op on an id, the first writer op of a kind
 ++  find-by
   |=  [l=(list json) id=@t]

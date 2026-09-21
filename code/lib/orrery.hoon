@@ -4403,6 +4403,21 @@
   =/  ej=(unit json)  (event-json id a zone)
   ?~  ej  ~
   `[id kind.a ?:(=(%task kind.a) %todo %calendar) '' u.ej '']
+::  +route-message: the owner's channel rule. A person with a ship is
+::  reached on Urbit, so a message proposed for telegram or mail to
+::  such a person is filed via chat, which Talon sends; telegram is for
+::  a person with no ship. The note goes to the trail so the rewrite
+::  is visible.
+::
+++  route-message
+  |=  [a=action ship=@t]
+  ^-  [a=action note=@t]
+  ?.  =(%message kind.a)  [a '']
+  ?:  =('' ship)  [a '']
+  =/  via=@t  (lower (gs payload.a 'via'))
+  ?.  |(=('telegram' via) =('mail' via))  [a '']
+  :-  a(payload (set-key payload.a 'via' s+'chat'))
+  (rap 3 'via rewritten to chat: ' (gs payload.a 'to') ' has a ship' ~)
 ::  +clean-text: the owner's first prose rule enforced on what leaves
 ::  the ship: an em dash becomes a comma, one space after it and none
 ::  before, whatever a model wrote. The rest of the rules are the
