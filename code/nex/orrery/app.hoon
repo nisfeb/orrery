@@ -3527,14 +3527,20 @@
   ^-  form:m
   ?+    target.p  (pure:m [| 'a task is placed without a claim'])
       %telegram
-    ;<  [ok=? why=@t]  bind:m  (send-telegram tg body.p)
+    ;<  [ok=? why=@t]  bind:m
+      %+  send-telegram  tg
+      %-  pairs:enjs:format
+      :~  ['chat_id' s+(gs:orr body.p 'chat_id')]
+          ['text' s+(clean-text:orr (gs:orr body.p 'text'))]
+      ==
     (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why)])
   ::
       %mail
     =/  who=(unit @p)  (slaw %p to.p)
     ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name')])
     ;<  err=(unit tang)  bind:m
-      (poke-auspex base u.who (gs:orr body.p 'subject') (gs:orr body.p 'text'))
+      %+  poke-auspex  base
+      [u.who (gs:orr body.p 'subject') (clean-text:orr (gs:orr body.p 'text'))]
     ?^  err  (pure:m [| (tang-head u.err)])
     (pure:m [& (cat 3 'sent by mail to ' to.p)])
   ::

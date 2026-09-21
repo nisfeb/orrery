@@ -1003,9 +1003,9 @@
           ['note' (shape ~[['text' 'required: the note for the owner']])]
           :-  'message'
           %-  shape
-          :~  ['via' 'required: one of telegram, mail, chat; the channel the conversation is on']
+          :~  ['via' 'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none']
               ['to' 'required: the body id of the person, e.g. person/andrea']
-              ['text' 'required: the message, short, in the owner\'s own voice']
+              ['text' 'required: the message, short, in the owner\'s own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.']
           ==
           :-  'home'
           %-  shape
@@ -1954,7 +1954,7 @@
   Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a follow-up on something that stalled. An open situation with nothing being done about it, a person whose status calls for a reply, a delivery that never arrived.
   An event on the calendar is already known: never propose a task for attending it, and never restate it as a todo. Propose what an event needs beyond showing up, and only when the state gives a reason: a birthday with no gift task, an appointment with a form to bring, a rehearsal with no ride. A first occurrence is not a fifth: an activity with no last, or a situation of a kind the state has not seen, may call for something the owner does not yet have, equipment, paperwork, a plan, where a routine one calls for nothing; when a first sailing session or rehearsal plausibly needs such things, one task with the likely list under payload "notes" is worth more than a reminder to attend. When two events are close together or overlap, propose one task to sort out the overlap, naming both. A situation that is over or closed needs nothing.
   Few and good. Zero is a fine answer. Never propose more than the limit given.
-  An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short; a home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
+  An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short. The text keeps the owner's prose rules: no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, and a sentence with more than one parenthetical thought split in two. A home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
   "about" names the bodies the action concerns, by id, at most a few. "due" is ISO 8601 UTC, only when the timing matters.
   Respect what the facts say about time: an occurrence in the past is over; a situation that is upcoming has not happened; "last" is the most recent occurrence and "next" the nearest one ahead.
   Do not invent facts, people, places or events. Do not propose things the owner cannot act on. Do not moralise.
@@ -2975,7 +2975,7 @@
   Three shapes exist.
   A body is something that exists: a person, place, thing, org, situation, activity or note. Its id is kind/slug, lowercase letters, digits and hyphens, for example person/sarah, place/johns-machine-shop, thing/subaru, situation/2026-09-16-breakdown.
   An observation is one claim about one body: subject.attr = value, with when it became true. Values are a short string, a number, true or false, null (which clears the attribute), or {"ref": "kind/slug"} pointing at another body.
-  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both, and when it does not, write neither. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short, in the owner's own voice. Never a message telling someone what they just said, and never one the owner already sent. Propose only the action kinds listed for you, with the payload shape given.
+  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both, and when it does not, write neither. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short, in the owner's own voice. The text keeps the owner's prose rules: no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, and a sentence with more than one parenthetical thought split in two. Never a message telling someone what they just said, and never one the owner already sent. Propose only the action kinds listed for you, with the payload shape given.
   Rules.
   Only state what the messages say or clearly imply. Never invent. When unsure, leave it out or lower the confidence.
   Use the existing bodies by id whenever a message refers to one of them, by name or alias. When a message calls an existing body by a name the list does not have ("next door" for place/neighbors, "the Hendersons"), repeat that body in "bodies" with the new name under "aliases", so the ship learns the word. Create a new body only for a named person, place, thing or org, or for a situation (an event with participants) the messages describe.
@@ -4403,6 +4403,30 @@
   =/  ej=(unit json)  (event-json id a zone)
   ?~  ej  ~
   `[id kind.a ?:(=(%task kind.a) %todo %calendar) '' u.ej '']
+::  +clean-text: the owner's first prose rule enforced on what leaves
+::  the ship: an em dash becomes a comma, one space after it and none
+::  before, whatever a model wrote. The rest of the rules are the
+::  prompts' to keep.
+::
+++  skip-trailing-space
+  |=  t=tape
+  ^-  tape
+  ?:  ?=([%' ' *] t)  $(t t.t)
+  t
+++  clean-text
+  |=  t=@t
+  ^-  @t
+  =/  cs=tape  " ,"
+  =/  s=tape  (trip t)
+  =|  out=tape
+  |-
+  ?~  s  (crip (flop out))
+  ::  the em dash is the three bytes e2 80 94; the accumulator is
+  ::  reversed, so the comma and its space go on backwards
+  ?.  ?=([%226 %128 %148 *] s)  $(s t.s, out [i.s out])
+  =/  rest=tape  t.t.t.s
+  =.  rest  ?:(?=([%' ' *] rest) t.rest rest)
+  $(s rest, out (weld cs (skip-trailing-space out)))
 ::  ==  the mirror: the calendar's todo list and the task actions kept
 ::  in step both ways. The fiber reads the store, +plan-mirror says
 ::  what each todo needs, and the fiber files it.

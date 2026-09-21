@@ -1008,6 +1008,15 @@
     ::  e1's tick carries now
     (expect-eq !>((ms-of:orr now)) !>((need (gn:orr (fall (find-by cal 'e1') ~) 'done'))))
   ==
+::  ==  clean-text
+::
+++  test-clean-text
+  =/  em=@t  (crip (tufa ~[`@c`0x2014]))
+  ;:  weld
+    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose ' em ' call me back' ~))))
+    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose' em 'call me back' ~))))
+    (expect-eq !>('plain') !>((clean-text:orr 'plain')))
+  ==
 ::  the first calendar op on an id, the first writer op of a kind
 ++  find-by
   |=  [l=(list json) id=@t]
