@@ -3055,8 +3055,7 @@
   (pure:m ~)
 ::  +tg-final-row: a validated observation (subject, attr, value, at,
 ::  conf, message, until) as the writer's row: the source is the message
-::  it came from, by telegram, the message key gone. A command's rows
-::  arrive in that shape already and pass unchanged.
+::  it came from, by telegram, the message key gone.
 ::
 ++  tg-final-row
   |=  o=json
@@ -3095,8 +3094,8 @@
   (pure:m !(~(has by people.cfg) found))
 ::  +tg-record: what the reader did with the last update, for the page;
 ::  read_today counts the messages the analyst was asked about (read),
-::  since the daily cap is about the model: a command, a question, a
-::  gate refusal and an ignored update do not move it
+::  since the daily cap is about the model: a question, a gate refusal,
+::  a held message and an ignored update do not move it
 ::
 ++  tg-record-down
   |=  [now=@da uid=@ud notes=(list @t)]

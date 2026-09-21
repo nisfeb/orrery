@@ -3088,8 +3088,9 @@
   ^-  (unit [id=@t at=@t who=@t text=@t])
   =/  id=@t  (gs r 'id')
   ?:(=('' id) ~ `[id (gs r 'at') (gs r 'who') (gs r 'text')])
-::  +tg-remember: the window with this message appended: commands and
-::  empty text never go in, five per chat, nothing older than a day
+::  +tg-remember: the window with this message appended: a text starting
+::  with a slash and an empty text never go in, five per chat, nothing
+::  older than a day
 ++  tg-remember
   |=  [recent=json m=tg-msg who=@t now=@da]
   ^-  json
