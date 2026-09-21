@@ -40,6 +40,8 @@ input:not([type]), input[type="password"] { font: inherit; padding: .25rem .4rem
 .token code { display: inline-block; padding: .3rem .5rem; font-size: 1.05em; user-select: all; word-break: break-all; }
 textarea { width: 100%; min-height: 14rem; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; }
 .actions li { margin-bottom: .5rem; }
+.refine { margin: .4rem 0 0; }
+.refine input { width: 18em; max-width: 100%; }
 code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius: 3px; }
 /* a phone: the header wraps, every table stacks one row per card with the
    column name in front of each cell, buttons grow to a finger's width,

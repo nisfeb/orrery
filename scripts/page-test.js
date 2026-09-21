@@ -86,6 +86,9 @@ ok('about names the body when the state is at hand, with the id on hover, and fa
   render.inbox(inbox, state).includes('about <a href="#body/thing/subaru" title="thing/subaru">the &lt;b&gt;Subaru&lt;/b&gt;</a>')
   && render.inbox(inbox, state).includes('<a href="#body/person/sarah" title="person/sarah">person/sarah</a>'));
 ok('an empty inbox says so', render.inbox([]).includes('Nothing waiting'));
+ok('a proposed action has a refine box and a button with its id', inboxHtml.includes('<input data-refine-text="p1" placeholder="a note for this action">') && inboxHtml.includes('<button data-refine="p1">refine</button>'));
+ok('an approved or claimed action has no refine box', !inboxHtml.includes('data-refine="a1"') && !inboxHtml.includes('data-refine-text="a1"') && !inboxHtml.includes('data-refine="c1"'));
+ok('the refine note is empty on render', inboxHtml.includes('<span class="muted" data-refine-note="p1"></span>'));
 
 const settings = render.settings({ kinds: { person: { attrs: ['status'] } } }, { auto: ['task'], push: 'proposed', retention_days: 365, sensitive: ['health'] });
 ok('the schema is editable JSON', settings.includes('id="schema"') && settings.includes('&quot;person&quot;'));

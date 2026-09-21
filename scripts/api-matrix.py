@@ -507,6 +507,11 @@ class Stub(http.server.BaseHTTPRequestHandler):
             system = ((body.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
             if system.startswith('You turn') and DOWN:
                 out, status = {'error': {'message': 'the stub is down'}}, 503
+            elif system.startswith('You refine'):
+                # the refine prompt ends with the owner's note, which picks the reply
+                user = ((body.get('messages') or [{}])[-1].get('content') or [{}])[0].get('text', '')
+                tail = user.rstrip().rsplit('The note: ', 1)[-1]
+                out = REFINE_CANNED.get(tail, REFINE_CANNED[''])
             else:
                 out = TG_CANNED if system.startswith('You turn') else CANNED
         out = json.dumps(out).encode()
@@ -953,7 +958,31 @@ def approve(aid):
     return curl('POST', API + f'/actions/{aid}', {'status': 'approved'})[0]
 
 
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped']:
+def completion(answer):
+    return {'choices': [{'message': {'content': json.dumps(answer)}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+
+
+# the refine stub's replies, keyed by the owner's note; the extra's due is
+# in 2099 so the retire and expire passes never touch it, and its title
+# carries the run so an earlier run's leftover is never its twin
+REFINE_EXTRA = 'Gate: buy the tow guy a coffee %s' % XRUN
+REFINE_CANNED = {
+    '': completion({'action': {'title': 'Tell Rose and Susan the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked. Susan knows too.'}, 'about': ['person/gate-shipped'], 'due': None},
+                    'extras': [{'kind': 'task', 'title': REFINE_EXTRA, 'payload': {'notes': 'before the tow'}, 'about': ['person/gate-shipped'], 'due': '2099-01-01T12:00:00Z'}], 'refused': ''}),
+    'include karl in this': completion({'bodies': [{'id': 'person/gate-karl', 'kind': 'person', 'name': 'Gate Karl', 'aliases': []}],
+                                        'action': {'title': 'Tell Rose and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped', 'person/gate-karl'], 'due': None},
+                                        'extras': [], 'refused': ''}),
+    'turn the porch light on': completion({'refused': 'a message cannot switch a light; propose a home action instead'}),
+    'send this as mail': completion({'action': {'title': 'Gate mail by refine %s' % XRUN, 'payload': {'via': 'mail', 'to': 'person/gate-shipped', 'text': 'a letter asked for at approval %s' % XRUN}, 'about': ['person/gate-shipped'], 'due': None},
+                                     'extras': [], 'refused': ''}),
+}
+
+
+def refine(aid, text, token=None):
+    return curl('POST', API + f'/actions/{aid}/refine', {'text': text}, token=token)
+
+
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped', 'person/gate-karl']:
     curl('DELETE', API + '/body/' + b)
 code, d = observe(
     [{'id': 'person/gate-tg', 'name': 'the gate telegram person'}, {'id': 'person/gate-ship', 'name': 'the gate ship person'},
@@ -1000,6 +1029,64 @@ check('a message to a person with a ship is filed via chat', code == 200 and boo
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the trail carries the rewrite', code == 200 and isinstance(log, list)
       and any(dictish(x).get('why') == 'via rewritten to chat: person/gate-shipped has a ship' for x in log), log[-3:] if isinstance(log, list) else log)
+# ---- refine at approval (version 36): a note under the proposed message, through the stub as the generator's model ----
+# the generator stays off; the route needs only its key and url
+curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
+time.sleep(0.5)
+n_refine = len(seen)
+code, d = refine(SHIPID, 'include susan in this')
+d = dictish(d)
+ra, rx = dictish(d.get('action')), [dictish(x) for x in (d.get('extras') or [])]
+check('a note refines the proposed message: ok, the revised action with the canned title and via chat, one extra',
+      code == 200 and d.get('ok') is True and ra.get('id') == SHIPID and ra.get('title') == 'Tell Rose and Susan the tow is booked'
+      and dictish(ra.get('payload')).get('via') == 'chat' and dictish(ra.get('payload')).get('text') == 'The tow is booked. Susan knows too.' and len(rx) == 1, (code, d))
+EXTRAID = rx[0].get('id', '') if rx else ''
+MADE.append(EXTRAID)
+check('the extra is a task carrying refined_from and the original\'s about, approved under auto',
+      rx and rx[0].get('kind') == 'task' and rx[0].get('title') == REFINE_EXTRA and dictish(rx[0].get('payload')).get('refined_from') == SHIPID
+      and 'person/gate-shipped' in (rx[0].get('about') or []) and rx[0].get('status') == 'approved' and rx[0].get('due') == '2099-01-01T12:00:00Z', rx)
+asked = [b for p, _, b in seen[n_refine:] if p.endswith('/chat/completions')]
+sysblock = ((asked[-1].get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '') if asked else ''
+check('the model was asked once under the generator\'s key, with the refine prompt as the system block',
+      len(asked) == 1 and sysblock.startswith('You refine') and any(h.get('authorization') == 'Bearer sk-stub' for p, h, _ in seen[n_refine:] if p.endswith('/chat/completions')), (len(asked), sysblock[:40]))
+a = action(SHIPID)
+check('read back, the action is still proposed under the new title with a last step revised by user',
+      a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Susan the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
+check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+check('the trail records the revision', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log), log[-4:] if isinstance(log, list) else log)
+code, d = refine(SHIPID, 'include karl in this')
+d = dictish(d)
+karl = dictish(curl('GET', API + '/body/person/gate-karl')[1])
+a = action(SHIPID)
+check('a person the note names is created and the action names them',
+      code == 200 and d.get('ok') is True and karl.get('name') == 'Gate Karl' and 'person/gate-karl' in (a.get('about') or []) and a.get('title') == 'Tell Rose and Karl the tow is booked'
+      and 'person/gate-karl' in (dictish(d.get('action')).get('about') or []), (code, d, karl, a.get('about')))
+code, d = refine(SHIPID, 'turn the porch light on')
+a = action(SHIPID)
+check('a refusal changes nothing and says why', code == 200 and dictish(d).get('ok') is False and dictish(d).get('note') == 'a message cannot switch a light; propose a home action instead'
+      and a.get('title') == 'Tell Rose and Karl the tow is booked' and steps(a)[-1] == ('revised', 'user') and len([s for s, _ in steps(a) if s == 'revised']) == 2, (code, d, a.get('title'), steps(a)))
+code, d = refine(SHIPID, '')
+check('an empty note is refused', code == 400, (code, d))
+code, taskkey = curl('POST', API + '/clients', {'name': 'gate task key', 'by': 'gate-task', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})
+code, rokey = curl('POST', API + '/clients', {'name': 'gate read key', 'by': 'gate-read', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': False, 'sensitive': 'none'}})
+code, d = refine(SHIPID, 'include susan in this', token=dictish(taskkey).get('token'))
+check('a key whose actions lack the kind does not see the action', code == 404, (code, d))
+code, d = refine(SHIPID, 'include susan in this', token=dictish(rokey).get('token'))
+check('a read only key may not refine', code == 403, (code, d))
+for k in (taskkey, rokey):
+    if dictish(k).get('id'):
+        curl('DELETE', API + '/clients/' + dictish(k)['id'])
+# the channel set at approval stands: a chat message asked for as mail goes by mail, though its person has a ship
+MAILREFID = propose('message', 'Gate chat to mail %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-shipped', 'text': 'a DM until the owner says mail'})
+code, d = refine(MAILREFID, 'send this as mail')
+a = action(MAILREFID)
+check('a note sets the channel to mail and the revision is not rerouted',
+      code == 200 and dictish(d).get('ok') is True and dictish(dictish(dictish(d).get('action')).get('payload')).get('via') == 'mail' and dictish(a.get('payload')).get('via') == 'mail', (code, d, a.get('payload')))
+approve(MAILREFID)
+a = settled(MAILREFID, bound=90)
+check('approved, the executor sends it by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ~wex' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+curl('PUT', API + '/generator', {'api_key': None})
 before = exec_last()
 approve(SHIPID)
 time.sleep(8)
@@ -1008,7 +1095,11 @@ after = exec_last()
 check('approved, it is left for the client that sends chat and the claimed count does not move',
       a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed'),
       (a.get('status'), steps(a), before.get('claimed'), after.get('claimed')))
+code, d = refine(SHIPID, 'include susan in this')
+check('an approved action is not refined', code == 409 and dictish(d).get('error') == 'only a proposed action can be refined', (code, d))
 curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'})
+if EXTRAID:
+    curl('POST', API + f'/actions/{EXTRAID}', {'status': 'dismissed', 'note': 'gate'})
 # a message to a person with no telegram attribute and not in the people map: no address, so no claim; left approved and noted
 NOID = propose('message', 'Gate telegram nobody %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-nobody', 'text': 'nobody hears this'})
 approve(NOID)
@@ -1134,7 +1225,7 @@ for t in todos():
 time.sleep(2)
 left = [t['id'] for t in todos() if dictish(t.get('meta')).get('orrery') in MADE]
 check('no todo of this run\'s own tasks is left on the calendar', left == [], left)
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped']:
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people', 'person/gate-shipped', 'person/gate-karl']:
     curl('DELETE', API + '/body/' + b)
 curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()

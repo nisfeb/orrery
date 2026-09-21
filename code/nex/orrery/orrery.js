@@ -198,7 +198,12 @@
       (MOVES[a.status] || []).forEach(function (s) {
         out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
       });
-      out += '</div></li>';
+      out += '</div>';
+      // A note under a proposed action refines it before approval (version 36).
+      if (a.status === 'proposed') {
+        out += '<p class="refine"><input data-refine-text="' + esc(a.id) + '" placeholder="a note for this action"> <button data-refine="' + esc(a.id) + '">refine</button> <span class="muted" data-refine-note="' + esc(a.id) + '"></span></p>';
+      }
+      out += '</li>';
     });
     return out + '</ul>';
   }
@@ -455,6 +460,29 @@
         move.note = why.trim().slice(0, 500);
       }
       post('/actions/' + seg(moveId), move).then(later).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.refine) {
+      var rid = b.dataset.refine;
+      // The row is looked up fresh each time, since the writer's revision
+      // moves the beacon while the request runs and the redraw replaces the row.
+      var noteOf = function () { return view.querySelector('[data-refine-note="' + rid + '"]'); };
+      var textOf = function () { return view.querySelector('[data-refine-text="' + rid + '"]'); };
+      var input = textOf(), noteEl = noteOf();
+      var text = input ? input.value.trim() : '';
+      if (!text) { if (noteEl) noteEl.textContent = 'type a note first'; return; }
+      // The note is sent, so nothing on the page is unsaved. The beacon's
+      // redraw is free to run, and it is what shows the revised row.
+      dirty = false;
+      b.disabled = true;
+      if (noteEl) noteEl.textContent = 'refining';
+      post('/actions/' + seg(rid) + '/refine', { text: text }).then(function (d) {
+        var el = noteOf(), inp = textOf();
+        if (d && d.ok) {
+          if (el) el.textContent = 'revised' + (d.note ? ': ' + d.note : '');
+          // The input is emptied and let go, so the beacon's redraw is not held by it.
+          if (inp) { inp.value = ''; inp.blur(); }
+        } else if (el) el.textContent = (d && d.note) || 'not refined';
+        b.disabled = false;
+      }).catch(function (e) { var el = noteOf(); if (el) el.textContent = e.message; b.disabled = false; });
     } else if (b.dataset.save) {
       var which = b.dataset.save;
       var parsed;
@@ -577,6 +605,13 @@
   // a token pasted into the telegram card was lost to a timed refresh
   // after a tab switch (2026-09-21). Saving clears the mark.
   var dirty = false;
+  // Enter in a refine box presses its button.
+  view.addEventListener('keydown', function (e) {
+    var el = e.target;
+    if (e.key !== 'Enter' || !el || !el.dataset || !el.dataset.refineText) return;
+    var btn = view.querySelector('[data-refine="' + el.dataset.refineText + '"]');
+    if (btn) { e.preventDefault(); btn.click(); }
+  });
   view.addEventListener('input', function (e) {
     var el = e.target;
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) dirty = true;

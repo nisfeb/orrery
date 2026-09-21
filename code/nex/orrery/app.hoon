@@ -22,6 +22,7 @@
 ::    /telegram-inbox/<update_id>      an update the webhook took, until read
 ::    /exec.sig                        the executor: approved actions carried out, the todo list kept in step
 ::    /exec-last.json                  what its last pass did
+::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
@@ -114,6 +115,8 @@
           ::  todo list in step, and what its last pass did
           [%fall %& [/ %'exec.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'exec-last.json'] [[/ %json] [%o ~]]]
+          ::  refine (version 36): one lock grub per action being refined
+          [%fall %| /refining empty-dir:loader]
       ==
     ::
     ++  on-file
@@ -714,6 +717,7 @@
   ?:  &(=('POST' meth) ?=([%api %act ~] suffix))            (serve-act eyre-id jon act)
   ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))         (serve-actions eyre-id args act)
   ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))      (serve-set-action eyre-id s2 jon act)
+  ?:  &(=('POST' meth) ?=([%api %actions @ %refine ~] suffix))  (serve-refine eyre-id s2 jon act)
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))          (own (serve-doc eyre-id %'schema.json'))
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))          (own (serve-set-doc eyre-id 'set-schema' jon))
   ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))          (own (serve-doc eyre-id %'policy.json'))
@@ -1551,6 +1555,151 @@
   ?^  err  (send-err eyre-id 500 'the writer refused the poke')
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['by' s+who] ['ok' b+&]])
+::  +serve-refine: POST /api/actions/<id>/refine {"text"}, the owner's
+::  note under a proposed action (version 36). The checks are the ones
+::  +serve-set-action makes: the owner, or a key whose actions name the
+::  kind and whose scope writes. /refining/<id> is the lock, so one
+::  refinement runs per action at a time. A lock older than five
+::  minutes was left by a crashed route and is dropped rather than
+::  obeyed. The work is +refine-run's, so the lock is dropped on every
+::  answer.
+::
+++  serve-refine
+  |=  [eyre-id=@ta id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'expected an object')
+  =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
+  ?:  =('' text)  (send-err eyre-id 400 'text: required')
+  ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
+  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
+  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
+  ?~  a  (send-err eyre-id 500 'unreadable action')
+  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
+    (send-err eyre-id 404 'no such action')
+  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
+  ?.  =(%proposed status.u.a)  (send-err eyre-id 409 'only a proposed action can be refined')
+  ;<  now=@da  bind:m  get-time:io
+  =/  lock=road:tarball  (rf 1 /refining id)
+  ;<  held=?  bind:m  (peek-exists:io lock)
+  ;<  since=json  bind:m  ?.(held (pure:(fiber:fiber:nexus ,json) [%o ~]) (read-json lock))
+  ::  A lock with no readable stamp counts as older than any bound.
+  =/  at=@da  (fall (de-iso:orr (gs:orr since 'at')) *@da)
+  ?:  &(held (lth now (add at ~m5)))  (send-err eyre-id 409 'a refinement is running')
+  ;<  ~  bind:m  ?.(held (pure:(fiber:fiber:nexus ,~) ~) (drop-lock id))
+  ::  Two requests can pass the check at once. The second make then
+  ::  fails on the name, the way a resent telegram update's does.
+  ;<  err=(unit tang)  bind:m
+    (make-soft:io lock |+[[[/ %json] (pairs:enjs:format ~[['at' s+(en-iso:orr now)]])] ~])
+  ?^  err  (send-err eyre-id 409 'a refinement is running')
+  ;<  got=[code=@ud body=json]  bind:m  (refine-run u.a id text act now)
+  ;<  ~  bind:m  (drop-lock id)
+  (send-json eyre-id code.got body.got)
+++  drop-lock
+  |=  id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  *  bind:m  (cull-soft:io (rf 1 /refining id))
+  (pure:m ~)
+::  +refine-run: the model call and the filing, as a status and a body.
+::  The prompt carries the action, the schema's kinds and payload
+::  shapes, the bodies the note could mean and the owner's clock. The
+::  answer is held to the reader's checks by +refine-check, then filed
+::  as at most an observe, the revision and one act per extra. A poke
+::  to the writer resolves when the writer takes it, not when the write
+::  lands, so the fiber keeps the beacon and settles before it reads
+::  the revision back.
+::
+++  refine-run
+  |=  [a=action:orr id=@ta text=@t act=actor now=@da]
+  =/  m  (fiber:fiber:nexus ,[code=@ud body=json])
+  ^-  form:m
+  =/  fail  |=([code=@ud msg=@t] ^-([code=@ud body=json] [code (pairs:enjs:format ~[['error' s+msg]])]))
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  =/  cfg=config:orr  (de-config:orr cfg-j)
+  ?:  =('' api-key.cfg)  (pure:m (fail 503 'the generator has no key'))
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  =/  tz=@t
+    =/  mine=@t  (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone')
+    ?:(=('' mine) timezone.cfg mine)
+  =/  who=@t  ?:(owner.act 'user' by.act)
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    %:  post-json
+      (cat 3 url.cfg '/chat/completions')
+      api-key.cfg
+      (chat-body-with:orr cfg refine-prompt:orr ~[(refine-user:orr a id ctx text now tz)])
+      ~m2
+      %refine
+    ==
+  ?.  =(200 status.got)
+    %-  pure:m
+    %+  fail  502
+    ?:  =(0 status.got)  (cat 3 'no answer from the model: ' body.got)
+    (rap 3 'the model answered ' (crip (a-co:co status.got)) ~)
+  =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
+  ?:  ?=(%| -.ans)  (pure:m (fail 502 p.ans))
+  =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
+  ?~  parsed  (pure:m (fail 502 'the model answered without JSON'))
+  =/  checked  (refine-check:orr u.parsed a id ctx now)
+  ?:  ?=(%| -.checked)
+    (pure:m [200 (pairs:enjs:format ~[['ok' b+|] ['note' s+p.checked]])])
+  =/  ops=(list json)  (refine-ops:orr p.checked id who now)
+  ;<  *  bind:m  (keep:io /refine (rf 1 /beacon %rev) ~)
+  ;<  ~  bind:m  (poke-each 1 ops)
+  ;<  ~  bind:m  (settle /refine)
+  ;<  after=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
+  =/  revised=(unit action:orr)
+    ?.  ?=([%file *] after)  ~
+    (read-action:orr (sang-noun:tarball sang.after))
+  ?~  revised  (pure:m (fail 500 'the revised action cannot be read back'))
+  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed ops now who)
+  %-  pure:m
+  :-  200
+  %-  pairs:enjs:format
+  :~  ['ok' b+&]
+      ['action' (en-action:orr id u.revised)]
+      ['extras' a+views.filed]
+      ['note' s+(join-cords:orr '\0a' (weld notes.p.checked notes.filed))]
+  ==
+::  +poke-each: each op to the writer in turn, from a fiber up steps
+::  below the root. +file-ops is the generator's and reaches the root
+::  directly, so a request fiber needs its own.
+::
+++  poke-each
+  |=  [up=@ud ops=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  ops  (pure:m ~)
+  ;<  ~  bind:m  (poke-writer up i.ops)
+  (poke-each up t.ops)
+::  +extras-filed: the view of each extra the writer filed, found under
+::  the id the writer computed. The channel rule runs on an extra as on
+::  any act, so the same rule runs here before the id is taken. An
+::  extra not found was refused as a twin, and becomes a note.
+::
+++  extras-filed
+  |=  [ops=(list json) now=@da who=@t]
+  =/  m  (fiber:fiber:nexus ,[views=(list json) notes=(list @t)])
+  ^-  form:m
+  =|  acc=[views=(list json) notes=(list @t)]
+  |-
+  ?~  ops  (pure:m [(flop views.acc) (flop notes.acc)])
+  ?.  =('act' (gs:orr i.ops 'op'))  $(ops t.ops)
+  =/  got  (de-action:orr (gj:orr i.ops 'action') now who)
+  ?:  ?=(%| -.got)  $(ops t.ops)
+  ;<  ship=@t  bind:m  (body-attr 1 (gs:orr payload.p.got 'to') 'ship')
+  =/  eid=@ta  (act-id:orr a:(route-message:orr p.got ship))
+  ;<  vw=view:nexus  bind:m  (peek:io (rf 1 /actions eid) ~)
+  =/  e=(unit action:orr)
+    ?.  ?=([%file *] vw)  ~
+    (read-action:orr (sang-noun:tarball sang.vw))
+  ?~  e
+    =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed: an open action with this kind and title exists' ~)
+    $(ops t.ops, notes.acc [why notes.acc])
+  $(ops t.ops, views.acc [(en-action:orr eid u.e) views.acc])
 ::  +serve-doc: schema.json or policy.json, as stored
 ::
 ++  serve-doc
