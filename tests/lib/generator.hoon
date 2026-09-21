@@ -1016,6 +1016,9 @@
     (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose ' em ' call me back' ~))))
     (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose' em 'call me back' ~))))
     (expect-eq !>('plain') !>((clean-text:orr 'plain')))
+    ::  two in a row, with or without spaces, give one comma
+    (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a' em em 'b' ~))))
+    (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a ' em ' ' em ' b' ~))))
   ==
 ::  the first calendar op on an id, the first writer op of a kind
 ++  find-by

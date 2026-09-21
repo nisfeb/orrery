@@ -4426,7 +4426,11 @@
   ?.  ?=([%226 %128 %148 *] s)  $(s t.s, out [i.s out])
   =/  rest=tape  t.t.t.s
   =.  rest  ?:(?=([%' ' *] rest) t.rest rest)
-  $(s rest, out (weld cs (skip-trailing-space out)))
+  ::  a second dash right after the first adds nothing: the comma is
+  ::  already there
+  =/  trimmed=tape  (skip-trailing-space out)
+  ?:  ?=([%',' *] trimmed)  $(s rest, out (weld cs t.trimmed))
+  $(s rest, out (weld cs trimmed))
 ::  ==  the mirror: the calendar's todo list and the task actions kept
 ::  in step both ways. The fiber reads the store, +plan-mirror says
 ::  what each todo needs, and the fiber files it.
