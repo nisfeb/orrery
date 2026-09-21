@@ -271,6 +271,11 @@
       out += '<p class="muted">Last update ' + esc(String(last.update_id)) + ' at ' + fmtTime(last.at) + ' from ' + esc(last.from || '') + ' in ' + esc(last.chat || '') + ': ' + esc(last.outcome || '') + '. Read today: ' + (last.read_today || 0) + '.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
     }
+    if (last.down && last.down.update_id) {
+      out += '<p class="bad">Update ' + esc(String(last.down.update_id)) + ' is waiting since ' + fmtTime(last.down.at) + ': the model could not be read. It retries every five minutes; fix the model or the key and press wake.</p>';
+      (last.down.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+      out += '<p><button data-wake="1">wake the reader</button></p>';
+    }
     return out + '</div>';
   }
   function settings(schema, policy, generator, last, reconcile, telegram, telegramLast) {
@@ -473,6 +478,8 @@
     } else if (b.dataset.webhook) {
       say('asking Telegram to send updates here');
       post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.wake) {
+      post('/telegram/wake', {}).then(function () { say('reader woken; the card updates when it has read'); setTimeout(function () { refresh(true); }, 20000); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.webhookInfo) {
       say('asking Telegram');
       api('/telegram/webhook').then(function (d) {

@@ -145,6 +145,7 @@ ok('the card asks Telegram what it holds', tgSettings.includes('data-webhook-inf
 ok('the card offers save and register', tgSettings.includes('data-save-telegram="1"') && tgSettings.includes('data-webhook="1"'));
 ok('the card offers to make a secret', tgSettings.includes('data-make-secret="1"'));
 ok('the last update is summarised', tgSettings.includes('Last update 7') && tgSettings.includes('facts') && tgSettings.includes('Read today: 3') && tgSettings.includes('gate: 90, read'));
+ok('a kept update is shown with its notes and a wake button', render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, { update_id: 5, at: '2026-09-21T01:00:00Z', outcome: 'facts', down: { update_id: 9, at: '2026-09-21T02:00:00Z', notes: ['model: 404 no endpoints'] } }).includes('Update 9 is waiting since') && render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, { down: { update_id: 9, at: '2026-09-21T02:00:00Z', notes: ['model: 404 no endpoints'] } }).includes('data-wake="1"'));
 ok('a reader that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}, { enabled: false }, {}).includes('Last update'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',

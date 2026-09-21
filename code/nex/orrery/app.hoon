@@ -2908,7 +2908,13 @@
   ?:  (gte today max-daily.cfg)
     (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
-  ?:  down  (pure:m &)
+  ::  kept for the retry, and said so: the record's update_id stays, a
+  ::  down key names the update, the moment and the model's answer, so
+  ::  a model the ship cannot reach reads off the card instead of
+  ::  looking like a reader that never ran (ricsul, 2026-09-21)
+  ?:  down
+    ;<  ~  bind:m  (tg-record-down now uid notes.facts)
+    (pure:m &)
   ;<  ~  bind:m  (tg-file facts u.who now)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
   ::  a chat taken out of the settings loses its window
@@ -3097,6 +3103,18 @@
 ::  since the daily cap is about the model: a command, a question, a
 ::  gate refusal and an ignored update do not move it
 ::
+++  tg-record-down
+  |=  [now=@da uid=@ud notes=(list @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
+  =/  down=json
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]
+        ['update_id' (numb:enjs:format uid)]
+        ['notes' a+(turn (scag 6 notes) |=(n=@t `json`s+(end [3 300] n)))]
+    ==
+  (over:io (rf 0 / %'telegram-last.json') [[/ %json] (set-key:orr last 'down' down)])
 ++  tg-record
   |=  [now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=?]
   =/  m  (fiber:fiber:nexus ,~)
