@@ -787,4 +787,75 @@
     (expect-eq !>(0) !>((noul-of:orr (jo '{}') 'worth_reading')))
     (expect-eq !>(`[@t @ud]`['feeling' 95]) !>((choice-of:orr (jo '{"status_2": {"type": "choice", "choice": "feeling", "probabilities": {"feeling": 0.95}}}') 'status_2')))
   ==
+::  ==  the executors (version 34)
+::
+++  exec-acts
+  ^-  (list [id=@ta a=action:orr])
+  =/  pay  |=(t=@t ^-(json (need (de:json:html t))))
+  :~  ['m1' [%message 'Tell Rose' (pay '{"via": "telegram", "to": "person/rose", "text": "Susan could not call back"}') (sy ~['person/rose']) ~ 'telegram' now %approved '' ~]]
+      ['m2' [%message 'Tell Bob' (pay '{"via": "mail", "to": "person/bob", "text": "hi"}') (sy ~['person/bob']) ~ 'telegram' now %approved '' ~]]
+      ['m3' [%message 'Tell Eve' (pay '{"via": "telegram", "to": "person/eve", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['m4' [%message 'DM Rose' (pay '{"via": "chat", "to": "person/rose", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['c1' [%calendar 'Dinner with Sarah' (pay '{"title": "Dinner with Sarah", "starts": "2026-09-25T20:00:00Z", "ends": "2026-09-25T22:00:00Z", "location": "the usual place"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['c2' [%calendar 'Field day' (pay '{"title": "Field day", "starts": "2026-10-03T00:00:00Z", "ends": "2026-10-04T00:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['t1' [%task 'Call the shop' (pay '{"notes": "about the brakes"}') ~ `~2026.9.30 'generator' now %approved '' ~]]
+      ['t2' [%task 'Old one' ~ ~ ~ 'generator' now %proposed '' ~]]
+      ['t3' [%task 'Done one' ~ ~ ~ 'generator' now %done '' ~]]
+  ==
+++  exec-bodies
+  ^-  (list loaded:orr)
+  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['telegram' s+'545179154']] now)
+      (mkb 'person/bob' %person 'Bob' ~ ~[['ship' s+'~sampel-palnet']] now)
+      (mkb 'person/eve' %person 'Eve' ~ ~ now)
+  ==
+++  test-plan-exec
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ now)
+  =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
+  ;:  weld
+    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'c1' 'c2' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
+    (expect-eq !>(%telegram) !>(target:(~(got by by-id) 'm1')))
+    (expect-eq !>('545179154') !>(to:(~(got by by-id) 'm1')))
+    (expect-eq !>('Susan could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
+    (expect-eq !>('545179154') !>((gs:orr body:(~(got by by-id) 'm1') 'chat_id')))
+    (expect-eq !>(%mail) !>(target:(~(got by by-id) 'm2')))
+    (expect-eq !>('~sampel-palnet') !>(to:(~(got by by-id) 'm2')))
+    (expect-eq !>('Tell Bob') !>((gs:orr body:(~(got by by-id) 'm2') 'subject')))
+    (expect-eq !>('') !>(to:(~(got by by-id) 'm3')))
+    (expect-eq !>('person/eve has no telegram attribute') !>(note:(~(got by by-id) 'm3')))
+    (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c1')))
+    (expect-eq !>('timed') !>((gs:orr body:(~(got by by-id) 'c1') 'cat')))
+    (expect-eq !>('allday') !>((gs:orr body:(~(got by by-id) 'c2') 'cat')))
+    (expect-eq !>(%todo) !>(target:(~(got by by-id) 't1')))
+    (expect-eq !>('todo') !>((gs:orr body:(~(got by by-id) 't1') 'cat')))
+  ==
+++  test-event-json
+  =/  c1  (snag 4 exec-acts)
+  =/  c2  (snag 5 exec-acts)
+  =/  t1  (snag 6 exec-acts)
+  =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York'))
+  =/  aj=json  (need (event-json:orr id.c2 a.c2 'America/New_York'))
+  =/  tj=json  (need (event-json:orr id.t1 a.t1 'America/New_York'))
+  =/  meta=json  (gj:orr ej 'meta')
+  ;:  weld
+    (expect-eq !>('add-event') !>((gs:orr ej 'action')))
+    (expect-eq !>('timed') !>((gs:orr ej 'cat')))
+    (expect-eq !>('once') !>((gs:orr ej 'kind')))
+    (expect-eq !>('Dinner with Sarah') !>((gs:orr meta 'name')))
+    (expect-eq !>('c1') !>((gs:orr meta 'orrery')))
+    (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr meta 'tags'))))
+    (expect-eq !>('the usual place') !>((gs:orr meta 'location')))
+    (expect-eq !>(1.790.366.400.000) !>((need (gn:orr ej 'start_ms'))))
+    (expect-eq !>(1.790.373.600.000) !>((need (gn:orr ej 'end_ms'))))
+    (expect-eq !>('to') !>((gs:orr ej 'fin')))
+    (expect-eq !>('America/New_York') !>((gs:orr ej 'zone')))
+    (expect-eq !>('allday') !>((gs:orr aj 'cat')))
+    (expect-eq !>(1) !>((need (gn:orr aj 'span_days'))))
+    (expect-eq !>(1.790.985.600.000) !>((need (gn:orr aj 'start_ms'))))
+    (expect-eq !>('todo') !>((gs:orr tj 'cat')))
+    (expect-eq !>('Call the shop') !>((gs:orr (gj:orr tj 'meta') 'name')))
+    (expect-eq !>('about the brakes') !>((gs:orr (gj:orr tj 'meta') 'note')))
+    (expect-eq !>(1.790.726.400.000) !>((need (gn:orr tj 'due_ms'))))
+    (expect-eq !>(1.790.366.400.000) !>((ms-of:orr ~2026.9.25..20.00.00)))
+    (expect-eq !>(~2026.9.25..20.00.00) !>((da-of-ms:orr 1.790.366.400.000)))
+  ==
 --

@@ -4197,4 +4197,137 @@
   ?:  =('' c)  ['' 0]
   =/  p=json  (gj (gj a 'probabilities') c)
   [c ?.(?=([%n *] p) 0 (min 100 (div (micro-of p.p) 10.000)))]
+::  ==  executors (version 34): the ship carries out its own approved
+::  actions. +plan-exec says what to do for each; the fiber does it.
+::
+::  +ms-of / +da-of-ms: epoch milliseconds, what the calendar takes
+::
+++  ms-of  |=(t=@da ^-(@ud (div (mul 1.000 (sub t ~1970.1.1)) ~s1)))
+++  da-of-ms  |=(ms=@ud ^-(@da (add ~1970.1.1 (div (mul ms ~s1) 1.000))))
+::  one action's way out: for telegram, to is the chat id and body the
+::  sendMessage JSON; for mail, to is the ship and body holds subject
+::  and text; for calendar and todo, body is the add-event JSON and to
+::  is ''. A message whose person lacks the attribute its channel needs
+::  keeps its target with to '' and says why in note.
+::
++$  exec-plan
+  $:  id=@ta
+      kind=@tas
+      target=?(%telegram %mail %calendar %todo)
+      to=@t
+      body=json
+      note=@t
+  ==
+++  loaded-of
+  |=  [all=(list loaded) id=@t]
+  ^-  (unit loaded)
+  ?~  all  ~
+  ?:(=(id id.i.all) `i.all $(all t.all))
+::  +attr-text: a body's live string attribute, '' when none
+::
+++  attr-text
+  |=  [all=(list loaded) multi=(set @t) now=@da id=@t attr=@t]
+  ^-  @t
+  =/  hit=(unit loaded)  (loaded-of all id)
+  ?~  hit  ''
+  (winner-text (fold rows.u.hit multi now) attr)
+::  +whole-days: a start and an end both at midnight UTC, at least a
+::  day apart: an all-day event rather than a timed one
+::
+++  whole-days
+  |=  [s=@da e=@da]
+  ^-  ?
+  &(=(0 (mod s ~d1)) =(0 (mod e ~d1)) (gte e (add s ~d1)))
+::  +event-json: the calendar's add-event poke for a calendar or task
+::  action. A task is a todo with its due; a calendar action is a
+::  one-off (kind once) allday event when its times are whole days,
+::  else a timed one from starts to ends (or an hour) in zone, the
+::  calendar's default when zone is ''. ~ when a calendar action's
+::  starts does not parse.
+::
+++  event-json
+  |=  [id=@ta a=action zone=@t]
+  ^-  (unit json)
+  =/  title=@t  =/(t (gs payload.a 'title') ?:(=('' t) title.a t))
+  =/  meta-base=(list [@t json])
+    :~  ['name' s+title]
+        ['orrery' s+id]
+        ['tags' a+~[s+'orrery']]
+    ==
+  ?:  =(%task kind.a)
+    =/  note=@t  (gs payload.a 'notes')
+    =/  meta=json
+      (pairs:enjs:format ?:(=('' note) meta-base (snoc meta-base ['note' s+note])))
+    :-  ~
+    %-  pairs:enjs:format
+    %+  weld
+      ^-  (list [@t json])
+      ~[['action' s+'add-event'] ['cat' s+'todo'] ['meta' meta]]
+    ^-  (list [@t json])
+    ?~(due.a ~ ~[['due_ms' (numb:enjs:format (ms-of u.due.a))]])
+  =/  s=(unit @da)  (gt payload.a 'starts')
+  ?~  s  ~
+  =/  start=@da  u.s
+  =/  end=@da  (fall (gt payload.a 'ends') (add start ~h1))
+  =/  loc=@t  (gs payload.a 'location')
+  =/  meta=json
+    (pairs:enjs:format ?:(=('' loc) meta-base (snoc meta-base ['location' s+loc])))
+  =/  base=(list [@t json])
+    :~  ['action' s+'add-event']
+        ['meta' meta]
+        ['kind' s+'once']
+        ['start_ms' (numb:enjs:format (ms-of start))]
+    ==
+  :-  ~
+  %-  pairs:enjs:format
+  ?:  (whole-days start end)
+    %+  weld  base
+    ^-  (list [@t json])
+    ~[['cat' s+'allday'] ['span_days' (numb:enjs:format (div (sub end start) ~d1))]]
+  %+  weld  base
+  %+  weld
+    ^-  (list [@t json])
+    ~[['cat' s+'timed'] ['fin' s+'to'] ['end_ms' (numb:enjs:format (ms-of end))]]
+  ^-  (list [@t json])
+  ?:(=('' zone) ~ ~[['zone' s+zone]])
+::  +plan-exec: what to do for each approved action. A message goes by
+::  its via: telegram to the person's telegram chat id, mail to their
+::  ship (with its ~); another via is not ours. A calendar or task
+::  action becomes an add-event in the owner's zone. Anything else, or
+::  a calendar action without a start, yields nothing.
+::
+++  plan-exec
+  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list exec-plan)
+  =/  zone=@t  (attr-text all multi now 'person/me' 'timezone')
+  %+  murn  acts
+  |=  [id=@ta a=action]
+  ^-  (unit exec-plan)
+  ?.  =(%approved status.a)  ~
+  ?:  =(%message kind.a)
+    =/  via=@t  (lower (gs payload.a 'via'))
+    =/  who=@t  (gs payload.a 'to')
+    =/  text=@t  (gs payload.a 'text')
+    ?:  =('telegram' via)
+      =/  chat=@t  (attr-text all multi now who 'telegram')
+      =/  note=@t  ?.(=('' chat) '' (rap 3 who ' has no telegram attribute' ~))
+      :-  ~
+      :*  id  kind.a  %telegram  chat
+          (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text]])
+          note
+      ==
+    ?:  =('mail' via)
+      =/  ship=@t  (attr-text all multi now who 'ship')
+      =/  to=@t  ?:(|(=('' ship) =('~' (end [3 1] ship))) ship (cat 3 '~' ship))
+      =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
+      :-  ~
+      :*  id  kind.a  %mail  to
+          (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text]])
+          note
+      ==
+    ~
+  ?.  |(=(%calendar kind.a) =(%task kind.a))  ~
+  =/  ej=(unit json)  (event-json id a zone)
+  ?~  ej  ~
+  `[id kind.a ?:(=(%task kind.a) %todo %calendar) '' u.ej '']
 --
