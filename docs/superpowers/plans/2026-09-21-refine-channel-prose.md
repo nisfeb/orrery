@@ -38,14 +38,15 @@
 
 ```hoon
 ++  test-clean-text
+  =/  em=@t  (crip (tufa ~[0x2014]))
   ;:  weld
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr 'Rose — call me back')))
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr 'Rose—call me back')))
+    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose ' em ' call me back' ~))))
+    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose' em 'call me back' ~))))
     (expect-eq !>('plain') !>((clean-text:orr 'plain')))
   ==
 ```
 
-Write the em dash in the test as the three-byte UTF-8 sequence through `(crip ~[0xe2 0x80 0x94])`, not as a literal, so the repo holds none: build the fixtures with `(rap 3 'Rose ' em ' call me back' ~)` where `=/  em=@t  (crip (tufa ~[0x2014]))`.
+The em dash is built from its code point so the repo holds no literal one.
 
 - [ ] **Step 2: Run it (feb) and see `-find.clean-text`**
 
