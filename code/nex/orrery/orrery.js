@@ -469,17 +469,17 @@
       var input = textOf(), noteEl = noteOf();
       var text = input ? input.value.trim() : '';
       if (!text) { if (noteEl) noteEl.textContent = 'type a note first'; return; }
-      // The note is sent, so nothing on the page is unsaved. The beacon's
-      // redraw is free to run, and it is what shows the revised row.
-      dirty = false;
       b.disabled = true;
       if (noteEl) noteEl.textContent = 'refining';
       post('/actions/' + seg(rid) + '/refine', { text: text }).then(function (d) {
         var el = noteOf(), inp = textOf();
         if (d && d.ok) {
           if (el) el.textContent = 'revised' + (d.note ? ': ' + d.note : '');
-          // The input is emptied and let go, so the beacon's redraw is not held by it.
+          // The box's own text is spent, so only another box still typing
+          // holds the page unsaved, and the revised row is fetched at once.
           if (inp) { inp.value = ''; inp.blur(); }
+          dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]'), function (i) { return !!i.value.trim(); });
+          refresh(true);
         } else if (el) el.textContent = (d && d.note) || 'not refined';
         b.disabled = false;
       }).catch(function (e) { var el = noteOf(); if (el) el.textContent = e.message; b.disabled = false; });
@@ -610,7 +610,8 @@
     var el = e.target;
     if (e.key !== 'Enter' || !el || !el.dataset || !el.dataset.refineText) return;
     var btn = view.querySelector('[data-refine="' + el.dataset.refineText + '"]');
-    if (btn) { e.preventDefault(); btn.click(); }
+    // Focus leaves the box before the click, so a redraw is not held by it.
+    if (btn) { e.preventDefault(); el.blur(); btn.focus(); btn.click(); }
   });
   view.addEventListener('input', function (e) {
     var el = e.target;

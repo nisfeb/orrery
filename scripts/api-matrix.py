@@ -1071,9 +1071,9 @@ check('an empty note is refused', code == 400, (code, d))
 code, taskkey = curl('POST', API + '/clients', {'name': 'gate task key', 'by': 'gate-task', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})
 code, rokey = curl('POST', API + '/clients', {'name': 'gate read key', 'by': 'gate-read', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': False, 'sensitive': 'none'}})
 code, d = refine(SHIPID, 'include susan in this', token=dictish(taskkey).get('token'))
-check('a key whose actions lack the kind does not see the action', code == 404, (code, d))
+check('a key whose actions lack the kind does not see the action', code == 404 and dictish(d).get('note') == 'no such action', (code, d))
 code, d = refine(SHIPID, 'include susan in this', token=dictish(rokey).get('token'))
-check('a read only key may not refine', code == 403, (code, d))
+check('a read only key may not refine', code == 403 and dictish(d).get('note') == 'read only key', (code, d))
 for k in (taskkey, rokey):
     if dictish(k).get('id'):
         curl('DELETE', API + '/clients/' + dictish(k)['id'])
@@ -1096,7 +1096,7 @@ check('approved, it is left for the client that sends chat and the claimed count
       a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed'),
       (a.get('status'), steps(a), before.get('claimed'), after.get('claimed')))
 code, d = refine(SHIPID, 'include susan in this')
-check('an approved action is not refined', code == 409 and dictish(d).get('error') == 'only a proposed action can be refined', (code, d))
+check('an approved action is not refined, with the reason as error and as note', code == 409 and dictish(d).get('error') == 'only a proposed action can be refined' and dictish(d).get('note') == 'only a proposed action can be refined', (code, d))
 curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'})
 if EXTRAID:
     curl('POST', API + f'/actions/{EXTRAID}', {'status': 'dismissed', 'note': 'gate'})

@@ -166,4 +166,10 @@ ok('a refresh holds while a form is dirty or focused, and only the owner\'s own 
   && src.includes('dirty = false; setTimeout(function () { refresh(true); }, 300);')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });")
   && !src.includes("setInterval(function () { if (!document.hidden) refresh(true); }"));
+ok('a refine leaves the box before the click, keeps the page-wide dirty flag on submit, and fetches the revised row on success',
+  src.includes("if (btn) { e.preventDefault(); el.blur(); btn.focus(); btn.click(); }")
+  && src.includes("if (inp) { inp.value = ''; inp.blur(); }")
+  && src.indexOf("dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]')") > src.indexOf("post('/actions/' + seg(rid) + '/refine'")
+  && src.indexOf("refresh(true);", src.indexOf("post('/actions/' + seg(rid) + '/refine'")) < src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")
+  && !src.slice(src.indexOf("b.dataset.refine) {"), src.indexOf("post('/actions/' + seg(rid) + '/refine'")).includes('dirty = false'));
 console.log('ALL OK (' + n + ' checks)');

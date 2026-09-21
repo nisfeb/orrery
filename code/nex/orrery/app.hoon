@@ -1573,29 +1573,56 @@
   ?:  =('' text)  (send-err eyre-id 400 'text: required')
   ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
   ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
-  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
+  ?.  ?=([%file *] cur)  (send-refused eyre-id 404 'no such action')
   =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
   ?~  a  (send-err eyre-id 500 'unreadable action')
   ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
-    (send-err eyre-id 404 'no such action')
-  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
-  ?.  =(%proposed status.u.a)  (send-err eyre-id 409 'only a proposed action can be refined')
+    (send-refused eyre-id 404 'no such action')
+  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-refused eyre-id 403 'read only key')
+  ?.  =(%proposed status.u.a)  (send-refused eyre-id 409 'only a proposed action can be refined')
   ;<  now=@da  bind:m  get-time:io
   =/  lock=road:tarball  (rf 1 /refining id)
-  ;<  held=?  bind:m  (peek-exists:io lock)
-  ;<  since=json  bind:m  ?.(held (pure:(fiber:fiber:nexus ,json) [%o ~]) (read-json lock))
+  ;<  first=(unit @t)  bind:m  (lock-stamp id)
   ::  A lock with no readable stamp counts as older than any bound.
-  =/  at=@da  (fall (de-iso:orr (gs:orr since 'at')) *@da)
-  ?:  &(held (lth now (add at ~m5)))  (send-err eyre-id 409 'a refinement is running')
-  ;<  ~  bind:m  ?.(held (pure:(fiber:fiber:nexus ,~) ~) (drop-lock id))
-  ::  Two requests can pass the check at once. The second make then
-  ::  fails on the name, the way a resent telegram update's does.
+  =/  at=@da  ?~(first *@da (fall (de-iso:orr u.first) *@da))
+  ?:  &(?=(^ first) (lth now (add at ~m5)))  (send-refused eyre-id 409 'a refinement is running')
+  ::  A stale lock is dropped only while it is the one read above. One
+  ::  with another stamp by now is a fresh request's, and stands.
+  ;<  same=?  bind:m
+    ?~  first  (pure:(fiber:fiber:nexus ,?) &)
+    ;<  again=(unit @t)  bind:(fiber:fiber:nexus ,?)  (lock-stamp id)
+    (pure:(fiber:fiber:nexus ,?) =(first again))
+  ?.  same  (send-refused eyre-id 409 'a refinement is running')
+  ;<  ~  bind:m  ?~(first (pure:(fiber:fiber:nexus ,~) ~) (drop-lock id))
+  ::  The make is the arbiter: two requests can pass the checks at once,
+  ::  and the second make fails on the name, the way a resent telegram
+  ::  update's does.
   ;<  err=(unit tang)  bind:m
     (make-soft:io lock |+[[[/ %json] (pairs:enjs:format ~[['at' s+(en-iso:orr now)]])] ~])
-  ?^  err  (send-err eyre-id 409 'a refinement is running')
+  ?^  err  (send-refused eyre-id 409 'a refinement is running')
   ;<  got=[code=@ud body=json]  bind:m  (refine-run u.a id text act now)
   ;<  ~  bind:m  (drop-lock id)
   (send-json eyre-id code.got body.got)
+::  +send-refused: a refusal a client written to rule 17 reads from
+::  note, and the page from error, so both keys carry the text.
+::
+++  send-refused
+  |=  [eyre-id=@ta code=@ud msg=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  (send-json eyre-id code (pairs:enjs:format ~[['error' s+msg] ['note' s+msg]]))
+::  +lock-stamp: the at of the lock on an action, ~ when there is no
+::  lock, '' when the lock has no readable stamp.
+::
+++  lock-stamp
+  |=  id=@ta
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  =/  lock=road:tarball  (rf 1 /refining id)
+  ;<  held=?  bind:m  (peek-exists:io lock)
+  ?.  held  (pure:m ~)
+  ;<  jon=json  bind:m  (read-json lock)
+  (pure:m `(gs:orr jon 'at'))
 ++  drop-lock
   |=  id=@ta
   =/  m  (fiber:fiber:nexus ,~)
@@ -1697,7 +1724,7 @@
     ?.  ?=([%file *] vw)  ~
     (read-action:orr (sang-noun:tarball sang.vw))
   ?~  e
-    =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed: an open action with this kind and title exists' ~)
+    =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed, the trail says why' ~)
     $(ops t.ops, notes.acc [why notes.acc])
   $(ops t.ops, views.acc [(en-action:orr eid u.e) views.acc])
 ::  +serve-doc: schema.json or policy.json, as stored
