@@ -4330,4 +4330,137 @@
   =/  ej=(unit json)  (event-json id a zone)
   ?~  ej  ~
   `[id kind.a ?:(=(%task kind.a) %todo %calendar) '' u.ej '']
+::  ==  the mirror: the calendar's todo list and the task actions kept
+::  in step both ways. The fiber reads the store, +plan-mirror says
+::  what each todo needs, and the fiber files it.
+::
+::  a todo as the mirror sees it: orrery is the action id its meta
+::  carries, '' when the owner typed it by hand
+::
++$  todo  [id=@t name=@t orrery=@t done=? due=(unit @da) note=@t]
+::  one thing the mirror does: an op for the writer, or a poke body for
+::  the calendar (its action key says which)
+::
++$  mirror-op  $%([%writer json] [%calendar json])
+::  +todos-of: the todos in the calendar's store as the ball serves it
+::  as JSON: title, zone, calendars and events, each row with its id,
+::  cat and meta, a todo also due_ms, done_ms and done. Rows of another
+::  cat are not the mirror's.
+::
+++  todos-of
+  |=  cal=json
+  ^-  (list todo)
+  %+  murn  (ga cal 'events')
+  |=  e=json
+  ^-  (unit todo)
+  ?.  =('todo' (gs e 'cat'))  ~
+  =/  meta=json  (gj e 'meta')
+  :-  ~
+  :*  (gs e 'id')
+      (gs meta 'name')
+      (gs meta 'orrery')
+      ?=([%b %.y] (gj e 'done'))
+      (bind (gn e 'due_ms') da-of-ms)
+      (gs meta 'note')
+  ==
+::  +todo-meta: a todo's meta for edit-event, which replaces the event
+::  whole through the calendar's parse-event (meta verbatim, only the
+::  exceptions survive): the name and note it had, the action id and
+::  the tag it carries. A meta key outside the todo type does not
+::  survive an edit.
+::
+++  todo-meta
+  |=  [t=todo act=@t]
+  ^-  json
+  %-  pairs:enjs:format
+  %+  weld
+    ^-  (list [@t json])
+    ~[['name' s+name.t] ['orrery' s+act] ['tags' a+~[s+'orrery']]]
+  ^-  (list [@t json])
+  ?:(=('' note.t) ~ ~[['note' s+note.t]])
+::  +edit-todo-op: the calendar poke that rewrites a todo with its
+::  action id and a due
+::
+++  edit-todo-op
+  |=  [t=todo act=@t due=(unit @da)]
+  ^-  json
+  %-  pairs:enjs:format
+  %+  weld
+    ^-  (list [@t json])
+    :~  ['action' s+'edit-event']
+        ['id' s+id.t]
+        ['cat' s+'todo']
+        ['meta' (todo-meta t act)]
+    ==
+  ^-  (list [@t json])
+  ?~(due ~ ~[['due_ms' (numb:enjs:format (ms-of u.due))]])
+::  +calendar-set-action: a status the calendar sets on an action
+::
+++  calendar-set-action
+  |=  [id=@t status=@t why=@t]
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'calendar']])
+::  +adopt-ops: a todo the owner typed becomes a task on the ship. The
+::  writer's act op files a proposal, so the approval is a second op
+::  on the id the writer will assign (act-id of the stamped action, as
+::  gen-pass computes it after filing); then the todo is rewritten with
+::  that id, so the next pass reads it as the ship's own. A todo the
+::  writer would refuse (a title over the cap) yields nothing.
+::
+++  adopt-ops
+  |=  [t=todo now=@da]
+  ^-  (list mirror-op)
+  =/  raw=json
+    %-  pairs:enjs:format
+    %+  weld
+      ^-  (list [@t json])
+      ~[['kind' s+'task'] ['title' s+name.t] ['about' a+~]]
+    %+  weld
+      ^-  (list [@t json])
+      ?:(=('' note.t) ~ ~[['payload' (pairs:enjs:format ~[['notes' s+note.t]])]])
+    ^-  (list [@t json])
+    ?~(due.t ~ ~[['due' s+(en-iso u.due.t)]])
+  =/  stamped=json  (fill-act-as raw now 'calendar')
+  =/  parsed=(each action @t)  (de-action stamped now 'calendar')
+  ?:  ?=(%| -.parsed)  ~
+  =/  act=@ta  (act-id p.parsed)
+  :~  [%writer (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])]
+      [%writer (calendar-set-action act 'approved' 'typed in the calendar')]
+      [%calendar (edit-todo-op t act due.t)]
+  ==
+::  +plan-mirror: the todo list against the actions. A todo carrying an
+::  action id follows its action: done on the ship ticks it, dismissed
+::  or failed deletes it, a due that differs is moved to the action's
+::  (the ship is the source of truth for what it made); ticked in the
+::  calendar, it moves an approved or claimed action to done. A todo
+::  with no action id and not done is the owner's own and is adopted.
+::  A done todo nobody claims, and a todo whose action is not in the
+::  list, are left alone.
+::
+++  plan-mirror
+  |=  [todos=(list todo) acts=(list [id=@ta a=action]) now=@da]
+  ^-  (list mirror-op)
+  =/  by-id=(map @ta action)  (~(gas by *(map @ta action)) acts)
+  %-  zing
+  %+  turn  todos
+  |=  t=todo
+  ^-  (list mirror-op)
+  ?:  =('' orrery.t)
+    ?:(done.t ~ (adopt-ops t now))
+  =/  hit=(unit action)  (~(get by by-id) `@ta`orrery.t)
+  ?~  hit  ~
+  =/  a=action  u.hit
+  =/  live=?  |(=(%approved status.a) =(%claimed status.a))
+  ?:  done.t
+    ?.  live  ~
+    [%writer (calendar-set-action orrery.t 'done' 'ticked in the calendar')]~
+  ?:  =(%done status.a)
+    :_  ~
+    :-  %calendar
+    (pairs:enjs:format ~[['action' s+'done-event'] ['id' s+id.t] ['done' (numb:enjs:format (ms-of now))]])
+  ?:  |(=(%dismissed status.a) =(%failed status.a))
+    [%calendar (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+id.t]])]~
+  ?.  live  ~
+  ?:  =(due.t due.a)  ~
+  [%calendar (edit-todo-op t orrery.t due.a)]~
 --

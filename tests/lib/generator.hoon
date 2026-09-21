@@ -858,4 +858,98 @@
     (expect-eq !>(1.790.366.400.000) !>((ms-of:orr ~2026.9.25..20.00.00)))
     (expect-eq !>(~2026.9.25..20.00.00) !>((da-of-ms:orr 1.790.366.400.000)))
   ==
+++  test-todos-of
+  =/  cal=json
+    %-  jo
+    '''
+    {"title": "mine", "zone": "America/New_York", "calendars": [],
+     "events": [
+       {"id": "e1", "cat": "todo", "meta": {"name": "Buy milk", "orrery": "a9", "tags": ["orrery"], "note": "two litres"},
+        "due_ms": 1790726400000, "done_ms": null, "done": false, "uid": "e1", "etag": "x", "seq": 1},
+       {"id": "e2", "cat": "todo", "meta": {"name": "Done one"}, "due_ms": null, "done_ms": 1790726400000, "done": true, "uid": "e2", "etag": "x", "seq": 1},
+       {"id": "e3", "cat": "timed", "meta": {"name": "Dinner"}, "kind": "once", "start_ms": 1790366400000, "fin": "to", "end_ms": 1790373600000, "zone": "none", "count": 0, "uid": "e3", "etag": "x", "seq": 1}
+     ]}
+    '''
+  =/  todos=(list todo:orr)  (todos-of:orr cal)
+  ;:  weld
+    (expect-eq !>(2) !>((lent todos)))
+    (expect-eq !>(`todo:orr`['e1' 'Buy milk' 'a9' | `~2026.9.30 'two litres']) !>((snag 0 todos)))
+    (expect-eq !>(`todo:orr`['e2' 'Done one' '' & ~ '']) !>((snag 1 todos)))
+  ==
+++  test-plan-mirror
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' [%task 'Ticked on the ship' ~ ~ ~ 'generator' now %done '' ~]]
+        ['a2' [%task 'Dismissed on the ship' ~ ~ ~ 'generator' now %dismissed '' ~]]
+        ['a3' [%task 'Ticked in the calendar' ~ ~ ~ 'generator' now %approved '' ~]]
+        ['a4' [%task 'Due moved on the ship' ~ ~ `~2026.10.5 'generator' now %approved '' ~]]
+        ['a5' [%task 'In step' ~ ~ ~ 'generator' now %approved '' ~]]
+    ==
+  =/  todos=(list todo:orr)
+    :~  ['e1' 'Ticked on the ship' 'a1' | ~ '']
+        ['e2' 'Dismissed on the ship' 'a2' | ~ '']
+        ['e3' 'Ticked in the calendar' 'a3' & ~ '']
+        ['e4' 'Due moved on the ship' 'a4' | `~2026.10.1 '']
+        ['e5' 'In step' 'a5' | ~ '']
+        ['e6' 'Buy milk' '' | `~2026.10.2 'two litres']
+        ['e7' 'Already done by hand' '' & ~ '']
+    ==
+  =/  ops=(list mirror-op:orr)  (plan-mirror:orr todos acts now)
+  =/  cal=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%calendar -.o) `+.o ~)))
+  =/  wr=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%writer -.o) `+.o ~)))
+  =/  cal-act  (turn cal |=(j=json [(gs:orr j 'action') (gs:orr j 'id')]))
+  =/  e4=json  (fall (find-by cal 'e4') ~)
+  =/  e6=json  (fall (find-by cal 'e6') ~)
+  =/  adopted=json  (fall (find-op wr 'act') ~)
+  ::  the id the writer will give the adopted action
+  =/  want=@ta  (fall (bind (lift-act (gj:orr adopted 'action')) act-id:orr) '')
+  ;:  weld
+    (expect !>((lien cal-act |=([a=@t i=@t] &(=('done-event' a) =('e1' i))))))
+    (expect !>((lien cal-act |=([a=@t i=@t] &(=('del-event' a) =('e2' i))))))
+    (expect !>((lien cal-act |=([a=@t i=@t] &(=('edit-event' a) =('e4' i))))))
+    (expect !>(!(lien cal-act |=([a=@t i=@t] =('e5' i)))))
+    (expect !>(!(lien cal-act |=([a=@t i=@t] =('e7' i)))))
+    ::  e3: the action moves to done; e6: a task is made and the todo marked
+    (expect !>((lien wr |=(j=json &(=('set-action' (gs:orr j 'op')) =('a3' (gs:orr j 'id')) =('done' (gs:orr j 'status')) =('calendar' (gs:orr j 'by')))))))
+    (expect !>((lien wr |=(j=json &(=('act' (gs:orr j 'op')) =('Buy milk' (gs:orr (gj:orr j 'action') 'title')))))))
+    (expect !>((lien wr |=(j=json &(=('set-action' (gs:orr j 'op')) =('approved' (gs:orr j 'status')) =('calendar' (gs:orr j 'by')))))))
+    (expect !>((lien cal-act |=([a=@t i=@t] &(=('edit-event' a) =('e6' i))))))
+    (expect-eq !>(1) !>((lent (skim wr |=(j=json =('act' (gs:orr j 'op')))))))
+    ::  the adopted action: a task by calendar, its note and due, stamped
+    (expect-eq !>('task') !>((gs:orr (gj:orr adopted 'action') 'kind')))
+    (expect-eq !>('calendar') !>((gs:orr (gj:orr adopted 'action') 'by')))
+    (expect-eq !>('two litres') !>((gs:orr (gj:orr (gj:orr adopted 'action') 'payload') 'notes')))
+    (expect-eq !>('2026-10-02T00:00:00Z') !>((gs:orr (gj:orr adopted 'action') 'due')))
+    ::  the approval names the id the writer will give it
+    (expect !>(!=('' want)))
+    (expect !>((lien wr |=(j=json &(=('set-action' (gs:orr j 'op')) =('approved' (gs:orr j 'status')) =(want (gs:orr j 'id')))))))
+    ::  e6's edit carries the whole meta, since edit-event replaces the event
+    (expect-eq !>('todo') !>((gs:orr e6 'cat')))
+    (expect-eq !>('Buy milk') !>((gs:orr (gj:orr e6 'meta') 'name')))
+    (expect-eq !>('two litres') !>((gs:orr (gj:orr e6 'meta') 'note')))
+    (expect-eq !>(want) !>((gs:orr (gj:orr e6 'meta') 'orrery')))
+    (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr (gj:orr e6 'meta') 'tags'))))
+    (expect-eq !>((ms-of:orr ~2026.10.2)) !>((need (gn:orr e6 'due_ms'))))
+    ::  e4's edit moves the due to the action's and keeps the name
+    (expect-eq !>((ms-of:orr ~2026.10.5)) !>((need (gn:orr e4 'due_ms'))))
+    (expect-eq !>('Due moved on the ship') !>((gs:orr (gj:orr e4 'meta') 'name')))
+    (expect-eq !>('a4') !>((gs:orr (gj:orr e4 'meta') 'orrery')))
+    ::  e1's tick carries now
+    (expect-eq !>((ms-of:orr now)) !>((need (gn:orr (fall (find-by cal 'e1') ~) 'done'))))
+  ==
+::  the first calendar op on an id, the first writer op of a kind
+++  find-by
+  |=  [l=(list json) id=@t]
+  ^-  (unit json)
+  ?~  l  ~
+  ?:(=(id (gs:orr i.l 'id')) `i.l $(l t.l))
+++  find-op
+  |=  [l=(list json) op=@t]
+  ^-  (unit json)
+  ?~  l  ~
+  ?:(=(op (gs:orr i.l 'op')) `i.l $(l t.l))
+++  lift-act
+  |=  j=json
+  ^-  (unit action:orr)
+  =/  got  (de-action:orr j now 'calendar')
+  ?:(?=(%| -.got) ~ `p.got)
 --
