@@ -20,6 +20,8 @@
 ::    /clients.json                    the minted keys, salted hashes only
 ::    /telegram.sig                    the telegram reader: drains the inbox
 ::    /telegram-inbox/<update_id>      an update the webhook took, until read
+::    /exec.sig                        the executor: approved actions carried out, the todo list kept in step
+::    /exec-last.json                  what its last pass did
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
@@ -107,6 +109,11 @@
           [%fall %| /telegram-inbox empty-dir:loader]
           [%fall %& [/telegram-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/ %'telegram.sig'] [[/ %sig] ~]]
+          ::  the executor (version 34): the fiber that carries out the
+          ::  approved actions the ship can serve and keeps the calendar's
+          ::  todo list in step, and what its last pass did
+          [%fall %& [/ %'exec.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'exec-last.json'] [[/ %json] [%o ~]]]
       ==
     ::
     ++  on-file
@@ -235,6 +242,27 @@
         ;<  ~  bind:m  tg-drain
         ;<  *  bind:m  (take-gen-in /tg)
         $
+          ::  the executor (version 34): on orrery's beacon it carries out
+          ::  the approved actions it can serve; on the calendar's store it
+          ::  keeps the todo list and the task actions in step. It pokes
+          ::  the writer, the calendar and auspex, and is poked by nothing
+          ::  but the owner's wake. The calendar is found through link on
+          ::  every pass, so one installed after the rise is kept from the
+          ::  pass that first finds it, with no restart.
+          [~ %'exec.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery executor: failed")
+        ;<  *  bind:m  (keep:io /exec (rf 0 /beacon %rev) ~)
+        =/  kept=?  |
+        =/  seen=(unit exec-seen)  ~
+        |-
+        ;<  k=?  bind:m  ?:(kept (pure:(fiber:fiber:nexus ,?) &) keep-calendar)
+        ;<  [s=(unit exec-seen) busy=?]  bind:m  (exec-run seen)
+        ::  a pass that moved something runs again at once: the settles
+        ::  inside it took the beacon's news, so an approval made while
+        ::  it ran would otherwise wait for the next wake
+        ?:  busy  $(kept k, seen s)
+        ;<  *  bind:m  take-exec-in
+        $(kept k, seen s)
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%orrery request: failed")
@@ -707,6 +735,8 @@
   ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (own (serve-set-webhook eyre-id))
   ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   (own (serve-webhook-info eyre-id))
   ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-telegram-wake eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
+  ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-exec-wake eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -1714,6 +1744,18 @@
     (poke-soft:io (rf 1 / %'telegram.sig') [[/ %sig] ~])
   ?^  err  (send-err eyre-id 500 'the telegram fiber refused the poke')
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-exec-wake: the owner pokes the executor: a live one runs a
+::  pass now, a crashed one restarts on the poke, since nothing else
+::  pokes it
+::
+++  serve-exec-wake
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io (rf 1 / %'exec.sig') [[/ %sig] ~])
+  ?^  err  (send-err eyre-id 500 'the executor fiber refused the poke')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +serve-telegram-hook: an update from Telegram. The secret header must
 ::  equal the stored secret; the update goes to the inbox as its own grub
 ::  and the request answers at once, since Telegram gives up on a slow
@@ -2513,6 +2555,28 @@
     ?.  =([/ %timer-wake] p.sage.u.in)  [%done %poke sage.u.in]
     [%done %wake (fall (mole |.(!<(path q.sage.u.in))) /)]
   ==
+::  +take-exec-in: +take-gen-in for the executor, which keeps two
+::  wires: orrery's beacon on /exec and the calendar's store on /cal.
+::  The kernel keys a keep by its target and the watching fiber, so the
+::  two need two wires, and either one's news is a wake. A veto is taken
+::  as a wake rather than a failure: the executor's own takers consume
+::  the vetoes of the roads it asks for, but one that reaches here must
+::  not jam the fiber.
+::
+++  take-exec-in
+  =/  m  (fiber:fiber:nexus ,gen-in)
+  ^-  form:m
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto *]  [%done %wake /veto]
+      [~ %news * *]
+    ?.(|(=(/exec wire.u.in) =(/cal wire.u.in)) [%skip ~] [%done %news wave.u.in])
+      [~ %poke * *]
+    ?.  =([/ %timer-wake] p.sage.u.in)  [%done %poke sage.u.in]
+    [%done %wake (fall (mole |.(!<(path q.sage.u.in))) /)]
+  ==
 ::  +gen-pass: one pass. Read the settings; off means nothing. Read the
 ::  state the way the state view does, build the prompt, and stop when
 ::  its digest is the last pass's unless forced. Ask the model under a
@@ -3185,6 +3249,429 @@
   =/  next=json  [%o (~(put by p.row) 'used' (en-time:orr now))]
   ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(put by cm) id next)]])
   (pure:m |)
+::  ==  the executor (version 34): the ship carries out its own approved
+::  actions. docs/superpowers/specs/2026-09-21-executors-on-ship-design.md
+::
+::  The lib plans (+plan-exec, +plan-mirror); the fiber here files. One
+::  pass is +exec-pass (the approved actions, each claimed, read back,
+::  carried out and reported) then +todo-pass (the calendar's todo list
+::  against the task actions), then the record.
+::
+::  what a pass did, for exec-last.json
+::
++$  exec-tally
+  $:  claimed=@ud                               ::  actions the ship claimed
+      sent=@ud                                  ::  messages delivered
+      placed=@ud                                ::  events and todos made
+      failed=(list [id=@t title=@t note=@t])    ::  the newest first
+      ticked=@ud                                ::  todos ticked for a done action
+      deleted=@ud                               ::  todos deleted for a dismissed or failed one
+      moved=@ud                                 ::  todos whose due followed the action's
+      closed=@ud                                ::  actions done because their todo was ticked
+      adopted=@ud                               ::  hand-typed todos made into tasks
+      missing=(list @t)                         ::  desks link does not know
+      notes=(list @t)
+  ==
+::  what the todo list was last read against: the actions as a hash,
+::  the store's version, and the todos read then. The store, a few
+::  megabytes turned into JSON, is re-read only when one of the two
+::  moved; the beacon moves on every fact the ship takes, and most of
+::  those are neither the executor's nor the mirror's.
+::
++$  exec-seen  [acts=@uvH store=cass:clay todos=(list todo:orr)]
+::  the calendar as one pass sees it: where it is (~ when link does not
+::  know it), its todos (~ when the store could not be read this time),
+::  what they were read against, and whether anything moved since the
+::  last pass, which is when the mirror has work
+::
++$  exec-cal
+  $:  base=(unit path)
+      todos=(unit (list todo:orr))
+      seen=(unit exec-seen)
+      moved=?
+  ==
+::  +exec-run: one pass: the calendar read once, the approved actions,
+::  the mirror, then the record; and whether the pass moved anything,
+::  which is when another pass should follow at once
+::
+++  exec-run
+  |=  seen=(unit exec-seen)
+  =/  m  (fiber:fiber:nexus ,[(unit exec-seen) busy=?])
+  ^-  form:m
+  ;<  cal=exec-cal  bind:m  (read-calendar seen)
+  ;<  tally=exec-tally  bind:m  (exec-pass cal)
+  ;<  tally=exec-tally  bind:m  (todo-pass cal tally)
+  ;<  ~  bind:m  (exec-record tally)
+  (pure:m [seen.cal !(tally-idle tally)])
+::  +tally-idle: a pass that moved nothing (a claim that was refused
+::  does not count, nor a poke the calendar refused, so a refusal that
+::  repeats does not run passes without end)
+::
+++  tally-idle
+  |=  t=exec-tally
+  ^-  ?
+  ?&  =(0 :(add claimed.t sent.t placed.t ticked.t deleted.t moved.t closed.t adopted.t))
+      ?=(~ failed.t)
+  ==
+::  +read-calendar: the todo list, through the store's JSON, unless
+::  neither the actions nor the store moved since it was last read, in
+::  which case the todos read then still hold
+::
+++  read-calendar
+  |=  seen=(unit exec-seen)
+  =/  m  (fiber:fiber:nexus ,exec-cal)
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  (find-base %calendar)
+  ?~  base  (pure:m [~ ~ seen |])
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base %'calendar.calendar'] ~)
+  ?.  ?=([~ %file *] vw)  (pure:m [base ~ seen |])
+  =/  acts-hash=@uvH  (sham acts)
+  ?:  &(?=(^ seen) =(acts.u.seen acts-hash) =(store.u.seen cass.u.vw))
+    (pure:m [base `todos.u.seen seen |])
+  ;<  store=(unit json)  bind:m  (calendar-json u.base (sang-noun:tarball sang.u.vw))
+  ?~  store  (pure:m [base ~ seen |])
+  =/  todos=(list todo:orr)  (todos-of:orr u.store)
+  (pure:m [base `todos `[acts-hash cass.u.vw todos] &])
+::  +keep-calendar: subscribe to the calendar's store on /cal, & when
+::  the keep took. Its own taker, since +keep waits for ever on a veto
+::  and +keep-soft leaves the veto in the queue for the next hard taker
+::  to fail on; a refused road must leave the executor running for the
+::  actions it can still serve. News is only a wake signal, so no blot.
+::
+++  keep-calendar
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  (find-base %calendar)
+  ?~  base  (pure:m |)
+  ;<  ~  bind:m  (send-dart:io %node /cal [%& %& u.base %'calendar.calendar'] %keep ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto %node * * *]
+    ?.(=(/cal wire.dart.u.in) [%skip ~] [%done |])
+      [~ %news * *]
+    ?.(=(/cal wire.u.in) [%skip ~] [%done &])
+  ==
+::  +ship-set-action: the writer's set-action by the ship
+::
+++  ship-set-action
+  |=  [id=@t status=@t why=@t]
+  ^-  json
+  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'ship']])
+::  +tang-head: a refusal's first line, as the note an action fails with
+::
+++  tang-head
+  |=  t=tang
+  ^-  @t
+  ?~  t  'refused'
+  (crip ~(ram re i.t))
+::  +note-missing: a desk link does not know, named once in the tally
+::
+++  note-missing
+  |=  [t=exec-tally name=@t]
+  ^-  exec-tally
+  ?:  (lien missing.t |=(x=@t =(x name)))  t
+  t(missing (snoc missing.t name))
+::  +exec-pass: the approved actions the ship can serve. A message or
+::  a calendar event is claimed through the writer and the claim read
+::  back, since another executor may hold it (the claim protocol's job,
+::  and it already works); then carried out and moved to done or failed
+::  with the note. A task is different: the todo list IS the task list
+::  (the model's own words: approved tasks not yet done), so its action
+::  stays approved once its todo is placed, and done means the task was
+::  done, ticked in the calendar or on the page. The todo carrying the
+::  action id is what stops a second placing, as Talon's mirror did, so
+::  a task is placed only when the list was read this pass. A task the
+::  calendar itself filed (an adopted todo, by calendar) has its todo
+::  already and is never placed.
+::
+++  exec-pass
+  |=  cal=exec-cal
+  =/  m  (fiber:fiber:nexus ,exec-tally)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) now)
+  ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
+  =|  tally=exec-tally
+  |-
+  ?~  plans  (pure:m tally)
+  =/  p=exec-plan:orr  i.plans
+  =/  was=(unit action:orr)  (act-of acts id.p)
+  ?~  was  $(plans t.plans)
+  =/  title=@t  title.u.was
+  ?:  =(%todo target.p)
+    ?:  =('calendar' by.u.was)  $(plans t.plans)
+    ?~  base.cal  $(plans t.plans, tally (note-missing tally 'calendar'))
+    ?~  todos.cal  $(plans t.plans, tally (note-once tally 'a task waits: the todo list could not be read'))
+    ?:  (lien u.todos.cal |=(t=todo:orr =(orrery.t id.p)))  $(plans t.plans)
+    ;<  err=(unit tang)  bind:m  (poke-calendar u.base.cal body.p)
+    ?^  err
+      $(plans t.plans, tally (note-once tally (cat 3 'the calendar refused a todo: ' (tang-head u.err))))
+    $(plans t.plans, tally tally(placed +(placed.tally)))
+  ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p 'claimed' '')] /exec)
+  ;<  after=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  mine=?
+    %+  lien  after
+    |=([id=@ta a=action:orr] &(=(id id.p) =(%claimed status.a) =('ship' (claimant:orr a))))
+  ?.  mine  $(plans t.plans)
+  =.  claimed.tally  +(claimed.tally)
+  ;<  [ok=? note=@t lost=(unit @t)]  bind:m  (exec-one p tg cal)
+  ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p ?:(ok 'done' 'failed') note)] /exec)
+  =?  tally  ?=(^ lost)  (note-missing tally u.lost)
+  =?  tally  !ok
+    =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
+    tally(failed (scag 20 f))
+  =?  tally  &(ok ?=(?(%telegram %mail) target.p))  tally(sent +(sent.tally))
+  =?  tally  &(ok ?=(%calendar target.p))  tally(placed +(placed.tally))
+  $(plans t.plans)
+::  +act-of: one action by id
+::
+++  act-of
+  |=  [acts=(list [id=@ta a=action:orr]) id=@t]
+  ^-  (unit action:orr)
+  ?~  acts  ~
+  ?:(=(id id.i.acts) `a.i.acts $(acts t.acts))
+::  +note-once: a note in the tally, once however many times it comes
+::
+++  note-once
+  |=  [t=exec-tally why=@t]
+  ^-  exec-tally
+  ?:  (lien notes.t |=(x=@t =(x why)))  t
+  t(notes [why notes.t])
+::  +exec-one: one claimed plan carried out: whether it went, the note,
+::  and the desk link did not know when that is why. A plan whose note
+::  is set already failed in the planner (the person has no such
+::  attribute).
+::
+++  exec-one
+  |=  [p=exec-plan:orr tg=tg-config:orr cal=exec-cal]
+  =/  m  (fiber:fiber:nexus ,[ok=? note=@t lost=(unit @t)])
+  ^-  form:m
+  ?.  =('' note.p)  (pure:m [| note.p ~])
+  ?-    target.p
+      %telegram
+    ?:  =('' token.tg)  (pure:m [| 'the telegram reader has no bot token' ~])
+    ;<  [ok=? why=@t]  bind:m  (send-telegram tg body.p)
+    (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why) ~])
+  ::
+      %mail
+    ;<  base=(unit path)  bind:m  (find-base %auspex)
+    ?~  base  (pure:m [| 'auspex is not installed' `'auspex'])
+    =/  who=(unit @p)  (slaw %p to.p)
+    ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name') ~])
+    ;<  err=(unit tang)  bind:m
+      (poke-auspex u.base u.who (gs:orr body.p 'subject') (gs:orr body.p 'text'))
+    ?^  err  (pure:m [| (tang-head u.err) ~])
+    (pure:m [& (cat 3 'sent by mail to ' to.p) ~])
+  ::
+      ?(%calendar %todo)
+    ?~  base.cal  (pure:m [| 'the calendar is not installed' `'calendar'])
+    ;<  err=(unit tang)  bind:m  (poke-calendar u.base.cal body.p)
+    ?^  err  (pure:m [| (tang-head u.err) ~])
+    (pure:m [& ?:(=(%todo target.p) 'in the todo list' 'on the calendar') ~])
+  ==
+::  +send-telegram: one sendMessage through the reader's token, the
+::  body the planner made (chat_id and text). Telegram answers ok false
+::  with a description, which is the failure note; no answer at all
+::  (the timer, a refused road) fails with +post-json's reason.
+::
+++  send-telegram
+  |=  [cfg=tg-config:orr body=json]
+  =/  m  (fiber:fiber:nexus ,[ok=? why=@t])
+  ^-  form:m
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (post-json (rap 3 api-url.cfg '/bot' token.cfg '/sendMessage' ~) '' body ~s30 %send)
+  =/  resp=json  (fall (de:json:html body.got) [%o ~])
+  ?:  &(=(200 status.got) ?=([%b %.y] (gj:orr resp 'ok')))  (pure:m [& ''])
+  =/  why=@t  (gs:orr resp 'description')
+  ?.  =('' why)  (pure:m [| why])
+  ?:  =(0 status.got)  (pure:m [| body.got])
+  (pure:m [| (cat 3 'telegram answered ' (crip (a-co:co status.got)))])
+::  +poke-auspex: a send to auspex's writer. Its action type lays %send
+::  out as to, subject, body, body-mime ('' is text/plain), prev, files
+::  and bcc; the marc is a noun passthrough and the writer clams it, so
+::  the layout here must match auspex's. A refusal inside the writer is
+::  not seen here; the road's veto and a nack are.
+::
+++  poke-auspex
+  |=  [base=path to=@p subject=@t body=@t]
+  =/  m  (fiber:fiber:nexus ,(unit tang))
+  ^-  form:m
+  =/  send=*  [%send (sy ~[to]) subject body '' ~ ~ ~]
+  (poke-soft:io [%& %& base %'main.sig'] [[/ %auspex-action] send])
+::  +poke-calendar: one action to the calendar's store, which is the
+::  fiber that takes its JSON pokes (add-event, edit-event, done-event,
+::  del-event). A bad body is dropped inside the calendar, not refused.
+::
+++  poke-calendar
+  |=  [base=path jon=json]
+  =/  m  (fiber:fiber:nexus ,(unit tang))
+  ^-  form:m
+  (poke-soft:io [%& %& base %'calendar.calendar'] [[/ %json] jon])
+::  +todo-pass: the calendar's todo list against the task actions,
+::  both ways. Nothing when the calendar is not installed or its store
+::  could not be read, and nothing again while neither the actions nor
+::  the store have moved since the list was last read. The actions are
+::  read afresh, since +exec-pass just moved some.
+::
+++  todo-pass
+  |=  [cal=exec-cal tally=exec-tally]
+  =/  m  (fiber:fiber:nexus ,exec-tally)
+  ^-  form:m
+  ?~  base.cal  (pure:m (note-missing tally 'calendar'))
+  ?~  todos.cal  (pure:m (note-once tally 'the todo list could not be read'))
+  ?.  moved.cal  (pure:m tally)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  ops=(list mirror-op:orr)  (plan-mirror:orr u.todos.cal acts now)
+  (run-mirror-ops u.base.cal ops tally)
+::  +calendar-json: the calendar's store as JSON. The store's noun is
+::  the calendar's own type, which orrery cannot clam, and a peek with
+::  a JSON blot converts in the PEEKING fiber's code namespace (the
+::  kernel's +hydrate validates and finds the tube from the peeker's
+::  rail), where no calendar marc lives. So the conversion the ball's
+::  own JSON route makes is made here by hand: the calendar's compiled
+::  marc, fetched from the code namespace that governs the store (a
+::  %font then a %code dart, both read operations under the peek
+::  grant), validates the raw noun and grows it to JSON. ~ when any
+::  step refuses or crashes.
+::
+++  calendar-json
+  |=  [base=path raw=*]
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  ;<  font=(unit (unit bend:tarball))  bind:m  (font-soft [%& %& base %'calendar.calendar'])
+  ?.  ?=([~ ~ *] font)  (pure:m ~)
+  ;<  mv=(unit vase)  bind:m  (code-soft (extend-road:tarball [%| u.u.font] /mar %calendar))
+  ?~  mv  (pure:m ~)
+  =/  mc=(unit marc:tarball)  (mole |.(!<(marc:tarball u.mv)))
+  ?~  mc  (pure:m ~)
+  (pure:m (mole |.(!<(json ((grow:u.mc [/ %json]) (vale:u.mc raw))))))
+::  +font-soft: +get-font that answers ~ on a veto instead of failing
+::
+++  font-soft
+  |=  road=road:tarball
+  =/  m  (fiber:fiber:nexus ,(unit (unit bend:tarball)))
+  ^-  form:m
+  ;<  w=wire  bind:m  (nonce:io /font)
+  ;<  ~  bind:m  (send-dart:io %node w road %font ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto %node * * *]
+    ?.(=(w wire.dart.u.in) [%skip ~] [%done ~])
+      [~ %font * *]
+    ?.(=(w wire.u.in) [%skip ~] [%done res.u.in])
+  ==
+::  +code-soft: +get-code that answers ~ on a veto instead of failing
+::
+++  code-soft
+  |=  road=road:tarball
+  =/  m  (fiber:fiber:nexus ,(unit vase))
+  ^-  form:m
+  ;<  w=wire  bind:m  (nonce:io /code)
+  ;<  ~  bind:m  (send-dart:io %node w road %code ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto %node * * *]
+    ?.(=(w wire.dart.u.in) [%skip ~] [%done ~])
+      [~ %code * *]
+    ?.  =(w wire.u.in)  [%skip ~]
+    ?.  ?=(%| -.res.u.in)  [%done ~]
+    ?.(?=(%vase -.p.res.u.in) [%done ~] [%done `vase.p.res.u.in])
+  ==
+::  +run-mirror-ops: the mirror's ops in order, each writer op filed
+::  and settled on its own and each calendar op poked. An adoption is
+::  three ops: the act, the approval of the id the act will get, and
+::  the todo's mark. The writer refuses an act whose open twin exists,
+::  and then the approval names an id that does not exist and the mark
+::  would give the todo an id naming no action, so that it is never
+::  adopted: after an act the actions are re-read, and when the id is
+::  not there the two ops that follow are dropped. An approval refused
+::  because policy approved the act already is harmless trail noise.
+::
+++  run-mirror-ops
+  |=  [base=path ops=(list mirror-op:orr) tally=exec-tally]
+  =/  m  (fiber:fiber:nexus ,exec-tally)
+  ^-  form:m
+  ::  how many of the ops ahead belong to the adoption under way
+  =/  adopting=@ud  0
+  |-
+  ?~  ops  (pure:m tally)
+  =/  rest=@ud  ?:(=(0 adopting) 0 (dec adopting))
+  ?-    -.i.ops
+      %writer
+    ;<  *  bind:m  (file-ops-on ~[+.i.ops] /exec)
+    ?.  =('act' (gs:orr +.i.ops 'op'))
+      ?.  =(0 adopting)  $(ops t.ops, adopting rest)
+      $(ops t.ops, closed.tally +(closed.tally))
+    =/  want=@t
+      ?~  t.ops  ''
+      ?.(?=(%writer -.i.t.ops) '' (gs:orr +.i.t.ops 'id'))
+    ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+    ?.  ?=(^ (act-of acts want))  $(ops (slag 2 t.ops))
+    $(ops t.ops, adopting 2, adopted.tally +(adopted.tally))
+  ::
+      %calendar
+    ;<  err=(unit tang)  bind:m  (poke-calendar base +.i.ops)
+    ?^  err
+      =/  why=@t  (cat 3 'the calendar refused a poke: ' (tang-head u.err))
+      $(ops t.ops, adopting rest, notes.tally [why notes.tally])
+    =/  act=@t  (gs:orr +.i.ops 'action')
+    %=  $
+      ops  t.ops
+      adopting  rest
+      ticked.tally  ?:(=('done-event' act) +(ticked.tally) ticked.tally)
+      deleted.tally  ?:(=('del-event' act) +(deleted.tally) deleted.tally)
+      moved.tally  ?:(&(=('edit-event' act) =(0 adopting)) +(moved.tally) moved.tally)
+    ==
+  ==
+::  +exec-record: what the pass did, for the page and the owner's eye.
+::  A pass that did nothing (most of them: the beacon moves on every
+::  fact, and the wake after a placing is one) keeps the last pass that
+::  did and moves only the time, so the card reads as the last thing
+::  done and when the executor last looked, not as zeros.
+::
+++  exec-record
+  |=  t=exec-tally
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'exec-last.json'))
+  =/  idle=?  &((tally-idle t) ?=(~ missing.t) ?=(~ notes.t))
+  ?:  &(idle ?=([%o *] last) !=(~ p.last))
+    =/  kept=(map @t json)  p.last
+    (over:io (rf 0 / %'exec-last.json') [[/ %json] [%o (~(put by kept) 'at' (en-time:orr now))]])
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['at' (en-time:orr now)]
+        ['acted_at' (en-time:orr now)]
+        ['claimed' (numb:enjs:format claimed.t)]
+        ['sent' (numb:enjs:format sent.t)]
+        ['placed' (numb:enjs:format placed.t)]
+        :-  'failed'
+        :-  %a
+        %+  turn  (flop failed.t)
+        |=  [id=@t title=@t note=@t]
+        (pairs:enjs:format ~[['id' s+id] ['title' s+title] ['note' s+note]])
+        ['ticked' (numb:enjs:format ticked.t)]
+        ['deleted' (numb:enjs:format deleted.t)]
+        ['moved' (numb:enjs:format moved.t)]
+        ['closed' (numb:enjs:format closed.t)]
+        ['adopted' (numb:enjs:format adopted.t)]
+        ['missing' a+(turn missing.t |=(x=@t `json`s+x))]
+        ['notes' a+(turn (flop notes.t) |=(x=@t `json`s+x))]
+    ==
+  (over:io (rf 0 / %'exec-last.json') [[/ %json] doc])
 ::  ==  who is asking
 ::
 ::  an actor: the owner (the cookie, writing as "http"), or a key with
