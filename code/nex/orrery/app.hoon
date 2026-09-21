@@ -3387,7 +3387,13 @@
 ::  spec's discovery rule) or the refusal once in notes. The road is
 ::  proved before any claim with a poke each writer ignores, since a
 ::  veto is the only way a refusal shows and a claimed action cannot
-::  go back to approved. A task is different: the todo list IS the
+::  go back to approved; and only when a plan will poke it this pass,
+::  so a pass with nothing new sends nothing. A message with no address
+::  (no telegram attribute and not in the reader's people map, no ship
+::  attribute) or no bot token to send it with is left approved the
+::  same way, noted once, since another executor may know the way and
+::  a claim the ship cannot serve would only fail it. A task is
+::  different: the todo list IS the
 ::  task list (the model's own words: approved tasks not yet done), so
 ::  its action stays approved once its todo is placed, and done means
 ::  the task was done, ticked in the calendar or on the page. The todo
@@ -3404,12 +3410,24 @@
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) now)
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
-  ::  the desks the plans need, found and their roads proved, once
-  =/  need-cal=?  (lien plans |=(p=exec-plan:orr ?=(?(%calendar %todo) target.p)))
-  =/  need-mail=?  (lien plans |=(p=exec-plan:orr =(%mail target.p)))
+  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now)
+  ::  the desks the plans need, found and their roads proved, once, and
+  ::  only for a plan that will poke this pass: a calendar event, a
+  ::  todo not yet placed (and not the calendar's own), a mail with an
+  ::  address
+  =/  need-cal=?
+    %+  lien  plans
+    |=  p=exec-plan:orr
+    ?:  =(%calendar target.p)  &
+    ?.  =(%todo target.p)  |
+    ?~  todos.cal  |
+    =/  was=(unit action:orr)  (act-of acts id.p)
+    ?~  was  |
+    ?:  =('calendar' by.u.was)  |
+    !(lien u.todos.cal |=(t=todo:orr =(orrery.t id.p)))
+  =/  need-mail=?  (lien plans |=(p=exec-plan:orr &(=(%mail target.p) =('' note.p))))
   ;<  cal-shut=(unit @t)  bind:m
     ?.  &(need-cal ?=(^ base.cal))  (pure:(fiber:fiber:nexus ,(unit @t)) ~)
     %+  road-shut  [%& %& u.base.cal %'calendar.calendar']
@@ -3426,6 +3444,12 @@
   =/  was=(unit action:orr)  (act-of acts id.p)
   ?~  was  $(plans t.plans)
   =/  title=@t  title.u.was
+  ::  a message with no way out is left approved and noted, before any
+  ::  desk is asked for it
+  ?.  =('' note.p)
+    $(plans t.plans, tally (note-once tally (cat 3 'a message waits: ' note.p)))
+  ?:  &(=(%telegram target.p) =('' token.tg))
+    $(plans t.plans, tally (note-once tally 'a message waits: no bot token'))
   ::  the desk the plan needs, or why it is left approved
   =/  desk=(each path exec-tally)
     ?-    target.p
@@ -3489,18 +3513,17 @@
   ?:  (lien notes.t |=(x=@t =(x why)))  t
   t(notes [why notes.t])
 ::  +exec-one: one claimed plan carried out at the desk found for it:
-::  whether it went and the note. A plan whose note is set already
-::  failed in the planner (the person has no such attribute). A task
-::  is placed without a claim and never comes here.
+::  whether it went and the note. A plan with no address, or a telegram
+::  one with no token, is never claimed (exec-pass leaves it approved),
+::  so the plan here has its way out. A task is placed without a claim
+::  and never comes here.
 ::
 ++  exec-one
   |=  [p=exec-plan:orr tg=tg-config:orr base=path]
   =/  m  (fiber:fiber:nexus ,[ok=? note=@t])
   ^-  form:m
-  ?.  =('' note.p)  (pure:m [| note.p])
   ?+    target.p  (pure:m [| 'a task is placed without a claim'])
       %telegram
-    ?:  =('' token.tg)  (pure:m [| 'the telegram reader has no bot token'])
     ;<  [ok=? why=@t]  bind:m  (send-telegram tg body.p)
     (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why)])
   ::

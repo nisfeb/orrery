@@ -796,6 +796,7 @@
       ['m2' [%message 'Tell Bob' (pay '{"via": "mail", "to": "person/bob", "text": "hi"}') (sy ~['person/bob']) ~ 'telegram' now %approved '' ~]]
       ['m3' [%message 'Tell Eve' (pay '{"via": "telegram", "to": "person/eve", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
       ['m4' [%message 'DM Rose' (pay '{"via": "chat", "to": "person/rose", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['m5' [%message 'Tell Ann' (pay '{"via": "telegram", "to": "person/ann", "text": "y"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c1' [%calendar 'Dinner with Sarah' (pay '{"title": "Dinner with Sarah", "starts": "2026-09-25T20:00:00Z", "ends": "2026-09-25T22:00:00Z", "location": "the usual place"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c2' [%calendar 'Field day' (pay '{"title": "Field day", "starts": "2026-10-03T00:00:00Z", "ends": "2026-10-04T00:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
       ['t1' [%task 'Call the shop' (pay '{"notes": "about the brakes"}') ~ `~2026.9.30 'generator' now %approved '' ~]]
@@ -807,12 +808,17 @@
   :~  (mkb 'person/rose' %person 'Rose' ~ ~[['telegram' s+'545179154']] now)
       (mkb 'person/bob' %person 'Bob' ~ ~[['ship' s+'~sampel-palnet']] now)
       (mkb 'person/eve' %person 'Eve' ~ ~ now)
+      (mkb 'person/ann' %person 'Ann' ~ ~ now)
   ==
+::  the reader's people map: a Telegram user id to the body it is
+++  exec-people
+  ^-  (map @t @t)
+  (my ~[['1001' 'person/me'] ['777' 'person/ann']])
 ++  test-plan-exec
-  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ now)
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
-    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'c1' 'c2' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
+    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm5' 'c1' 'c2' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
     (expect-eq !>(%telegram) !>(target:(~(got by by-id) 'm1')))
     (expect-eq !>('545179154') !>(to:(~(got by by-id) 'm1')))
     (expect-eq !>('Susan could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
@@ -820,8 +826,15 @@
     (expect-eq !>(%mail) !>(target:(~(got by by-id) 'm2')))
     (expect-eq !>('~sampel-palnet') !>(to:(~(got by by-id) 'm2')))
     (expect-eq !>('Tell Bob') !>((gs:orr body:(~(got by by-id) 'm2') 'subject')))
+    ::  m3: no attribute and not in people, so no address; m5: no
+    ::  attribute, but the people map knows the person's user id
     (expect-eq !>('') !>(to:(~(got by by-id) 'm3')))
-    (expect-eq !>('person/eve has no telegram attribute') !>(note:(~(got by by-id) 'm3')))
+    (expect-eq !>('person/eve has no telegram attribute and is not in people') !>(note:(~(got by by-id) 'm3')))
+    (expect-eq !>('777') !>(to:(~(got by by-id) 'm5')))
+    (expect-eq !>('777') !>((gs:orr body:(~(got by by-id) 'm5') 'chat_id')))
+    (expect-eq !>('') !>(note:(~(got by by-id) 'm5')))
+    ::  the attribute wins over the people map
+    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now) |=(p=exec-plan:orr [id.p p])))) 'm1')))
     (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c1')))
     (expect-eq !>('timed') !>((gs:orr body:(~(got by by-id) 'c1') 'cat')))
     (expect-eq !>('allday') !>((gs:orr body:(~(got by by-id) 'c2') 'cat')))
@@ -829,9 +842,9 @@
     (expect-eq !>('todo') !>((gs:orr body:(~(got by by-id) 't1') 'cat')))
   ==
 ++  test-event-json
-  =/  c1  (snag 4 exec-acts)
-  =/  c2  (snag 5 exec-acts)
-  =/  t1  (snag 6 exec-acts)
+  =/  c1  (snag 5 exec-acts)
+  =/  c2  (snag 6 exec-acts)
+  =/  t1  (snag 7 exec-acts)
   =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York'))
   =/  aj=json  (need (event-json:orr id.c2 a.c2 'America/New_York'))
   =/  tj=json  (need (event-json:orr id.t1 a.t1 'America/New_York'))
@@ -857,6 +870,9 @@
     (expect-eq !>(1.790.726.400.000) !>((need (gn:orr tj 'due_ms'))))
     (expect-eq !>(1.790.366.400.000) !>((ms-of:orr ~2026.9.25..20.00.00)))
     (expect-eq !>(~2026.9.25..20.00.00) !>((da-of-ms:orr 1.790.366.400.000)))
+    ::  a time before the epoch is 0, not an underflow
+    (expect-eq !>(0) !>((ms-of:orr ~1969.12.31)))
+    (expect-eq !>(0) !>((ms-of:orr ~1970.1.1)))
   ==
 ++  test-todos-of
   =/  cal=json
@@ -871,10 +887,15 @@
      ]}
     '''
   =/  todos=(list todo:orr)  (todos-of:orr cal)
+  =/  e1=todo:orr  (snag 0 todos)
+  =/  e2=todo:orr  (snag 1 todos)
   ;:  weld
     (expect-eq !>(2) !>((lent todos)))
-    (expect-eq !>(`todo:orr`['e1' 'Buy milk' 'a9' | `~2026.9.30 'two litres']) !>((snag 0 todos)))
-    (expect-eq !>(`todo:orr`['e2' 'Done one' '' & ~ '']) !>((snag 1 todos)))
+    (expect-eq !>(`[@t @t @t ? (unit @da) @t]`['e1' 'Buy milk' 'a9' | `~2026.9.30 'two litres']) !>([id name orrery done due note]:e1))
+    (expect-eq !>(`[@t @t @t ? (unit @da) @t]`['e2' 'Done one' '' & ~ '']) !>([id name orrery done due note]:e2))
+    ::  the whole meta rides along, for an edit to carry
+    (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr meta.e1 'tags'))))
+    (expect-eq !>('Done one') !>((gs:orr meta.e2 'name')))
   ==
 ++  test-plan-mirror
   =/  acts=(list [id=@ta a=action:orr])
@@ -884,14 +905,16 @@
         ['a4' [%task 'Due moved on the ship' ~ ~ `~2026.10.5 'generator' now %approved '' ~]]
         ['a5' [%task 'In step' ~ ~ ~ 'generator' now %approved '' ~]]
     ==
+  ::  e6 carries a color and a tag of the owner's, which the adoption
+  ::  must keep; e4's meta is what the ship placed
   =/  todos=(list todo:orr)
-    :~  ['e1' 'Ticked on the ship' 'a1' | ~ '']
-        ['e2' 'Dismissed on the ship' 'a2' | ~ '']
-        ['e3' 'Ticked in the calendar' 'a3' & ~ '']
-        ['e4' 'Due moved on the ship' 'a4' | `~2026.10.1 '']
-        ['e5' 'In step' 'a5' | ~ '']
-        ['e6' 'Buy milk' '' | `~2026.10.2 'two litres']
-        ['e7' 'Already done by hand' '' & ~ '']
+    :~  ['e1' 'Ticked on the ship' 'a1' | ~ '' [%o ~]]
+        ['e2' 'Dismissed on the ship' 'a2' | ~ '' [%o ~]]
+        ['e3' 'Ticked in the calendar' 'a3' & ~ '' [%o ~]]
+        ['e4' 'Due moved on the ship' 'a4' | `~2026.10.1 '' (jo '{"name": "Due moved on the ship", "orrery": "a4", "tags": ["orrery"]}')]
+        ['e5' 'In step' 'a5' | ~ '' [%o ~]]
+        ['e6' 'Buy milk' '' | `~2026.10.2 'two litres' (jo '{"name": "Buy milk", "note": "two litres", "color": "red", "tags": ["home"]}')]
+        ['e7' 'Already done by hand' '' & ~ '' [%o ~]]
     ==
   =/  ops=(list mirror-op:orr)  (plan-mirror:orr todos acts now)
   =/  cal=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%calendar -.o) `+.o ~)))
@@ -927,12 +950,17 @@
     (expect-eq !>('Buy milk') !>((gs:orr (gj:orr e6 'meta') 'name')))
     (expect-eq !>('two litres') !>((gs:orr (gj:orr e6 'meta') 'note')))
     (expect-eq !>(want) !>((gs:orr (gj:orr e6 'meta') 'orrery')))
-    (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr (gj:orr e6 'meta') 'tags'))))
+    ::  the owner's color and tag survive, and the orrery tag is added
+    (expect-eq !>(`(list @t)`~['home' 'orrery']) !>((strings:orr (ga:orr (gj:orr e6 'meta') 'tags'))))
+    (expect-eq !>('red') !>((gs:orr (gj:orr e6 'meta') 'color')))
     (expect-eq !>((ms-of:orr ~2026.10.2)) !>((need (gn:orr e6 'due_ms'))))
-    ::  e4's edit moves the due to the action's and keeps the name
+    ::  e4's edit moves the due to the action's and keeps the name,
+    ::  with the orrery tag once
     (expect-eq !>((ms-of:orr ~2026.10.5)) !>((need (gn:orr e4 'due_ms'))))
     (expect-eq !>('Due moved on the ship') !>((gs:orr (gj:orr e4 'meta') 'name')))
     (expect-eq !>('a4') !>((gs:orr (gj:orr e4 'meta') 'orrery')))
+    (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr (gj:orr e4 'meta') 'tags'))))
+    (expect !>(!(has-key:orr (gj:orr e4 'meta') 'note')))
     ::  e1's tick carries now
     (expect-eq !>((ms-of:orr now)) !>((need (gn:orr (fall (find-by cal 'e1') ~) 'done'))))
   ==

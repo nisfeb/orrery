@@ -139,7 +139,9 @@ curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})
 retract_matrix('person/me')
 code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
-    if a['title'] in (TITLE, MSG, RACE):
+    #  a run that died in the executor section leaves its gate actions open,
+    #  and an approved message with no address is noted on every pass
+    if a['title'] in (TITLE, MSG, RACE) or a['title'].startswith('Gate '):
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
@@ -927,8 +929,17 @@ def steps(a):
     return [(h.get('status'), h.get('by')) for h in dictish(a).get('history', [])]
 
 
-def exec_last():
-    return dictish(curl('GET', API + '/exec/last')[1])
+def exec_last(**want):
+    #  the record, waited for (ten seconds at most) until it carries the
+    #  counts asked for: the pass writes the action or the todo first and
+    #  its record last, so a record read the moment the action moved can
+    #  still be the pass before
+    deadline = time.time() + 10
+    while True:
+        last = dictish(curl('GET', API + '/exec/last')[1])
+        if not want or all(last.get(k) == v for k, v in want.items()) or time.time() >= deadline:
+            return last
+        time.sleep(1)
 
 
 def propose(kind, title, **more):
@@ -942,13 +953,16 @@ def approve(aid):
     return curl('POST', API + f'/actions/{aid}', {'status': 'approved'})[0]
 
 
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody']:
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people']:
     curl('DELETE', API + '/body/' + b)
 code, d = observe(
-    [{'id': 'person/gate-tg', 'name': 'the gate telegram person'}, {'id': 'person/gate-ship', 'name': 'the gate ship person'}, {'id': 'person/gate-nobody', 'name': 'the gate person with no channel'}],
+    [{'id': 'person/gate-tg', 'name': 'the gate telegram person'}, {'id': 'person/gate-ship', 'name': 'the gate ship person'},
+     {'id': 'person/gate-nobody', 'name': 'the gate person with no channel'}, {'id': 'person/gate-people', 'name': 'the gate person the people map knows'}],
     [obs('person/gate-tg', 'telegram', '1001', now - timedelta(minutes=1), USER),
      obs('person/gate-ship', 'ship', '~wex', now - timedelta(minutes=1), USER)])
-check('the three people the executor addresses land', code == 200 and all_ok(d, 'bodies', 3) and all_ok(d, 'observations', 2), (code, d))
+check('the four people the executor addresses land', code == 200 and all_ok(d, 'bodies', 4) and all_ok(d, 'observations', 2), (code, d))
+# the reader's people map is the second way to a chat id, read backwards
+curl('PUT', API + '/telegram', {'people': {'1001': 'person/me', '1002': 'person/gate-people'}})
 code, d = curl('GET', API + '/exec/last', jar=None)
 check('the executor record is the owner\'s', code == 403, (code, d))
 code, d = curl('POST', API + '/exec/wake', jar=None)
@@ -964,16 +978,28 @@ a = settled(TGID)
 check('the ship claimed it and reported done with the chat', a.get('status') == 'done' and a.get('note') == 'sent to 1001' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
 check('the stub saw one sendMessage under the token with the chat id and the text', len(sent) == 1 and sent[0][0] == '/bot123:abc/sendMessage' and sent[0][1].get('chat_id') == '1001' and sent[0][1].get('text') == 'the gate says hello %s' % XRUN, sent)
-last = exec_last()
+last = exec_last(claimed=1, sent=1)
 check('the record counts the claim and the send, and says when', last.get('claimed') == 1 and last.get('sent') == 1 and last.get('failed') == [] and bool(last.get('acted_at')), last)
-# a message to a person with no telegram attribute: claimed, then failed with the planner's note
+# a message to a person with no telegram attribute but in the people map: sent to the user id the map gives them
+PEOPLEID = propose('message', 'Gate telegram people %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-people', 'text': 'the people map hears this %s' % XRUN})
+approve(PEOPLEID)
+a = settled(PEOPLEID)
+check('a person the people map knows is sent to that user id', a.get('status') == 'done' and a.get('note') == 'sent to 1002' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
+check('the stub saw the second sendMessage under the chat id from the people map', len(sent) == 2 and sent[1][1].get('chat_id') == '1002' and sent[1][1].get('text') == 'the people map hears this %s' % XRUN, sent)
+# a message to a person with no telegram attribute and not in the people map: no address, so no claim; left approved and noted
 NOID = propose('message', 'Gate telegram nobody %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-nobody', 'text': 'nobody hears this'})
 approve(NOID)
-a = settled(NOID)
-check('a person with no telegram attribute fails with the note, by the ship', a.get('status') == 'failed' and a.get('note') == 'person/gate-nobody has no telegram attribute' and steps(a)[-1] == ('failed', 'ship'), (a.get('status'), a.get('note'), steps(a)))
-check('nothing was sent for it', len([p for p, _, _ in seen[n:] if p.endswith('/sendMessage')]) == 1, [p for p, _, _ in seen[n:]])
-last = exec_last()
-check('the record lists the failure with its title and note', [(f.get('id'), f.get('title'), f.get('note')) for f in last.get('failed', [])] == [(NOID, 'Gate telegram nobody %s' % XRUN, 'person/gate-nobody has no telegram attribute')] and last.get('sent') == 0, last)
+time.sleep(8)
+a = action(NOID)
+check('a person with no address is left approved, with no claim', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
+check('nothing was sent for it', len([p for p, _, _ in seen[n:] if p.endswith('/sendMessage')]) == 2, [p for p, _, _ in seen[n:]])
+last = exec_last(notes=['a message waits: person/gate-nobody has no telegram attribute and is not in people'])
+check('the record notes the message that waits, and no failure', last.get('notes') == ['a message waits: person/gate-nobody has no telegram attribute and is not in people'] and last.get('failed') == [], last)
+curl('POST', API + f'/actions/{NOID}', {'status': 'dismissed', 'note': 'gate'})
+time.sleep(6)
+last = exec_last(notes=[])
+check('dismissed, it is noted no more', last.get('notes') == [], last)
 # a message via mail: a send poke to auspex's writer, which probes its peer before it lands
 MAILID = propose('message', 'Gate mail %s' % XRUN, payload={'via': 'mail', 'to': 'person/gate-ship', 'text': 'a letter from the gate %s' % XRUN})
 approve(MAILID)
@@ -995,7 +1021,7 @@ EVID = propose('calendar', 'Gate event %s' % XRUN, payload={'title': 'Gate event
 approve(EVID)
 a = settled(EVID)
 check('an approved calendar action is done, on the calendar', a.get('status') == 'done' and a.get('note') == 'on the calendar' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
-last = exec_last()
+last = exec_last(placed=1, claimed=1)
 check('the record counts the placing', last.get('placed') == 1 and last.get('claimed') == 1, last)
 # the calendar's store takes the poke after acking it, so the event can land a moment after the action reads done
 deadline = time.time() + 20
@@ -1024,7 +1050,7 @@ check('a second pass does not place it again', len([x for x in todos() if dictis
 code, d = cal_poke({'action': 'done-event', 'id': t['id'] if t else 'none'})
 a = settled(TASKID)
 check('ticked in the calendar, the task is done by the calendar', a.get('status') == 'done' and a.get('note') == 'ticked in the calendar' and steps(a)[-1] == ('done', 'calendar'), (code, a.get('status'), a.get('note'), steps(a)))
-last = exec_last()
+last = exec_last(closed=1)
 check('the record counts the close', last.get('closed') == 1, last)
 # a task the owner marks done on the page: section 6's task, ticked by the mirror
 t = todo_for(AID)
@@ -1037,7 +1063,7 @@ check('the second task is placed too', t is not None and t.get('done') is False,
 curl('POST', API + f'/actions/{DISID}', {'status': 'dismissed', 'note': 'gate'})
 t = todo_for(DISID, gone=True)
 check('dismissed on the page, its todo is deleted', t is None, t)
-last = exec_last()
+last = exec_last(deleted=1)
 check('the record counts the deletion', last.get('deleted') == 1, last)
 # a todo the owner typed in the calendar is adopted as an approved task, and the todo gains the mark
 HAND_DUE = (now + timedelta(days=5)).replace(hour=12, minute=0, second=0)
@@ -1057,7 +1083,7 @@ check('it appears as an approved task filed by the calendar, with its note and d
 t = todo_for(HANDID)
 check('the todo gains the action id and the tag, and keeps its name, note and due',
       t is not None and dictish(t.get('meta')) == {'name': 'Gate hand-typed todo %s' % XRUN, 'orrery': HANDID, 'tags': ['orrery'], 'note': 'typed by hand'} and t.get('due_ms') == int(HAND_DUE.timestamp() * 1000), t)
-last = exec_last()
+last = exec_last(adopted=1)
 check('the record counts the adoption', last.get('adopted') == 1, last)
 check('a hand-typed todo is adopted once, not placed again', len([x for x in todos() if dictish(dictish(x.get('meta'))).get('name') == 'Gate hand-typed todo %s' % XRUN]) == 1, None)
 curl('POST', API + f'/actions/{HANDID}', {'status': 'dismissed', 'note': 'gate'})
@@ -1084,8 +1110,9 @@ for t in todos():
 time.sleep(2)
 left = [t['id'] for t in todos() if dictish(t.get('meta')).get('orrery') in MADE]
 check('no todo of this run\'s own tasks is left on the calendar', left == [], left)
-for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody']:
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody', 'person/gate-people']:
     curl('DELETE', API + '/body/' + b)
+curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()
 srv.server_close()
 

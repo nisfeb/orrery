@@ -4200,9 +4200,15 @@
 ::  ==  executors (version 34): the ship carries out its own approved
 ::  actions. +plan-exec says what to do for each; the fiber does it.
 ::
-::  +ms-of / +da-of-ms: epoch milliseconds, what the calendar takes
+::  +ms-of / +da-of-ms: epoch milliseconds, what the calendar takes. A
+::  time before the epoch answers 0, since an underflow would crash the
+::  fiber over one odd due.
 ::
-++  ms-of  |=(t=@da ^-(@ud (div (mul 1.000 (sub t ~1970.1.1)) ~s1)))
+++  ms-of
+  |=  t=@da
+  ^-  @ud
+  ?:  (lth t ~1970.1.1)  0
+  (div (mul 1.000 (sub t ~1970.1.1)) ~s1)
 ++  da-of-ms  |=(ms=@ud ^-(@da (add ~1970.1.1 (div (mul ms ~s1) 1.000))))
 ::  one action's way out: for telegram, to is the chat id and body the
 ::  sendMessage JSON; for mail, to is the ship and body holds subject
@@ -4218,6 +4224,14 @@
       body=json
       note=@t
   ==
+::  +chat-of-people: the first Telegram user id the reader's people map
+::  gives a body id, '' when none does
+::
+++  chat-of-people
+  |=  [people=(map @t @t) who=@t]
+  ^-  @t
+  =/  hits=(list [uid=@t bid=@t])  (skim ~(tap by people) |=([uid=@t bid=@t] =(bid who)))
+  ?~(hits '' uid.i.hits)
 ++  loaded-of
   |=  [all=(list loaded) id=@t]
   ^-  (unit loaded)
@@ -4292,12 +4306,15 @@
   ?:(=('' zone) ~ ~[['zone' s+zone]])
 ::  +plan-exec: what to do for each approved action. A message goes by
 ::  its via: telegram to the person's telegram chat id, mail to their
-::  ship (with its ~); another via is not ours. A calendar or task
-::  action becomes an add-event in the owner's zone. Anything else, or
-::  a calendar action without a start, yields nothing.
+::  ship (with its ~); another via is not ours. The chat id is the
+::  person's telegram attribute, or failing that the reader's people
+::  map read backwards (the Telegram user id whose body is the person),
+::  which is how the bot found it too. A calendar or task action
+::  becomes an add-event in the owner's zone. Anything else, or a
+::  calendar action without a start, yields nothing.
 ::
 ++  plan-exec
-  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) now=@da]
+  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da]
   ^-  (list exec-plan)
   =/  zone=@t  (attr-text all multi now 'person/me' 'timezone')
   %+  murn  acts
@@ -4310,7 +4327,8 @@
     =/  text=@t  (gs payload.a 'text')
     ?:  =('telegram' via)
       =/  chat=@t  (attr-text all multi now who 'telegram')
-      =/  note=@t  ?.(=('' chat) '' (rap 3 who ' has no telegram attribute' ~))
+      =?  chat  =('' chat)  (chat-of-people people who)
+      =/  note=@t  ?.(=('' chat) '' (rap 3 who ' has no telegram attribute and is not in people' ~))
       :-  ~
       :*  id  kind.a  %telegram  chat
           (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text]])
@@ -4335,9 +4353,10 @@
 ::  what each todo needs, and the fiber files it.
 ::
 ::  a todo as the mirror sees it: orrery is the action id its meta
-::  carries, '' when the owner typed it by hand
+::  carries, '' when the owner typed it by hand; meta is the whole meta
+::  as read, so an edit can carry the keys the mirror does not know
 ::
-+$  todo  [id=@t name=@t orrery=@t done=? due=(unit @da) note=@t]
++$  todo  [id=@t name=@t orrery=@t done=? due=(unit @da) note=@t meta=json]
 ::  one thing the mirror does: an op for the writer, or a poke body for
 ::  the calendar (its action key says which)
 ::
@@ -4362,22 +4381,25 @@
       ?=([%b %.y] (gj e 'done'))
       (bind (gn e 'due_ms') da-of-ms)
       (gs meta 'note')
+      meta
   ==
 ::  +todo-meta: a todo's meta for edit-event, which replaces the event
 ::  whole through the calendar's parse-event (meta verbatim, only the
-::  exceptions survive): the name and note it had, the action id and
-::  the tag it carries. A meta key outside the todo type does not
-::  survive an edit.
+::  exceptions survive): the meta it had, with the name and note, the
+::  action id and the orrery tag laid over it, so a color, a CalDAV
+::  category or a tag the owner set survives the edit.
 ::
 ++  todo-meta
   |=  [t=todo act=@t]
   ^-  json
-  %-  pairs:enjs:format
-  %+  weld
-    ^-  (list [@t json])
-    ~[['name' s+name.t] ['orrery' s+act] ['tags' a+~[s+'orrery']]]
-  ^-  (list [@t json])
-  ?:(=('' note.t) ~ ~[['note' s+note.t]])
+  =/  own=(map @t json)  ?:(?=([%o *] meta.t) p.meta.t *(map @t json))
+  =/  tags=(list @t)  (strings (ga meta.t 'tags'))
+  =?  tags  !(lien tags |=(x=@t =('orrery' x)))  (snoc tags 'orrery')
+  =.  own  (~(put by own) 'name' s+name.t)
+  =.  own  (~(put by own) 'orrery' s+act)
+  =.  own  (~(put by own) 'tags' a+(turn tags |=(x=@t ^-(json s+x))))
+  =.  own  ?:(=('' note.t) (~(del by own) 'note') (~(put by own) 'note' s+note.t))
+  [%o own]
 ::  +edit-todo-op: the calendar poke that rewrites a todo with its
 ::  action id and a due
 ::
