@@ -9,7 +9,7 @@ import sys
 
 utils = sys.argv[1].rstrip('/')
 lib = open('code/lib/orrery.hoon').read()
-PAIRS = [('system-prompt', 'generator-prompt.md'), ('analyst-prompt', 'analyst-prompt.md')]
+PAIRS = [('system-prompt', 'generator-prompt.md'), ('analyst-prompt', 'analyst-prompt.md'), ('refine-prompt', 'refine-prompt.md')]
 #  the decider's questions: each question's instructions string in
 #  analyze.py, and each of its criteria, must appear in the lib as a cord
 QUESTIONS = ['worth_reading', 'needs_help_now', 'status_%d']

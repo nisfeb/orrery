@@ -1047,6 +1047,70 @@
     (expect-eq !>('revise-action') !>((gs:orr op 'op')))
     (expect-eq !>('a1') !>((gs:orr op 'id')))
   ==
+++  refine-ctx
+  ^-  reader-ctx:orr
+  =/  schema=json  starter-schema:orr
+  %-  reader-context:orr
+  :+  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['ship' s+'~sampel-palnet']] now)
+          (mkb 'person/susan-egan' %person 'Susan Egan' ~['susan'] ~ now)
+      ==
+    schema
+  now
+++  refine-act
+  ^-  action:orr
+  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+++  test-refine-check
+  =/  good=json  (jo '{"action": {"title": "Tell Rose and Susan", "payload": {"via": "chat", "to": "person/rose", "text": "hi both"}, "about": ["person/rose", "susan"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/rose"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
+  =/  got  (refine-check:orr good refine-act 'a1' refine-ctx now)
+  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/rose", "person/karl"]}, "extras": [], "refused": ""}')
+  =/  nobody=json  (jo '{"action": {"title": "Tell Rose", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
+  =/  refused=json  (jo '{"refused": "no person named Karl on the ship"}')
+  =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
+  =/  past=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2020-01-01T00:00:00Z"}, "about": []}], "refused": ""}')
+  =/  new-got  (refine-check:orr newbie refine-act 'a1' refine-ctx now)
+  =/  no-got  (refine-check:orr nobody refine-act 'a1' refine-ctx now)
+  =/  ref-got  (refine-check:orr refused refine-act 'a1' refine-ctx now)
+  =/  bad-got  (refine-check:orr badkind refine-act 'a1' refine-ctx now)
+  =/  past-got  (refine-check:orr past refine-act 'a1' refine-ctx now)
+  ;:  weld
+    (expect !>(?=(%& -.got)))
+    (expect-eq !>('Tell Rose and Susan') !>(?>(?=(%& -.got) title.p.got)))
+    (expect-eq !>(`(list @t)`~['person/rose' 'person/susan-egan']) !>(?>(?=(%& -.got) about.p.got)))
+    (expect-eq !>(1) !>(?>(?=(%& -.got) (lent extras.p.got))))
+    (expect-eq !>('a1') !>(?>(?=(%& -.got) (gs:orr (gj:orr (snag 0 extras.p.got) 'payload') 'refined_from'))))
+    ::  a person the note names and the ship lacks is created, not refused
+    (expect-eq !>(1) !>(?>(?=(%& -.new-got) (lent bodies.p.new-got))))
+    (expect-eq !>(`(list @t)`~['person/rose' 'person/karl']) !>(?>(?=(%& -.new-got) about.p.new-got)))
+    ::  an about id the answer neither knows nor creates refuses
+    (expect !>(?=(%| -.no-got)))
+    (expect-eq !>('no body named person/nobody on the ship') !>(?>(?=(%| -.no-got) p.no-got)))
+    (expect-eq !>('no person named Karl on the ship') !>(?>(?=(%| -.ref-got) p.ref-got)))
+    ::  an extra of a kind a reader may not propose is dropped, not fatal
+    (expect-eq !>(0) !>(?>(?=(%& -.bad-got) (lent extras.p.bad-got))))
+    ::  a calendar extra in the past is dropped
+    (expect-eq !>(0) !>(?>(?=(%& -.past-got) (lent extras.p.past-got))))
+  ==
+++  test-refine-ops
+  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')]]
+  =/  ops=(list json)  (refine-ops:orr r 'a1' 'user' now)
+  =/  none=(list json)  (refine-ops:orr r(bodies ~) 'a1' 'user' now)
+  ;:  weld
+    (expect-eq !>(3) !>((lent ops)))
+    (expect-eq !>('observe') !>((gs:orr (snag 0 ops) 'op')))
+    (expect-eq !>('person/karl') !>((gs:orr (snag 0 (ga:orr (snag 0 ops) 'bodies')) 'id')))
+    (expect-eq !>('revise-action') !>((gs:orr (snag 1 ops) 'op')))
+    (expect-eq !>('act') !>((gs:orr (snag 2 ops) 'op')))
+    (expect-eq !>('user') !>((gs:orr (gj:orr (snag 2 ops) 'action') 'by')))
+    (expect-eq !>(2) !>((lent none)))
+  ==
+++  test-refine-user
+  =/  t=@t  (refine-user:orr refine-act 'a1' refine-ctx 'include susan in this' now 'America/New_York')
+  ;:  weld
+    (expect !>((has-sub t 'person/susan-egan | Susan Egan | susan')))
+    (expect !>((has-sub t 'include susan in this')))
+    (expect !>((has-sub t 'message payload:')))
+    (expect !>((has-sub t 'The owner\'s clock reads 2026-09-18T08:00:00-04:00')))
+  ==
 ::  the first calendar op on an id, the first writer op of a kind
 ++  find-by
   |=  [l=(list json) id=@t]
