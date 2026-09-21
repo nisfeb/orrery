@@ -22,7 +22,7 @@ The starter schema is a fall; ricsul's stored `schema.json` is its own document.
 
 ## The prose rules
 
-The owner's rules, verbatim in the schema's note for `message.text` and in the shared prompts (`analyst-prompt.md`, `generator-prompt.md`, `refine-prompt.md`), which the lib's cords mirror under the drift check: no em dashes; no semicolons or colons joining independent clauses; simple direct sentences of varied length; a sentence with more than one parenthetical thought is split in two. As the last line, the executor replaces an em dash (U+2014) in outgoing text with a comma, with one space after it and none before before `sendMessage` or the auspex poke, so none leaves the ship whatever a model wrote.
+The owner's rules, verbatim in the schema's note for `message.text` and in the shared prompts (`analyst-prompt.md`, `generator-prompt.md`, `refine-prompt.md`), which the lib's cords mirror under the drift check: no em dashes; no semicolons or colons joining independent clauses; simple direct sentences of varied length; a sentence with more than one parenthetical thought is split in two. As the last line, the executor replaces an em dash (U+2014) in outgoing text with a comma, with one space after it and none before, ahead of `sendMessage` or the auspex poke, so none leaves the ship whatever a model wrote.
 
 ## Out of scope
 
