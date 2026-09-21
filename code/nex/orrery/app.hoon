@@ -336,6 +336,7 @@
   ?:  =('retract' op)  (do-retract jon)
   ?:  =('act' op)  (do-act jon)
   ?:  =('set-action' op)  (do-set-action jon)
+  ?:  =('revise-action' op)  (do-revise-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
@@ -1174,6 +1175,39 @@
   =/  next=action:orr  (transition:orr u.a `@tas`want who why now)
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
   ;<  ~  bind:m  (note-by 'set-action' & '' who)
+  (pure:m &)
+::  +do-revise-action: the owner's rewrite of a proposed action's title,
+::  payload, about and due, applied in place with a history step. Never
+::  routes the message: a channel a revision sets stands as written.
+::
+++  do-revise-action
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  road=road:tarball  (rf 0 /actions `@ta`id)
+  ;<  cur=view:nexus  bind:m  (peek:io road ~)
+  ?.  ?=([%file *] cur)  (refuse 'revise-action' (cat 3 'no action ' id))
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
+  ?~  a  (refuse 'revise-action' 'unreadable action')
+  ?.  =(%proposed status.u.a)
+    (refuse 'revise-action' 'only a proposed action can be revised')
+  =/  title=@t  (gs:orr jon 'title')
+  ?:  |(=('' title) (gth (met 3 title) max-title:orr))
+    (refuse 'revise-action' 'title: required')
+  =/  raw=(list json)  (ga:orr jon 'about')
+  =/  about=(list @t)  (strings:orr raw)
+  ;<  missing=(unit bid:orr)  bind:m  (first-missing 0 about)
+  ?^  missing  (refuse 'revise-action' (cat 3 'about: no such body ' u.missing))
+  =/  due-s=@t  (gs:orr jon 'due')
+  =/  due=(unit @da)  ?:(=('' due-s) ~ (de-iso-any:orr due-s))
+  ?:  &(!=('' due-s) =(~ due))  (refuse 'revise-action' 'due: not a time')
+  =/  payload=json  (gj:orr jon 'payload')
+  ;<  now=@da  bind:m  get-time:io
+  =/  next=action:orr  (revise:orr u.a title payload (sy about) due who now)
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
+  ;<  ~  bind:m  (note-by 'revise-action' & '' who)
   (pure:m &)
 ::  +do-set-doc: replace schema.json or policy.json whole. An unchanged
 ::  document is a no-op, not a write, so the beacon does not move.

@@ -920,6 +920,31 @@
   |=  [a=action want=@tas by=@t why=@t at=@da]
   ^-  action
   a(status want, note why, history (snoc history.a [at want by]))
+::  +revise: the owner's note applied to a proposed action: the four
+::  fields the note can change, replaced whole; the id, the status and
+::  the history stay, with one step saying the owner revised it. The
+::  status does not move, so the transition table has no say.
+::
+++  revise
+  |=  [a=action title=@t payload=json about=(set bid) due=(unit @da) by=@t now=@da]
+  ^-  action
+  a(title title, payload payload, about about, due due, history (snoc history.a [now %revised by]))
+::  +revise-action-op: the writer op that carries a revision's fields
+::
+++  revise-action-op
+  |=  [id=@ta title=@t payload=json about=(list @t) due=(unit @da) by=@t]
+  ^-  json
+  %-  pairs:enjs:format
+  %-  zing
+  :~  :~  ['op' s+'revise-action']
+          ['id' s+id]
+          ['title' s+title]
+          ['payload' payload]
+          ['about' a+(turn about |=(x=@t `json`s+x))]
+          ['by' s+by]
+      ==
+      ?~(due ~ ~[['due' s+(en-iso u.due)]])
+  ==
 ::  +ring: append to a JSON array and keep the last max entries
 ::
 ++  ring

@@ -1034,6 +1034,19 @@
     (expect-eq !>('') !>(note.chat))
     (expect-eq !>('') !>(note.task))
   ==
+++  test-revise
+  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+  =/  got  (revise:orr m 'Tell Rose and Susan' (jo '{"via": "chat", "to": "person/rose", "text": "hi both"}') (sy ~['person/rose' 'person/susan-egan']) `(add now ~d1) 'user' (add now ~m5))
+  =/  op=json  (revise-action-op:orr 'a1' 'T' (jo '{}') ~['person/rose'] ~ 'user')
+  ;:  weld
+    (expect-eq !>('Tell Rose and Susan') !>(title.got))
+    (expect-eq !>(%proposed) !>(status.got))
+    (expect-eq !>(2) !>((lent history.got)))
+    (expect-eq !>([%revised 'user']) !>([status by]:(rear history.got)))
+    (expect-eq !>(`(add now ~d1)) !>(due.got))
+    (expect-eq !>('revise-action') !>((gs:orr op 'op')))
+    (expect-eq !>('a1') !>((gs:orr op 'id')))
+  ==
 ::  the first calendar op on an id, the first writer op of a kind
 ++  find-by
   |=  [l=(list json) id=@t]
