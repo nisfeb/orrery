@@ -478,6 +478,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
         status = 200
         if self.path.endswith('/setWebhook'):
             out = {'ok': True, 'result': True, 'description': 'Webhook was set'}
+        elif self.path.endswith('/getWebhookInfo'):
+            out = {'ok': True, 'result': {'url': 'http://localhost:8080/apps/orrery/telegram', 'pending_update_count': 2, 'max_connections': 1, 'last_error_date': 1789900000, 'last_error_message': 'Connection refused'}}
         elif self.path.startswith('/bot123:abc/'):
             out = {'ok': True, 'result': {'user': {'id': 1001}}}
         elif self.path.endswith('/decisions'):
@@ -738,6 +740,8 @@ code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
 check('setWebhook carried the public url, the secret, the update kinds and one connection', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret-abcdef' and sw[-1].get('allowed_updates') == ['message', 'business_message'] and sw[-1].get('max_connections') == 1, sw[-1:])
+code, d = curl('GET', API + '/telegram/webhook')
+check('what Telegram holds is read through the ship, never the token', code == 200 and dictish(d).get('url') == 'http://localhost:8080/apps/orrery/telegram' and dictish(d).get('pending_update_count') == 2 and dictish(d).get('last_error_message') == 'Connection refused' and '123:abc' not in json.dumps(d), (code, d))
 curl('PUT', API + '/telegram', {'public_url': 'http://localhost:8080/'})
 time.sleep(0.5)
 curl('POST', API + '/telegram/webhook')

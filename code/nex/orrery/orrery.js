@@ -266,7 +266,7 @@
       '<p><label class="field">gate (hundredths) <input name="gate" value="' + esc(t.gate != null ? t.gate : '') + '"></label> ' +
       '<label class="field">escalate (hundredths) <input name="escalate" value="' + esc(t.escalate != null ? t.escalate : '') + '"></label> ' +
       '<label class="field">messages per day at most <input name="max_daily_messages" value="' + esc(t.max_daily_messages != null ? t.max_daily_messages : '') + '"></label></p>' +
-      '<p><button data-save-telegram="1">save telegram</button><button data-webhook="1">register the webhook</button></p></div>';
+      '<p><button data-save-telegram="1">save telegram</button><button data-webhook="1">register the webhook</button><button data-webhook-info="1">what Telegram holds</button></p><p class="muted" id="webhook-info"></p></div>';
     if (last.at) {
       out += '<p class="muted">Last update ' + esc(String(last.update_id)) + ' at ' + fmtTime(last.at) + ' from ' + esc(last.from || '') + ' in ' + esc(last.chat || '') + ': ' + esc(last.outcome || '') + '. Read today: ' + (last.read_today || 0) + '.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
@@ -473,6 +473,16 @@
     } else if (b.dataset.webhook) {
       say('asking Telegram to send updates here');
       post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.webhookInfo) {
+      say('asking Telegram');
+      api('/telegram/webhook').then(function (d) {
+        var el = document.getElementById('webhook-info');
+        if (!el) return;
+        var when = d.last_error_date ? new Date(d.last_error_date * 1000).toISOString().replace('T', ' ').slice(0, 19) : '';
+        el.textContent = 'Telegram holds url ' + (d.url || '(none: not registered)') + '; ' + (d.pending_update_count || 0) + ' updates waiting' +
+          (d.last_error_message ? '; last delivery error ' + when + ': ' + d.last_error_message : '; no delivery error') + '.';
+        say('');
+      }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.makeSecret) {
       // a fresh secret: 32 random bytes as hex, in the field until saved
       var bytes = new Uint8Array(32);

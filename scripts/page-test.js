@@ -141,6 +141,7 @@ const tgLast = { at: '2026-09-20T13:00:00Z', update_id: 7, chat: '1001', from: '
 const tgSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast);
 ok('the telegram card follows reconcile with the token masked and the secret wanted', tgSettings.indexOf('<h2>Reconcile</h2>') < tgSettings.indexOf('<h2>Telegram</h2>') && tgSettings.includes('a token is set') && tgSettings.includes('no secret set') && !tgSettings.includes('123:abc'));
 ok('the card holds chats, people, thresholds and the cap', tgSettings.includes('name="chats" value="1001"') && tgSettings.includes('&quot;1001&quot;: &quot;person/me&quot;') && tgSettings.includes('name="gate" value="30"') && tgSettings.includes('name="max_daily_messages" value="500"'));
+ok('the card asks Telegram what it holds', tgSettings.includes('data-webhook-info="1"') && tgSettings.includes('id="webhook-info"'));
 ok('the card offers save and register', tgSettings.includes('data-save-telegram="1"') && tgSettings.includes('data-webhook="1"'));
 ok('the card offers to make a secret', tgSettings.includes('data-make-secret="1"'));
 ok('the last update is summarised', tgSettings.includes('Last update 7') && tgSettings.includes('facts') && tgSettings.includes('Read today: 3') && tgSettings.includes('gate: 90, read'));

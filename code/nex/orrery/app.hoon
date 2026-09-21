@@ -702,6 +702,7 @@
   ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))         (own (serve-set-telegram eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
   ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (own (serve-set-webhook eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   (own (serve-webhook-info eyre-id))
   ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-telegram-wake eyre-id))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
@@ -1670,6 +1671,33 @@
   =/  resp=json  (fall (de:json:html body.got) [%o ~])
   %^  send-json  eyre-id  ?:(=(200 status.got) 200 502)
   (pairs:enjs:format ~[['ok' (gj:orr resp 'ok')] ['description' (gj:orr resp 'description')]])
+::  +serve-webhook-info: Telegram's side of the story: the url it holds
+::  for this bot, how many updates wait, and its last delivery error,
+::  so a registration that did not take is read off the card rather
+::  than guessed at (2026-09-21). The token is used and never shown.
+::
+++  serve-webhook-info
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'telegram.json'))
+  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
+  ?:  =('' token.cfg)  (send-err eyre-id 400 'no token set')
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (get-json (rap 3 api-url.cfg '/bot' token.cfg '/getWebhookInfo' ~) ~s30 %webhook-info)
+  =/  resp=json  (fall (de:json:html body.got) [%o ~])
+  =/  r=json  (gj:orr resp 'result')
+  %^  send-json  eyre-id  ?:(=(200 status.got) 200 502)
+  %-  pairs:enjs:format
+  :~  ['ok' (gj:orr resp 'ok')]
+      ['description' (gj:orr resp 'description')]
+      ['url' (gj:orr r 'url')]
+      ['pending_update_count' (gj:orr r 'pending_update_count')]
+      ['last_error_date' (gj:orr r 'last_error_date')]
+      ['last_error_message' (gj:orr r 'last_error_message')]
+      ['max_connections' (gj:orr r 'max_connections')]
+      ['allowed_updates' (gj:orr r 'allowed_updates')]
+  ==
 ::  +serve-telegram-wake: the owner pokes the reader: a live one drains
 ::  the inbox now (an update the model could not read waits on a five
 ::  minute timer otherwise), a crashed one restarts on the poke, since

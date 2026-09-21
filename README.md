@@ -313,6 +313,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET` and `PUT /telegram` | the reader's settings, the token and secret masked as `token_set` and `secret_set`; a blank field on PUT keeps the stored value, a JSON `null` clears it, a secret under 16 bytes is refused; owner only |
 | `GET /telegram/last` | the last update handled: outcome, notes, messages read today |
 | `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; owner only |
+| `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; owner only |
 | `POST /telegram/wake` | wake the reader: drain the inbox now, an update kept through a model outage included, or restart a reader that crashed; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
 | `GET /reconcile/last` | what the last run did: time rows fixed, activities made, people made, participants added, merges proposed and run, retired, pruned |
