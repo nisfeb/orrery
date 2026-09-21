@@ -4301,8 +4301,19 @@
 ::  one-off (kind once) allday event when its times are whole days,
 ::  else a timed one from starts to ends (or an hour) in zone, the
 ::  calendar's default when zone is ''. ~ when a calendar action's
-::  starts does not parse.
+::  starts does not parse. The calendar keeps start_ms and end_ms as
+::  the zone's own clock encoded as if it were UTC (its page builds
+::  them with Date.UTC from the local fields), so both are shifted
+::  into the zone's clock first; whole days are judged on that clock
+::  too. A zone the ship cannot render is passed through unshifted.
 ::
+++  wall-of
+  |=  [at=@da tz=@t]
+  ^-  @da
+  =/  z=(unit zone)  (~(get by zones) tz)
+  ?~  z  at
+  =/  shift=@dr  (mul ?:((in-dst u.z at) dst.u.z std.u.z) ~m1)
+  ?:(west.u.z (sub at shift) (add at shift))
 ++  event-json
   |=  [id=@ta a=action zone=@t]
   ^-  (unit json)
@@ -4325,8 +4336,8 @@
     ?~(due.a ~ ~[['due_ms' (numb:enjs:format (ms-of u.due.a))]])
   =/  s=(unit @da)  (gt payload.a 'starts')
   ?~  s  ~
-  =/  start=@da  u.s
-  =/  end=@da  (fall (gt payload.a 'ends') (add start ~h1))
+  =/  start=@da  (wall-of u.s zone)
+  =/  end=@da  (wall-of (fall (gt payload.a 'ends') (add u.s ~h1)) zone)
   =/  loc=@t  (gs payload.a 'location')
   =/  meta=json
     (pairs:enjs:format ?:(=('' loc) meta-base (snoc meta-base ['location' s+loc])))

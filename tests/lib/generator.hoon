@@ -882,7 +882,10 @@
   =/  c2  (snag 6 exec-acts)
   =/  t1  (snag 7 exec-acts)
   =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York'))
-  =/  aj=json  (need (event-json:orr id.c2 a.c2 'America/New_York'))
+  =/  aj=json  (need (event-json:orr id.c2 a.c2 ''))
+  ::  a whole day on New York's clock starts at 04:00Z in summer
+  =/  ny=action:orr  a.c2(payload (jo '{"title": "Field day", "starts": "2026-10-03T04:00:00Z", "ends": "2026-10-04T04:00:00Z"}'))
+  =/  nj=json  (need (event-json:orr id.c2 ny 'America/New_York'))
   =/  tj=json  (need (event-json:orr id.t1 a.t1 'America/New_York'))
   =/  meta=json  (gj:orr ej 'meta')
   ;:  weld
@@ -893,13 +896,18 @@
     (expect-eq !>('c1') !>((gs:orr meta 'orrery')))
     (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr meta 'tags'))))
     (expect-eq !>('the usual place') !>((gs:orr meta 'location')))
-    (expect-eq !>(1.790.366.400.000) !>((need (gn:orr ej 'start_ms'))))
-    (expect-eq !>(1.790.373.600.000) !>((need (gn:orr ej 'end_ms'))))
+    ::  20:00Z on 2026-09-25 is 16:00 on New York's summer clock, and
+    ::  the calendar wants that clock encoded as if it were UTC
+    (expect-eq !>(1.790.352.000.000) !>((need (gn:orr ej 'start_ms'))))
+    (expect-eq !>(1.790.359.200.000) !>((need (gn:orr ej 'end_ms'))))
+    (expect-eq !>(1.790.366.400.000) !>((need (gn:orr (need (event-json:orr id.c1 a.c1 '')) 'start_ms'))))
     (expect-eq !>('to') !>((gs:orr ej 'fin')))
     (expect-eq !>('America/New_York') !>((gs:orr ej 'zone')))
     (expect-eq !>('allday') !>((gs:orr aj 'cat')))
     (expect-eq !>(1) !>((need (gn:orr aj 'span_days'))))
     (expect-eq !>(1.790.985.600.000) !>((need (gn:orr aj 'start_ms'))))
+    (expect-eq !>('allday') !>((gs:orr nj 'cat')))
+    (expect-eq !>(1.790.985.600.000) !>((need (gn:orr nj 'start_ms'))))
     (expect-eq !>('todo') !>((gs:orr tj 'cat')))
     (expect-eq !>('Call the shop') !>((gs:orr (gj:orr tj 'meta') 'name')))
     (expect-eq !>('about the brakes') !>((gs:orr (gj:orr tj 'meta') 'note')))
