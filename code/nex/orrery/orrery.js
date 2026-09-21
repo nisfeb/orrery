@@ -249,6 +249,27 @@
     }
     return out + '</div>';
   }
+  // the executor card: what the ship's last pass did (messages sent,
+  // events and todos placed, the todo list kept in step), the failures
+  // with their notes, the desks link could not find, and a wake button;
+  // there are no settings, since the executor uses the reader's token and
+  // the desks the owner consented to on the permits page
+  function executorCard(last) {
+    last = last || {};
+    var out = '<div class="card"><h2>Executor</h2><p class="muted">The ship carries out approved actions itself: a message via telegram through the bot, ' +
+      'via mail through auspex to the person\'s ship, a calendar action onto the calendar, a task into its todo list; and it keeps the todo list and the tasks ' +
+      'in step both ways. A message via chat is left for the client that sends chat.</p><p><button data-exec-wake="1">wake the executor</button></p>';
+    if (last.at) {
+      out += '<p class="muted">Last looked ' + fmtTime(last.at) + '.' + (last.acted_at ? ' Last acted ' + fmtTime(last.acted_at) + ': ' +
+        (last.claimed || 0) + ' claimed, ' + (last.sent || 0) + ' sent, ' + (last.placed || 0) + ' placed, ' +
+        (last.ticked || 0) + ' todos ticked, ' + (last.deleted || 0) + ' deleted, ' + (last.moved || 0) + ' moved, ' +
+        (last.closed || 0) + ' tasks closed from the calendar, ' + (last.adopted || 0) + ' todos adopted.' : ' Nothing done yet.') + '</p>';
+      (last.failed || []).forEach(function (f) { out += '<p class="bad">failed: ' + esc(f.title || f.id || '') + ' <span class="muted">' + esc(f.note || '') + '</span></p>'; });
+      (last.missing || []).forEach(function (d) { out += '<p class="bad">The ' + esc(d) + ' desk is not installed: what it would carry out stays approved for another executor.</p>'; });
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
   // the telegram card: the reader's settings, the token and secret written
   // and never read back, the webhook registered from here, the last update
   function telegramCard(t, last) {
@@ -278,8 +299,8 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + telegramCard(telegram, telegramLast) +
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast) + telegramCard(telegram, telegramLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -400,7 +421,7 @@
     function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
     p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
@@ -480,6 +501,10 @@
       post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.wake) {
       post('/telegram/wake', {}).then(function () { say('reader woken; the card updates when it has read'); setTimeout(function () { refresh(true); }, 20000); }).catch(function (e) { say(e.message, true); });
+    } else if (b.dataset.execWake) {
+      // the pass follows within a second or two, so the card is read back soon after
+      say('waking the executor');
+      post('/exec/wake', {}).then(function () { say('executor woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 5000); }).catch(function (e) { say(e.message, true); });
     } else if (b.dataset.webhookInfo) {
       say('asking Telegram');
       api('/telegram/webhook').then(function (d) {

@@ -4,13 +4,17 @@ The HTTP gate for orrery: spec section 8, the stranded car, against a
 fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
 retracts and dismisses what an earlier run left."""
-import json, subprocess, sys, threading, time
+import json, subprocess, sys, threading, time, urllib.parse
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
 API = HOST + '/apps/orrery/api'
 INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 fails = []
+# the ids of the task actions this run files: the executor on the ship
+# places each one in the calendar's todo list, and the last section
+# deletes those todos so repeated runs do not pile them up
+MADE = []
 
 
 def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
@@ -242,6 +246,7 @@ code, a = curl('POST', API + '/act', prop)
 check('proposal answers 200', code == 200, (code, a))
 check('policy auto-approves a task', code == 200 and a['status'] == 'approved' and not a['existing'], a)
 AID = a['id'] if code == 200 else ''
+MADE.append(AID)
 code, acts = curl('GET', API + '/actions')
 check('the task is on the open list', code == 200 and isinstance(acts, list)
       and any(dictish(x).get('id') == AID for x in acts), acts)
@@ -517,6 +522,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 # so nothing here outlives the run for the other gates to trip over
 curl('POST', API + '/observe', {'bodies': [{'id': 'thing/gate-car', 'name': 'the gate car'}], 'observations': []})
 code, twin = curl('POST', API + '/act', {'kind': 'task', 'title': 'Open item for the gate car', 'about': ['thing/gate-car']})
+MADE.append(dictish(twin).get('id', ''))
 time.sleep(1)
 curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'moonshotai/kimi-k3', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'max_actions': 5, 'cooldown_minutes': 0, 'max_daily': 1000})
 time.sleep(1)
@@ -534,13 +540,20 @@ while time.time() < deadline:
     if isinstance(last, dict) and last.get('at') and last.get('at') != before_at and not last.get('skipped') and last.get('usage'):
         break
     time.sleep(2)
-check('the pass wrote its record, two filed', isinstance(last, dict) and last.get('filed') == 2 and last.get('dropped') == 2 and 'stub note' in ' '.join(last.get('notes', [])) and not last.get('error') and last.get('calls_today') >= 1, last)
+# the filing wakes a follow-up pass, which finds the two open and rewrites
+# the record a dozen seconds later; with the executor placing the two new
+# tasks as todos meanwhile, a poll into the busy ship can land after that,
+# so the two filed are read from whichever record stands
+notes = ' '.join(dictish(last).get('notes', []))
+filed_two = dictish(last).get('filed') == 2 and dictish(last).get('dropped') == 2 or (dictish(last).get('filed') == 0 and dictish(last).get('dropped') == 4 and all('dropped as already open or decided: ' + t in notes for t in (FRESH, FRESH2)))
+check('the pass wrote its record, two filed', isinstance(last, dict) and filed_two and 'stub note' in notes and not last.get('error') and last.get('calls_today') >= 1, last)
 _, hdrs, body = seen[0] if seen else ('', {}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
 code, acts = curl('GET', API + '/actions?status=open')
 mine = [a for a in acts if a.get('by') == 'generator' and a.get('title') in (FRESH, FRESH2)] if isinstance(acts, list) else []
 check('both surviving proposals are filed by generator with their why', len(mine) == 2 and sorted(a['payload'].get('why') for a in mine) == ['gate', 'gate too'], mine)
+MADE.extend(a['id'] for a in mine)
 code, d = curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/gate-car', 'attr': 'status', 'value': 'still writing', 'source': {'kind': 'user', 'id': 'gate'}}]}, timeout=20)
 check('the writer still answers after a pass that filed two', code == 200, (code, d))
 # filing a proposal is itself a change, so one more pass follows on its
@@ -697,6 +710,7 @@ me = dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get(
 check('the owner\'s status stands, checked as a circumstance', me.get('value') == 'stranded, waiting for a tow', me)
 acts = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if a.get('title') == 'Call a tow for the gate car']
 check('the task was filed by telegram', len(acts) == 1 and acts[0].get('by') == 'telegram', acts)
+MADE.extend(a['id'] for a in acts)
 # the urgent pass runs on the generator's own fiber after the poke; its record follows the reader's
 deadline = time.time() + 90
 while time.time() < deadline:
@@ -772,7 +786,9 @@ for a in curl('GET', API + '/actions?status=proposed')[1] or []:
 for o in dictish(curl('GET', API + '/body/person/me')[1]).get('observations', []):
     if o['source']['id'].startswith('telegram/') and o['status'] != 'retracted':
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
+# shutdown ends serving but keeps the socket bound; the executor section binds the port again
 srv.shutdown()
+srv.server_close()
 
 # ---- reconcile: the passes of reconcile.py on the ship, on POST /reconcile ----
 OVER = 'situation/2026-09-01-gate-over'
@@ -855,6 +871,223 @@ code, d = curl('GET', API + '/telegram')
 check('a write without the token keeps it', dictish(d).get('token_set') is True and sorted(dictish(d).get('chats') or []) == ['1001', '1002'], d)
 code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
 check('a short secret is refused', code == 400, (code, d))
+
+# ---- the executor (version 34): approved actions carried out on the ship, the todo list kept in step ----
+# the stub stands in for Telegram again (the telegram section shut it
+# down); the calendar and auspex are the real desks on wex, installed
+# and their roads consented, so the record's missing list reads empty
+# and every path is the real one. A message via chat is Talon's and is
+# left approved.
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+curl('PUT', API + '/telegram', {'token': '123:abc', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT})
+XRUN = secrets.token_hex(3)
+CAL_BASE = '/apps/shell.shell/desks/calendar.desk/desk/data/calendar.calendar_app'
+
+
+def cal_poke(action):
+    return curl('POST', HOST + '/grubbery/api/poke' + CAL_BASE + '/calendar.calendar?blot=/json', action)
+
+
+def todos():
+    code, ev = curl('GET', HOST + '/apps/calendar/events.json')
+    return [e for e in (ev if isinstance(ev, list) else []) if dictish(e).get('cat') == 'todo']
+
+
+def todo_for(aid, bound=30, gone=False):
+    #  the todo carrying the action id, waited for (or waited to go)
+    deadline = time.time() + bound
+    while True:
+        hits = [t for t in todos() if dictish(t.get('meta')).get('orrery') == aid]
+        if bool(hits) != gone or time.time() >= deadline:
+            return hits[0] if hits else None
+        time.sleep(2)
+
+
+def is_open(aid):
+    code, acts = curl('GET', API + '/actions?status=open')
+    return any(dictish(a).get('id') == aid for a in (acts if isinstance(acts, list) else []))
+
+
+def action(aid):
+    code, acts = curl('GET', API + '/actions?status=all')
+    hits = [a for a in (acts if isinstance(acts, list) else []) if dictish(a).get('id') == aid]
+    return hits[0] if hits else {}
+
+
+def settled(aid, bound=30):
+    #  the action once it has left the open list, or as it stands at the bound
+    deadline = time.time() + bound
+    while time.time() < deadline and is_open(aid):
+        time.sleep(2)
+    return action(aid)
+
+
+def steps(a):
+    return [(h.get('status'), h.get('by')) for h in dictish(a).get('history', [])]
+
+
+def exec_last():
+    return dictish(curl('GET', API + '/exec/last')[1])
+
+
+def propose(kind, title, **more):
+    body = dict(kind=kind, title=title, by='api-matrix')
+    body.update(more)
+    code, d = curl('POST', API + '/act', body)
+    return dictish(d).get('id', '') if code == 200 else ''
+
+
+def approve(aid):
+    return curl('POST', API + f'/actions/{aid}', {'status': 'approved'})[0]
+
+
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody']:
+    curl('DELETE', API + '/body/' + b)
+code, d = observe(
+    [{'id': 'person/gate-tg', 'name': 'the gate telegram person'}, {'id': 'person/gate-ship', 'name': 'the gate ship person'}, {'id': 'person/gate-nobody', 'name': 'the gate person with no channel'}],
+    [obs('person/gate-tg', 'telegram', '1001', now - timedelta(minutes=1), USER),
+     obs('person/gate-ship', 'ship', '~wex', now - timedelta(minutes=1), USER)])
+check('the three people the executor addresses land', code == 200 and all_ok(d, 'bodies', 3) and all_ok(d, 'observations', 2), (code, d))
+code, d = curl('GET', API + '/exec/last', jar=None)
+check('the executor record is the owner\'s', code == 403, (code, d))
+code, d = curl('POST', API + '/exec/wake', jar=None)
+check('the wake is the owner\'s', code == 403, (code, d))
+last = exec_last()
+check('the record carries every count, the failures, the missing desks and the notes', all(k in last for k in ('at', 'acted_at', 'claimed', 'sent', 'placed', 'failed', 'ticked', 'deleted', 'moved', 'closed', 'adopted', 'missing', 'notes')), last)
+check('the calendar and auspex are found on wex and their roads open', last.get('missing') == [] and last.get('notes') == [], last)
+# a message via telegram: claimed by the ship, one sendMessage through the stub, done with the chat
+n = len(seen)
+TGID = propose('message', 'Gate telegram %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-tg', 'text': 'the gate says hello %s' % XRUN})
+check('a message via telegram is proposed and approved', bool(TGID) and approve(TGID) == 200, TGID)
+a = settled(TGID)
+check('the ship claimed it and reported done with the chat', a.get('status') == 'done' and a.get('note') == 'sent to 1001' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
+check('the stub saw one sendMessage under the token with the chat id and the text', len(sent) == 1 and sent[0][0] == '/bot123:abc/sendMessage' and sent[0][1].get('chat_id') == '1001' and sent[0][1].get('text') == 'the gate says hello %s' % XRUN, sent)
+last = exec_last()
+check('the record counts the claim and the send, and says when', last.get('claimed') == 1 and last.get('sent') == 1 and last.get('failed') == [] and bool(last.get('acted_at')), last)
+# a message to a person with no telegram attribute: claimed, then failed with the planner's note
+NOID = propose('message', 'Gate telegram nobody %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-nobody', 'text': 'nobody hears this'})
+approve(NOID)
+a = settled(NOID)
+check('a person with no telegram attribute fails with the note, by the ship', a.get('status') == 'failed' and a.get('note') == 'person/gate-nobody has no telegram attribute' and steps(a)[-1] == ('failed', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+check('nothing was sent for it', len([p for p, _, _ in seen[n:] if p.endswith('/sendMessage')]) == 1, [p for p, _, _ in seen[n:]])
+last = exec_last()
+check('the record lists the failure with its title and note', [(f.get('id'), f.get('title'), f.get('note')) for f in last.get('failed', [])] == [(NOID, 'Gate telegram nobody %s' % XRUN, 'person/gate-nobody has no telegram attribute')] and last.get('sent') == 0, last)
+# a message via mail: a send poke to auspex's writer, which probes its peer before it lands
+MAILID = propose('message', 'Gate mail %s' % XRUN, payload={'via': 'mail', 'to': 'person/gate-ship', 'text': 'a letter from the gate %s' % XRUN})
+approve(MAILID)
+a = settled(MAILID, bound=90)
+check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ~wex' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+code, box = curl('GET', HOST + '/apps/auspex/api/inbox')
+threads = [t for t in dictish(box).get('threads', []) if dictish(t).get('subject') == 'Gate mail %s' % XRUN]
+check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == '~wex' and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
+# a message via chat is Talon's: the ship never claims it
+CHATID = propose('message', 'Gate chat %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-ship', 'text': 'a DM the ship does not send'})
+approve(CHATID)
+time.sleep(8)
+a = action(CHATID)
+check('a message via chat is left approved for the client that sends chat', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
+curl('POST', API + f'/actions/{CHATID}', {'status': 'dismissed', 'note': 'gate'})
+# a calendar action: an event on the calendar, timed, carrying the action id
+EV_START = (now + timedelta(days=3)).replace(hour=14, minute=0, second=0)
+EVID = propose('calendar', 'Gate event %s' % XRUN, payload={'title': 'Gate event %s' % XRUN, 'starts': iso(EV_START), 'ends': iso(EV_START + timedelta(minutes=90)), 'location': 'the gate'})
+approve(EVID)
+a = settled(EVID)
+check('an approved calendar action is done, on the calendar', a.get('status') == 'done' and a.get('note') == 'on the calendar' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+last = exec_last()
+check('the record counts the placing', last.get('placed') == 1 and last.get('claimed') == 1, last)
+# the calendar's store takes the poke after acking it, so the event can land a moment after the action reads done
+deadline = time.time() + 20
+events = []
+while time.time() < deadline and not events:
+    events = [e for e in (curl('GET', HOST + '/apps/calendar/events.json')[1] or []) if dictish(dictish(e).get('meta')).get('orrery') == EVID]
+    if not events:
+        time.sleep(2)
+ev = dictish(curl('GET', HOST + '/apps/calendar/event.json?id=' + urllib.parse.quote(events[0]['id'] if events else 'none', safe=''))[1])
+check('the event reads back through the calendar: timed, from starts to ends, at the location, tagged orrery',
+      len(events) == 1 and ev.get('cat') == 'timed' and ev.get('kind') == 'once' and ev.get('fin') == 'to'
+      and ev.get('start_ms') == int(EV_START.timestamp() * 1000) and ev.get('end_ms') == int((EV_START + timedelta(minutes=90)).timestamp() * 1000)
+      and dictish(ev.get('meta')) == {'name': 'Gate event %s' % XRUN, 'orrery': EVID, 'tags': ['orrery'], 'location': 'the gate'}, ev)
+EVENT_ID = events[0]['id'] if events else ''
+# a task: placed in the todo list without a claim, and done when the owner ticks it in the calendar
+TASK_DUE = (now + timedelta(days=4)).replace(hour=15, minute=0, second=0)
+TASKID = propose('task', 'Gate task %s' % XRUN, due=iso(TASK_DUE), payload={'notes': 'from the gate'})
+MADE.append(TASKID)
+t = todo_for(TASKID)
+check('an approved task becomes a todo carrying the action id, its notes, its due and the tag',
+      t is not None and t.get('done') is False and t.get('due_ms') == int(TASK_DUE.timestamp() * 1000)
+      and dictish(t.get('meta')) == {'name': 'Gate task %s' % XRUN, 'orrery': TASKID, 'tags': ['orrery'], 'note': 'from the gate'}, t)
+a = action(TASKID)
+check('the task itself stays approved, with no claim', a.get('status') == 'approved' and steps(a) == [('proposed', 'api-matrix'), ('approved', 'policy')], steps(a))
+check('a second pass does not place it again', len([x for x in todos() if dictish(x.get('meta')).get('orrery') == TASKID]) == 1, None)
+code, d = cal_poke({'action': 'done-event', 'id': t['id'] if t else 'none'})
+a = settled(TASKID)
+check('ticked in the calendar, the task is done by the calendar', a.get('status') == 'done' and a.get('note') == 'ticked in the calendar' and steps(a)[-1] == ('done', 'calendar'), (code, a.get('status'), a.get('note'), steps(a)))
+last = exec_last()
+check('the record counts the close', last.get('closed') == 1, last)
+# a task the owner marks done on the page: section 6's task, ticked by the mirror
+t = todo_for(AID)
+check('the task done on the page has its todo ticked', t is not None and t.get('done') is True, t)
+# a task dismissed on the page: its todo goes
+DISID = propose('task', 'Gate dismissed task %s' % XRUN, payload={'notes': 'to be dismissed'})
+MADE.append(DISID)
+t = todo_for(DISID)
+check('the second task is placed too', t is not None and t.get('done') is False, t)
+curl('POST', API + f'/actions/{DISID}', {'status': 'dismissed', 'note': 'gate'})
+t = todo_for(DISID, gone=True)
+check('dismissed on the page, its todo is deleted', t is None, t)
+last = exec_last()
+check('the record counts the deletion', last.get('deleted') == 1, last)
+# a todo the owner typed in the calendar is adopted as an approved task, and the todo gains the mark
+HAND_DUE = (now + timedelta(days=5)).replace(hour=12, minute=0, second=0)
+code, d = cal_poke({'action': 'add-event', 'cat': 'todo', 'meta': {'name': 'Gate hand-typed todo %s' % XRUN, 'note': 'typed by hand'}, 'due_ms': int(HAND_DUE.timestamp() * 1000)})
+check('a todo typed through the calendar is taken', code == 200, (code, d))
+deadline = time.time() + 30
+hand = []
+while time.time() < deadline and not hand:
+    time.sleep(2)
+    hand = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if dictish(a).get('title') == 'Gate hand-typed todo %s' % XRUN]
+a = hand[0] if hand else {}
+HANDID = a.get('id', '')
+MADE.append(HANDID)
+check('it appears as an approved task filed by the calendar, with its note and due',
+      a.get('kind') == 'task' and a.get('status') == 'approved' and a.get('by') == 'calendar' and a.get('due') == iso(HAND_DUE)
+      and dictish(a.get('payload')).get('notes') == 'typed by hand' and steps(a) == [('proposed', 'calendar'), ('approved', 'policy')], a)
+t = todo_for(HANDID)
+check('the todo gains the action id and the tag, and keeps its name, note and due',
+      t is not None and dictish(t.get('meta')) == {'name': 'Gate hand-typed todo %s' % XRUN, 'orrery': HANDID, 'tags': ['orrery'], 'note': 'typed by hand'} and t.get('due_ms') == int(HAND_DUE.timestamp() * 1000), t)
+last = exec_last()
+check('the record counts the adoption', last.get('adopted') == 1, last)
+check('a hand-typed todo is adopted once, not placed again', len([x for x in todos() if dictish(dictish(x.get('meta'))).get('name') == 'Gate hand-typed todo %s' % XRUN]) == 1, None)
+curl('POST', API + f'/actions/{HANDID}', {'status': 'dismissed', 'note': 'gate'})
+check('dismissing the adopted task deletes its todo', todo_for(HANDID, gone=True) is None, None)
+# the owner's wake: the record's time moves within the second. The
+# deletion's pass and the idle one that follows it are over in a few
+# seconds, so the record read before the wake is the one the wake keeps
+time.sleep(6)
+before = exec_last()
+code, d = curl('POST', API + '/exec/wake')
+deadline = time.time() + 20
+while time.time() < deadline and exec_last().get('at') == before.get('at'):
+    time.sleep(1)
+after = exec_last()
+check('the owner wakes the executor and the record follows', code == 200 and dictish(d).get('ok') is True and after.get('at') != before.get('at'), (code, d, before.get('at'), after.get('at')))
+check('an idle pass keeps the last active pass\'s counts and acted_at', after.get('acted_at') == before.get('acted_at') and after.get('deleted') == before.get('deleted'), (before, after))
+# teardown: the event and the todos this run's own actions made, and the three people
+if EVENT_ID:
+    cal_poke({'action': 'del-event', 'id': EVENT_ID})
+MADE = [m for m in MADE if m]
+for t in todos():
+    if dictish(t.get('meta')).get('orrery') in MADE:
+        cal_poke({'action': 'del-event', 'id': t['id']})
+time.sleep(2)
+left = [t['id'] for t in todos() if dictish(t.get('meta')).get('orrery') in MADE]
+check('no todo of this run\'s own tasks is left on the calendar', left == [], left)
+for b in ['person/gate-tg', 'person/gate-ship', 'person/gate-nobody']:
+    curl('DELETE', API + '/body/' + b)
+srv.shutdown()
+srv.server_close()
 
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
