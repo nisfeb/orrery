@@ -213,6 +213,8 @@ Version 34 raises a consent prompt again, since it asks for three lines it did n
 3. Switch Talon's task mirror and its Telegram and mail senders off (the Talon release made in step with version 34; `via: chat` stays Talon's). Two mirrors over one todo list place and tick twice, and two senders send twice, so this is not a step to leave for tomorrow. The Python bot's delivery loop is off already once the webhook is registered.
 4. Tick a todo in the calendar and watch its task go `done` on the page, and approve one message, to see the record's counts move.
 
+Version 36 raises no new consent prompt, and there is nothing to approve on `/apps/grubbery/permits`. The starter schema in the lib is only a fall; ricsul's stored `schema.json` is its own document, so after the pull the controller merges the two changed notes into it through `PUT /api/schema`, word for word: `payloads.message.via` becomes `required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none`, and `payloads.message.text` becomes `required: the message, short, in the owner's own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.` so the models on the live ship read the new notes at once. The Talon agent also gets rule 17 of `orrery-utils/docs/writing-a-client.md`, the note-at-approval contract, since Talon is the client that shows the refine box's twin on its own surface.
+
 Opening it to beta testers without publishing it:
 
 1. Make a usergroup for them on ricsul, the way `/family` was made: a `<name>.grp` directory under `/sys/ames/usergroups` with the testers' ships in `who.ships`.
