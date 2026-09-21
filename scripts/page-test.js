@@ -89,6 +89,13 @@ ok('an empty inbox says so', render.inbox([]).includes('Nothing waiting'));
 ok('a proposed action has a refine box and a button with its id', inboxHtml.includes('<input data-refine-text="p1" placeholder="a note for this action">') && inboxHtml.includes('<button data-refine="p1">refine</button>'));
 ok('an approved or claimed action has no refine box', !inboxHtml.includes('data-refine="a1"') && !inboxHtml.includes('data-refine-text="a1"') && !inboxHtml.includes('data-refine="c1"'));
 ok('the refine note is empty on render', inboxHtml.includes('<span class="muted" data-refine-note="p1"></span>'));
+const kindsHtml = render.inbox([
+  { id: 'n1', kind: 'note', title: 'A note', status: 'proposed', proposed: '2026-09-17T02:11:00Z', by: 'mcp', about: [], history: [] },
+  { id: 'm1', kind: 'merge', title: 'Merge two', status: 'proposed', proposed: '2026-09-17T02:11:00Z', by: 'mcp', about: [], history: [] },
+  { id: 't1', kind: 'task', title: 'A task', status: 'proposed', proposed: '2026-09-17T02:11:00Z', by: 'mcp', about: [], history: [] },
+  { id: 'e1', kind: 'calendar', title: 'An event', status: 'proposed', proposed: '2026-09-17T02:11:00Z', by: 'mcp', about: [], history: [] },
+]);
+ok('only a proposed task, calendar event or message gets a refine box', kindsHtml.includes('data-refine="t1"') && kindsHtml.includes('data-refine="e1"') && !kindsHtml.includes('data-refine="n1"') && !kindsHtml.includes('data-refine="m1"') && kindsHtml.includes('data-move="n1:approved"'));
 
 const settings = render.settings({ kinds: { person: { attrs: ['status'] } } }, { auto: ['task'], push: 'proposed', retention_days: 365, sensitive: ['health'] });
 ok('the schema is editable JSON', settings.includes('id="schema"') && settings.includes('&quot;person&quot;'));
@@ -166,6 +173,11 @@ ok('a refresh holds while a form is dirty or focused, and only the owner\'s own 
   && src.includes('dirty = false; setTimeout(function () { refresh(true); }, 300);')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });")
   && !src.includes("setInterval(function () { if (!document.hidden) refresh(true); }"));
+ok('a refine holds the row\'s move buttons while it runs and frees them on a refusal or an error',
+  src.indexOf("holdMoves(true);") > src.indexOf("b.dataset.refine) {") && src.indexOf("holdMoves(true);") < src.indexOf("post('/actions/' + seg(rid) + '/refine'")
+  && src.includes("view.querySelectorAll('[data-move^=\"' + rid + ':\"]')")
+  && src.indexOf("holdMoves(false);", src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")) > 0
+  && src.slice(src.indexOf(".catch(function (e) { var el = noteOf();")).split('\n')[0].includes('holdMoves(false);'));
 ok('a refine leaves the box before the click, keeps the page-wide dirty flag on submit, and fetches the revised row on success',
   src.includes("if (btn) { e.preventDefault(); el.blur(); btn.focus(); btn.click(); }")
   && src.includes("if (inp) { inp.value = ''; inp.blur(); }")

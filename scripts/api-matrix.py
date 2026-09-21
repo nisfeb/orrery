@@ -975,6 +975,10 @@ REFINE_CANNED = {
     'turn the porch light on': completion({'refused': 'a message cannot switch a light; propose a home action instead'}),
     'send this as mail': completion({'action': {'title': 'Gate mail by refine %s' % XRUN, 'payload': {'via': 'mail', 'to': 'person/gate-shipped', 'text': 'a letter asked for at approval %s' % XRUN}, 'about': ['person/gate-shipped'], 'due': None},
                                      'extras': [], 'refused': ''}),
+    # a key whose actions name only message asks for a task extra: the
+    # revision lands and the extra is dropped with a note
+    'also add a todo': completion({'action': {'title': 'Tell Rose and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped'], 'due': None},
+                                   'extras': [{'kind': 'task', 'title': 'Gate: todo by key %s' % XRUN, 'payload': {'notes': 'outside the key'}, 'about': ['person/gate-shipped'], 'due': '2099-01-01T12:00:00Z'}], 'refused': ''}),
 }
 
 
@@ -1074,9 +1078,24 @@ code, d = refine(SHIPID, 'include susan in this', token=dictish(taskkey).get('to
 check('a key whose actions lack the kind does not see the action', code == 404 and dictish(d).get('note') == 'no such action', (code, d))
 code, d = refine(SHIPID, 'include susan in this', token=dictish(rokey).get('token'))
 check('a read only key may not refine', code == 403 and dictish(d).get('note') == 'read only key', (code, d))
-for k in (taskkey, rokey):
+code, msgkey = curl('POST', API + '/clients', {'name': 'gate message key', 'by': 'gate-msg', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': True, 'sensitive': 'none'}})
+code, d = refine(SHIPID, 'also add a todo', token=dictish(msgkey).get('token'))
+d = dictish(d)
+a = action(SHIPID)
+check('a key refines within its actions: the revision lands by the key, and an extra outside its actions is dropped with a note, not filed',
+      code == 200 and d.get('ok') is True and d.get('extras') == [] and d.get('note') == 'dropped extra Gate: todo by key %s: not in this key\'s actions' % XRUN
+      and steps(a)[-1] == ('revised', 'gate-msg') and not any(dictish(x).get('title') == 'Gate: todo by key %s' % XRUN for x in curl('GET', API + '/actions?status=all')[1]), (code, d, steps(a)))
+for k in (taskkey, rokey, msgkey):
     if dictish(k).get('id'):
         curl('DELETE', API + '/clients/' + dictish(k)['id'])
+# only the reader's three kinds are refined: a note has no shape a rewrite could be held to
+curl('PUT', API + '/policy', {'auto': ['task'], 'push': 'proposed', 'retention_days': 365})
+NOTEID = propose('note', 'Gate note %s' % XRUN, payload={'text': 'a note the gate refines'})
+code, d = refine(NOTEID, 'make it shorter')
+check('a proposed note is not refined, with the reason as error and as note',
+      bool(NOTEID) and code == 409 and dictish(d).get('error') == 'only a task, a calendar event or a message can be refined' and dictish(d).get('note') == dictish(d).get('error'), (code, d, action(NOTEID).get('status')))
+curl('POST', API + f'/actions/{NOTEID}', {'status': 'dismissed', 'note': 'gate'})
+curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 # the channel set at approval stands: a chat message asked for as mail goes by mail, though its person has a ship
 MAILREFID = propose('message', 'Gate chat to mail %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-shipped', 'text': 'a DM until the owner says mail'})
 code, d = refine(MAILREFID, 'send this as mail')

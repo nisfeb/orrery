@@ -178,6 +178,7 @@
   }
 
   var MOVES = { proposed: ['approved', 'dismissed'], approved: ['done', 'failed', 'dismissed'], claimed: ['dismissed'] };
+  var REFINABLE = ['task', 'calendar', 'message'];
   // the claimant is the by of the last claimed step in the history
   function claimant(a) {
     var who = '';
@@ -200,7 +201,10 @@
       });
       out += '</div>';
       // A note under a proposed action refines it before approval (version 36).
-      if (a.status === 'proposed') {
+      // The ship refines the reader's three kinds and no other, since a merge
+      // or a home action has no payload shape a note could be held to; the
+      // three are the lib's reader-kinds, fixed there, so they are fixed here.
+      if (a.status === 'proposed' && REFINABLE.indexOf(a.kind) >= 0) {
         out += '<p class="refine"><input data-refine-text="' + esc(a.id) + '" placeholder="a note for this action"> <button data-refine="' + esc(a.id) + '">refine</button> <span class="muted" data-refine-note="' + esc(a.id) + '"></span></p>';
       }
       out += '</li>';
@@ -466,10 +470,17 @@
       // moves the beacon while the request runs and the redraw replaces the row.
       var noteOf = function () { return view.querySelector('[data-refine-note="' + rid + '"]'); };
       var textOf = function () { return view.querySelector('[data-refine-text="' + rid + '"]'); };
+      // The row's move buttons are held while the note is applied: an
+      // approval in that window would move the action the revision is
+      // aimed at, and the ship would answer that it moved.
+      var holdMoves = function (held) {
+        Array.prototype.forEach.call(view.querySelectorAll('[data-move^="' + rid + ':"]'), function (m) { m.disabled = held; });
+      };
       var input = textOf(), noteEl = noteOf();
       var text = input ? input.value.trim() : '';
       if (!text) { if (noteEl) noteEl.textContent = 'type a note first'; return; }
       b.disabled = true;
+      holdMoves(true);
       if (noteEl) noteEl.textContent = 'refining';
       post('/actions/' + seg(rid) + '/refine', { text: text }).then(function (d) {
         var el = noteOf(), inp = textOf();
@@ -482,7 +493,8 @@
           refresh(true);
         } else if (el) el.textContent = (d && d.note) || 'not refined';
         b.disabled = false;
-      }).catch(function (e) { var el = noteOf(); if (el) el.textContent = e.message; b.disabled = false; });
+        holdMoves(false);
+      }).catch(function (e) { var el = noteOf(); if (el) el.textContent = e.message; b.disabled = false; holdMoves(false); });
     } else if (b.dataset.save) {
       var which = b.dataset.save;
       var parsed;

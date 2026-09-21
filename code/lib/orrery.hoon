@@ -3460,7 +3460,10 @@
     [%| 'value over 2000 bytes']
   ==
 ::  +one-of: the values a payload key admits, read off its schema line
-::  ("required: one of telegram, mail, chat"), or ~ when it is free
+::  ("required: one of telegram, mail, chat"), or ~ when it is free.
+::  The list ends at its clause: a note goes on after a semicolon or a
+::  full stop to say when each value applies, and those words are not
+::  values.
 ::
 ++  one-of
   |=  shape=@t
@@ -3468,7 +3471,12 @@
   =/  s=tape  (trip shape)
   =/  at=(unit @ud)  (find "one of" s)
   ?~  at  ~
-  =/  rest=tape  (slag (add u.at 6) s)
+  =/  rest=tape
+    =/  r=tape  (slag (add u.at 6) s)
+    |-  ^-  tape
+    ?~  r  ~
+    ?:  |(=(';' i.r) =('.' i.r))  ~
+    [i.r $(r t.r)]
   %+  murn  (split-ws (turn rest |=(c=@tD ^-(@tD ?:(=(',' c) ' ' c)))))
   |=(w=tape ^-((unit @t) ?:(|(?=(~ w) =("or" w)) ~ `(crip w))))
 ::  +fixes-a-time: a day, a date or an hour in the words
@@ -4202,10 +4210,14 @@
   ?.  ?=([~ %s *] t)  j
   [%o (~(put by p.j) 'text' s+(clean-text p.u.t))]
 ::  +refine-check: the model's answer held to the ship: a refusal is
-::  passed on; a new body has a well-formed id of a kind the schema has
-::  and a name; every about and the recipient name a body the ship has
-::  or the answer creates; the payload keeps its kind's shape; an extra
-::  that fails its checks is dropped, since the revision stands alone
+::  passed on; a new body has a well-formed id, a name, and one of the
+::  four kinds a note may name (a situation or an activity is a
+::  reader's to describe from messages, not a note's to conjure); every
+::  about and the recipient name a body the ship has or the answer
+::  creates; the payload keeps its kind's shape; a due that is written
+::  but does not parse refuses, since clearing it would lose a time the
+::  owner meant to keep; an extra that fails its checks is dropped,
+::  since the revision stands alone
 ::
 ++  refine-check
   |=  [answer=json a=action id=@ta ctx=reader-ctx now=@da]
@@ -4225,6 +4237,7 @@
     =/  pk  (parse-bid bid)
     ?~  pk  ~
     ?:  (~(has in had) bid)  ~
+    ?.  ?=(?(%person %place %thing %org) kind.u.pk)  ~
     ?.  (~(has by attrs.ctx) `@t`kind.u.pk)  ~
     =/  name=@t  (end [3 120] (trim-cord (gs b 'name')))
     ?:  =('' name)  ~
@@ -4277,9 +4290,9 @@
     ?:(?=([%o *] p) p.p ~)
   =/  held  (hold-payload pay (fall (~(get by payloads.ctx) kind.a) `json`~) known alias)
   ?:  ?=([%| *] held)  [%| p.held]
-  =/  due=(unit @da)
-    =/  d=@t  (gs act 'due')
-    ?:(=('' d) ~ (de-iso-any d))
+  =/  due-s=@t  (gs act 'due')
+  =/  due=(unit @da)  ?:(=('' due-s) ~ (de-iso-any due-s))
+  ?:  &(!=('' due-s) ?=(~ due))  [%| 'due is not a time']
   ::  each extra as an act, or why it is dropped; the revision stands
   ::  whatever becomes of its extras, so a bad one is a note, not a refusal
   =/  extra-of
@@ -4300,9 +4313,9 @@
     ?:  ?=([%| *] eheld)  [%| p.eheld]
     =/  planned  ?.(=('calendar' kind) eheld (hold-extra-plan p.eheld now))
     ?:  ?=([%| *] planned)  [%| p.planned]
-    =/  edue=(unit @da)
-      =/  d=@t  (gs e 'due')
-      ?:(=('' d) ~ (de-iso-any d))
+    =/  edue-s=@t  (gs e 'due')
+    =/  edue=(unit @da)  ?:(=('' edue-s) ~ (de-iso-any edue-s))
+    ?:  &(!=('' edue-s) ?=(~ edue))  [%| 'due is not a time']
     =/  eabout-all=(list @t)  (scag 20 (dedupe (weld eabout ~(tap in about.a))))
     =/  epayload=json  (clean-json-text [%o (~(put by p.planned) 'refined_from' s+id)])
     :-  %&
@@ -4670,6 +4683,20 @@
   ?.  |(=('telegram' via) =('mail' via))  [a '']
   :-  a(payload (set-key payload.a 'via' s+'chat'))
   (rap 3 'via rewritten to chat: ' (gs payload.a 'to') ' has a ship' ~)
+::  +reroute-on-revise: the channel rule on a revision. A note that
+::  names a new recipient and says nothing about the channel leaves
+::  the channel as it was proposed, so the rule runs again for the new
+::  person, the way it ran for the old one at filing. A note that sets
+::  the channel is the owner's word and stands whoever the message is
+::  to, so nothing reroutes when via changed.
+::
+++  reroute-on-revise
+  |=  [old=action new=action ship=@t]
+  ^-  [a=action note=@t]
+  ?.  =(%message kind.new)  [new '']
+  ?:  =((lower (gs payload.old 'to')) (lower (gs payload.new 'to')))  [new '']
+  ?.  =((lower (gs payload.old 'via')) (lower (gs payload.new 'via')))  [new '']
+  (route-message new ship)
 ::  +clean-text: the owner's first prose rule enforced on what leaves
 ::  the ship: an em dash becomes a comma, one space after it and none
 ::  before, whatever a model wrote. The rest of the rules are the

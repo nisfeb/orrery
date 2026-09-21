@@ -1034,6 +1034,46 @@
     (expect-eq !>('') !>(note.chat))
     (expect-eq !>('') !>(note.task))
   ==
+++  test-one-of
+  ::  the starter's note for via, and the note ricsul stored before it:
+  ::  both go on after the list, and hold-payload must read the list alone
+  =/  new=@t  'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none'
+  =/  old=@t  'one of telegram, mail, chat; the channel the conversation is on'
+  =/  shape=json
+    %-  pairs:enjs:format
+    :~  ['via' s+new]
+        ['to' s+'required: the body id of the person, e.g. person/andrea']
+        ['text' s+'required: the message, short, in the owner\'s own voice. No em dashes.']
+    ==
+  =/  pj=json  (jo '{"via": "mail", "to": "person/rose", "text": "hi"}')
+  =/  held  (hold-payload:orr ?>(?=([%o *] pj) p.pj) shape (sy ~['person/rose']) ~)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['chat' 'telegram' 'mail']) !>((one-of:orr new)))
+    (expect-eq !>(`(list @t)`~['telegram' 'mail' 'chat']) !>((one-of:orr old)))
+    (expect-eq !>(`(list @t)`~['a' 'b']) !>((one-of:orr 'one of a, or b. Then more.')))
+    (expect !>(?=(%& -.held)))
+    (expect-eq !>('mail') !>(?>(?=(%& -.held) (gs:orr [%o p.held] 'via'))))
+  ==
+++  test-reroute-on-revise
+  =/  old=action:orr  [%message 'Tell Rose' (jo '{"via": "telegram", "to": "person/rose", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
+  =/  to-karl  old(payload (jo '{"via": "telegram", "to": "person/karl", "text": "hi"}'))
+  =/  karl-mail  old(payload (jo '{"via": "mail", "to": "person/karl", "text": "hi"}'))
+  =/  moved  (reroute-on-revise:orr old to-karl '~sampel-palnet')
+  =/  worded  (reroute-on-revise:orr old karl-mail '~sampel-palnet')
+  =/  same  (reroute-on-revise:orr old old(title 'Tell Rose again') '~sampel-palnet')
+  =/  noship  (reroute-on-revise:orr old to-karl '')
+  ;:  weld
+    ::  a new recipient with a ship, and no word on the channel: rerouted
+    (expect-eq !>('chat') !>((gs:orr payload.a.moved 'via')))
+    (expect-eq !>('via rewritten to chat: person/karl has a ship') !>(note.moved))
+    ::  the note set the channel: the owner's word stands
+    (expect-eq !>('mail') !>((gs:orr payload.a.worded 'via')))
+    (expect-eq !>('') !>(note.worded))
+    ::  the same recipient, or one without a ship: nothing moves
+    (expect-eq !>('telegram') !>((gs:orr payload.a.same 'via')))
+    (expect-eq !>('') !>(note.same))
+    (expect-eq !>('telegram') !>((gs:orr payload.a.noship 'via')))
+  ==
 ++  test-revise
   =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
   =/  got  (revise:orr m 'Tell Rose and Susan' (jo '{"via": "chat", "to": "person/rose", "text": "hi both"}') (sy ~['person/rose' 'person/susan-egan']) `(add now ~d1) 'user' (add now ~m5))
@@ -1084,8 +1124,20 @@
         ' call me"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2026-09-25T18:00:00Z", "ends": null}, "about": []}], "refused": ""}'
     ==
   =/  dash-got  (refine-check:orr dashed refine-act 'a1' refine-ctx now)
+  ::  a due written but garbled refuses rather than clearing the time
+  =/  garbled=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": [], "due": "tomorrowish"}, "extras": [], "refused": ""}')
+  =/  garbled-got  (refine-check:orr garbled refine-act 'a1' refine-ctx now)
+  ::  a created body of a kind a note may not conjure is dropped, so an
+  ::  about naming it refuses
+  =/  sit=json  (jo '{"bodies": [{"id": "situation/2026-09-25-dinner", "kind": "situation", "name": "Dinner", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": ["situation/2026-09-25-dinner"]}, "extras": [], "refused": ""}')
+  =/  sit-got  (refine-check:orr sit refine-act 'a1' refine-ctx now)
+  =/  org=json  (jo '{"bodies": [{"id": "org/acme", "kind": "org", "name": "Acme", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": ["org/acme"]}, "extras": [], "refused": ""}')
+  =/  org-got  (refine-check:orr org refine-act 'a1' refine-ctx now)
   ;:  weld
     (expect !>(?=(%& -.got)))
+    (expect-eq !>('due is not a time') !>(?>(?=(%| -.garbled-got) p.garbled-got)))
+    (expect-eq !>('no body named situation/2026-09-25-dinner on the ship') !>(?>(?=(%| -.sit-got) p.sit-got)))
+    (expect-eq !>(1) !>(?>(?=(%& -.org-got) (lent bodies.p.org-got))))
     (expect-eq !>('Tell Rose and Susan') !>(?>(?=(%& -.got) title.p.got)))
     (expect-eq !>(`(list @t)`~['person/rose' 'person/susan-egan']) !>(?>(?=(%& -.got) about.p.got)))
     (expect-eq !>(1) !>(?>(?=(%& -.got) (lent extras.p.got))))

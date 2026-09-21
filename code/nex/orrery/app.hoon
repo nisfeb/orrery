@@ -1181,8 +1181,10 @@
   ;<  ~  bind:m  (note-by 'set-action' & '' who)
   (pure:m &)
 ::  +do-revise-action: the owner's rewrite of a proposed action's title,
-::  payload, about and due, applied in place with a history step. Never
-::  routes the message: a channel a revision sets stands as written.
+::  payload, about and due, applied in place with a history step. A
+::  channel the revision sets stands as written; a revision that only
+::  moves the message to another person runs the channel rule for that
+::  person, as the filing did for the first (+reroute-on-revise).
 ::
 ++  do-revise-action
   |=  jon=json
@@ -1215,6 +1217,10 @@
   ?:  &(!=('' due-s) =(~ due))  (refuse 'revise-action' 'due: not a time')
   ;<  now=@da  bind:m  get-time:io
   =/  next=action:orr  (revise:orr u.a title payload about due who now)
+  ;<  ship=@t  bind:m  (body-attr 0 (gs:orr payload 'to') 'ship')
+  =/  routed  (reroute-on-revise:orr u.a next ship)
+  =.  next  a.routed
+  ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'revise-action' & note.routed))
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
   ;<  ~  bind:m  (note-by 'revise-action' & '' who)
   (pure:m &)
@@ -1636,28 +1642,44 @@
 ::  as at most an observe, the revision and one act per extra. A poke
 ::  to the writer resolves when the writer takes it, not when the write
 ::  lands, so the fiber keeps the beacon and settles before it reads
-::  the revision back.
+::  the revision back; and the writer may refuse what it took, so the
+::  extras are filed only once the action's last step says the
+::  revision landed. A key sees the bodies its kinds allow and no
+::  other, in the prompt's action as in its context, files no extra
+::  outside its actions, and reads the answer through the same view
+::  its action list gives it; the links it could not see stay on the
+::  revised action.
 ::
 ++  refine-run
   |=  [a=action:orr id=@ta text=@t act=actor now=@da]
   =/  m  (fiber:fiber:nexus ,[code=@ud body=json])
   ^-  form:m
-  =/  fail  |=([code=@ud msg=@t] ^-([code=@ud body=json] [code (pairs:enjs:format ~[['error' s+msg]])]))
+  =/  fail
+    |=  [code=@ud msg=@t]
+    ^-  [code=@ud body=json]
+    [code (pairs:enjs:format ~[['error' s+msg] ['note' s+msg]])]
   ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
   =/  cfg=config:orr  (de-config:orr cfg-j)
   ?:  =('' api-key.cfg)  (pure:m (fail 503 'the generator has no key'))
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  all=(list loaded:orr)  all:(view-of act all0 ~ (hidden-for act policy))
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  ::  The kinds a refinement may touch are the reader's: a merge or a
+  ::  home action has no shape the prompt could hold a rewrite to.
+  ?.  (lien kinds.ctx |=(k=@t =(k `@t`kind.a)))
+    (pure:m (fail 409 'only a task, a calendar event or a message can be refined'))
   =/  tz=@t
-    =/  mine=@t  (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone')
+    =/  mine=@t  (attr-text:orr all0 (multi-of:orr schema) now 'person/me' 'timezone')
     ?:(=('' mine) timezone.cfg mine)
   =/  who=@t  ?:(owner.act 'user' by.act)
+  =/  shown=action:orr  (seen-by act a)
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
     %:  post-json
       (cat 3 url.cfg '/chat/completions')
       api-key.cfg
-      (chat-body-with:orr cfg refine-prompt:orr ~[(refine-user:orr a id ctx text now tz)])
+      (chat-body-with:orr cfg refine-prompt:orr ~[(refine-user:orr shown id ctx text now tz)])
       ~m2
       %refine
     ==
@@ -1670,27 +1692,64 @@
   ?:  ?=(%| -.ans)  (pure:m (fail 502 p.ans))
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
   ?~  parsed  (pure:m (fail 502 'the model answered without JSON'))
-  =/  checked  (refine-check:orr u.parsed a id ctx now)
+  =/  checked  (refine-check:orr u.parsed shown id ctx now)
   ?:  ?=(%| -.checked)
     (pure:m [200 (pairs:enjs:format ~[['ok' b+|] ['note' s+p.checked]])])
-  =/  ops=(list json)  (refine-ops:orr p.checked id who now)
+  =/  unseen=(list @t)  (skip ~(tap in about.a) |=(x=@t (~(has in about.shown) x)))
+  ::  An extra of a kind outside a key's actions is dropped with a note:
+  ::  the key could not have proposed it through /act either.
+  =/  scoped=[extras=(list json) notes=(list @t)]
+    ?~  scope.act  [extras.p.checked ~]
+    =/  s=scope:orr  u.scope.act
+    %+  roll  extras.p.checked
+    |=  [e=json acc=[extras=(list json) notes=(list @t)]]
+    ^-  [extras=(list json) notes=(list @t)]
+    ?:  (action-in-scope:orr s `@tas`(gs:orr e 'kind'))  [(snoc extras.acc e) notes.acc]
+    [extras.acc (snoc notes.acc (rap 3 'dropped extra ' (gs:orr e 'title') ': not in this key\'s actions' ~))]
+  =/  held=refined:orr
+    %=  p.checked
+      about   (scag 20 (dedupe:orr (weld about.p.checked unseen)))
+      extras  extras.scoped
+      notes   (weld notes.p.checked notes.scoped)
+    ==
+  =/  ops=(list json)  (refine-ops:orr held id who now)
+  =/  is-act  |=(o=json =('act' (gs:orr o 'op')))
+  =/  acts=(list json)  (skim ops is-act)
   ;<  *  bind:m  (keep:io /refine (rf 1 /beacon %rev) ~)
-  ;<  ~  bind:m  (poke-each 1 ops)
+  ;<  ~  bind:m  (poke-each 1 (skip ops is-act))
   ;<  ~  bind:m  (settle /refine)
   ;<  after=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
   =/  revised=(unit action:orr)
     ?.  ?=([%file *] after)  ~
     (read-action:orr (sang-noun:tarball sang.after))
   ?~  revised  (pure:m (fail 500 'the revised action cannot be read back'))
-  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed ops now who)
+  ::  The writer's refusal leaves the action as it was, so a last step
+  ::  that is not this request's revision means the note did not land.
+  =/  took=?
+    ?~  history.u.revised  |
+    =/  last=step:orr  (rear history.u.revised)
+    &(=(%revised status.last) (gte at.last now))
+  ?.  took
+    (pure:m [200 (pairs:enjs:format ~[['ok' b+|] ['note' s+'the action moved while the note was applied']])])
+  ;<  ~  bind:m  (poke-each 1 acts)
+  ;<  ~  bind:m  ?~(acts (pure:(fiber:fiber:nexus ,~) ~) (settle /refine))
+  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed acts now who act)
   %-  pure:m
   :-  200
   %-  pairs:enjs:format
   :~  ['ok' b+&]
-      ['action' (en-action:orr id u.revised)]
+      ['action' (en-action:orr id (seen-by act u.revised))]
       ['extras' a+views.filed]
-      ['note' s+(join-cords:orr '\0a' (weld notes.p.checked notes.filed))]
+      ['note' s+(join-cords:orr '\0a' (weld notes.held notes.filed))]
   ==
+::  +seen-by: an action as an actor's view shows it: whole for the
+::  owner, its about trimmed to the key's kinds, as +view-of trims the
+::  action list
+::
+++  seen-by
+  |=  [act=actor a=action:orr]
+  ^-  action:orr
+  ?~(scope.act a (scope-about:orr a kinds.u.scope.act))
 ::  +poke-each: each op to the writer in turn, from a fiber up steps
 ::  below the root. +file-ops is the generator's and reaches the root
 ::  directly, so a request fiber needs its own.
@@ -1708,7 +1767,7 @@
 ::  extra not found was refused as a twin, and becomes a note.
 ::
 ++  extras-filed
-  |=  [ops=(list json) now=@da who=@t]
+  |=  [ops=(list json) now=@da who=@t act=actor]
   =/  m  (fiber:fiber:nexus ,[views=(list json) notes=(list @t)])
   ^-  form:m
   =|  acc=[views=(list json) notes=(list @t)]
@@ -1726,7 +1785,7 @@
   ?~  e
     =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed, the trail says why' ~)
     $(ops t.ops, notes.acc [why notes.acc])
-  $(ops t.ops, views.acc [(en-action:orr eid u.e) views.acc])
+  $(ops t.ops, views.acc [(en-action:orr eid (seen-by act u.e)) views.acc])
 ::  +serve-doc: schema.json or policy.json, as stored
 ::
 ++  serve-doc
