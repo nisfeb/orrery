@@ -244,24 +244,24 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
 - Produces:
   - `refine-prompt` cord (the system text, equal to the file byte for byte).
   - `refine-user |=([a=action id=@ta ctx=reader-ctx text=@t now=@da tz=@t] @t)`: the user prompt.
-  - `+$ refined [title=@t payload=json about=(list @t) due=(unit @da) extras=(list json)]` where each extra is an `act`-ready json (kind, title, payload with `refined_from`, about, due) not yet stamped.
+  - `+$ refined [bodies=(list json) title=@t payload=json about=(list @t) due=(unit @da) extras=(list json)]` where each body is an observe-ready `{id, kind, name, aliases}` for a body the ship lacks, and each extra is an `act`-ready json (kind, title, payload with `refined_from`, about, due) not yet stamped.
   - `refine-check |=([answer=json a=action id=@ta ctx=reader-ctx now=@da] (each refined @t))`.
-  - `refine-ops |=([r=refined id=@ta by=@t now=@da] (list json))`: the `revise-action` op then one `act` op per extra (through `fill-act-as` with `by`).
+  - `refine-ops |=([r=refined id=@ta by=@t now=@da] (list json))`: an `observe` op with the new bodies when there are any (`observe-ops bodies ~`), then the `revise-action` op, then one `act` op per extra (through `fill-act-as` with `by`).
 
 - [ ] **Step 1: The prompt file** `orrery-utils/common/refine-prompt.md` (no hard wraps; the exact text the cord holds):
 
 ```
 You refine one proposed action for orrery, a model of one person's world, from a note the owner typed while approving it.
 
-You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, and the note. Answer with one JSON object and nothing else: {"action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
+You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, and the note. Answer with one JSON object and nothing else: {"bodies": [...], "action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
 
-The action keeps its kind and its purpose; the note changes what it says. "Include Susan in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Every body you name is an id from the list, never a name you made up. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
+The action keeps its kind and its purpose; the note changes what it says. "Include Susan in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
 
 What the note asks for beyond this action goes in extras, each a complete new action with kind, title, payload in the schema's shape, about and due: "also add a todo the day before to go shopping" is a task due one day before the event's start. Never repeat the action itself as an extra.
 
 The owner's prose rules hold for every text and title you write: No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.
 
-When the note names a person the ship does not know, or asks for something no action kind can carry, answer {"refused": "<one plain sentence saying what is missing>"} and change nothing.
+When the note asks for something no action kind can carry, answer {"refused": "<one plain sentence saying why>"} and change nothing.
 ```
 
 Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` (a `'''` cord, each line of the file one line of the cord) and the pair to `PAIRS` in `scripts/prompt-drift.py`.
@@ -284,6 +284,7 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
 ++  test-refine-check
   =/  good=json  (jo '{"action": {"title": "Tell Rose and Susan", "payload": {"via": "chat", "to": "person/rose", "text": "hi both"}, "about": ["person/rose", "susan"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/rose"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
   =/  got  (refine-check:orr good refine-act 'a1' refine-ctx now)
+  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/rose", "person/karl"]}, "extras": [], "refused": ""}')
   =/  nobody=json  (jo '{"action": {"title": "Tell Rose", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
   =/  refused=json  (jo '{"refused": "no person named Karl on the ship"}')
   =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
@@ -294,6 +295,10 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
     (expect-eq !>(`(list @t)`~['person/rose' 'person/susan-egan']) !>(?>(?=(%& -.got) about.p.got)))
     (expect-eq !>(1) !>(?>(?=(%& -.got) (lent extras.p.got))))
     (expect-eq !>('a1') !>(?>(?=(%& -.got) (gs:orr (gj:orr (snag 0 extras.p.got) 'payload') 'refined_from'))))
+    ::  a person the note names and the ship lacks is created, not refused
+    (expect-eq !>(1) !>(?>(?=(%& -.(refine-check:orr newbie refine-act 'a1' refine-ctx now)) (lent bodies.p.(refine-check:orr newbie refine-act 'a1' refine-ctx now)))))
+    (expect-eq !>(`(list @t)`~['person/rose' 'person/karl']) !>(?>(?=(%& -.(refine-check:orr newbie refine-act 'a1' refine-ctx now)) about.p.(refine-check:orr newbie refine-act 'a1' refine-ctx now))))
+    ::  an about id the answer neither knows nor creates refuses
     (expect !>(?=(%| -.(refine-check:orr nobody refine-act 'a1' refine-ctx now))))
     (expect-eq !>('no person named Karl on the ship') !>(?>(?=(%| -.(refine-check:orr refused refine-act 'a1' refine-ctx now)) p.(refine-check:orr refused refine-act 'a1' refine-ctx now))))
     ::  an extra of a kind a reader may not propose is dropped, not fatal
@@ -302,13 +307,17 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
     (expect-eq !>(0) !>(?>(?=(%& -.(refine-check:orr past refine-act 'a1' refine-ctx now)) (lent extras.p.(refine-check:orr past refine-act 'a1' refine-ctx now)))))
   ==
 ++  test-refine-ops
-  =/  r=refined:orr  ['T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')]]
+  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')]]
   =/  ops=(list json)  (refine-ops:orr r 'a1' 'user' now)
+  =/  none=(list json)  (refine-ops:orr r(bodies ~) 'a1' 'user' now)
   ;:  weld
-    (expect-eq !>(2) !>((lent ops)))
-    (expect-eq !>('revise-action') !>((gs:orr (snag 0 ops) 'op')))
-    (expect-eq !>('act') !>((gs:orr (snag 1 ops) 'op')))
-    (expect-eq !>('user') !>((gs:orr (gj:orr (snag 1 ops) 'action') 'by')))
+    (expect-eq !>(3) !>((lent ops)))
+    (expect-eq !>('observe') !>((gs:orr (snag 0 ops) 'op')))
+    (expect-eq !>('person/karl') !>((gs:orr (snag 0 (ga:orr (snag 0 ops) 'bodies')) 'id')))
+    (expect-eq !>('revise-action') !>((gs:orr (snag 1 ops) 'op')))
+    (expect-eq !>('act') !>((gs:orr (snag 2 ops) 'op')))
+    (expect-eq !>('user') !>((gs:orr (gj:orr (snag 2 ops) 'action') 'by')))
+    (expect-eq !>(2) !>((lent none)))
   ==
 ++  test-refine-user
   =/  t=@t  (refine-user:orr refine-act 'a1' refine-ctx 'include susan in this' now 'America/New_York')
@@ -369,12 +378,38 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
   ^-  (each refined @t)
   =/  refused=@t  (gs answer 'refused')
   ?.  =('' refused)  [%| refused]
-  =/  known=(set @t)  (sy (turn bodies.ctx |=(b=ctx-body id.b)))
+  ::  the bodies the note names and the ship lacks, checked the way the
+  ::  reader checks a new body: a well-formed id of a kind the schema
+  ::  has, a name, no observations; one the ship has already is dropped
+  =/  had=(set @t)  (sy (turn bodies.ctx |=(b=ctx-body id.b)))
+  =/  made=(list json)
+    %+  murn  (ga answer 'bodies')
+    |=  b=json
+    ^-  (unit json)
+    ?.  ?=([%o *] b)  ~
+    =/  id=@t  (lower (trim-cord (gs b 'id')))
+    =/  pk  (parse-bid id)
+    ?~  pk  ~
+    ?:  (~(has in had) id)  ~
+    ?.  (~(has by attrs.ctx) kind.u.pk)  ~
+    =/  name=@t  (end [3 120] (trim-cord (gs b 'name')))
+    ?:  =('' name)  ~
+    :-  ~
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['kind' s+kind.u.pk]
+        ['name' s+name]
+        ['aliases' a+(turn (strings (ga b 'aliases')) |=(x=@t `json`s+x))]
+    ==
+  =/  known=(set @t)  (~(gas in had) (turn made |=(b=json (gs b 'id'))))
   =/  alias=(map @t @t)
     %-  ~(gas by *(map @t @t))
     %-  zing
-    %+  turn  bodies.ctx
-    |=(b=ctx-body [[(lower name.b) id.b] (turn aliases.b |=(x=@t [(lower x) id.b]))])
+    %+  weld
+      %+  turn  bodies.ctx
+      |=(b=ctx-body [[(lower name.b) id.b] (turn aliases.b |=(x=@t [(lower x) id.b]))])
+    %+  turn  made
+    |=(b=json [[(lower (gs b 'name')) (gs b 'id')] ~])
   =/  act=json  (gj answer 'action')
   ?.  ?=([%o *] act)  [%| 'the model answered no action']
   =/  title=@t  =/(t (end [3 200] (trim-cord (gs act 'title'))) ?:(=('' t) title.a t))
@@ -412,15 +447,17 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
         ==
         ?~(edue ~ ~[['due' s+(en-iso u.edue)]])
     ==
-  [%& title (clean-json-text [%o p.held]) about due extras]
+  [%& made title (clean-json-text [%o p.held]) about due extras]
 ```
 
-`extra-plan-ok`: `starts` parses, is after `now` and before `now + ~d365`, and `ends`, when present, is after `starts`. `clean-json-text` applies `clean-text` to the payload's `text` key when it is a string (one small arm). `refine-ops`:
+`parse-bid` answers `(unit [kind=@tas slug=@ta])` (app.hoon uses it in `first-missing`); `attrs.ctx` is keyed by kind, so a kind the schema lacks is refused. `extra-plan-ok`: `starts` parses, is after `now` and before `now + ~d365`, and `ends`, when present, is after `starts`. `clean-json-text` applies `clean-text` to the payload's `text` key when it is a string (one small arm). `refine-ops`:
 
 ```hoon
 ++  refine-ops
   |=  [r=refined id=@ta by=@t now=@da]
   ^-  (list json)
+  %+  weld
+    ?~(bodies.r ~ (observe-ops bodies.r ~))
   :-  (revise-action-op id title.r payload.r about.r due.r by)
   %+  turn  extras.r
   |=  e=json
@@ -494,13 +531,14 @@ Check `fill-act-as`'s signature in the executors section and match it (Task 4 of
 
 Confirm the names: `read-generator`, `cull-soft` (or the arm the reader uses to drop an inbox grub), `file-ops` from a request fiber (the sharing routes file ops from the request fiber; copy their pattern, including `settle`), and how `serve-actions` encodes an action view. `/refining/<id>` is the per-action lock; a crashed route leaves it, so the lock is also dropped by a `POST /api/exec/wake`? No: keep it simple, and drop the lock grub when its mtime is older than five minutes (read its `cass` from the peek) instead of refusing.
 
-- [ ] **Step 2: The stub.** In `scripts/api-matrix.py`'s `Stub.answer`, before the `CANNED` fallback: `elif system.startswith('You refine'): out = REFINE_CANNED`, where `REFINE_CANNED` is a chat completion whose content is the JSON `{"action": {"title": "Tell Rose and Susan the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked. Susan knows too."}, "about": ["person/gate-shipped"], "due": null}, "extras": [{"kind": "task", "title": "Gate: buy the tow guy a coffee", "payload": {"notes": "before the tow"}, "about": ["person/gate-shipped"], "due": "2099-01-01T12:00:00Z"}], "refused": ""}` (a `2099` due so the retire and expire passes never touch it). A second canned reply for the refused case: when the request's user prompt ends with `The note: who is karl`, answer `{"refused": "no person named Karl on the ship"}`.
+- [ ] **Step 2: The stub.** In `scripts/api-matrix.py`'s `Stub.answer`, before the `CANNED` fallback: `elif system.startswith('You refine'): out = REFINE_CANNED`, where `REFINE_CANNED` is a chat completion whose content is the JSON `{"action": {"title": "Tell Rose and Susan the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked. Susan knows too."}, "about": ["person/gate-shipped"], "due": null}, "extras": [{"kind": "task", "title": "Gate: buy the tow guy a coffee", "payload": {"notes": "before the tow"}, "about": ["person/gate-shipped"], "due": "2099-01-01T12:00:00Z"}], "refused": ""}` (a `2099` due so the retire and expire passes never touch it). A second canned reply for the new-person case: when the user prompt ends with `The note: include karl in this`, answer `{"bodies": [{"id": "person/gate-karl", "kind": "person", "name": "Gate Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked."}, "about": ["person/gate-shipped", "person/gate-karl"], "due": null}, "extras": [], "refused": ""}`. A third for the refused case: when it ends with `The note: turn the porch light on`, answer `{"refused": "a message cannot switch a light; propose a home action instead"}`.
 
 - [ ] **Step 3: The gate checks** (in the executor section, after Task 2's `person/gate-shipped` message is filed and before it is dismissed; the stub is up and the generator points at it there):
   - `POST /api/actions/<id>/refine {"text": "include susan in this"}` answers 200 `ok` true, `action.title` is the canned title, `action.payload.via` is `chat`, `extras` has one task whose `payload.refined_from` is the id and whose `about` holds `person/gate-shipped`.
   - `GET /api/actions/<id>` shows status `proposed`, the new title, and a last history step `revised` by `user`.
   - The extra exists in `GET /api/actions?status=open` (approved under `auto`, since it is a task) and its todo is placed by the executor (poll `todo_for`); dismiss it and add it to `MADE`.
-  - `POST .../refine {"text": "who is karl"}` answers 200 `ok` false with the note, and the title is unchanged.
+  - `POST .../refine {"text": "include karl in this"}` answers 200 `ok` true; `GET /api/body/person/gate-karl` exists with name `Gate Karl`; the action's `about` holds it. Delete the body in the teardown.
+  - `POST .../refine {"text": "turn the porch light on"}` answers 200 `ok` false with the note, and the title is unchanged.
   - Refining an approved action answers 409; refining with a key whose `actions` lacks `message` answers 404; a read-only key answers 403 (the key section has fixtures for these; add one refine call there, or make the keys here).
   - The trail (`/tr/log`) has a `revise-action` line.
   - `POST .../refine {"text": "send this as mail"}` on a fresh `chat` message answers `ok` true with `action.payload.via` `mail`, and reading the action back shows `mail` (the stub answers `{"action": {... "via": "mail" ...}, "extras": [], "refused": ""}` when the user prompt ends with `The note: send this as mail`); approve it and the executor sends it by auspex (`sent by mail to ~wex`), which proves a revision is not rerouted.
