@@ -273,16 +273,52 @@
         (sit 'situation/2026-07-01-stale' ~[['started' '2026-07-01T15:00:00Z']] ago)
         (sit 'situation/2026-07-01-alive' ~[['started' '2026-07-01T15:00:00Z']] now)
         (sit 'situation/2026-09-10-fresh' ~[['starts' '2026-09-10T15:00:00Z']] ago)
+        (sit 'situation/2026-09-18-soon' ~[['starts' '2026-09-18T09:00:00Z']] ago)
+        (sit 'situation/2026-09-16-ongoing' ~[['started' '2026-09-16T09:00:00Z']] ago)
+        (sit 'situation/2026-09-05-trip' ~[['started' '2026-09-05']] ago)
     ==
   =/  got  (plan-retire:orr all ~ now ~d30)
   ;:  weld
     %+  expect-eq
-      !>(`(list @t)`~['situation/2026-09-10-dentist' 'situation/2026-09-01-trip' 'situation/2026-07-01-stale'])
+      !>(`(list @t)`~['situation/2026-09-10-dentist' 'situation/2026-09-01-trip' 'situation/2026-07-01-stale' 'situation/2026-09-10-fresh' 'situation/2026-09-05-trip'])
       !>(`(list @t)`(turn got |=([id=@t *] id)))
     (expect-eq !>(~2026.9.10..15.00.00) !>(at:(snag 0 got)))
     (expect-eq !>(~2026.9.8..15.00.00) !>(at:(snag 1 got)))
     (expect-eq !>(ago) !>(at:(snag 2 got)))
     (expect-eq !>('ended 2026-09-10T15:00:00Z') !>(why:(snag 0 got)))
+    ::  a scheduled event with no end is over six hours after it starts
+    (expect-eq !>(~2026.9.10..21.00.00) !>(at:(snag 3 got)))
+    (expect-eq !>('scheduled for 2026-09-10T15:00:00Z with no end') !>(why:(snag 3 got)))
+    ::  a trip whose start is a bare date closes a week on
+    (expect-eq !>(~2026.9.12) !>(at:(snag 4 got)))
+  ==
+++  test-plan-expire
+  =/  thing
+    |=  [id=@t st=@t at=@da]
+    ^-  loaded:orr
+    :+  id  [%thing 'x' ~ now ~]
+    ~[['status-row' [id 'status' s+st at ~ 100 ['mail' 'm1'] 'mail' at | '']]]
+  =/  all=(list loaded:orr)
+    :~  (thing 'thing/order-1' 'out for delivery' (sub now ~d4))
+        (thing 'thing/order-2' 'Out for delivery' (sub now ~d1))
+        (thing 'thing/order-3' 'shipped' (sub now ~d20))
+        (thing 'thing/order-4' 'shipped' (sub now ~d10))
+        (thing 'thing/order-5' 'delivered' (sub now ~d20))
+        (thing 'thing/car' 'at the shop' (sub now ~d20))
+        (sit 'situation/2026-09-01-trip' ~[['status' 'shipped']] (sub now ~d20))
+    ==
+  =/  got  (plan-expire:orr all ~ now)
+  =/  ops=(list json)  (expire-ops:orr got)
+  =/  rows=(list json)  (ga:orr (snag 0 ops) 'observations')
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['thing/order-1' 'thing/order-3']) !>(`(list @t)`(turn got |=([id=@t *] id))))
+    (expect-eq !>((sub now ~d1)) !>(at:(snag 0 got)))
+    (expect-eq !>((sub now ~d6)) !>(at:(snag 1 got)))
+    (expect !>((has-sub why:(snag 0 got) 'out for delivery since')))
+    (expect !>((has-sub why:(snag 0 got) 'presumed delivered')))
+    (expect-eq !>('delivered') !>((gs:orr (snag 0 rows) 'value')))
+    (expect-eq !>(60) !>((fall (gn:orr (snag 0 rows) 'conf') 0)))
+    (expect-eq !>('retire') !>((gs:orr (snag 0 rows) 'by')))
   ==
 ++  test-plan-retire-after-status
   ::  a reminder said open after the event: the close lands a second past it

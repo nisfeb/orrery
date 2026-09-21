@@ -2069,12 +2069,17 @@
 ::
 ::  +plan-retire: the situations to close and when. One whose end has
 ::  passed closes at its end; a trip with no end a week after it
-::  started; one with a start but no end that began more than stale
-::  ago with nothing seen since closes at its newest observation. The
+::  started; one scheduled (starts, never started) with no end six
+::  hours after it starts, since a performance or an appointment with
+::  no end given is over by then; one with a start but no end that
+::  began more than stale ago with nothing seen since closes at its
+::  newest observation. Times are read the way the readers write them,
+::  a bare date included, so a trip that started on a date closes. The
 ::  close time lands one second past a later live status row, so a
 ::  reminder that said "open" after the event does not win the fold.
 ::
-++  retire-trip   ~d7
+++  retire-trip       ~d7
+++  retire-scheduled  ~h6
 ++  is-trip
   |=  id=bid
   ^-  ?
@@ -2102,10 +2107,10 @@
     ?:((gte u.status-at at) (add u.status-at ~s1) at)
   =/  end=(unit @da)
     =/  e=@t  (winner-text winners 'ended')
-    (de-iso ?:(=('' e) (winner-text winners 'ends') e))
+    (de-iso-any ?:(=('' e) (winner-text winners 'ends') e))
+  =/  started=@t  (winner-text winners 'started')
   =/  start=(unit @da)
-    =/  s=@t  (winner-text winners 'started')
-    (de-iso ?:(=('' s) (winner-text winners 'starts') s))
+    (de-iso-any ?:(=('' started) (winner-text winners 'starts') started))
   ?^  end
     ?.  (lth u.end now)  ~
     `[id.l (after u.end) (cat 3 'ended ' (en-iso u.end))]
@@ -2113,6 +2118,9 @@
   ?:  &((is-trip id.l) (lth (add u.start retire-trip) now))
     =/  e=@da  (add u.start retire-trip)
     `[id.l (after e) (rap 3 'a trip started ' (en-iso u.start) ' with no end' ~)]
+  ?:  &(=('' started) (lth (add u.start retire-scheduled) now))
+    =/  e=@da  (add u.start retire-scheduled)
+    `[id.l (after e) (rap 3 'scheduled for ' (en-iso u.start) ' with no end' ~)]
   =/  latest=@da
     %+  roll  rows.l
     |=  [r=row acc=@da]
@@ -2130,6 +2138,42 @@
   %+  turn  plans
   |=  [id=bid at=@da why=@t]
   (obs-row id 'status' s+'closed' at ~ 90 ['retire' (cat 3 'retire/' id)] 'retire')
+::  +plan-expire: a thing whose status is a stage of a delivery and has
+::  stood past its grace is presumed delivered: out for delivery three
+::  days on, shipped or in transit a fortnight on. The new row is dated
+::  at the end of the grace, so it wins the fold, and carries conf 60
+::  and the note, so a carrier's own word later supersedes it and the
+::  trail says it was presumed.
+::
+++  expire-out      ~d3
+++  expire-shipped  ~d14
+++  plan-expire
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [id=bid at=@da why=@t])
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [id=bid at=@da why=@t])
+  ?.  =(%thing kind.body.l)  ~
+  =/  winners=(map @t (list row))  (fold rows.l multi now)
+  =/  w=(list row)  (fall (~(get by winners) 'status') ~)
+  ?~  w  ~
+  ?.  ?=([%s *] value.obs.i.w)  ~
+  =/  st=@t  (lower p.value.obs.i.w)
+  =/  grace=(unit @dr)
+    ?:  =('out for delivery' st)  `expire-out
+    ?:  ?|(=('shipped' st) =('in transit' st) =('dispatched' st))  `expire-shipped
+    ~
+  ?~  grace  ~
+  =/  due=@da  (add at.obs.i.w u.grace)
+  ?.  (lth due now)  ~
+  `[id.l due (rap 3 st ' since ' (en-iso at.obs.i.w) ', presumed delivered' ~)]
+++  expire-ops
+  |=  plans=(list [id=bid at=@da why=@t])
+  ^-  (list json)
+  %+  observe-ops  ~
+  %+  turn  plans
+  |=  [id=bid at=@da why=@t]
+  (obs-row id 'status' s+'delivered' at ~ 60 ['retire' (cat 3 'retire/' id)] 'retire')
 ::  ==  reconcile: associating what the readers left apart (the passes of
 ::  reconcile.py, on-ship 2026-09-20). Each planner is pure over the
 ::  loaded bodies and answers the writer ops to file, in order.

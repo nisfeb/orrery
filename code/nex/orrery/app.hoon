@@ -1628,6 +1628,8 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  retire  (plan-retire:orr all multi now (mul stale.cfg ~d1))
   ;<  *  bind:m  (file-ops (retire-ops:orr retire))
+  =/  expire  (plan-expire:orr all multi now)
+  ;<  *  bind:m  (file-ops (expire-ops:orr expire))
   =/  prune=(list bid:orr)  (plan-prune:orr all multi now prune.cfg)
   ;<  *  bind:m  (file-ops (turn prune delete-op:orr))
   =/  doc=json
@@ -1640,6 +1642,7 @@
         ['proposed' (numb:enjs:format proposed.people)]
         ['merged' (numb:enjs:format merged)]
         ['retired' (numb:enjs:format (lent retire))]
+        ['expired' (numb:enjs:format (lent expire))]
         ['pruned' (numb:enjs:format (lent prune))]
     ==
   (over:io (rf 0 / %'reconcile-last.json') [[/ %json] doc])
