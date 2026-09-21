@@ -432,6 +432,18 @@ code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
 check('the writer noted the merge last',
       code == 200 and dictish(last).get('op') == 'merge' and dictish(last).get('ok') is True, last)
 
+# ── 9. the ask ──────────────────────────────────────────────────────
+# the executor's roads are asked for in the served weir; consent is the
+# owner's, on the permits page, and a granted road shows in ?info=1
+print('9. the ask names the calendar and auspex desks')
+code, d = curl('GET', INSTANCE + '/weir.json?raw=1')
+roads = {k: [r.get('road') for r in v] for k, v in dictish(d).items() if isinstance(v, list)}
+CAL, AUS = '/apps/shell.shell/desks/calendar.desk/', '/apps/shell.shell/desks/auspex.desk/'
+check('the ask pokes the calendar desk and the auspex desk',
+      code == 200 and CAL in roads.get('poke', []) and AUS in roads.get('poke', []), (code, roads))
+check('the ask peeks the calendar desk, and still the link registry',
+      code == 200 and CAL in roads.get('peek', []) and '/sys/link/' in roads.get('peek', []), (code, roads))
+
 # ---- the on-ship generator: its settings ----
 # a rerun starts from the defaults: a JSON null clears the stored key
 curl('PUT', API + '/generator', {'enabled': False, 'api_key': None, 'model': 'moonshotai/kimi-k3', 'url': 'https://openrouter.ai/api/v1', 'max_actions': 5, 'max_tokens': 8000, 'reasoning': {'effort': 'high'}})

@@ -264,12 +264,15 @@
           (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
           (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
+          (line '/apps/shell.shell/desks/calendar.desk/' 'put an approved calendar action on your calendar, an approved task in its todo list, and keep the two in step. Refuse this and those actions wait for another executor')
+          (line '/apps/shell.shell/desks/auspex.desk/' 'send an approved message by mail. Refuse this and mail actions wait for another executor')
       ==
       :-  'peek'
       :-  %a
       :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer and an offer can say where to read')
           (line '/sys/ames/usergroups/' 'read a share group before rewriting it')
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
+          (line '/apps/shell.shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
       ==
       :-  'make'
       :-  %a
@@ -1773,10 +1776,17 @@
 ::  (/sys/link/orrery/dest.lanes: every instance claiming the name, ours
 ::  among them). ~ when the road is refused or the registry has no row.
 ::
-++  self-base
+++  self-base  (find-base %orrery)
+::  +find-base: where an app claiming a link name lives: the first lane
+::  in /sys/link/<name>/dest.lanes. The executor finds the calendar and
+::  auspex this way. ~ when the road is refused or the registry has no
+::  row.
+::
+++  find-base
+  |=  name=@ta
   =/  m  (fiber:fiber:nexus ,(unit path))
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /sys/link/orrery %'dest.lanes'] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /sys/link/[name] %'dest.lanes'] ~)
   ?.  ?=([~ %file *] vw)  (pure:m ~)
   =/  ls=(unit (set lane:tarball))
     (mole |.(!<((set lane:tarball) (need-vase:tarball sang.u.vw))))
