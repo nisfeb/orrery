@@ -248,7 +248,10 @@
           ::  the writer, the calendar and auspex, and is poked by nothing
           ::  but the owner's wake. The calendar is found through link on
           ::  every pass, so one installed after the rise is kept from the
-          ::  pass that first finds it, with no restart.
+          ::  pass that first finds it, with no restart. A %fell on /cal is
+          ::  not consumed, so a calendar removed and installed again is
+          ::  kept again only once the fiber restarts: a wake, the owner's
+          ::  wake route included, restarts the loop's wait, not the keep.
           [~ %'exec.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%orrery executor: failed")
         ;<  *  bind:m  (keep:io /exec (rf 0 /beacon %rev) ~)
@@ -3378,14 +3381,20 @@
 ::  a calendar event is claimed through the writer and the claim read
 ::  back, since another executor may hold it (the claim protocol's job,
 ::  and it already works); then carried out and moved to done or failed
-::  with the note. A task is different: the todo list IS the task list
-::  (the model's own words: approved tasks not yet done), so its action
-::  stays approved once its todo is placed, and done means the task was
-::  done, ticked in the calendar or on the page. The todo carrying the
-::  action id is what stops a second placing, as Talon's mirror did, so
-::  a task is placed only when the list was read this pass. A task the
-::  calendar itself filed (an adopted todo, by calendar) has its todo
-::  already and is never placed.
+::  with the note. A desk link does not know, or a road the owner has
+::  refused, claims nothing and fails nothing: the plan is left
+::  approved for another executor, the desk noted once in missing (the
+::  spec's discovery rule) or the refusal once in notes. The road is
+::  proved before any claim with a poke each writer ignores, since a
+::  veto is the only way a refusal shows and a claimed action cannot
+::  go back to approved. A task is different: the todo list IS the
+::  task list (the model's own words: approved tasks not yet done), so
+::  its action stays approved once its todo is placed, and done means
+::  the task was done, ticked in the calendar or on the page. The todo
+::  carrying the action id is what stops a second placing, as Talon's
+::  mirror did, so a task is placed only when the list was read this
+::  pass. A task the calendar itself filed (an adopted todo, by
+::  calendar) has its todo already and is never placed.
 ::
 ++  exec-pass
   |=  cal=exec-cal
@@ -3398,6 +3407,18 @@
   =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) now)
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
+  ::  the desks the plans need, found and their roads proved, once
+  =/  need-cal=?  (lien plans |=(p=exec-plan:orr ?=(?(%calendar %todo) target.p)))
+  =/  need-mail=?  (lien plans |=(p=exec-plan:orr =(%mail target.p)))
+  ;<  cal-shut=(unit @t)  bind:m
+    ?.  &(need-cal ?=(^ base.cal))  (pure:(fiber:fiber:nexus ,(unit @t)) ~)
+    %+  road-shut  [%& %& u.base.cal %'calendar.calendar']
+    [[/ %json] (pairs:enjs:format ~[['action' s+'noop']])]
+  ;<  aus=(unit path)  bind:m
+    ?.(need-mail (pure:(fiber:fiber:nexus ,(unit path)) ~) (find-base %auspex))
+  ;<  aus-shut=(unit @t)  bind:m
+    ?~  aus  (pure:(fiber:fiber:nexus ,(unit @t)) ~)
+    (road-shut [%& %& u.aus %'main.sig'] [[/ %json] ~])
   =|  tally=exec-tally
   |-
   ?~  plans  (pure:m tally)
@@ -3405,12 +3426,25 @@
   =/  was=(unit action:orr)  (act-of acts id.p)
   ?~  was  $(plans t.plans)
   =/  title=@t  title.u.was
+  ::  the desk the plan needs, or why it is left approved
+  =/  desk=(each path exec-tally)
+    ?-    target.p
+        %telegram  [%& /]
+        %mail
+      ?~  aus  [%| (note-missing tally 'auspex')]
+      ?~  aus-shut  [%& u.aus]
+      [%| (note-once tally (cat 3 'a message waits: the auspex road is refused: ' u.aus-shut))]
+        ?(%calendar %todo)
+      ?~  base.cal  [%| (note-missing tally 'calendar')]
+      ?~  cal-shut  [%& u.base.cal]
+      [%| (note-once tally (cat 3 'an action waits: the calendar road is refused: ' u.cal-shut))]
+    ==
+  ?:  ?=(%| -.desk)  $(plans t.plans, tally p.desk)
   ?:  =(%todo target.p)
     ?:  =('calendar' by.u.was)  $(plans t.plans)
-    ?~  base.cal  $(plans t.plans, tally (note-missing tally 'calendar'))
     ?~  todos.cal  $(plans t.plans, tally (note-once tally 'a task waits: the todo list could not be read'))
     ?:  (lien u.todos.cal |=(t=todo:orr =(orrery.t id.p)))  $(plans t.plans)
-    ;<  err=(unit tang)  bind:m  (poke-calendar u.base.cal body.p)
+    ;<  err=(unit tang)  bind:m  (poke-calendar p.desk body.p)
     ?^  err
       $(plans t.plans, tally (note-once tally (cat 3 'the calendar refused a todo: ' (tang-head u.err))))
     $(plans t.plans, tally tally(placed +(placed.tally)))
@@ -3421,15 +3455,25 @@
     |=([id=@ta a=action:orr] &(=(id id.p) =(%claimed status.a) =('ship' (claimant:orr a))))
   ?.  mine  $(plans t.plans)
   =.  claimed.tally  +(claimed.tally)
-  ;<  [ok=? note=@t lost=(unit @t)]  bind:m  (exec-one p tg cal)
+  ;<  [ok=? note=@t]  bind:m  (exec-one p tg p.desk)
   ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p ?:(ok 'done' 'failed') note)] /exec)
-  =?  tally  ?=(^ lost)  (note-missing tally u.lost)
   =?  tally  !ok
     =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
     tally(failed (scag 20 f))
   =?  tally  &(ok ?=(?(%telegram %mail) target.p))  tally(sent +(sent.tally))
   =?  tally  &(ok ?=(%calendar target.p))  tally(placed +(placed.tally))
   $(plans t.plans)
+::  +road-shut: why a poke road is refused, or ~ when it is open. The
+::  proof is a poke the target ignores: the calendar drops an action
+::  it does not know, and auspex's writer drops a blot it does not
+::  know. A veto (or a nack) is the road's answer before any claim.
+::
+++  road-shut
+  |=  [road=road:tarball =bask:tarball]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m  (poke-soft:io road bask)
+  (pure:m (bind err tang-head))
 ::  +act-of: one action by id
 ::
 ++  act-of
@@ -3444,37 +3488,34 @@
   ^-  exec-tally
   ?:  (lien notes.t |=(x=@t =(x why)))  t
   t(notes [why notes.t])
-::  +exec-one: one claimed plan carried out: whether it went, the note,
-::  and the desk link did not know when that is why. A plan whose note
-::  is set already failed in the planner (the person has no such
-::  attribute).
+::  +exec-one: one claimed plan carried out at the desk found for it:
+::  whether it went and the note. A plan whose note is set already
+::  failed in the planner (the person has no such attribute). A task
+::  is placed without a claim and never comes here.
 ::
 ++  exec-one
-  |=  [p=exec-plan:orr tg=tg-config:orr cal=exec-cal]
-  =/  m  (fiber:fiber:nexus ,[ok=? note=@t lost=(unit @t)])
+  |=  [p=exec-plan:orr tg=tg-config:orr base=path]
+  =/  m  (fiber:fiber:nexus ,[ok=? note=@t])
   ^-  form:m
-  ?.  =('' note.p)  (pure:m [| note.p ~])
-  ?-    target.p
+  ?.  =('' note.p)  (pure:m [| note.p])
+  ?+    target.p  (pure:m [| 'a task is placed without a claim'])
       %telegram
-    ?:  =('' token.tg)  (pure:m [| 'the telegram reader has no bot token' ~])
+    ?:  =('' token.tg)  (pure:m [| 'the telegram reader has no bot token'])
     ;<  [ok=? why=@t]  bind:m  (send-telegram tg body.p)
-    (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why) ~])
+    (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why)])
   ::
       %mail
-    ;<  base=(unit path)  bind:m  (find-base %auspex)
-    ?~  base  (pure:m [| 'auspex is not installed' `'auspex'])
     =/  who=(unit @p)  (slaw %p to.p)
-    ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name') ~])
+    ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name')])
     ;<  err=(unit tang)  bind:m
-      (poke-auspex u.base u.who (gs:orr body.p 'subject') (gs:orr body.p 'text'))
-    ?^  err  (pure:m [| (tang-head u.err) ~])
-    (pure:m [& (cat 3 'sent by mail to ' to.p) ~])
+      (poke-auspex base u.who (gs:orr body.p 'subject') (gs:orr body.p 'text'))
+    ?^  err  (pure:m [| (tang-head u.err)])
+    (pure:m [& (cat 3 'sent by mail to ' to.p)])
   ::
-      ?(%calendar %todo)
-    ?~  base.cal  (pure:m [| 'the calendar is not installed' `'calendar'])
-    ;<  err=(unit tang)  bind:m  (poke-calendar u.base.cal body.p)
-    ?^  err  (pure:m [| (tang-head u.err) ~])
-    (pure:m [& ?:(=(%todo target.p) 'in the todo list' 'on the calendar') ~])
+      %calendar
+    ;<  err=(unit tang)  bind:m  (poke-calendar base body.p)
+    ?^  err  (pure:m [| (tang-head u.err)])
+    (pure:m [& 'on the calendar'])
   ==
 ::  +send-telegram: one sendMessage through the reader's token, the
 ::  body the planner made (chat_id and text). Telegram answers ok false
@@ -3625,7 +3666,7 @@
     ;<  err=(unit tang)  bind:m  (poke-calendar base +.i.ops)
     ?^  err
       =/  why=@t  (cat 3 'the calendar refused a poke: ' (tang-head u.err))
-      $(ops t.ops, adopting rest, notes.tally [why notes.tally])
+      $(ops t.ops, adopting rest, tally (note-once tally why))
     =/  act=@t  (gs:orr +.i.ops 'action')
     %=  $
       ops  t.ops
@@ -3636,10 +3677,12 @@
     ==
   ==
 ::  +exec-record: what the pass did, for the page and the owner's eye.
-::  A pass that did nothing (most of them: the beacon moves on every
+::  A pass that moved nothing (most of them: the beacon moves on every
 ::  fact, and the wake after a placing is one) keeps the last pass that
-::  did and moves only the time, so the card reads as the last thing
-::  done and when the executor last looked, not as zeros.
+::  did, with its acted_at, and moves only the time and what it saw
+::  missing or refused, so the card reads as the last thing done, when
+::  the executor last looked, and what stands in its way now. The
+::  failed list reads newest first.
 ::
 ++  exec-record
   |=  t=exec-tally
@@ -3647,20 +3690,26 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'exec-last.json'))
-  =/  idle=?  &((tally-idle t) ?=(~ missing.t) ?=(~ notes.t))
-  ?:  &(idle ?=([%o *] last) !=(~ p.last))
+  =/  active=?  !(tally-idle t)
+  =/  saw=(list [@t json])
+    :~  ['at' (en-time:orr now)]
+        ['missing' a+(turn missing.t |=(x=@t `json`s+x))]
+        ['notes' a+(turn (flop notes.t) |=(x=@t `json`s+x))]
+    ==
+  ?:  &(!active ?=([%o *] last) !=(~ p.last))
     =/  kept=(map @t json)  p.last
-    (over:io (rf 0 / %'exec-last.json') [[/ %json] [%o (~(put by kept) 'at' (en-time:orr now))]])
+    (over:io (rf 0 / %'exec-last.json') [[/ %json] [%o (~(gas by kept) saw)]])
   =/  doc=json
     %-  pairs:enjs:format
-    :~  ['at' (en-time:orr now)]
-        ['acted_at' (en-time:orr now)]
+    %+  weld  saw
+    ^-  (list [@t json])
+    :~  ['acted_at' ?:(active (en-time:orr now) ~)]
         ['claimed' (numb:enjs:format claimed.t)]
         ['sent' (numb:enjs:format sent.t)]
         ['placed' (numb:enjs:format placed.t)]
         :-  'failed'
         :-  %a
-        %+  turn  (flop failed.t)
+        %+  turn  failed.t
         |=  [id=@t title=@t note=@t]
         (pairs:enjs:format ~[['id' s+id] ['title' s+title] ['note' s+note]])
         ['ticked' (numb:enjs:format ticked.t)]
@@ -3668,8 +3717,6 @@
         ['moved' (numb:enjs:format moved.t)]
         ['closed' (numb:enjs:format closed.t)]
         ['adopted' (numb:enjs:format adopted.t)]
-        ['missing' a+(turn missing.t |=(x=@t `json`s+x))]
-        ['notes' a+(turn (flop notes.t) |=(x=@t `json`s+x))]
     ==
   (over:io (rf 0 / %'exec-last.json') [[/ %json] doc])
 ::  ==  who is asking
