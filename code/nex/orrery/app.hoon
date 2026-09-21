@@ -2864,8 +2864,8 @@
   ;<  in=gen-in  bind:m  (take-gen-in /tg)
   ?:  ?=([%wake [%yield ~]] in)  (pure:m ~)
   $
-::  +tg-handle: one update: the filters, then a command or the model, then
-::  the filing, then the window and the record. A held message is not
+::  +tg-handle: one update: the filters, then the model, then the filing,
+::  the window and the record. A held message is not
 ::  read and not context; the window is written after a reading whatever
 ::  it yielded, so a question rides along as the next message's context.
 ::  Yields whether the update is kept for a retry: the model was down,
@@ -2900,11 +2900,6 @@
   ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
-  =/  cmd=(unit tg-facts:orr)  (tg-command:orr msg u.who)
-  ?^  cmd
-    ;<  ~  bind:m  (tg-file u.cmd u.who now)
-    =/  outcome=@t  ?:(&(=(~ obs.u.cmd) =(~ acts.u.cmd)) 'refused' 'facts')
-    (done chat.msg from.msg outcome notes.u.cmd |)
   ?:  (gte today max-daily.cfg)
     (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
