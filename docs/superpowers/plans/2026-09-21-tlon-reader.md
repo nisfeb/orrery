@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Orrery version 37 reads the owner's Tlon DMs, group DMs and chosen group channels on the ship by polling two "changes since" scries, and runs them through the reader pipeline the Telegram reader already has, writing the same facts under the same rules.
+**Goal:** Orrery version 38 reads the owner's Tlon DMs, group DMs and chosen group channels on the ship by polling two "changes since" scries, and runs them through the reader pipeline the Telegram reader already has, writing the same facts under the same rules.
 
 **Architecture:** The Telegram reader's pipeline (`tg-read`, `tg-file`, the window, the cap, the status check, the escalate question) is made source-agnostic by one small record, `reader-kind`, that names the channel word, the signer, the source-id prefix and the file names; Telegram passes its own record and changes nothing else. The chat reader is a new fiber, `chat.sig`, on a timer: it scries `chat` and `channels` for changes since the last pass through `typed-scry` with the `json` mark (gall converts through Tlon's own marks), turns writs and posts into the reader's message rows, and hands each to the shared pipeline. Settings, a card and routes follow the Telegram ones. One new consent road, `/sys/scry/`.
 
@@ -97,7 +97,7 @@
 - Produces: `chat.sig`:
 
 ```hoon
-          ::  the chat reader (version 37): every poll_minutes, the writs
+          ::  the chat reader (version 38): every poll_minutes, the writs
           ::  and posts changed since the last pass, read through Tlon's
           ::  own JSON, each through the reader's pipeline. Nothing pokes
           ::  it but the owner's wake; a wake runs a pass at once.
@@ -125,7 +125,7 @@
 
 **Files:**
 - Modify: `code/nex/orrery/orrery.js`, `orrery.css`, `scripts/page-test.js` (a Chat card beside the Telegram card: on/off, poll minutes, backfill hours, gate, escalate, cap, model, `read_own`; the DM list as checkboxes from `GET /api/chat/dms` (a small route that scries `/gx/chat/dm/json` and answers the list; add it in this task to app.hoon) and the channel list from `GET /api/chat/channels` (`/gx/channels/v5/channels/json`? read `<the tlon-apps checkout>/desk/app/channels.hoon` around line 227 for the scry that lists channels with their titles, or the groups scry `/gx/groups/groups/light/json` with its channels; pick the one that gives nest and title, cite it); the people map as rows; the last pass; a wake button)
-- Modify: `README.md`, `docs/releasing.md` (version 37 owner steps: approve `/sys/scry/` on the permits page, reload; on the Chat card pick DMs and channels, map people, enable; then tell the phone client to stop reading chats), `orrery-utils/docs/writing-a-client.md` (rule 1's "never triage twice": the ship's chat reader uses the phone client's source ids, so a client that still reads chats must stop; a line in rule 14's reader half), `orrery-utils/telegram/README.md` (a pointer), `code/version.json` 37.
+- Modify: `README.md`, `docs/releasing.md` (version 38 owner steps: approve `/sys/scry/` on the permits page, reload; on the Chat card pick DMs and channels, map people, enable; then tell the phone client to stop reading chats), `orrery-utils/docs/writing-a-client.md` (rule 1's "never triage twice": the ship's chat reader uses the phone client's source ids, so a client that still reads chats must stop; a line in rule 14's reader half), `orrery-utils/telegram/README.md` (a pointer), `code/version.json` 38.
 - [ ] **Step 1: The two list routes and the card, four page tests** (renders off, renders the lists with checked boxes for the chosen ones, the people rows, the last line).
 - [ ] **Step 2: Docs.**
 - [ ] **Step 3: Every gate** (closure, tools.hoon cmp, drift, page-test, api, key, mcp, smoke, share, both suites on the second ship). **Commit** orrery `Version 37: the ship reads Tlon DMs and group channels`; utils `Rule 1 and rule 14 for a ship that reads its own chats`. The push, the live ship's pull, the permits approval, the card setup and the phone client's note are the controller's and the owner's.

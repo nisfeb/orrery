@@ -1,6 +1,6 @@
 # Reading Tlon DMs and group channels on the ship
 
-Orrery version 37 reads the owner's Tlon messages itself: DMs, group DMs and the group channels the owner picks. It runs them through the reader pipeline the Telegram reader has had since version 29 and writes the same facts under the same rules, so the phone client's chat reader can be switched off and the phone leaves the loop. Asked by the owner on 2026-09-21 after version 34; the research behind the shape is `.superpowers/research-tlon-reader.md` (2026-09-21, read-only survey of grubbery, Tlon's groups desk and the phone client).
+Orrery version 38 reads the owner's Tlon messages itself: DMs, group DMs and the group channels the owner picks. It runs them through the reader pipeline the Telegram reader has had since version 29 and writes the same facts under the same rules, so the phone client's chat reader can be switched off and the phone leaves the loop. Asked by the owner on 2026-09-21 after version 34; the research behind the shape is `.superpowers/research-tlon-reader.md` (2026-09-21, read-only survey of grubbery, Tlon's groups desk and the phone client).
 
 ## How the ship gets the messages
 
