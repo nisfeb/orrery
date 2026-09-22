@@ -414,6 +414,31 @@
     (expect-eq !>((en-iso:orr ahead)) !>((gs:orr (snag 1 writes) 'value')))
     (expect-eq !>((en-iso:orr (add ahead ~d1))) !>((gs:orr (snag 1 writes) 'until')))
   ==
+++  test-plan-times-skipped
+  ::  an activity's skipped rows: one two days past is retracted, one an
+  ::  hour past and one tomorrow are left; a skipped on a body that is
+  ::  not an activity (a situation) is left alone
+  =/  gone=@da  (sub now ~d2)
+  =/  soon-past=@da  (sub now ~h1)
+  =/  ahead-skip=@da  (add now ~d1)
+  =/  mk-skip
+    |=  [id=@t v=@da]
+    ^-  row:orr
+    [id ['activity/ice' 'skipped' s+(en-iso:orr v) now ~ 100 ['test' 'fx'] 'test' now | '']]
+  =/  skip-all=(list loaded:orr)
+    :~  :+  'activity/ice'  [%activity 'Ice' ~ now ~]
+          :~  (mk-skip 'activity/ice/skipped-gone' gone)
+              (mk-skip 'activity/ice/skipped-recent' soon-past)
+              (mk-skip 'activity/ice/skipped-ahead' ahead-skip)
+          ==
+        (mkb 'situation/2026-09-05-other' %situation 'Other' ~ ~[['skipped' s+(en-iso:orr gone)]] now)
+    ==
+  =/  skip-ops=(list json)  (plan-times:orr skip-all now)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['retract']) !>((ops-of skip-ops)))
+    (expect-eq !>('activity/ice/skipped-gone') !>((gs:orr (snag 0 skip-ops) 'id')))
+    (expect-eq !>('reconcile: the occurrence has passed') !>((gs:orr (snag 0 skip-ops) 'note')))
+  ==
 ++  test-plan-activities
   =/  ahead=@da  (add now ~d7)
   =/  loc=[k=@t v=json]  ['location' s+'the studio']

@@ -1008,15 +1008,17 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next']
-          :~  ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped']
+          :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
+              ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
               ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
               ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
               ['cadence' 'weekly, twice a week, monthly']
+              ['skipped' 'the start of one occurrence that is off, ISO 8601 UTC, one row per occurrence; the activity itself stays active']
           ==
           ['note' (kind ~['text'] ~)]
       ==
-      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of'] |=(t=@t `json`s+t))]
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar'] |=(t=@t `json`s+t))]
       :-  'payloads'
       =/  shape
@@ -2634,7 +2636,15 @@
       %+  turn  stale
       |=  r=row
       (obs-row id.l 'next' s+(en-iso i.ahead) now `(add i.ahead ~d1) 90 ['reconcile' (cat 3 'times/' id.r)] 'reconcile')
-    $(rest t.rest, retracts (weld (flop rs) retracts), writes (weld (flop ws) writes))
+    =/  skipped-stale=(list row)
+      %+  skim  live
+      |=  r=row
+      ?.  &(=('skipped' attr.obs.r) ?=([%s *] value.obs.r))  |
+      =/  v=(unit @da)  (de-iso-any p.value.obs.r)
+      ?~(v | (lte u.v (sub now ~d1)))
+    =/  skipped-rs=(list json)
+      (turn skipped-stale |=(r=row (retract-op id.r 'reconcile: the occurrence has passed')))
+    $(rest t.rest, retracts (weld (flop (weld rs skipped-rs)) retracts), writes (weld (flop ws) writes))
   ?.  =(%situation kind.body.l)  $(rest t.rest)
   =/  got=[rs=(list json) ws=(list json)]
     %+  roll  live
