@@ -12,15 +12,15 @@
 
 ## Global Constraints
 
-- Every read of the ball's `?info=1` must check `build.status` (`vase` compiled, `tang` failed); `bang` says nothing. The fast loop is `write-text` to `/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/<file>` on ~wex (`localhost:8080`, jar `/tmp/wex.cookies`), verified by read-back (the scratchpad `build.sh` does both).
-- Clay unit tests run on ~feb's grubbery desk (copies at `~/software/feb/grubbery/lib/orrery.hoon` and `~/software/feb/grubbery/tests/lib/generator.hoon`, `|commit %grubbery` then `-test /=grubbery=/tests/lib/generator ~` in tmux window `0:6`). Wex's clay desk fails `|commit` (out of memory) and is not used for tests.
+- Every read of the ball's `?info=1` must check `build.status` (`vase` compiled, `tang` failed); `bang` says nothing. The fast loop is `write-text` to `/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/<file>` on the dev ship (`$SHIP`, jar `$JAR`), verified by read-back (the scratchpad `build.sh` does both).
+- Clay unit tests run on the second ship's grubbery desk (copies at `<the second ship's mount>/lib/orrery.hoon` and `<the second ship's mount>/tests/lib/generator.hoon`, `|commit %grubbery` then `-test /=grubbery=/tests/lib/generator ~` in its dojo). The dev ship's clay desk fails `|commit` (out of memory) and is not used for tests.
 - Tall `:~` items on one line need two-space gaps. A wet gate (`sy`, `slag`, `levy`) on a `?~`-narrowed list fails with `mull-grow`; bind to a typed face or cast first. `\'` inside a cord; `\{` for a brace in a tape.
 - Facts written by the reader: `by` is `telegram`, source `{"kind": "chat", "id": "telegram/<chat id>/<message id>"}`, identical to the Python bot.
 - No secret is ever served back: the token and the webhook secret read as `token_set` and `secret_set`.
 - The webhook is unauthenticated by design and the secret header is its whole credential: `PUT /telegram` refuses a `secret` shorter than 16 bytes (400, `secret: 16 bytes at least`); the hook compares the header before parsing the body and refuses a body over 64 KB (413) before the parse; the card generates a 32-byte secret on demand (`crypto.getRandomValues`, hex).
-- Never publish grubbery on ricsul; never touch ricsul by dojo or ssh; a release is a forge pull (`POST /grubbery/forge/api/run {"repo": "orrery.git_repo", "command": "pull"}`).
+- Never publish grubbery on the live ship; never touch the live ship by dojo or ssh; a release is a forge pull (`POST /grubbery/forge/api/run {"repo": "orrery.git_repo", "command": "pull"}`).
 - Commits as nisfeb, no AI attribution line, no em dashes.
-- Every task ends with the gates that touch it green: `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, and the api gate `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` for tasks that change a route or a fiber.
+- Every task ends with the gates that touch it green: `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, and the api gate `python3 scripts/api-matrix.py $SHIP $JAR` for tasks that change a route or a fiber.
 
 ---
 
@@ -77,7 +77,7 @@ Existing arms the tasks lean on (all in `code/lib/orrery.hoon` unless said): `gs
   ==
 ```
 
-- [ ] **Step 2: Run it to see it fail** (copy lib and tests to feb, commit, run; expect `FAILED  /tests/lib/generator/hoon (build)` with `-find.de-tg-config`)
+- [ ] **Step 2: Run it to see it fail** (copy lib and tests to the second ship, commit, run; expect `FAILED  /tests/lib/generator/hoon (build)` with `-find.de-tg-config`)
 
 - [ ] **Step 3: Write the lib section**
 
@@ -241,7 +241,7 @@ The writer op in `apply`: `?:  =('set-telegram' op)  (do-set-telegram jon)`.
 
 Note `(pure:m |)`: settings are not model state, the beacon does not move, the same as `do-set-generator`. Check how `do-set-generator` is written and match it line for line where they differ from the above; the intent above is the contract.
 
-- [ ] **Step 5: Build on wex, run the unit test on feb**: lib and app `build: vase`; the feb suite shows `OK  /tests/lib/generator/test-tg-config`.
+- [ ] **Step 5: Build on the dev ship, run the unit test on the second ship**: lib and app `build: vase`; the second ship's suite shows `OK  /tests/lib/generator/test-tg-config`.
 
 - [ ] **Step 6: Gate checks** (append to `scripts/api-matrix.py` before the `print()` of the verdict, a new section)
 
@@ -391,7 +391,7 @@ Note `tg-remember`'s `now` argument is the moment of remembering: entries whose 
 
 `~1970.1.1` plus seconds: check `unix-secs` in the lib (used by `act-id`) for the inverse and keep the two in step. If `tg-msg`'s tuple order in tests fails to nest, name every leg in the test literals the way the type does.
 
-- [ ] **Step 4: Run the tests on feb: both OK. Commit.**
+- [ ] **Step 4: Run the tests on the second ship: both OK. Commit.**
 
 ```bash
 git add code/lib/orrery.hoon tests/lib/generator.hoon
@@ -513,7 +513,7 @@ git commit -m "The reader's update and its window: five free-text messages per c
 
 `de-iso` takes a full ISO time; a bare date `2026-10-02` needs the `T00:00:00Z` before the check. Write it as `(de-iso (crip (weld d "T00:00:00Z")))` in the condition. The Python's `/obs` resolves the subject through `subject_of` (a body id, a person's name via `/resolve`, or `me`); the ship's version takes a body id only, and a subject that does not parse is refused with `usage: /obs <kind>/<slug> <attr> <value>` since the writer would drop an unknown subject anyway.
 
-- [ ] **Step 4: Tests OK on feb. Commit.**
+- [ ] **Step 4: Tests OK on the second ship. Commit.**
 
 ```bash
 git commit -am "The reader's command grammar: /at, /status, /obs, /task, as the bot has them"
@@ -680,7 +680,7 @@ The local time line: the Python prints the message time in the box's zone with i
 
 The `%-  zing  :~ ... ==` with a `?~` inside a list needs each element to be a `(list @t)`; write `?~(earlier ~ ~['New messages, oldest first:'])` and the others as shown, casting with `` `(list @t)` `` where the compiler asks. `en:json:html` of a payload shape prints keys in map order, not insertion order: the test checks only the leading `{"title": "required"` of the calendar shape, so put `title` first by sorting nothing and accept the map's order in the test if it differs (adjust the expected fragment to whatever key the map puts first; the model reads either).
 
-- [ ] **Step 4: Tests OK on feb. Commit.**
+- [ ] **Step 4: Tests OK on the second ship. Commit.**
 
 ```bash
 git commit -am "The reader's context and prompt, line for line as analyze.prompt writes them"
@@ -753,7 +753,7 @@ open('code/lib/orrery.hoon', 'w').write(lib)
 
 Check that `\0a` is how `system-prompt` carries its newlines; if it uses real newlines inside a multi-line cord form, use that form instead and change the script the same way.
 
-- [ ] **Step 4: Run the script: two `ok` lines. Build the lib on wex: `vase`. Commit.**
+- [ ] **Step 4: Run the script: two `ok` lines. Build the lib on the dev ship: `vase`. Commit.**
 
 ```bash
 git add code/lib/orrery.hoon scripts/prompt-drift.py
@@ -1011,7 +1011,7 @@ Then the validator. The `canon` map and the `known` set grow as bodies are accep
 
 `validate-obs` and `validate-acts` follow the Python block for block; the rules to carry, in order, for an observation: not an object skip; `subject` canonised through `alias` and lower-cased; a `{ref}` value canonised the same way; subject not in known drop "dropped observation on an unknown body: "; `ok-attr` on the attr else "dropped observation with a bad attr: "; a situation's `status` not open/closed/cancelled drop with the times sentence; a sink attr skip silently; a `message` in context-ids skip silently; a kind the schema lists whose attr list does not hold the attr drop with "the owner's policy keeps it from keys" when the attr is in `sensitive-attrs` else "not an attribute of <kind>"; the value cleaned (`clean-value`: null, booleans and numbers as they are; a string trimmed and cut at 2,000 bytes; a `{ref}` whose ref parses as a body id; any other object or array kept when its JSON is at most 2,000 bytes; else a note); `message` set to the given id when it is one of the new ids else `last`; `at` from the row's ISO when it parses else the message's `at`; `conf` clamped 0 to 100 with 70 the default; `until` when it parses. For an action: `kind` lower-cased, `task` when blank; `title` trimmed and cut at 200; a `message` in context-ids skip; a kind not in `kinds.ctx` or an empty title drop "dropped action: <title>"; `about` canonised, kept when known, unique, at most 20; `message` as for observations; `due` when it parses; the payload held to the kind's shape from `payloads.ctx` (ISO keys normalised, required keys present else "dropped action <title>: payload lacks a, b", a `one of` key lower-cased and in the list else "dropped action <title>: <k> is <v>, not one of a, b", a `to` key described with "body id" canonised and known else "dropped action <title>: to names a body that does not exist: <v>"); a calendar action held by `plan-problem` (drop with its reason) and `hold-plan`, and a second plan from one message dropped "dropped action <title>: a second plan from one message". Write `one-of |=(shape-value=@t (list @t))` reading the words after `one of`, splitting on commas, spaces and the word `or`.
 
-- [ ] **Step 4: Tests OK on feb. Commit.**
+- [ ] **Step 4: Tests OK on the second ship. Commit.**
 
 ```bash
 git commit -am "The reader's validation, rule for rule as analyze.validate holds a small model's answer"
@@ -1194,7 +1194,7 @@ cd ../orrery-utils/telegram && python3 -c "import bot, json; print(bot.grounded(
 
 `set-key |=([j=json k=@t v=json] json)` puts one key on an object; write it beside `has-key` if the lib lacks one (check `with-default` and `force-string` near `fill-act-as`, which do the same kind of thing). The possessive line above builds `w` and `w` without the trailing `'s`; write it as a small `possessive-free` gate rather than the inline arithmetic if the compiler complains.
 
-- [ ] **Step 4: Tests OK on feb. Commit.**
+- [ ] **Step 4: Tests OK on the second ship. Commit.**
 
 ```bash
 git commit -am "Grounding, the bot's rules: a fact traces to its message, a paraphrase to its words, a body to a fact about it"
@@ -1426,7 +1426,7 @@ In the app, lift the HTTP call out of `ask-model`:
 
 Two fibers may be inside `post-json` at once (the generator and the reader): each waits for `[/ %http-response]` on its own fiber, and iris answers the fiber that sent, so the wires do not cross. If the kernel's iris delivery is per nexus rather than per fiber, the reader must not overlap the generator: check `docs/spikes/2026-09-19-iris-probe.md` and the calendar's `fetch-hdr`, and if in doubt make the reader take the generator's `/model` answer as its own by tagging the timer paths and reading the response's wire. Prove it in the gate (Task 9 runs a reader message while a generator pass is in flight).
 
-- [ ] **Step 4: Tests OK on feb; lib and app `vase` on wex; the api gate's generator section still green. Commit.**
+- [ ] **Step 4: Tests OK on the second ship; lib and app `vase` on the dev ship; the api gate's generator section still green. Commit.**
 
 ```bash
 git commit -am "The decider questions as the shared code asks them, and one HTTP call the model and the decider share"
@@ -1466,7 +1466,7 @@ Make the stub's `do_POST` answer by path: `/chat/completions` with `CANNED` unle
 curl('DELETE', API + '/body/thing/gate-car'); curl('DELETE', API + '/body/place/gate-shop')
 observe([{'id': 'thing/gate-car', 'name': 'the gate car', 'aliases': ['gate car']}], [])
 curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'cooldown_minutes': 1440, 'max_daily': 1000})
-curl('PUT', API + '/telegram', {'enabled': True, 'token': '123:abc', 'secret': 'hook-secret', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'public_url': 'http://localhost:8080',
+curl('PUT', API + '/telegram', {'enabled': True, 'token': '123:abc', 'secret': 'hook-secret', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'public_url': '$SHIP',
                                'chats': [1001], 'people': {'1001': 'person/me'}, 'gate': 30, 'escalate': 60, 'max_daily_messages': 500})
 time.sleep(1)
 HOOK = HOST + '/apps/orrery/telegram'
@@ -1773,7 +1773,7 @@ Remember the message even when the day's cap held it? No: a held message is not 
 
 A command's outcome counts as read too when it wrote; keep `read` as the two outcomes that ran the model, since the cap is about the model.
 
-- [ ] **Step 4: Build on wex (`vase` for lib and app), run the api gate: the telegram section green and every earlier section still green.** If the reader's iris answer lands on the generator fiber or the other way round, that shows here as the gate's generator checks failing with the reader's canned answer; then tag the requests (the `wire` argument of `post-json` names the timer only, the response has no wire) by running the reader's model call through the generator fiber instead: the reader pokes `gen.sig` with `{"read": <prompt>}` and takes the answer back as a poke. Prefer proving the simple form works first; the calendar desk runs a fetch fiber beside the sync fiber the same way.
+- [ ] **Step 4: Build on the dev ship (`vase` for lib and app), run the api gate: the telegram section green and every earlier section still green.** If the reader's iris answer lands on the generator fiber or the other way round, that shows here as the gate's generator checks failing with the reader's canned answer; then tag the requests (the `wire` argument of `post-json` names the timer only, the response has no wire) by running the reader's model call through the generator fiber instead: the reader pokes `gen.sig` with `{"read": <prompt>}` and takes the answer back as a poke. Prefer proving the simple form works first; the calendar desk runs a fetch fiber beside the sync fiber the same way.
 
 - [ ] **Step 5: Commit**
 
@@ -1799,7 +1799,7 @@ git commit -m "The telegram reader: a webhook into an inbox, a fiber that drains
 code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
-check('setWebhook carried the public url, the secret and the update kinds', sw and sw[-1].get('url') == 'http://localhost:8080/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret' and sw[-1].get('allowed_updates') == ['message', 'business_message'], sw[-1:] )
+check('setWebhook carried the public url, the secret and the update kinds', sw and sw[-1].get('url') == '$SHIP/apps/orrery/telegram' and sw[-1].get('secret_token') == 'hook-secret' and sw[-1].get('allowed_updates') == ['message', 'business_message'], sw[-1:] )
 ```
 
 - [ ] **Step 2: Implement**
@@ -1946,7 +1946,7 @@ cd ../orrery-utils && git add telegram/README.md docs/writing-a-client.md && git
 - Modify: `code/version.json` (29)
 
 - [ ] **Step 1: `printf '{"version": 29}\n' > code/version.json`**
-- [ ] **Step 2: The full gates on wex**: `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` (every section), `python3 scripts/key-matrix.py` and `python3 scripts/mcp-matrix.py` the way `docs/releasing.md` runs them, `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, `python3 scripts/prompt-drift.py ../orrery-utils/common`, the feb unit suite.
+- [ ] **Step 2: The full gates on the dev ship**: `python3 scripts/api-matrix.py $SHIP $JAR` (every section), `python3 scripts/key-matrix.py` and `python3 scripts/mcp-matrix.py` the way `docs/releasing.md` runs them, `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, `python3 scripts/prompt-drift.py ../orrery-utils/common`, the second ship's unit suite.
 - [ ] **Step 3: Commit and push**
 
 ```bash
@@ -1955,8 +1955,8 @@ git commit -m "Version 29: the ship reads Telegram through its webhook"
 git push
 ```
 
-- [ ] **Step 4: Pull onto ricsul** (`POST /grubbery/forge/api/run {"repo": "orrery.git_repo", "command": "pull"}` over HTTPS with the owner cookie), confirm `version.json` reads 29 and `GET /api/telegram` answers masked settings.
-- [ ] **Step 5: Hand-off to the owner**: on ricsul's Settings, the Telegram card: token, secret, public URL `https://urbit.sneagan.com`, the chats and people from the bot's `config.json`, gate 30, escalate 60, then register. Stop the Python bot's loop (its executor keeps working until version 30 only if it runs; the reading half must not run beside the webhook, since Telegram delivers to one or the other). Text the bot and watch the card's last line.
+- [ ] **Step 4: Pull onto the live ship** (`POST /grubbery/forge/api/run {"repo": "orrery.git_repo", "command": "pull"}` over HTTPS with the owner cookie), confirm `version.json` reads 29 and `GET /api/telegram` answers masked settings.
+- [ ] **Step 5: Hand-off to the owner**: on the live ship's Settings, the Telegram card: token, secret, public URL `<the live ship's URL>`, the chats and people from the bot's `config.json`, gate 30, escalate 60, then register. Stop the Python bot's loop (its executor keeps working until version 30 only if it runs; the reading half must not run beside the webhook, since Telegram delivers to one or the other). Text the bot and watch the card's last line.
 - [ ] **Step 6: Memory**: update `project/orrery/status` (version 29, what moved, the window file, the lessons) in lattice.
 
 ---

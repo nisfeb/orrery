@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A grubbery desk app on `~wex` that stores bodies, observations and actions, folds observations into current state, and answers the HTTP API from spec section 6, proven by the section 8 scenario running green from `scripts/api-matrix.py`.
+**Goal:** A grubbery desk app on the dev ship that stores bodies, observations and actions, folds observations into current state, and answers the HTTP API from spec section 6, proven by the section 8 scenario running green from `scripts/api-matrix.py`.
 
-**Architecture:** One import-free hoon library (`code/lib/orrery.hoon`) holds the types, ids, validation, JSON codecs and the fold, and is unit-tested on `~wex` with `-test`. One nexus (`code/nex/orrery/app.hoon`) lays the tree in `on-load`, runs a single writer fiber at `/main.sig` that applies JSON ops, binds `/apps/orrery` from `/web.sig`, and answers each request on an ephemeral fiber under `/requests/`. The desk installs on `~wex` through the forge (a git mirror of `nisfeb/orrery`) and the shell's desk-add route, exactly the production path.
+**Architecture:** One import-free hoon library (`code/lib/orrery.hoon`) holds the types, ids, validation, JSON codecs and the fold, and is unit-tested on the dev ship with `-test`. One nexus (`code/nex/orrery/app.hoon`) lays the tree in `on-load`, runs a single writer fiber at `/main.sig` that applies JSON ops, binds `/apps/orrery` from `/web.sig`, and answers each request on an ephemeral fiber under `/requests/`. The desk installs on the dev ship through the forge (a git mirror of `nisfeb/orrery`) and the shell's desk-add route, exactly the production path.
 
-**Tech Stack:** Hoon at zuse 408 on grubbery (nisfeb/grubbery `dist/single-release`, local checkout `~/software/groundwire/grubbery`), the fake ship `~wex` (HTTP `http://localhost:8080`, dojo in tmux pane `0:2.0`, clay mount `~/software/wex/grubbery`), Python 3 with `curl` for the gate script, git with the nisfeb identity.
+**Tech Stack:** Hoon at zuse 408 on grubbery (nisfeb/grubbery `dist/single-release`, local checkout `<the grubbery checkout>`), the fake dev ship (HTTP `$SHIP`, its dojo, clay mount `<the dev ship's mount>`), Python 3 with `curl` for the gate script, git with the nisfeb identity.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-orrery-design.md`. The plan argues from it; read sections 3, 5, 6 and 8 before any task.
 
@@ -15,8 +15,8 @@
 - Prose rules for every doc, comment and commit message: no em-dashes, no hard-wrapped markdown, simple sentences (`/feedback/prose-style-rules`). Hoon comments follow grubbery's `style-guide.md`: `::  +arm: lowercase headline`, a bare `::` line below.
 - No AI attribution anywhere: no `Co-Authored-By`, no `Generated with` lines, in commits or elsewhere.
 - Commits go to `nisfeb/orrery` as the nisfeb identity (`git config user.name` is already `nisfeb`). Commit at the end of every task with the message given. Push only where a step says push.
-- Never touch `~ricsul-bilwyt`. Never boot, kill or restart a pier. Bounce is `|suspend %grubbery` then `|revive %grubbery`, never `|exit`. The tmux window `0:3` is an ssh session to ricsul: never send keys there.
-- Dojo discipline (`/feedback/dojo-input-discipline`): send ONE line, verify its echo with `tmux capture-pane`, never chain. Any wait over 2 minutes, or an echo missing after 30 seconds, is a STOP: report what is on screen. Never type an expression you have not seen work.
+- Never touch the live ship. Never boot, kill or restart a pier. Bounce is `|suspend %grubbery` then `|revive %grubbery`, never `|exit`.
+- Dojo discipline (`/feedback/dojo-input-discipline`): send ONE line, verify its echo in the pane, never chain. Any wait over 2 minutes, or an echo missing after 30 seconds, is a STOP: report what is on screen. Never type an expression you have not seen work.
 - Every persistent path in the tree has a covering `%fall` row in `on-load`. Every blot the tree lays has a marc inside `code/mar`. Every marc is a noun passthrough. Long-lived fibers use nexus-relative roads built with `rf` and `rv`. No `$` with arguments inside a `;<` continuation: recurse by arm name.
 - The writer never crashes on input: every refusal is a clean branch that writes `/tr/last`.
 - The library `code/lib/orrery.hoon` stays import-free (no `/<`, `/+`, `/-`): it must build both in the clay desk `/lib` for `-test` and in the app's code namespace.
@@ -25,40 +25,40 @@
 
 ---
 
-## Working with `~wex`
+## Working with the dev ship
 
 Every ship step in this plan uses these recipes. Read them once.
 
-**Login and cookie.** `~wex` answers on `http://localhost:8080`. Its fake `+code` is `novwel-tamfes-daplex-misdem` (verified 2026-09-16). Keep the cookie jar in the session scratchpad, never in the repo:
+**Login and cookie.** The dev ship answers on `$SHIP`. Its `+code` is read from its dojo. Keep the cookie jar in the session scratchpad, never in the repo:
 
 ```bash
-W=http://localhost:8080
-CK=/tmp/wex.cookies
+W=$SHIP
+CK=$JAR
 curl -s -c $CK -o /dev/null -w '%{http_code}\n' -X POST $W/~/login --data 'password=novwel-tamfes-daplex-misdem'
 # expected: 200. A 400 means the code is wrong: read it with `+code` on the dojo (recipe below).
 ```
 
-**Dojo, one line at a time.** The wex dojo is tmux pane `0:2.0`. Send a line, then read the pane until the echo and the result appear:
+**Dojo, one line at a time.** The dev ship's dojo is in its own pane. Send a line, then read the pane until the echo and the result appear:
 
 ```bash
-tmux send-keys -t 0:2.0 -l '|commit %grubbery'; tmux send-keys -t 0:2.0 Enter
-sleep 5; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -15
+# in the dojo: |commit %grubbery
+# then read the dojo output
 ```
 
-A `|commit` prints `+ /~wex/grubbery/<rev>/lib/orrery/hoon` lines for added files, `: /~wex/grubbery/<rev>/...` for changed ones, and `>=` at the end. The number after `grubbery/` is the desk revision `<rev>` used by `-test`. A commit that prints only `>=` saw no change. If the prompt shows `~wex:dojo/=/grubbery/...>`, the working dir is pinned: send `=dir /=base=` first (`/reference/grubbery-test-invocation-trap`).
+A `|commit` prints `+ /~sampel-sipnym/grubbery/<rev>/lib/orrery/hoon` lines for added files, `: /~sampel-sipnym/grubbery/<rev>/...` for changed ones, and `>=` at the end. The number after `grubbery/` is the desk revision `<rev>` used by `-test`. A commit that prints only `>=` saw no change. If the prompt shows `~sampel-sipnym:dojo/=/grubbery/...>`, the working dir is pinned: send `=dir /=base=` first (`/reference/grubbery-test-invocation-trap`).
 
 **Unit tests.** The library and its test file are copied into the clay mount, committed, then run with the revision pinned. `-test` output ends with a `built`/`ok=%.y` or `ok=%.n` line and one `OK`/`FAILED`/`CRASHED` line per arm:
 
 ```bash
-cp code/lib/orrery.hoon ~/software/wex/grubbery/lib/orrery.hoon
-cp tests/lib/orrery.hoon ~/software/wex/grubbery/tests/lib/orrery.hoon
-tmux send-keys -t 0:2.0 -l '|commit %grubbery'; tmux send-keys -t 0:2.0 Enter
-sleep 8; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -6      # read <rev>
-tmux send-keys -t 0:2.0 -l '-test /~wex/grubbery/<rev>/tests/lib/orrery ~'; tmux send-keys -t 0:2.0 Enter
-sleep 20; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -40
+cp code/lib/orrery.hoon <the dev ship's mount>/lib/orrery.hoon
+cp tests/lib/orrery.hoon <the dev ship's mount>/tests/lib/orrery.hoon
+# in the dojo: |commit %grubbery
+# then read the dojo output      # read <rev>
+# in the dojo: -test /~sampel-sipnym/grubbery/<rev>/tests/lib/orrery ~
+# then read the dojo output
 ```
 
-Count only the `OK`, `FAILED` and `CRASHED` lines between your own command echo and its verdict. A compile error in the test file or the library prints a `dep failed` or a trace instead of a verdict; the file and line are in the trace. Two mechanics learned on the first runs: this shell aliases `cp` to `cp -i`, so copies into the mount are `\cp`; and a dojo line that starts with a dash needs `--` before it (`tmux send-keys -t 0:2.0 -l -- '-test ...'`) or tmux reads the dash as a flag. A commit that touches a library the desk compiles takes 70 to 95 seconds to print; a pane that keeps changing is working, not stuck. Two hoon facts the tests taught: `%=` (the `x(face value)` form) and a dot wing (`face.x`) work on a leg bound with `=/`, not on an arm; to reach into an arm's product use the colon form (`face:x`) or bind it to a leg first.
+Count only the `OK`, `FAILED` and `CRASHED` lines between your own command echo and its verdict. A compile error in the test file or the library prints a `dep failed` or a trace instead of a verdict; the file and line are in the trace. Two mechanics learned on the first runs: this shell aliases `cp` to `cp -i`, so copies into the mount are `\cp`; and a dojo line that starts with a dash needs `--` before it when it is sent through a terminal multiplexer, or the multiplexer reads the dash as a flag. A commit that touches a library the desk compiles takes 70 to 95 seconds to print; a pane that keeps changing is working, not stuck. Two hoon facts the tests taught: `%=` (the `x(face value)` form) and a dot wing (`face.x`) work on a leg bound with `=/`, not on an arm; to reach into an arm's product use the colon form (`face:x`) or bind it to a leg first.
 
 **The fast loop for nexus code, after the desk exists (Task 4 onward).** Writing a file into the desk's code tree recompiles at once, with no commit. Then reload the instance so its long-lived fibers pick the new code up, and read `bang`:
 
@@ -85,9 +85,9 @@ A file that does not exist in the code tree yet is created first with `action=cr
 | `code/mar/json.hoon`, `code/mar/sig.hoon`, `code/mar/mime.hoon` | the kernel marcs the tree lays, vendored so the desk is hermetic |
 | `code/mar/orrery/body.hoon`, `obs.hoon`, `action.hoon` | noun-passthrough marcs for the three stored shapes |
 | `code/lib/orrery.hoon` | types, caps, validation, ids, ISO time, JSON codecs, the fold, timelines, involved, resolve, action rules, starter schema and policy. Pure, import-free |
-| `tests/lib/orrery.hoon` | unit tests for the library, run on `~wex` |
+| `tests/lib/orrery.hoon` | unit tests for the library, run on the dev ship |
 | `code/nex/orrery/app.hoon` | the nexus: `on-load` rows, the writer, the HTTP binder, the request handler, tree walks |
-| `scripts/api-matrix.py` | the HTTP gate: spec section 8 against `~wex` |
+| `scripts/api-matrix.py` | the HTTP gate: spec section 8 against the dev ship |
 | `scripts/code-closure.py` | hermeticity check, copied from auspex |
 | `docs/releasing.md` | the release mechanics, copied from calendar with the names changed |
 
@@ -330,7 +330,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
 ::
 ++  o1
   ^-  obs:orr
-  ['thing/subaru' 'location' s+'Route 9' t0 ~ 90 ['talon-dm' 'm1'] 'talon/triage' t0 | '']
+  ['thing/subaru' 'location' s+'Route 9' t0 ~ 90 ['phone-dm' 'm1'] 'phone/triage' t0 | '']
 ++  test-obs-id-shape
   =/  id=tape  (trip (obs-id:orr o1))
   ;:  weld
@@ -380,7 +380,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
 ++  test-de-obs-ok
   =/  got
     %^  de-obs:orr
-      (jo '{"subject":"thing/subaru","attr":"location","value":{"ref":"place/johns-machine-shop"},"at":"2026-09-17T02:10:00Z","conf":85,"source":{"kind":"talon-dm","id":"m3"}}')
+      (jo '{"subject":"thing/subaru","attr":"location","value":{"ref":"place/johns-machine-shop"},"at":"2026-09-17T02:10:00Z","conf":85,"source":{"kind":"phone-dm","id":"m3"}}')
     t0  'http'
   ?.  ?=(%& -.got)  (expect !>(|))
   ;:  weld
@@ -390,7 +390,7 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
     (expect-eq !>(~2026.9.17..2.10.00) !>(at.p.got))
     (expect-eq !>(`(unit @da)`~) !>(until.p.got))
     (expect-eq !>(85) !>(conf.p.got))
-    (expect-eq !>(`source:orr`['talon-dm' 'm3']) !>(source.p.got))
+    (expect-eq !>(`source:orr`['phone-dm' 'm3']) !>(source.p.got))
     (expect-eq !>('http') !>(by.p.got))
     (expect-eq !>(t0) !>(seen.p.got))
     (expect-eq !>(|) !>(retracted.p.got))
@@ -501,19 +501,19 @@ git commit -m "The desk skeleton: manifest, tile, icon, and the six marcs"
 
 - [ ] **Step 2: Run the tests and watch them fail**
 
-Copy only the test file (the library does not exist yet) and run per the recipe under "Working with `~wex`":
+Copy only the test file (the library does not exist yet) and run per the recipe under "Working with the dev ship":
 
 ```bash
-cp tests/lib/orrery.hoon ~/software/wex/grubbery/tests/lib/orrery.hoon
-tmux send-keys -t 0:2.0 -l '|commit %grubbery'; tmux send-keys -t 0:2.0 Enter
-sleep 8; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -6
+cp tests/lib/orrery.hoon <the dev ship's mount>/tests/lib/orrery.hoon
+# in the dojo: |commit %grubbery
+# then read the dojo output
 ```
 
-Read `<rev>` off the `+ /~wex/grubbery/<rev>/tests/lib/orrery/hoon` line, then:
+Read `<rev>` off the `+ /~sampel-sipnym/grubbery/<rev>/tests/lib/orrery/hoon` line, then:
 
 ```bash
-tmux send-keys -t 0:2.0 -l '-test /~wex/grubbery/<rev>/tests/lib/orrery ~'; tmux send-keys -t 0:2.0 Enter
-sleep 15; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -12
+# in the dojo: -test /~sampel-sipnym/grubbery/<rev>/tests/lib/orrery ~
+# then read the dojo output
 ```
 
 Expected: a build failure naming `/lib/orrery/hoon` as missing (a `%file-not-found` or `dep failed` line), no `OK` lines.
@@ -898,11 +898,11 @@ Expected: a build failure naming `/lib/orrery/hoon` as missing (a `%file-not-fou
 - [ ] **Step 4: Run the tests and watch them pass**
 
 ```bash
-cp code/lib/orrery.hoon ~/software/wex/grubbery/lib/orrery.hoon
-tmux send-keys -t 0:2.0 -l '|commit %grubbery'; tmux send-keys -t 0:2.0 Enter
-sleep 8; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -6
-tmux send-keys -t 0:2.0 -l '-test /~wex/grubbery/<rev>/tests/lib/orrery ~'; tmux send-keys -t 0:2.0 Enter
-sleep 20; tmux capture-pane -p -t 0:2.0 | grep -v '^\s*$' | tail -30
+cp code/lib/orrery.hoon <the dev ship's mount>/lib/orrery.hoon
+# in the dojo: |commit %grubbery
+# then read the dojo output
+# in the dojo: -test /~sampel-sipnym/grubbery/<rev>/tests/lib/orrery ~
+# then read the dojo output
 ```
 
 Expected: 19 `OK` lines, no `FAILED`, no `CRASHED`, `ok=%.y`. A compile error names the file and the line; fix the library (or the test, when the test is wrong), copy again, commit again, test again. Do not move on with a failing arm.
@@ -1079,7 +1079,7 @@ Insert before the final `--` of `tests/lib/orrery.hoon`:
 
 - [ ] **Step 2: Run the tests and watch the new ones fail**
 
-Copy the test file, commit, run (recipe under "Working with `~wex`"). Expected: a build failure naming an unknown arm such as `fold` (`-find.fold`), because the library lacks part two. The 18 arms from Task 2 do not run either; that is expected, the file does not compile.
+Copy the test file, commit, run (recipe under "Working with the dev ship"). Expected: a build failure naming an unknown arm such as `fold` (`-find.fold`), because the library lacks part two. The 18 arms from Task 2 do not run either; that is expected, the file does not compile.
 
 - [ ] **Step 3: Append the arms to the library**
 
@@ -1309,7 +1309,7 @@ Insert before the final `--` of `code/lib/orrery.hoon`:
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Copy both files, commit, run (recipe under "Working with `~wex`"). Expected: 29 `OK` lines, no `FAILED`, no `CRASHED`, `ok=%.y`. Fix and rerun until green.
+Copy both files, commit, run (recipe under "Working with the dev ship"). Expected: 29 `OK` lines, no `FAILED`, no `CRASHED`, `ok=%.y`. Fix and rerun until green.
 
 - [ ] **Step 5: Commit**
 
@@ -1318,7 +1318,7 @@ git add code/lib/orrery.hoon tests/lib/orrery.hoon
 git commit -m "The model library: encoders, the fold, timelines, involved, resolve and the action rules, with tests"
 ```
 
-### Task 4: The nexus: tree, writer, HTTP, and the install on `~wex`
+### Task 4: The nexus: tree, writer, HTTP, and the install on the dev ship
 
 **Files:**
 - Create: `code/nex/orrery/app.hoon`
@@ -1867,12 +1867,12 @@ git commit -m "The nexus: the tree, the writer with observe and upsert-body, and
 git push origin main
 ```
 
-- [ ] **Step 3: Mirror the repo on `~wex` and install the desk**
+- [ ] **Step 3: Mirror the repo on the dev ship and install the desk**
 
-Log in first (recipe under "Working with `~wex`"). Then:
+Log in first (recipe under "Working with the dev ship"). Then:
 
 ```bash
-W=http://localhost:8080; CK=/tmp/wex.cookies
+W=$SHIP; CK=$JAR
 curl -s -b $CK -X POST -H 'content-type: application/json' \
   -d '{"name":"orrery","repo":"nisfeb/orrery","ref":"main"}' $W/grubbery/forge/api/add
 # expected: created   (409 "a repo by that name already exists" means a previous attempt; continue)
@@ -1923,7 +1923,7 @@ curl -s -b $CK "$I?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin)
 curl -s -m 30 -b $CK $W/apps/orrery/api/state | python3 -m json.tool | head -40
 ```
 
-Expected: HTTP 200 with `"me": "person/me"`, a `bodies` array holding one body `person/me` named `me` with aliases `me`, `I` and `~wex`, empty `attrs`, `situations: []`, `actions: []`, and the starter schema. The first call lays `person/me`; if the body is missing on the first answer, call again once. A hang past 30 seconds means the route is bound to a dead instance: read the bang. A 403 means the cookie is stale: log in again. Unauthenticated check:
+Expected: HTTP 200 with `"me": "person/me"`, a `bodies` array holding one body `person/me` named `me` with aliases `me`, `I` and its own @p, empty `attrs`, `situations: []`, `actions: []`, and the starter schema. The first call lays `person/me`; if the body is missing on the first answer, call again once. A hang past 30 seconds means the route is bound to a dead instance: read the bang. A 403 means the cookie is stale: log in again. Unauthenticated check:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' $W/apps/orrery/api/state
@@ -1936,7 +1936,7 @@ curl -s -o /dev/null -w '%{http_code}\n' $W/apps/orrery/api/state
 curl -s -b $CK -X POST -H 'content-type: application/json' $W/apps/orrery/api/observe -d '{
   "bodies": [{"id":"thing/subaru","name":"The Subaru","aliases":["the car","subaru"]}],
   "observations": [
-    {"subject":"thing/subaru","attr":"status","value":"broken down","at":"2026-09-16T12:00:00Z","conf":90,"source":{"kind":"talon-dm","id":"m1"},"by":"talon/triage"},
+    {"subject":"thing/subaru","attr":"status","value":"broken down","at":"2026-09-16T12:00:00Z","conf":90,"source":{"kind":"phone-dm","id":"m1"},"by":"phone/triage"},
     {"subject":"thing/nothing","attr":"status","value":"x","source":{"kind":"user","id":""}}
   ]}' | python3 -m json.tool
 ```
@@ -1947,7 +1947,7 @@ Expected: `bodies[0]` is `{"id": "thing/subaru", "ok": true, "existing": false}`
 curl -s -b $CK $W/apps/orrery/api/state | python3 -c 'import sys,json; d=json.load(sys.stdin); b=[x for x in d["bodies"] if x["id"]=="thing/subaru"][0]; print(b["attrs"])'
 ```
 
-Expected: `status` with value `broken down`, `at` `2026-09-16T12:00:00Z`, `conf` 90, `source` `{kind: talon-dm, id: m1}`, `by` `talon/triage`, and `obs` equal to the id answered above. Re-POST the same request: `existing: true` on the body and the first observation. Read the writer's last note:
+Expected: `status` with value `broken down`, `at` `2026-09-16T12:00:00Z`, `conf` 90, `source` `{kind: phone-dm, id: m1}`, `by` `phone/triage`, and `obs` equal to the id answered above. Re-POST the same request: `existing: true` on the body and the first observation. Read the writer's last note:
 
 ```bash
 curl -s -b $CK "$I/tr/last?raw=1"
@@ -1958,7 +1958,7 @@ curl -s -b $CK "$I/tr/last?raw=1"
 
 ```bash
 git add code
-git commit -m "Installed on wex: the first observation lands and reads back"
+git commit -m "Installed on the dev ship: the first observation lands and reads back"
 git push origin main
 ```
 
@@ -2506,7 +2506,7 @@ In `+serve-observe`, delete the line `;<  rev=json  bind:m  (read-json (rf 1 /be
 - [ ] **Step 7: Deploy with the fast loop and read the bang**
 
 ```bash
-W=http://localhost:8080; CK=/tmp/wex.cookies
+W=$SHIP; CK=$JAR
 D=$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk
 I="$D/data/orrery.orrery_app"
 curl -s -b $CK -X POST --data-urlencode action=write-text --data-urlencode content@code/nex/orrery/app.hoon "$D/code/nex/orrery/app.hoon"
@@ -2558,7 +2558,7 @@ curl -s -b $CK "$I/tr/last?raw=1"
 #   the last op, ok true
 ```
 
-The push: with `push: true` the `act` calls above poke `/sys/push`. On `~wex` nothing subscribes, so nothing arrives, and that is fine. What matters is that the writer survived: `/tr/last` reads `{"op":"act","ok":true,...}` after the task proposal.
+The push: with `push: true` the `act` calls above poke `/sys/push`. On the dev ship nothing subscribes, so nothing arrives, and that is fine. What matters is that the writer survived: `/tr/last` reads `{"op":"act","ok":true,...}` after the task proposal.
 
 - [ ] **Step 9: Commit and push**
 
@@ -2575,7 +2575,7 @@ git push origin main
 
 **Interfaces:**
 - Consumes: every route from Tasks 4 and 5.
-- Produces: the phase 1 gate. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` exits 0 and prints `ALL OK`.
+- Produces: the phase 1 gate. `python3 scripts/api-matrix.py $SHIP $JAR` exits 0 and prints `ALL OK`.
 
 The scenario's times are computed from the ship's present (the breakdown is twelve hours ago), because a fold at "now" would read fixed future dates as not yet true. Source ids carry a `matrix-` prefix so a rerun can retract what an earlier run wrote.
 
@@ -2587,7 +2587,7 @@ The scenario's times are computed from the ship's present (the breakdown is twel
 #!/usr/bin/env python3
 """api-matrix.py HOST JAR
 The HTTP gate for orrery: spec section 8, the stranded car, against a
-fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
+fake ship. HOST like $SHIP; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
 retracts and dismisses what an earlier run left."""
 import json, subprocess, sys
@@ -2637,7 +2637,7 @@ USER = {'kind': 'user', 'id': 'matrix-setup'}
 
 
 def src(i):
-    return {'kind': 'talon-dm', 'id': 'matrix-' + i}
+    return {'kind': 'phone-dm', 'id': 'matrix-' + i}
 
 
 def ref(b):
@@ -2850,7 +2850,7 @@ sys.exit(1 if fails else 0)
 
 ```bash
 chmod +x scripts/api-matrix.py
-python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies
+python3 scripts/api-matrix.py $SHIP $JAR
 ```
 
 Expected: every line `ok`, then `ALL OK`, exit 0. A `FAIL` line carries the answer that disagreed. Decide whether the script or the nexus is wrong by reading the spec section 8 sentence the check comes from: the spec is the authority, the script transcribes it, the nexus implements it. Fix the wrong one, redeploy the nexus with the fast loop when it changed, rerun until `ALL OK`. Run it twice in a row: the second run must also pass, which proves the clean-slate step.
@@ -2859,7 +2859,7 @@ Expected: every line `ok`, then `ALL OK`, exit 0. A `FAIL` line carries the answ
 
 ```bash
 git add scripts/api-matrix.py code
-git commit -m "The gate: spec section 8 as scripts/api-matrix.py, green on wex"
+git commit -m "The gate: spec section 8 as scripts/api-matrix.py, green on the dev ship"
 git push origin main
 ```
 
@@ -2881,7 +2881,7 @@ cp ../auspex/scripts/code-closure.py scripts/code-closure.py
 python3 scripts/code-closure.py code
 ```
 
-Expected: it reports nothing missing. If it names a missing marc or lib, vendor it from `~/software/groundwire/grubbery/desk/gub/mar` or `gub/lib` into `code/mar` or `code/lib` (it can do that itself with `--fill ~/software/groundwire/grubbery/desk`), and rerun until closed. Then redeploy any new file with the fast loop (`create-file` then `write-text`) and confirm the bang stays `None`.
+Expected: it reports nothing missing. If it names a missing marc or lib, vendor it from `<the grubbery checkout>/desk/gub/mar` or `gub/lib` into `code/mar` or `code/lib` (it can do that itself with `--fill <the grubbery checkout>/desk`), and rerun until closed. Then redeploy any new file with the fast loop (`create-file` then `write-text`) and confirm the bang stays `None`.
 
 - [ ] **Step 2: The releasing doc**
 
@@ -2894,17 +2894,17 @@ sed -e 's/calendar\.desk/orrery.desk/g' -e 's/calendar\.git_repo/orrery.git_repo
 grep -n -i calendar docs/releasing.md
 ```
 
-Read every remaining `calendar` mention the grep prints and decide: a sentence about the mechanism that names calendar as the example stays true and stays; a sentence that describes calendar's own files is rewritten for orrery. The two paragraphs on "what makes ricsul update" and "verifying a release actually landed" are the ones the next phase needs. Then append this section at the end:
+Read every remaining `calendar` mention the grep prints and decide: a sentence about the mechanism that names calendar as the example stays true and stays; a sentence that describes calendar's own files is rewritten for orrery. The two paragraphs on "what makes the live ship update" and "verifying a release actually landed" are the ones the next phase needs. Then append this section at the end:
 
 ```markdown
 ##  8. Orrery's own release checklist
 
 1. `code/version.json` bumped, the number one higher than the last release.
 2. `python3 scripts/code-closure.py code` reports nothing missing.
-3. Unit tests green on `~wex`: `-test /~wex/grubbery/<rev>/tests/lib/orrery ~`.
-4. `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, twice in a row.
-5. `git push origin main`, then on `~wex`: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-6. The ricsul steps are sneagan's: the catalog line, the kernel commit, the sync, the consent, the publish.
+3. Unit tests green on the dev ship: `-test /~sampel-sipnym/grubbery/<rev>/tests/lib/orrery ~`.
+4. `python3 scripts/api-matrix.py $SHIP $JAR` prints `ALL OK`, twice in a row.
+5. `git push origin main`, then on the dev ship: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
+6. The live ship's steps are the owner's: the catalog line, the kernel commit, the sync, the consent, the publish.
 ```
 
 - [ ] **Step 3: The README**
@@ -2915,7 +2915,7 @@ Replace the "Design, under review" bullet in `README.md` with these bullets:
 - Design: `docs/superpowers/specs/2026-09-16-orrery-design.md`. Phase 1 plan: `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`.
 - `code/` is the desk: the nexus at `code/nex/orrery/app.hoon`, the model in `code/lib/orrery.hoon`, the marcs under `code/mar`. `code/version.json` is what replicates.
 - The HTTP API lives under `/apps/orrery/api`: `state`, `body/<kind>/<slug>`, `resolve`, `observe`, `retract`, `bodies`, `act`, `actions`, `schema`, `policy`. Owner only. Spec section 6 has the table.
-- Gates, against `~wex`: `tests/lib/orrery.hoon` with `-test`, and `scripts/api-matrix.py`. Releasing: `docs/releasing.md`.
+- Gates, against the dev ship: `tests/lib/orrery.hoon` with `-test`, and `scripts/api-matrix.py`. Releasing: `docs/releasing.md`.
 ```
 
 - [ ] **Step 4: Rehearse the release path**
@@ -2929,7 +2929,7 @@ EOF
 git add code/version.json docs/releasing.md README.md scripts/code-closure.py code
 git commit -m "Version 2: closure check, releasing doc, README; the first release through the forge"
 git push origin main
-W=http://localhost:8080; CK=/tmp/wex.cookies
+W=$SHIP; CK=$JAR
 curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.git_repo","command":"pull"}' $W/grubbery/forge/api/run
 # expected: ok
 ```
@@ -2941,7 +2941,7 @@ curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/version.json
 # expected, once synced: {"version": 2}
 curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app?info=1" | python3 -c 'import sys,json; print(json.load(sys.stdin)["bang"])'
 # expected: None
-python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies
+python3 scripts/api-matrix.py $SHIP $JAR
 # expected: ALL OK
 ```
 
@@ -2949,7 +2949,7 @@ If the version syncs but the bang is not `None`, a file on the ship differed fro
 
 - [ ] **Step 5: Report**
 
-Phase 1 is done when: 29 unit tests green with the revision pinned, `api-matrix.py` green twice, the desk at version 2 synced through the forge with a null bang, and `main` pushed. Report those four facts with the numbers you saw, and the wex desk revision the tests ran at. Do not touch `~ricsul-bilwyt`.
+Phase 1 is done when: 29 unit tests green with the revision pinned, `api-matrix.py` green twice, the desk at version 2 synced through the forge with a null bang, and `main` pushed. Report those four facts with the numbers you saw, and the dev ship's desk revision the tests ran at. Do not touch the live ship.
 
 ### Task 8: The product-review amendments: a ship on a body, the self-reference guard, action history, push modes, the audit log
 
@@ -3040,7 +3040,7 @@ Then update these existing tests in the same file, because `body` and `action` l
 
 - [ ] **Step 2: Run the tests and watch the new ones fail**
 
-Copy the test file, commit, run (recipe under "Working with `~wex`"). Expected: a build failure naming an unknown arm such as `transition` or `step`.
+Copy the test file, commit, run (recipe under "Working with the dev ship"). Expected: a build failure naming an unknown arm such as `transition` or `step`.
 
 - [ ] **Step 3: Change the library**
 
@@ -3326,14 +3326,14 @@ Four small things, all in `code/nex/orrery/app.hoon`:
 4. `+do-retract` writes a body's observation and must compact like `+do-observe` does. After its `over` add `;<  ~  bind:m  (compact kind.u.hit slug.u.hit)`.
 5. A push leaves no trace of its own. In `+push-soft`, after the poke, add `;<  ~  bind:m  (note-by 'push' & title.a by.a)` so the audit log shows every notification attempt; the act's own note follows it and stays the last outcome.
 
-Deploy with the fast loop (write-text, reload-nexus, bang `None`). Bodies and actions written by earlier tasks are `%1` grubs: after the reload, `GET /api/state` must still list them (the ladder lifts them), and `GET /api/body/person/me` shows `"ship": "~wex"` only after the next write to it, so upsert it once: `POST /api/bodies {"id":"person/me","ship":"~wex"}`.
+Deploy with the fast loop (write-text, reload-nexus, bang `None`). Bodies and actions written by earlier tasks are `%1` grubs: after the reload, `GET /api/state` must still list them (the ladder lifts them), and `GET /api/body/person/me` shows `"ship": "~sampel-sipnym"` only after the next write to it, so upsert it once: `POST /api/bodies {"id":"person/me","ship":"~sampel-sipnym"}`.
 
 - [ ] **Step 6: Extend the gate**
 
 In `scripts/api-matrix.py`:
 
 - Every policy `PUT` body uses `'push': 'proposed'` instead of `'push': True`.
-- In section 0 after the `person/me exists` check add: `curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})`.
+- In section 0 after the `person/me exists` check add: `curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~sampel-sipnym'})`.
 - In section 1 after `me.spouse is sarah` add:
 
 ```python
@@ -3380,7 +3380,7 @@ git push origin main
 
 **Spec coverage.** Section 3 bodies, observations, actions and the fold: Tasks 2 and 3, tested. `person/me` seeded: Task 4 (`ensure-me`, laid on the first request rather than at rise, see the note in `on-file`). Upsert semantics, no merge: Tasks 4 and 5. Observation ids and idempotence: Task 2, checked live in Task 4 step 7 and Task 6. Retraction with a note: Task 5. Derived views, `?at`, multi, null, expiry, involved: Task 3 and the routes in Tasks 4 and 5. `schema.json` and `policy.json` seeded and editable: Tasks 3, 4 and 5. Compaction on write: Task 5. Section 5 tree and writer: Task 4 (every persistent path has a row; `/beacon/rev` nested; `/tr/last`; retention on for bodies and actions through `make-gained-soft`). Section 6 HTTP routes and per-item observe answers: Tasks 4 and 5. Owner gate: Task 4. Caps: Task 2 and the batch caps in Task 4. Section 7 ask: Task 4 `weir-json`. Section 8 scenario: Task 6. Section 9 constraints: the Global Constraints block and the code. Section 10 tests: Tasks 2, 3 and 6. Section 12 release mechanics: Task 7.
 
-**Not in this plan, by the spec's phasing.** The MCP tools and the discovery patch (phase 2), the page (phase 3), the catalog line and the ricsul release (phase 4). Keep-SSE on the beacon is grubbery's route and needs no code here; phase 3 wires the page to it.
+**Not in this plan, by the spec's phasing.** The MCP tools and the discovery patch (phase 2), the page (phase 3), the catalog line and the live ship's release (phase 4). Keep-SSE on the beacon is grubbery's route and needs no code here; phase 3 wires the page to it.
 
 **Two things to verify on the ship that the plan assumes.** First, that `make-gained-soft` keeps a body's versions (spec: history on). The instance answers `?info=1` without a version list, so this is not asserted by the gate; if phase 3 wants a body's history it reads it with `born:io`. Second, that a request fiber's answer follows the writer's apply: the gate's "read back at once" checks catch a race if there is one, and the fix would be a reply grub per request, as the spec allows.
 

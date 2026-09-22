@@ -4,9 +4,9 @@ Status: approved 2026-09-16. Amended the same day after product review: a ship o
 
 ## 1. What this is
 
-Orrery keeps a model of what is going on in one person's life: the people, places, things and situations around them, what is currently true about each, where each fact came from, and what the assistant proposes to do about it. It is a grubbery desk app in the nisfeb family, installed from `~ricsul-bilwyt` the way lattice, auspex and calendar are.
+Orrery keeps a model of what is going on in one person's life: the people, places, things and situations around them, what is currently true about each, where each fact came from, and what the assistant proposes to do about it. It is a grubbery desk app in the nisfeb family, installed from the live ship the way lattice, auspex and calendar are.
 
-The ship holds the state and its history. It runs no AI. Clients do the thinking: a local model on the client (Talon, later) triages messages, mail and calendar events into observations and submits them. A larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows. In the first release the analyst is Claude Code over the HTTP API, and then over MCP tools compiled into the desk, so the loop runs before any client code exists.
+The ship holds the state and its history. It runs no AI. Clients do the thinking: a local model on the client (the phone client, later) triages messages, mail and calendar events into observations and submits them. A larger model reads the state back and proposes actions, or files them straight to the todo list when policy allows. In the first release the analyst is Claude Code over the HTTP API, and then over MCP tools compiled into the desk, so the loop runs before any client code exists.
 
 The name is the instrument: a mechanical model of bodies in motion, read to know where everything is now and where it was.
 
@@ -32,7 +32,7 @@ A body carries `kind`, `name` (at most 200 bytes), `aliases` (a set of at most 3
 
 An upsert of an existing id replaces the name if one is given and unions the aliases.
 
-Resolve answers the bodies a phrase could mean, best match first, at most twenty. A query equal to a body's ship, to one of its names or aliases, or to a live value of its `email` or `phone` attribute is an `exact` hit: an address and a number are identity, not spelling. A query whose words are all among the words of a name or an alias, or a name or alias whose words are all among the query's, is a `token` hit: "andrea" finds "Andrea Egan" and "Andrea Egan" finds "Andrea", while "andrea" never finds "Andrew Egan". A name or alias that starts with the query is a `prefix` hit. Comparison is case-insensitive, and a word is a run of letters and digits.
+Resolve answers the bodies a phrase could mean, best match first, at most twenty. A query equal to a body's ship, to one of its names or aliases, or to a live value of its `email` or `phone` attribute is an `exact` hit: an address and a number are identity, not spelling. A query whose words are all among the words of a name or an alias, or a name or alias whose words are all among the query's, is a `token` hit: "alice" finds "Alice Baker" and "Alice Baker" finds "Alice", while "alice" never finds "Alicia Baker". A name or alias that starts with the query is a `prefix` hit. Comparison is case-insensitive, and a word is a run of letters and digits.
 
 Two bodies that turn out to be one are folded with `POST /merge`, `{"from", "into"}`, owner only. Every observation on `from` is copied onto `into` with its own time, source and `seen`, its id recomputed from the new subject, and a copy already there is left alone. Every live observation anywhere whose value is `{"ref": from}` is retracted with the note `merged into <into>` and written again beside it as `{"ref": into}`. Every action whose `about` names `from` names `into` instead. The aliases union and `from`'s name joins them, while `into` keeps its name, ship and created stamp. Then `from` is deleted the way `DELETE /body` deletes it, share record and group included. `from` may not be `person/me` and the two may not be the same body; `into` may be anything, `person/me` included.
 
@@ -46,8 +46,8 @@ Two bodies that turn out to be one are folded with `POST /merge`, `{"from", "int
 | `at` | time | when it became true. ISO 8601 UTC on the wire. Defaults to now |
 | `until` | time or null | when it is expected to stop being true. Optional |
 | `conf` | 0 to 100 | how confident the asserter was. Defaults to 100 |
-| `source` | `{"kind", "id"}` | where it came from: `talon-dm`, `mail`, `calendar`, `user`, `model`, `ship` for one mirrored from another ship, or any other kind. The id is opaque, at most 200 bytes, and is the only evidence kept. Never the text |
-| `by` | string | who asserted it: `talon/triage`, `claude-code`, `user`. At most 64 bytes |
+| `source` | `{"kind", "id"}` | where it came from: `phone-dm`, `mail`, `calendar`, `user`, `model`, `ship` for one mirrored from another ship, or any other kind. The id is opaque, at most 200 bytes, and is the only evidence kept. Never the text |
+| `by` | string | who asserted it: `phone/triage`, `claude-code`, `user`. At most 64 bytes |
 | `seen` | time | when the ship recorded it. Set by the ship |
 | `status` | `live` or `retracted` | the only mutable field |
 
@@ -132,8 +132,8 @@ code/
   lib/tools/orrery-*.hoon        the MCP tools
   mar/orrery/body.hoon  obs.hoon  action.hoon      noun passthroughs
   mar/json.hoon  sig.hoon  mime.hoon               the kernel marcs the tree lays, vendored as auspex does
-tests/lib/orrery.hoon            unit tests, run on ~wex with the revision pinned
-scripts/api-matrix.py            the HTTP gate against ~wex
+tests/lib/orrery.hoon            unit tests, run on the dev ship with the revision pinned
+scripts/api-matrix.py            the HTTP gate against the dev ship
 docs/                            this spec, releasing.md copied from calendar, keys.md, mcp.md, sharing.md, kernel/README.md
 ```
 
@@ -221,11 +221,11 @@ Eight tools, each a `tool:tools` core, reads by absolute peek into the instance,
 | `orrery-actions` | `status` to list; `id` and `status` to transition, `note` and `by` |
 | `orrery-schema` | none to read; `schema` to replace |
 
-**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location: `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery, because the tools child nexus resolves an absolute source path directly, and `+await-tool` in `nex/mcp.hoon` has no callers and is not on the call path. The durable fix is a patch to three kernel files: `nex/mcp.hoon` in two hunks (`+get-app-mcp-paths` walks the shell's desks, and the discovery loop names a desk's tools `apps/<desk>` so two desks never collide) and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`; it lives in `docs/kernel`, was rehearsed on `~wex` on 2026-09-17, and reaches production only through the dist branch. `tools/list` stays the kernel's three-tool protocol allowlist by design, so discovery shows instead in the tools tree and in `list_tools`. Calendar's and auspex's tools could then leave the kernel too. Phase 4 confirms the gap on `~wex` before the patch. Grants are not the blocker there: the mcp instance on `~wex` already holds peek, poke and make on the whole ball, which is also the honest answer to what an MCP analyst can reach today.
+**A gap in the kernel, found while writing this.** The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Lattice's tools are vendored into the kernel's own bundle for that reason. Two things follow. Any tool is callable today by location: `call_tool` with `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` works without discovery, because the tools child nexus resolves an absolute source path directly, and `+await-tool` in `nex/mcp.hoon` has no callers and is not on the call path. The durable fix is a patch to three kernel files: `nex/mcp.hoon` in two hunks (`+get-app-mcp-paths` walks the shell's desks, and the discovery loop names a desk's tools `apps/<desk>` so two desks never collide) and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`; it lives in `docs/kernel`, was rehearsed on the dev ship on 2026-09-17, and reaches production only through the dist branch. `tools/list` stays the kernel's three-tool protocol allowlist by design, so discovery shows instead in the tools tree and in `list_tools`. Calendar's and auspex's tools could then leave the kernel too. Phase 4 confirms the gap on the dev ship before the patch. Grants are not the blocker there: the mcp instance on the dev ship already holds peek, poke and make on the whole ball, which is also the honest answer to what an MCP analyst can reach today.
 
 ### Where the analyst runs, and what it can see
 
-In v1 the analyst runs off the ship: Claude Code, later Talon, holding the owner's credentials for orrery's API. Over the HTTP API that is everything orrery holds and nothing else on the ship. Over the ship's MCP server it is whatever that server is granted, which today is the whole ball. Two mechanisms narrow that, and both are in v1. A scoped client key (section 11, phase 3) is the HTTP answer for a client that does not run a ship: a token bound to an identity and a scope. A share (section 11, phase 2) is the Urbit answer for an agent that does: an agent ship is a peer with a share, and it sees exactly the bodies shared with it. Which grubs reach which model is therefore a question of which key or which peer the model sits behind.
+In v1 the analyst runs off the ship: Claude Code, later the phone client, holding the owner's credentials for orrery's API. Over the HTTP API that is everything orrery holds and nothing else on the ship. Over the ship's MCP server it is whatever that server is granted, which today is the whole ball. Two mechanisms narrow that, and both are in v1. A scoped client key (section 11, phase 3) is the HTTP answer for a client that does not run a ship: a token bound to an identity and a scope. A share (section 11, phase 2) is the Urbit answer for an agent that does: an agent ship is a peer with a share, and it sees exactly the bodies shared with it. Which grubs reach which model is therefore a question of which key or which peer the model sits behind.
 
 ### The page, at `/apps/orrery`
 
@@ -246,7 +246,7 @@ Phase 2 grew the ask by the sharing roads, which is why `/sys/ames/*` and `/sys/
 
 ## 8. The acceptance scenario
 
-Three messages, one analyst step. `scripts/api-matrix.py` runs this over HTTP against `~wex`; phase 2 runs it again from the raw text over MCP with Claude Code as the triager and the analyst, and the state must match.
+Three messages, one analyst step. `scripts/api-matrix.py` runs this over HTTP against the dev ship; phase 2 runs it again from the raw text over MCP with Claude Code as the triager and the analyst, and the state must match.
 
 **Setup.** Bodies: `person/me`, `person/sarah` (aliases Sarah, wife), `thing/subaru` (aliases the car, subaru), `place/home`. Observations: `person/me.spouse = {ref person/sarah}`, `person/me.home = {ref place/home}`, `thing/subaru.owner = {ref person/me}`. Policy: the starter.
 
@@ -280,29 +280,29 @@ From the lattice, auspex and calendar releases, each silent at the point of fail
 5. No `$` with arguments inside a `;<` continuation.
 6. The writer never crashes on input.
 7. A release is a `code/version.json` bump, and the instance's `bang` is the proof it landed, not the version number.
-8. Nothing touches `~ricsul-bilwyt` until it has passed on `~wex`, and the publish is sneagan's action.
+8. Nothing touches the live ship until it has passed on the dev ship, and the publish is the owner's action.
 
 ## 10. Testing
 
-- **Unit**, `tests/lib/orrery.hoon`, on `~wex` with the revision pinned: id derivation is deterministic and excludes `by`; kind, slug, attr and cap validation; the single-valued fold prefers latest `at` and breaks ties on `seen`; the multi fold collects and refreshes; `until` expires; `null` clears; retracted observations are ignored; `?at` filtering; `involved`; resolve ordering; JSON round-trips for all three shapes.
-- **HTTP gate**, `scripts/api-matrix.py` against `~wex`: section 8, plus 403 for a non-owner, 400 with the field named for every cap, and the batch caps.
-- **Cross-ship gate**, phase 2, `scripts/ship-share-matrix.py` with `~wex` as host and `~feb` as peer: a body shared read-only arrives on the peer, a new observation on the host reaches the peer within one poll, an edit-mode observation from the peer lands on the host with the peer as actor, a revoke stops the flow. A read from the other ship, never a before-and-after on one.
+- **Unit**, `tests/lib/orrery.hoon`, on the dev ship with the revision pinned: id derivation is deterministic and excludes `by`; kind, slug, attr and cap validation; the single-valued fold prefers latest `at` and breaks ties on `seen`; the multi fold collects and refreshes; `until` expires; `null` clears; retracted observations are ignored; `?at` filtering; `involved`; resolve ordering; JSON round-trips for all three shapes.
+- **HTTP gate**, `scripts/api-matrix.py` against the dev ship: section 8, plus 403 for a non-owner, 400 with the field named for every cap, and the batch caps.
+- **Cross-ship gate**, phase 2, `scripts/ship-share-matrix.py` with the dev ship as host and the second ship as peer: a body shared read-only arrives on the peer, a new observation on the host reaches the peer within one poll, an edit-mode observation from the peer lands on the host with the peer as actor, a revoke stops the flow. A read from the other ship, never a before-and-after on one.
 - **Scoped keys gate**, phase 3, `scripts/key-matrix.py`: a key scoped to things and tasks sees no people, cannot observe a person, can file a task, cannot propose a message, and answers 403 once revoked.
-- **MCP gate**, phase 4, `scripts/mcp-matrix.py` against `~wex`: a slice of section 8 through the eight tools, each called by absolute path, with every read cross-checked whole against the HTTP API's answer for the same read. `tools/list` is not the check: it stays the kernel's three-tool protocol allowlist by design, so discovery shows in `list_tools` and in the tools tree instead.
-- **Page**, phase 4, `scripts/page-smoke.py` and `scripts/page-test.js`: the page, its script and its style are served to the owner and refused without the cookie, the beacon stream answers with a rev, and the render functions run under node against fixtures. Seeing the scenario in all four views is the owner's own pass, step 10 of `docs/releasing.md` section 8, before the ricsul publish.
-- Never against `~ricsul-bilwyt` until all of the above pass.
+- **MCP gate**, phase 4, `scripts/mcp-matrix.py` against the dev ship: a slice of section 8 through the eight tools, each called by absolute path, with every read cross-checked whole against the HTTP API's answer for the same read. `tools/list` is not the check: it stays the kernel's three-tool protocol allowlist by design, so discovery shows in `list_tools` and in the tools tree instead.
+- **Page**, phase 4, `scripts/page-smoke.py` and `scripts/page-test.js`: the page, its script and its style are served to the owner and refused without the cookie, the beacon stream answers with a rev, and the render functions run under node against fixtures. Seeing the scenario in all four views is the owner's own pass, step 10 of `docs/releasing.md` section 8, before the live ship's publish.
+- Never against the live ship until all of the above pass.
 
 ## 11. Phases
 
 Each phase is installable and useful on its own. The order changed on 2026-09-16: multiplayer is the reason to be on Urbit at all, so sharing comes before the tools and the page.
 
-1. **Desk and model.** The repo laid out as section 4, `lib/orrery.hoon` with its tests, the writer, the HTTP API, install on `~wex`, then the amendments of this revision (the ship on a body, the self-reference guard, action history, push modes, the audit log). Gate: the unit tests and the HTTP matrix green. About two and a half days.
+1. **Desk and model.** The repo laid out as section 4, `lib/orrery.hoon` with its tests, the writer, the HTTP API, install on the dev ship, then the amendments of this revision (the ship on a body, the self-reference guard, action history, push modes, the audit log). Gate: the unit tests and the HTTP matrix green. About two and a half days.
 2. **Cross-ship sharing.** The minimal protocol below. Gate: the two-ship matrix. About three days.
 3. **Scoped client keys.** Below. Gate: the additions to the HTTP matrix. About one day.
 4. **MCP tools, push, and the page.** The eight tools, the discovery check and the kernel patch if the gap is confirmed, section 6's four views. Gates: the MCP scenario and the scenario visible. About two days.
-5. **Release.** `docs/releasing.md` from calendar, a catalog line in the kernel's `gub/nex/shell.hoon` beside calendar's, version bump, ricsul's forge pull, the publish. Sneagan runs the ricsul steps.
+5. **Release.** `docs/releasing.md` from calendar, a catalog line in the kernel's `gub/nex/shell.hoon` beside calendar's, version bump, the live ship's forge pull, the publish. The owner runs the live ship's steps.
 
-Later, each with its own spec: the Talon triage client; calendar and auspex pushing structural facts into orrery on the ship, one poke road each; a `calendar` action kind that pokes the calendar desk app; body merge; fuzzy resolve; full-text search over values (lattice's term index is the reusable piece).
+Later, each with its own spec: the phone client's triage; calendar and auspex pushing structural facts into orrery on the ship, one poke road each; a `calendar` action kind that pokes the calendar desk app; body merge; fuzzy resolve; full-text search over values (lattice's term index is the reusable piece).
 
 ### Phase 2: cross-ship sharing, the minimal protocol
 
@@ -310,7 +310,7 @@ The unit shared is a body: its `body` grub and its observations. Calendar's ship
 
 - **Shares.** `shares.json` on the host maps a body id to the ships it is shared with and a mode, `read` or `edit`. Owner routes: `POST /api/share {"id", "ship", "mode"}`, `DELETE /api/share/<id>/<ship>`, `GET /api/shares`. Sharing registers a peek grant for that ship on the body's directory through the usergroup registry, one group per shared body, exactly as calendar keeps one group per shared calendar.
 - **Offer and accept.** Sharing pokes the peer's orrery inbox, `shares.sig`, which rides on the public usergroup so any ship may offer. The offer carries the host, the body id, the body's ship if it has one, the mode, and the host's instance path, since a desk app's path differs per install. The peer stores offers in `share-offers.json`; the owner accepts with `POST /api/accept {"host", "id"}`, which writes a row to `ship-remotes.json`. An offer for a share already accepted narrows the mode at once; a wider mode waits for a new accept, and accepting an already accepted share keeps what was pushed.
-- **The mapping.** An accepted body lands locally by its ship: a local body already carrying the offered ship is the target, else a body whose ship is our own @p lands on `person/me`, the host's own `person/me` lands on `person/<host>` and any other body lands under its own id. A target that does not exist yet is created with the name and ship the offer names; one that does keeps its own. So what Jackson's ship knows about Sarah becomes, on Sarah's ship, third-party observations on her own `person/me`, and Jackson's `person/me` becomes her `person/jackson`.
+- **The mapping.** An accepted body lands locally by its ship: a local body already carrying the offered ship is the target, else a body whose ship is our own @p lands on `person/me`, the host's own `person/me` lands on `person/<host>` and any other body lands under its own id. A target that does not exist yet is created with the name and ship the offer names; one that does keeps its own. So what the owner's ship knows about Sarah becomes, on Sarah's ship, third-party observations on her own `person/me`, and the owner's `person/me` becomes, on her ship, a body named after the owner's ship.
 - **Mirroring.** A follower fiber per accepted share polls the host's body directory over `/sys/ames/ships/<host>/root/...` every five minutes on a behn tick and on demand. Each of the host's own observations, not ones the host itself mirrored from a third ship, is written locally with `source = {"kind": "ship", "id": "<host>/<oid>"}`, `by = "<host>"` and a local `seen`; the content hash makes a re-poll a no-op. Retracting a mirrored observation locally is allowed and local; the next poll does not resurrect it because the retracted grub stays.
 - **Edits back.** In `edit` mode the peer may poke the host's inbox with observations about the shared body. The host applies them through the writer with `by` set to the peer's @p from the transport, never from the payload, and refuses any subject outside the share.
 - **Revoke.** Removing a ship from `shares.json` drops the grant and pokes the peer, which removes its offer or accepted row for the body. If the peer cannot be reached, its next poll on that body fails instead and the row's `error` explains why.
@@ -327,13 +327,13 @@ The unit shared is a body: its `body` grub and its observations. Calendar's ship
 
 ## 12. Release and install
 
-Orrery is a stock desk app. The source of truth is `nisfeb/orrery`, the publisher is `~ricsul-bilwyt`, and every other ship gets it from ricsul. Ricsul's forge polls the repo every 15 minutes; its desk pulls when `code/version.json` differs from its own; it republishes the version file and subscribers watching it sync on their own. A subscriber installs with the shell's `POST /desks/add` naming ricsul's desk, which asks consent for the roads in section 7.
+Orrery is a stock desk app. The source of truth is `nisfeb/orrery`, the publisher is the live ship, and every other ship gets it from the live ship. The live ship's forge polls the repo every 15 minutes; its desk pulls when `code/version.json` differs from its own; it republishes the version file and subscribers watching it sync on their own. A subscriber installs with the shell's `POST /desks/add` naming the live ship's desk, which asks consent for the roads in section 7.
 
 The kernel needs one line, `(published our 'orrery' 'nisfeb/orrery' 'main')` beside calendar's in `gub/nex/shell.hoon`, delivered the kernel way: the mount, then `|commit %grubbery`. That and the mcp patch are the only kernel touches.
 
 ## 13. Not in v1
 
-The Talon client. Calendar and auspex pushing into orrery. Text evidence of any kind. Embedding resolve (body merge and token resolve landed in version 10). Full-text search over values. Stored indexes and a sweeper. Transitive relation queries. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page. Sharing actions across ships.
+The phone client itself. Calendar and auspex pushing into orrery. Text evidence of any kind. Embedding resolve (body merge and token resolve landed in version 10). Full-text search over values. Stored indexes and a sweeper. Transitive relation queries. The ship executing an action beyond holding it. A second owner on one ship. Editing bodies and observations by hand in the page. Sharing actions across ships.
 
 ## 14. Decisions recorded
 

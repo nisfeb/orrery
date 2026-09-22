@@ -14,10 +14,10 @@
 
 - No em dashes (U+2014) anywhere in either repo, in code, comments, docs or the prompts that state the rule (name it by its code point). No hard-wrapped markdown.
 - Commit messages are one plain sentence in the style of `git log`, no attribution lines. Comments are complete sentences that say why.
-- Never set grubbery or orrery to public. Never touch ricsul (the live ship): wex (`http://localhost:8080`, cookie jar `/tmp/wex.cookies`) is the dev ship; feb (`http://localhost:8081`, `/tmp/feb.cookies`, mounted desk `/home/sneagan/software/feb/grubbery`, dojo in tmux `0:6`) runs the unit suites. Never boot or kill piers. No ship codes, tokens or cookies in the repo or a report.
-- Fast compile: `/tmp/claude-1001/-home-sneagan-software-personal-orrery/2a3e16c2-f1c6-43d8-a630-854483ecbe32/scratchpad/build.sh lib/orrery.hoon` (or `nex/orrery/app.hoon`, `nex/orrery/orrery.js`) writes the file to wex and prints `build: vase` (or `mime` for JS) or the compile error.
-- Unit tests on feb: copy `code/lib/orrery.hoon` to `<mount>/lib/orrery.hoon` and `tests/lib/*.hoon` to `<mount>/tests/lib/` with `\cp -f`, then in tmux `0:6`: `C-u`, `|commit %grubbery`, wait 8 s, `C-u`, `send-keys -- "-test /=grubbery=/tests/lib/generator ~"` (the `--` matters), wait for `ok=%.y`; the generator suite is 44 OK at the start of this plan, the orrery suite 59.
-- Gates before a commit that touches them: `python3 scripts/code-closure.py code`, `python3 scripts/prompt-drift.py ../orrery-utils/common`, `node scripts/page-test.js` (63), `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` (210, about 15 minutes, ends `ALL OK`).
+- Never set grubbery or orrery to public. Never touch the live ship. The dev ship (`$SHIP`, cookie jar `$JAR`) builds; the second ship (`$SHIP2`, `$JAR2`, mounted desk `<the second ship's mount>`, its dojo) runs the unit suites. Never boot or kill piers. No ship codes, tokens or cookies in the repo or a report.
+- Fast compile: `<scratchpad>/build.sh lib/orrery.hoon` (or `nex/orrery/app.hoon`, `nex/orrery/orrery.js`) writes the file to the dev ship and prints `build: vase` (or `mime` for JS) or the compile error.
+- Unit tests on the second ship: copy `code/lib/orrery.hoon` to `<mount>/lib/orrery.hoon` and `tests/lib/*.hoon` to `<mount>/tests/lib/` with `\cp -f`, then in its dojo: `C-u`, `|commit %grubbery`, wait 8 s, `C-u`, `-test /=grubbery=/tests/lib/generator ~` (a leading dash needs `--` before it when sent through a multiplexer), wait for `ok=%.y`; the generator suite is 44 OK at the start of this plan, the orrery suite 59.
+- Gates before a commit that touches them: `python3 scripts/code-closure.py code`, `python3 scripts/prompt-drift.py ../orrery-utils/common`, `node scripts/page-test.js` (63), `python3 scripts/api-matrix.py $SHIP $JAR` (210, about 15 minutes, ends `ALL OK`).
 - The prose rules, verbatim wherever they are stated: `No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.`
 - Every write-up goes to the ledger and the task report, not the chat.
 
@@ -40,15 +40,15 @@
 ++  test-clean-text
   =/  em=@t  (crip (tufa ~[0x2014]))
   ;:  weld
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose ' em ' call me back' ~))))
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose' em 'call me back' ~))))
+    (expect-eq !>('Nora, call me back') !>((clean-text:orr (rap 3 'Nora ' em ' call me back' ~))))
+    (expect-eq !>('Nora, call me back') !>((clean-text:orr (rap 3 'Nora' em 'call me back' ~))))
     (expect-eq !>('plain') !>((clean-text:orr 'plain')))
   ==
 ```
 
 The em dash is built from its code point so the repo holds no literal one.
 
-- [ ] **Step 2: Run it (feb) and see `-find.clean-text`**
+- [ ] **Step 2: Run it (the second ship) and see `-find.clean-text`**
 
 - [ ] **Step 3: clean-text in the lib, in the executors section**
 
@@ -81,7 +81,7 @@ Write `skip-trailing-space` beside it (drops spaces from the head of the reverse
           :-  'message'
           %-  shape
           :~  ['via' 'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none']
-              ['to' 'required: the body id of the person, e.g. person/andrea']
+              ['to' 'required: the body id of the person, e.g. person/alice']
               ['text' 'required: the message, short, in the owner\'s own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.']
           ==
 ```
@@ -90,7 +90,7 @@ Write `skip-trailing-space` beside it (drops spaces from the head of the reverse
 
 - [ ] **Step 6: The executor applies clean-text.** In `send-telegram`, the `text` field of the body sent is `(clean-text text)`; in `poke-auspex`, the body cord is `(clean-text body)`. Two one-line changes; find where the plan's `body` json's `text` is read (`exec-one`'s `%telegram` and `%mail` arms) and clean there, once.
 
-- [ ] **Step 7: Build lib and app, run the generator suite on feb (45 OK), prompt-drift (exit 0), then the api gate (210 ALL OK; the telegram section's canned reply carries no em dash, so nothing moves).**
+- [ ] **Step 7: Build lib and app, run the generator suite on the second ship (45 OK), prompt-drift (exit 0), then the api gate (210 ALL OK; the telegram section's canned reply carries no em dash, so nothing moves).**
 
 - [ ] **Step 8: Commit** orrery: `The prose rules in the schema and the prompts, and an em dash never leaves the ship`; orrery-utils: `The prompts carry the owner's prose rules for a message`.
 
@@ -113,14 +113,14 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
 ```hoon
 ++  test-route-message
   =/  jo  |=(t=@t ^-(json (need (de:json:html t))))
-  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "telegram", "to": "person/rose", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
+  =/  m=action:orr  [%message 'Tell Nora' (jo '{"via": "telegram", "to": "person/nora", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
   =/  got  (route-message:orr m '~sampel-palnet')
   =/  same  (route-message:orr m '')
-  =/  chat  (route-message:orr m(payload (jo '{"via": "chat", "to": "person/rose", "text": "hi"}')) '~sampel-palnet')
+  =/  chat  (route-message:orr m(payload (jo '{"via": "chat", "to": "person/nora", "text": "hi"}')) '~sampel-palnet')
   =/  task  (route-message:orr m(kind %task) '~sampel-palnet')
   ;:  weld
     (expect-eq !>('chat') !>((gs:orr payload.a.got 'via')))
-    (expect-eq !>('via rewritten to chat: person/rose has a ship') !>(note.got))
+    (expect-eq !>('via rewritten to chat: person/nora has a ship') !>(note.got))
     (expect-eq !>('telegram') !>((gs:orr payload.a.same 'via')))
     (expect-eq !>('') !>(note.same))
     (expect-eq !>('') !>(note.chat))
@@ -128,14 +128,14 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
   ==
 ```
 
-- [ ] **Step 2: Run it (feb), `-find.route-message`**
+- [ ] **Step 2: Run it (the second ship), `-find.route-message`**
 
 - [ ] **Step 3: The arm**
 
 ```hoon
 ::  +route-message: the owner's channel rule. A person with a ship is
 ::  reached on Urbit, so a message proposed for telegram or mail to
-::  such a person is filed via chat, which Talon sends; telegram is for
+::  such a person is filed via chat, which the phone client sends; telegram is for
 ::  a person with no ship. The note goes to the trail so the rewrite
 ::  is visible.
 ::
@@ -160,9 +160,9 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
 
 `note` is the writer's trail arm (see `note-by` at 380 for the shape). The id is computed after the rewrite, so a twin check on the rewritten action agrees with what is stored.
 
-- [ ] **Step 5: A gate check.** In `scripts/api-matrix.py`'s executor section, after the `person/gate-people` checks: observe a body `person/gate-shipped` with a `ship` attribute `~wex` and a `telegram` attribute `1002`; `POST /act` a `message` via `telegram` to it; read it back: `payload.via == 'chat'`; and `GET /tr/log` (or however the section reads the trail; see the sharing section) carries `via rewritten to chat: person/gate-shipped has a ship`. Approve it and confirm the executor leaves it approved (it is `chat`, Talon's) and the record's `claimed` did not move. Dismiss it and delete the body in the section's teardown.
+- [ ] **Step 5: A gate check.** In `scripts/api-matrix.py`'s executor section, after the `person/gate-people` checks: observe a body `person/gate-shipped` with a `ship` attribute `~sampel-sipnym` and a `telegram` attribute `1002`; `POST /act` a `message` via `telegram` to it; read it back: `payload.via == 'chat'`; and `GET /tr/log` (or however the section reads the trail; see the sharing section) carries `via rewritten to chat: person/gate-shipped has a ship`. Approve it and confirm the executor leaves it approved (it is `chat`, the phone client's) and the record's `claimed` did not move. Dismiss it and delete the body in the section's teardown.
 
-- [ ] **Step 6: Build, feb (46 OK), api gate (ALL OK, 213). Commit** `A message to a person with a ship is filed via chat`.
+- [ ] **Step 6: Build, the second ship (46 OK), api gate (ALL OK, 213). Commit** `A message to a person with a ship is filed via chat`.
 
 ---
 
@@ -181,11 +181,11 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
 ```hoon
 ++  test-revise
   =/  jo  |=(t=@t ^-(json (need (de:json:html t))))
-  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
-  =/  got  (revise:orr m 'Tell Rose and Susan' (jo '{"via": "chat", "to": "person/rose", "text": "hi both"}') (sy ~['person/rose' 'person/susan-egan']) `(add now ~d1) 'user' (add now ~m5))
-  =/  op=json  (revise-action-op:orr 'a1' 'T' (jo '{}') ~['person/rose'] ~ 'user')
+  =/  m=action:orr  [%message 'Tell Nora' (jo '{"via": "chat", "to": "person/nora", "text": "hi"}') (sy ~['person/nora']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+  =/  got  (revise:orr m 'Tell Nora and Dana' (jo '{"via": "chat", "to": "person/nora", "text": "hi both"}') (sy ~['person/nora' 'person/dana-hill']) `(add now ~d1) 'user' (add now ~m5))
+  =/  op=json  (revise-action-op:orr 'a1' 'T' (jo '{}') ~['person/nora'] ~ 'user')
   ;:  weld
-    (expect-eq !>('Tell Rose and Susan') !>(title.got))
+    (expect-eq !>('Tell Nora and Dana') !>(title.got))
     (expect-eq !>(%proposed) !>(status.got))
     (expect-eq !>(2) !>((lent history.got)))
     (expect-eq !>([%revised 'user']) !>([status by]:(rear history.got)))
@@ -195,7 +195,7 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
   ==
 ```
 
-- [ ] **Step 2: Run (feb), `-find.revise`**
+- [ ] **Step 2: Run (the second ship), `-find.revise`**
 
 - [ ] **Step 3: The lib arms**
 
@@ -227,7 +227,7 @@ The rule runs in `do-act` only. `do-revise-action` (Task 3) never calls `route-m
 
 - [ ] **Step 4: The writer.** Dispatch: `?:  =('revise-action' op)  (do-revise-action jon)`. The arm, a copy of `do-set-action`'s shape: read the action at `(rf 0 /actions id)`, refuse `no action <id>` / `unreadable action`; refuse `only a proposed action can be revised` unless `=(%proposed status.u.a)`; `title` non-empty and at most 200 bytes else refuse `title: required`; `about` through `first-missing` (refuse `about: no such body <x>`); `due` through `de-iso-any:orr` when present (refuse `due: not a time`); then `revise:orr` and `over:io` the stored action `[%2 next]`; `(note-by 'revise-action' & '' who)`; answer `&`. The beacon moves on the write like any action write (confirm how `do-set-action`'s write moves it; nothing extra to do if it is the writer's settle).
 
-- [ ] **Step 5: Build lib and app, feb (47 OK). Commit** `The writer revises a proposed action in place`.
+- [ ] **Step 5: Build lib and app, the second ship (47 OK). Commit** `The writer revises a proposed action in place`.
 
 ---
 
@@ -255,7 +255,7 @@ You refine one proposed action for orrery, a model of one person's world, from a
 
 You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, and the note. Answer with one JSON object and nothing else: {"bodies": [...], "action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
 
-The action keeps its kind and its purpose; the note changes what it says. "Include Susan in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
+The action keeps its kind and its purpose; the note changes what it says. "Include Dana in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
 
 What the note asks for beyond this action goes in extras, each a complete new action with kind, title, payload in the schema's shape, about and due: "also add a todo the day before to go shopping" is a task due one day before the event's start. Never repeat the action itself as an extra.
 
@@ -273,31 +273,31 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
   ^-  reader-ctx:orr
   =/  schema=json  starter-schema:orr
   %-  reader-context:orr
-  :+  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['ship' s+'~sampel-palnet']] now)
-          (mkb 'person/susan-egan' %person 'Susan Egan' (sy ~['susan']) ~ now)
+  :+  :~  (mkb 'person/nora' %person 'Nora' ~ ~[['ship' s+'~sampel-palnet']] now)
+          (mkb 'person/dana-hill' %person 'Dana Hill' (sy ~['dana']) ~ now)
       ==
     schema
   now
 ++  refine-act
   ^-  action:orr
-  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+  [%message 'Tell Nora' (jo '{"via": "chat", "to": "person/nora", "text": "hi"}') (sy ~['person/nora']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
 ++  test-refine-check
-  =/  good=json  (jo '{"action": {"title": "Tell Rose and Susan", "payload": {"via": "chat", "to": "person/rose", "text": "hi both"}, "about": ["person/rose", "susan"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/rose"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
+  =/  good=json  (jo '{"action": {"title": "Tell Nora and Dana", "payload": {"via": "chat", "to": "person/nora", "text": "hi both"}, "about": ["person/nora", "dana"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/nora"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
   =/  got  (refine-check:orr good refine-act 'a1' refine-ctx now)
-  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/rose", "person/karl"]}, "extras": [], "refused": ""}')
-  =/  nobody=json  (jo '{"action": {"title": "Tell Rose", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
+  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Nora and Karl", "payload": {"via": "chat", "to": "person/nora", "text": "hi"}, "about": ["person/nora", "person/karl"]}, "extras": [], "refused": ""}')
+  =/  nobody=json  (jo '{"action": {"title": "Tell Nora", "payload": {"via": "chat", "to": "person/nora", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
   =/  refused=json  (jo '{"refused": "no person named Karl on the ship"}')
-  =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
-  =/  past=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2020-01-01T00:00:00Z"}, "about": []}], "refused": ""}')
+  =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/nora", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
+  =/  past=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/nora", "text": "x"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2020-01-01T00:00:00Z"}, "about": []}], "refused": ""}')
   ;:  weld
     (expect !>(?=(%& -.got)))
-    (expect-eq !>('Tell Rose and Susan') !>(?>(?=(%& -.got) title.p.got)))
-    (expect-eq !>(`(list @t)`~['person/rose' 'person/susan-egan']) !>(?>(?=(%& -.got) about.p.got)))
+    (expect-eq !>('Tell Nora and Dana') !>(?>(?=(%& -.got) title.p.got)))
+    (expect-eq !>(`(list @t)`~['person/nora' 'person/dana-hill']) !>(?>(?=(%& -.got) about.p.got)))
     (expect-eq !>(1) !>(?>(?=(%& -.got) (lent extras.p.got))))
     (expect-eq !>('a1') !>(?>(?=(%& -.got) (gs:orr (gj:orr (snag 0 extras.p.got) 'payload') 'refined_from'))))
     ::  a person the note names and the ship lacks is created, not refused
     (expect-eq !>(1) !>(?>(?=(%& -.(refine-check:orr newbie refine-act 'a1' refine-ctx now)) (lent bodies.p.(refine-check:orr newbie refine-act 'a1' refine-ctx now)))))
-    (expect-eq !>(`(list @t)`~['person/rose' 'person/karl']) !>(?>(?=(%& -.(refine-check:orr newbie refine-act 'a1' refine-ctx now)) about.p.(refine-check:orr newbie refine-act 'a1' refine-ctx now))))
+    (expect-eq !>(`(list @t)`~['person/nora' 'person/karl']) !>(?>(?=(%& -.(refine-check:orr newbie refine-act 'a1' refine-ctx now)) about.p.(refine-check:orr newbie refine-act 'a1' refine-ctx now))))
     ::  an about id the answer neither knows nor creates refuses
     (expect !>(?=(%| -.(refine-check:orr nobody refine-act 'a1' refine-ctx now))))
     (expect-eq !>('no person named Karl on the ship') !>(?>(?=(%| -.(refine-check:orr refused refine-act 'a1' refine-ctx now)) p.(refine-check:orr refused refine-act 'a1' refine-ctx now))))
@@ -307,7 +307,7 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
     (expect-eq !>(0) !>(?>(?=(%& -.(refine-check:orr past refine-act 'a1' refine-ctx now)) (lent extras.p.(refine-check:orr past refine-act 'a1' refine-ctx now)))))
   ==
 ++  test-refine-ops
-  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')]]
+  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/nora", "text": "x"}') ~['person/nora' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/nora"]}')]]
   =/  ops=(list json)  (refine-ops:orr r 'a1' 'user' now)
   =/  none=(list json)  (refine-ops:orr r(bodies ~) 'a1' 'user' now)
   ;:  weld
@@ -320,10 +320,10 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
     (expect-eq !>(2) !>((lent none)))
   ==
 ++  test-refine-user
-  =/  t=@t  (refine-user:orr refine-act 'a1' refine-ctx 'include susan in this' now 'America/New_York')
+  =/  t=@t  (refine-user:orr refine-act 'a1' refine-ctx 'include dana in this' now 'America/New_York')
   ;:  weld
-    (expect !>((has-sub t 'person/susan-egan | Susan Egan | susan')))
-    (expect !>((has-sub t 'include susan in this')))
+    (expect !>((has-sub t 'person/dana-hill | Dana Hill | dana')))
+    (expect !>((has-sub t 'include dana in this')))
     (expect !>((has-sub t 'message payload:')))
     (expect !>((has-sub t 'The owner\'s clock reads 2026-09-18T08:00:00-04:00')))
   ==
@@ -331,7 +331,7 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
 
 `mkb` is the fixture the exec tests use (id kind name aliases attrs now); the test file's `now` is `~2026.9.18..12.00.00`. Adjust the fixture arity to `mkb`'s actual one (read it at the top of the exec tests).
 
-- [ ] **Step 3: Run (feb), `-find.refine-check`**
+- [ ] **Step 3: Run (the second ship), `-find.refine-check`**
 
 - [ ] **Step 4: The planner**
 
@@ -466,7 +466,7 @@ Add the cord to the lib as `++  refine-prompt` in the style of `analyst-prompt` 
 
 Check `fill-act-as`'s signature in the executors section and match it (Task 4 of version 34 used it in `adopt-ops`).
 
-- [ ] **Step 5: Build the lib, feb (50 OK), prompt-drift exit 0. Commit** orrery `The refine planner: a note under a proposed action becomes a revision and its extras`; orrery-utils `The refine prompt`.
+- [ ] **Step 5: Build the lib, the second ship (50 OK), prompt-drift exit 0. Commit** orrery `The refine planner: a note under a proposed action becomes a revision and its extras`; orrery-utils `The refine prompt`.
 
 ---
 
@@ -531,17 +531,17 @@ Check `fill-act-as`'s signature in the executors section and match it (Task 4 of
 
 Confirm the names: `read-generator`, `cull-soft` (or the arm the reader uses to drop an inbox grub), `file-ops` from a request fiber (the sharing routes file ops from the request fiber; copy their pattern, including `settle`), and how `serve-actions` encodes an action view. `/refining/<id>` is the per-action lock; a crashed route leaves it, so the lock is also dropped by a `POST /api/exec/wake`? No: keep it simple, and drop the lock grub when its mtime is older than five minutes (read its `cass` from the peek) instead of refusing.
 
-- [ ] **Step 2: The stub.** In `scripts/api-matrix.py`'s `Stub.answer`, before the `CANNED` fallback: `elif system.startswith('You refine'): out = REFINE_CANNED`, where `REFINE_CANNED` is a chat completion whose content is the JSON `{"action": {"title": "Tell Rose and Susan the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked. Susan knows too."}, "about": ["person/gate-shipped"], "due": null}, "extras": [{"kind": "task", "title": "Gate: buy the tow guy a coffee", "payload": {"notes": "before the tow"}, "about": ["person/gate-shipped"], "due": "2099-01-01T12:00:00Z"}], "refused": ""}` (a `2099` due so the retire and expire passes never touch it). A second canned reply for the new-person case: when the user prompt ends with `The note: include karl in this`, answer `{"bodies": [{"id": "person/gate-karl", "kind": "person", "name": "Gate Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked."}, "about": ["person/gate-shipped", "person/gate-karl"], "due": null}, "extras": [], "refused": ""}`. A third for the refused case: when it ends with `The note: turn the porch light on`, answer `{"refused": "a message cannot switch a light; propose a home action instead"}`.
+- [ ] **Step 2: The stub.** In `scripts/api-matrix.py`'s `Stub.answer`, before the `CANNED` fallback: `elif system.startswith('You refine'): out = REFINE_CANNED`, where `REFINE_CANNED` is a chat completion whose content is the JSON `{"action": {"title": "Tell Nora and Dana the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked. Dana knows too."}, "about": ["person/gate-shipped"], "due": null}, "extras": [{"kind": "task", "title": "Gate: buy the tow guy a coffee", "payload": {"notes": "before the tow"}, "about": ["person/gate-shipped"], "due": "2099-01-01T12:00:00Z"}], "refused": ""}` (a `2099` due so the retire and expire passes never touch it). A second canned reply for the new-person case: when the user prompt ends with `The note: include karl in this`, answer `{"bodies": [{"id": "person/gate-karl", "kind": "person", "name": "Gate Karl", "aliases": []}], "action": {"title": "Tell Nora and Karl the tow is booked", "payload": {"via": "chat", "to": "person/gate-shipped", "text": "The tow is booked."}, "about": ["person/gate-shipped", "person/gate-karl"], "due": null}, "extras": [], "refused": ""}`. A third for the refused case: when it ends with `The note: turn the porch light on`, answer `{"refused": "a message cannot switch a light; propose a home action instead"}`.
 
 - [ ] **Step 3: The gate checks** (in the executor section, after Task 2's `person/gate-shipped` message is filed and before it is dismissed; the stub is up and the generator points at it there):
-  - `POST /api/actions/<id>/refine {"text": "include susan in this"}` answers 200 `ok` true, `action.title` is the canned title, `action.payload.via` is `chat`, `extras` has one task whose `payload.refined_from` is the id and whose `about` holds `person/gate-shipped`.
+  - `POST /api/actions/<id>/refine {"text": "include dana in this"}` answers 200 `ok` true, `action.title` is the canned title, `action.payload.via` is `chat`, `extras` has one task whose `payload.refined_from` is the id and whose `about` holds `person/gate-shipped`.
   - `GET /api/actions/<id>` shows status `proposed`, the new title, and a last history step `revised` by `user`.
   - The extra exists in `GET /api/actions?status=open` (approved under `auto`, since it is a task) and its todo is placed by the executor (poll `todo_for`); dismiss it and add it to `MADE`.
   - `POST .../refine {"text": "include karl in this"}` answers 200 `ok` true; `GET /api/body/person/gate-karl` exists with name `Gate Karl`; the action's `about` holds it. Delete the body in the teardown.
   - `POST .../refine {"text": "turn the porch light on"}` answers 200 `ok` false with the note, and the title is unchanged.
   - Refining an approved action answers 409; refining with a key whose `actions` lacks `message` answers 404; a read-only key answers 403 (the key section has fixtures for these; add one refine call there, or make the keys here).
   - The trail (`/tr/log`) has a `revise-action` line.
-  - `POST .../refine {"text": "send this as mail"}` on a fresh `chat` message answers `ok` true with `action.payload.via` `mail`, and reading the action back shows `mail` (the stub answers `{"action": {... "via": "mail" ...}, "extras": [], "refused": ""}` when the user prompt ends with `The note: send this as mail`); approve it and the executor sends it by auspex (`sent by mail to ~wex`), which proves a revision is not rerouted.
+  - `POST .../refine {"text": "send this as mail"}` on a fresh `chat` message answers `ok` true with `action.payload.via` `mail`, and reading the action back shows `mail` (the stub answers `{"action": {... "via": "mail" ...}, "extras": [], "refused": ""}` when the user prompt ends with `The note: send this as mail`); approve it and the executor sends it by auspex (`sent by mail to the dev ship`), which proves a revision is not rerouted.
 
 - [ ] **Step 4: The page.** In `inbox`, for `a.status === 'proposed'`, after the move buttons: `'<p class="refine"><input data-refine-text="' + esc(a.id) + '" placeholder="a note for this action"> <button data-refine="' + esc(a.id) + '">refine</button> <span class="muted" data-refine-note="' + esc(a.id) + '"></span></p>'`. The click handler beside `data-move`'s: read the input, `api('/actions/' + id + '/refine', {method: 'POST', body: {text}})`, then on `ok` false put the note in the span, on `ok` true say `revised` in the span and let the beacon refresh redraw (the write moved it). Three page tests: a proposed action renders the input and the button with its id; an approved one does not; the note span is empty on render.
 
@@ -552,15 +552,15 @@ Confirm the names: `read-generator`, `cull-soft` (or the arm the reader uses to 
 ### Task 6: Docs and release prep
 
 **Files:**
-- Modify: `README.md` (routes table: `POST /actions/<id>/refine`; the executor paragraph gains the channel rule and the prose rules; Under the hood gains `refine-prompt.md`), `docs/releasing.md` (version 36's owner steps: none on the permits page; the controller merges the two schema notes into ricsul's stored schema through `PUT /api/schema` after the pull, and the Talon agent gets rule 17), `code/version.json` 36.
+- Modify: `README.md` (routes table: `POST /actions/<id>/refine`; the executor paragraph gains the channel rule and the prose rules; Under the hood gains `refine-prompt.md`), `docs/releasing.md` (version 36's owner steps: none on the permits page; the controller merges the two schema notes into the live ship's stored schema through `PUT /api/schema` after the pull, and the phone client's agent gets rule 17), `code/version.json` 36.
 - Modify: `orrery-utils/common/README.md` (the three prompt files and the drift check), `orrery-utils/docs/writing-a-client.md` rule 14 (one sentence: the ship files a message to a person with a ship via `chat`, so a client executor may see `chat` messages that were proposed as `telegram`).
 
 - [ ] **Step 1: The docs**, in each file's voice, no hard wraps.
-- [ ] **Step 2: Every gate:** closure, `cmp code/lib/tools.hoon /home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon`, prompt-drift, page-test, api-matrix, key-matrix (107), mcp-matrix (38), page-smoke (13), ship-share-matrix (79), feb suites (generator 50, orrery 59).
-- [ ] **Step 3: Commit** orrery `Version 36: a note at approval refines the action, a message to a ship goes via chat, and the prose rules hold`; orrery-utils `Rule 14 and the common README for orrery 36`. The push, the pull onto ricsul, the schema merge on ricsul and the Talon note are the controller's.
+- [ ] **Step 2: Every gate:** closure, `cmp code/lib/tools.hoon <the grubbery checkout>/desk/gub/lib/tools.hoon`, prompt-drift, page-test, api-matrix, key-matrix (107), mcp-matrix (38), page-smoke (13), ship-share-matrix (79), the second ship suites (generator 50, orrery 59).
+- [ ] **Step 3: Commit** orrery `Version 36: a note at approval refines the action, a message to a ship goes via chat, and the prose rules hold`; orrery-utils `Rule 14 and the common README for orrery 36`. The push, the pull onto the live ship, the schema merge on the live ship and the phone client's note are the controller's.
 
 ## Self-review
 
-- Spec coverage: refine route, checks, ops, page, lock (Task 3, 4, 5); channel rule and the schema note (Task 2, 1); prose rules in schema, prompts, executor (Task 1); the ricsul schema merge (Task 6's release note, the controller's); out of scope respected (no kind change: `refine-check` keeps `kind.a`; no chat executor).
+- Spec coverage: refine route, checks, ops, page, lock (Task 3, 4, 5); channel rule and the schema note (Task 2, 1); prose rules in schema, prompts, executor (Task 1); the live ship's schema merge (Task 6's release note, the controller's); out of scope respected (no kind change: `refine-check` keeps `kind.a`; no chat executor).
 - Placeholders: Task 5's route has one elided read-back (`... read the revised action back ...`); it names the arms to copy (`serve-actions`'s view encoder, the mirror's `act-id` computation) so the implementer has the how. Task 4's cord is `...the file, line for line...` by necessity (the file is in Step 1).
 - Types: `refined` fields used the same in Tasks 4 and 5; `route-message` returns `[a note]` in Task 2 and is read as `a.routed`/`note.routed`; `revise-action-op` takes `about` as a list and `refined` holds a list; `refine-ops` passes `by` to `fill-act-as` the way `adopt-ops` does.

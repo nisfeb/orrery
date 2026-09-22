@@ -1,8 +1,8 @@
 # orrery
 
-Orrery keeps track of what is going on in your life, on your own Urbit ship. It remembers the people, places, things and situations around you, what is currently true about each of them, where every fact came from, and what your assistant proposes to do about it.
+Orrery is a model of one person's world, kept on their own Urbit ship. It holds the bodies around them (people, places, things, orgs, situations, activities), a dated and sourced observation for every fact learned about each one, folded into what is currently true now or at any past time, the situations and activities each body is part of, and the actions an assistant proposes: held under a policy that approves the routine ones and waits for a tap on the rest, with a claim step so two executors never act twice, and a history on every action that says who proposed, approved and carried it out. The writer keeps an audit trail of every write. A body can be shared with another ship, a client that runs no ship gets a scoped key, an analyst on the ship's MCP server gets tools, and the owner gets a page.
 
-The ship stores the facts and their history. It runs no AI. The thinking happens in clients: a small model on your phone or laptop turns messages, mail and calendar events into facts and sends them in, and a larger model reads the picture back and proposes actions. You approve them, or let a policy approve the routine ones for you.
+The ship stores the facts and their history. Models do the thinking, and none runs on the ship: a small one turns messages, mail and calendar events into facts, on a phone or laptop client or through the ship's own readers, and a larger one reads the picture back and proposes actions. You approve them, or let a policy approve the routine ones for you.
 
 The name is the instrument: a mechanical model of bodies in motion, read to know where everything is now and where it was.
 
@@ -23,7 +23,7 @@ Ask the ship what was true at 11pm and it still puts the car on Route 9. Ask it 
 Everything below talks to the HTTP API with the ship's owner cookie. Log in once and keep the cookie jar.
 
 ```bash
-SHIP=http://localhost:8080          # your ship's web address
+SHIP=https://your-ship.example      # your ship's web address
 curl -s -c jar -X POST -d "password=$CODE" $SHIP/~/login    # $CODE is what +code prints in the dojo
 API=$SHIP/apps/orrery/api
 post() { curl -s -b jar -H 'content-type: application/json' -X POST "$API/$1" -d "$2"; echo; }
@@ -114,10 +114,10 @@ A situation is a body like any other, of kind `situation`, whose `participants` 
 post observe '{
   "bodies": [{"id": "situation/2026-09-16-breakdown", "name": "The breakdown"}],
   "observations": [
-    {"subject": "situation/2026-09-16-breakdown", "attr": "status",       "value": "open",                   "source": {"kind": "talon-dm", "id": "msg-1"}},
-    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/me"},    "source": {"kind": "talon-dm", "id": "msg-1"}},
-    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/sarah"}, "source": {"kind": "talon-dm", "id": "msg-1"}},
-    {"subject": "situation/2026-09-16-breakdown", "attr": "location",     "value": "Route 9",                "source": {"kind": "talon-dm", "id": "msg-1"}}
+    {"subject": "situation/2026-09-16-breakdown", "attr": "status",       "value": "open",                   "source": {"kind": "phone-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/me"},    "source": {"kind": "phone-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "participants", "value": {"ref": "person/sarah"}, "source": {"kind": "phone-dm", "id": "msg-1"}},
+    {"subject": "situation/2026-09-16-breakdown", "attr": "location",     "value": "Route 9",                "source": {"kind": "phone-dm", "id": "msg-1"}}
   ]
 }'
 ```
@@ -148,7 +148,7 @@ curl -s -b jar "$API/actions?status=open"                  # proposed, approved 
 post actions/1758110400-9c2e41aa '{"status": "done"}'      # or dismissed, or failed with a note
 ```
 
-An executor (the ship itself for `telegram`, `mail`, `calendar` and `task` since version 34; Talon for `chat`) claims an approved action before it acts, with `{"status": "claimed", "by": "telegram"}`, and the claim holds it for ten minutes.
+An executor (the ship itself for `telegram`, `mail`, `calendar` and `task` since version 34; a phone client for `chat`) claims an approved action before it acts, with `{"status": "claimed", "by": "telegram"}`, and the claim holds it for ten minutes.
 
 A second executor's claim inside that lease is refused with `claimed by telegram`, only the claimant reports done or failed, and you unstick a claimed action by dismissing it.
 
@@ -162,11 +162,11 @@ The ship proposes on its own. With the generator on (the Generator card under Se
 
 The ship reads Telegram itself (version 29). Make a bot with BotFather, put its token, a secret of your own and this ship's public URL on the Telegram card under Settings, list the chat ids to read and map each Telegram user id to a person on the ship, and press register: the ship tells Telegram to push every message to `POST /apps/orrery/telegram`, one connection at a time, since updates are handled in id order. Each one runs the pipeline the Python bot ran on a box: the gate and the analyst, both called through the generator's OpenRouter key, so the Generator card's key must be set for the reader to read (the gate is `typesafe/jev-1.13`, reached through the generator's own url; the analyst is the reader's own small model, `model` in its settings), validation and grounding as `orrery-utils/common/analyze.py` and `telegram/bot.py` hold them, the status check, and, at or above `escalate`, a question that asks the generator for an urgent pass over the situations just written (the client guide's rule 16, which the ship's own reader now follows too). The reader's settings fall back on their own: `model` is `deepseek/deepseek-v4-flash` unless set, answering in `max_tokens` (4000) at most; `gate` and `escalate` are hundredths, 30 and 60 unless set; `api_url` is `https://api.telegram.org` unless set. Facts are signed `telegram`, their source `{"kind": "chat", "id": "telegram/<chat>/<message>"}`, the same pointers the bot writes, so a backfill from an export and the live reader agree. The last five free-text messages per chat are kept a day as the next message's context, in the reader's own file and nowhere else, a chat's window dropped once it leaves the settings; they are the one message text the ship holds, and no view, key or share sees them. With Telegram Premium a Business connection delivers your own private chats to the same webhook; a connection whose owner is not in `people` is ignored. `max_daily_messages` (500) bounds the messages the analyst is asked about, not questions. Changing the token on the card starts the update ids over, so it also resets the reader's last-handled one. An update the analyst could not read (unreachable, a timeout, 401 to 404, 408, 429 or a 5xx) stays in the inbox and is read again five minutes later; `POST /api/telegram/wake` reads it now, and is the remedy when the card's last update stops moving, since it also restarts a reader that crashed. The reader sends nothing: the `via: telegram` executor is the ship's own, below.
 
-The ship carries out its own approved actions (version 34). An executor fiber keeps the beacon and, on every change, takes each approved action it can serve. A `message` whose `via` is `telegram` goes as one `sendMessage` through the reader's token to the chat id in the person's `telegram` attribute, or, when there is none, to the Telegram user id the reader's `people` map gives that person. A `message` via `mail` goes through auspex, which is mail between ships, so `to` is a person whose `ship` attribute names their ship; the action's title is the subject and the payload's text the body. A message to a person with a `ship` attribute is always filed `via` `chat` instead, whatever channel it was proposed on, since Telegram is only for a person with none and mail stays for a person with a ship only when they have no chat, which today never happens; the trail notes the rewrite. A note at approval (below) can still choose the channel by hand, "send this as mail" or "over telegram", since that rewrite runs only when an action is first filed, never on a revision. A `calendar` action becomes an event on the calendar, timed from `starts` to `ends` (an hour when `ends` is absent) or all-day when both are whole days, in the owner's `timezone` from `person/me`, carrying the action id as `meta.orrery` and the tag `orrery`. A `task` becomes a todo in the calendar's list with its notes and its due, marked the same way. Messages and calendar actions follow the claim protocol: claimed `by` `ship`, then `done` with `sent to <chat>`, `sent by mail to <ship>` or `on the calendar`, or `failed` with the reason (Telegram's own description, auspex's refusal). As the last step before a message leaves the ship, whether by `sendMessage` or the auspex poke, an em dash (U+2014) in its text is swapped for a comma, with one space after and none before, so none leaves the ship whatever a model wrote; the schema's note for `message.text` and the shared prompts carry the same rules word for word (no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, a sentence with more than one parenthetical thought split in two). A message with no address (no `telegram` attribute and not in `people`, no `ship` attribute), or a Telegram one while the reader has no bot token, is not claimed: it stays approved and is named in the record's `notes` on every pass until it is dismissed or the address is added. An action a client left `claimed` past its lease is not taken by the ship either; the owner dismisses it. A task is placed without a claim and stays `approved` until it is done: ticked in the calendar, its action goes `done` by `calendar` with `ticked in the calendar`; marked done on the page, its todo is ticked; dismissed or failed on the page, its todo is deleted; and a todo you type into the calendar by hand becomes an approved task filed `by` `calendar` and gains the mark in the same pass, so it is adopted once. The mirror runs on the calendar's own changes, so a tick reaches the ship within seconds. A message via `chat` is Talon's, whose store the DM lives in, and is never touched. Two things to know: a todo the ship placed and you delete in the calendar is placed again on the next pass, since the ship is the source of truth for what it made, so dismiss the action on the page instead; and a task adopted from a hand-typed todo that you then delete stays approved on the ship until you dismiss it on the page. The desks are found through `/sys/link/`, a peek road the ship had already, and three lines need your consent once on `/apps/grubbery/permits`: a poke of the calendar instance (its writer), a peek of it (its store, kept for the mirror) and a poke of auspex's writer. A desk that is not installed, or a road refused, leaves those actions approved for another executor and is named on the Executor card under Settings, which shows what the last pass did, the failures with their notes, and wakes the executor. Talon's own task mirror and its senders must be off once this runs: two mirrors over one todo list place and tick twice, and two senders send twice.
+The ship carries out its own approved actions (version 34). An executor fiber keeps the beacon and, on every change, takes each approved action it can serve. A `message` whose `via` is `telegram` goes as one `sendMessage` through the reader's token to the chat id in the person's `telegram` attribute, or, when there is none, to the Telegram user id the reader's `people` map gives that person. A `message` via `mail` goes through auspex, which is mail between ships, so `to` is a person whose `ship` attribute names their ship; the action's title is the subject and the payload's text the body. A message to a person with a `ship` attribute is always filed `via` `chat` instead, whatever channel it was proposed on, since Telegram is only for a person with none and mail stays for a person with a ship only when they have no chat, which today never happens; the trail notes the rewrite. A note at approval (below) can still choose the channel by hand, "send this as mail" or "over telegram", since that rewrite runs only when an action is first filed, never on a revision. A `calendar` action becomes an event on the calendar, timed from `starts` to `ends` (an hour when `ends` is absent) or all-day when both are whole days, in the owner's `timezone` from `person/me`, carrying the action id as `meta.orrery` and the tag `orrery`. A `task` becomes a todo in the calendar's list with its notes and its due, marked the same way. Messages and calendar actions follow the claim protocol: claimed `by` `ship`, then `done` with `sent to <chat>`, `sent by mail to <ship>` or `on the calendar`, or `failed` with the reason (Telegram's own description, auspex's refusal). As the last step before a message leaves the ship, whether by `sendMessage` or the auspex poke, an em dash (U+2014) in its text is swapped for a comma, with one space after and none before, so none leaves the ship whatever a model wrote; the schema's note for `message.text` and the shared prompts carry the same rules word for word (no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, a sentence with more than one parenthetical thought split in two). A message with no address (no `telegram` attribute and not in `people`, no `ship` attribute), or a Telegram one while the reader has no bot token, is not claimed: it stays approved and is named in the record's `notes` on every pass until it is dismissed or the address is added. An action a client left `claimed` past its lease is not taken by the ship either; the owner dismisses it. A task is placed without a claim and stays `approved` until it is done: ticked in the calendar, its action goes `done` by `calendar` with `ticked in the calendar`; marked done on the page, its todo is ticked; dismissed or failed on the page, its todo is deleted; and a todo you type into the calendar by hand becomes an approved task filed `by` `calendar` and gains the mark in the same pass, so it is adopted once. The mirror runs on the calendar's own changes, so a tick reaches the ship within seconds. A message via `chat` is the companion client's, whose store the DM lives in, and is never touched. Two things to know: a todo the ship placed and you delete in the calendar is placed again on the next pass, since the ship is the source of truth for what it made, so dismiss the action on the page instead; and a task adopted from a hand-typed todo that you then delete stays approved on the ship until you dismiss it on the page. The desks are found through `/sys/link/`, a peek road the ship had already, and three lines need your consent once on `/apps/grubbery/permits`: a poke of the calendar instance (its writer), a peek of it (its store, kept for the mirror) and a poke of auspex's writer. A desk that is not installed, or a road refused, leaves those actions approved for another executor and is named on the Executor card under Settings, which shows what the last pass did, the failures with their notes, and wakes the executor. A companion client's own task mirror and its senders must be off once this runs: two mirrors over one todo list place and tick twice, and two senders send twice.
 
-A proposed action on the page carries a box under it for a note (version 36): "include susan in this", "make it 3pm", "send this as mail". `POST /actions/<id>/refine` runs one model call and rewrites the action's title, payload, `about` and `due` in place, keeping its id and history and appending one step `revised` by whoever asked. A name the note gives that the ship does not have becomes a new person with no attributes, the way a reader creates one from a message; the owner does not add every person they meet by hand. Anything the note asks for beyond the action itself, such as a todo the day before, comes back as an `extra`, a second action carrying `refined_from` and the original's `about`, filed as any proposal is: under the policy's `auto` list a task lands approved, anything else waits for its tap. A note the ship cannot carry out, such as switching a light, changes nothing and answers why in `note`. The action stays `proposed` until approved as before, and only a proposed action can be refined: approve first, and a done action is history. One refinement runs at a time per action; a second while the first is still running answers 409.
+A proposed action on the page carries a box under it for a note (version 36): "include dana in this", "make it 3pm", "send this as mail". `POST /actions/<id>/refine` runs one model call and rewrites the action's title, payload, `about` and `due` in place, keeping its id and history and appending one step `revised` by whoever asked. A name the note gives that the ship does not have becomes a new person with no attributes, the way a reader creates one from a message; the owner does not add every person they meet by hand. Anything the note asks for beyond the action itself, such as a todo the day before, comes back as an `extra`, a second action carrying `refined_from` and the original's `about`, filed as any proposal is: under the policy's `auto` list a task lands approved, anything else waits for its tap. A note the ship cannot carry out, such as switching a light, changes nothing and answers why in `note`. The action stays `proposed` until approved as before, and only a proposed action can be refined: approve first, and a done action is history. One refinement runs at a time per action; a second while the first is still running answers 409.
 
-The ship also reconciles on its own. Twice a day, and on `POST /reconcile`, it runs the passes that used to be `orrery-utils/common/reconcile.py`, in order: a future `started` or `ended` becomes `starts` or `ends` (the schedule, dated when it was learned) and a situation status that is not open, closed or cancelled is retracted; situations that are occurrences of one repeating event (three or more with the same calendar uid or the same title) become one activity with an observation per occurrence, and the occurrences are deleted; people are read out of titles ("Mira- Ballet/Tap", "Felix Birthday") and made participants, created when the ship lacks them; bodies that name one person (an org made from a person's name, two persons whose names or addresses match) become merge proposals, actions of kind `merge` for the inbox, and the ones you approve are run; then what is over closes (a situation whose end has passed closes at that end, a trip with no end a week after it started, a scheduled situation with a `starts` but no end six hours after it starts, a situation with a start but no end that began more than thirty days ago with nothing seen since closes at its newest observation; times are read as the readers write them, a bare date included), a thing whose delivery stage has stood too long is presumed delivered (`out for delivery` three days on, `shipped` or `in transit` a fortnight on: a `status` of `delivered` at the end of the grace, conf 60, signed `retire`, so a carrier's own word later supersedes it), and, when `reconcile.prune_days` in the policy is set, closed situations older than that are deleted. Every change is an ordinary observation, retraction or deletion signed `reconcile` (`retire` for the closes), filed through the writer. The settings live under `reconcile` in `policy.json`: `min_occurrences` (3), `stale_days` (30) and `prune_days` (0, off). The Settings page shows what the last run did and runs one now. Version 25 moved retire on-ship, version 26 the rest, version 35 added the scheduled and the delivery rules.
+The ship also reconciles on its own. Twice a day, and on `POST /reconcile`, it runs the passes that used to be `orrery-utils/common/reconcile.py`, in order: a future `started` or `ended` becomes `starts` or `ends` (the schedule, dated when it was learned) and a situation status that is not open, closed or cancelled is retracted; situations that are occurrences of one repeating event (three or more with the same calendar uid or the same title) become one activity with an observation per occurrence, and the occurrences are deleted; people are read out of titles ("Mira- Ballet/Tap", "Felix Birthday") and made participants, created when the ship lacks them; bodies that name one person (an org made from a person's name, two persons whose names or addresses match) become merge proposals, actions of kind `merge` for the inbox, and the ones you approve are run; then what is over closes (a situation whose end has passed closes at that end, a trip with no end a week after it started, a scheduled situation with a `starts` but no end six hours after it starts, a situation with a start but no end that started more than thirty days ago with nothing seen since closes at its newest observation; times are read as the readers write them, a bare date included), a thing whose delivery stage has stood too long is presumed delivered (`out for delivery` three days on, `shipped` or `in transit` a fortnight on: a `status` of `delivered` at the end of the grace, conf 60, signed `retire`, so a carrier's own word later supersedes it), and, when `reconcile.prune_days` in the policy is set, closed situations older than that are deleted. Every change is an ordinary observation, retraction or deletion signed `reconcile` (`retire` for the closes), filed through the writer. The settings live under `reconcile` in `policy.json`: `min_occurrences` (3), `stale_days` (30) and `prune_days` (0, off). The Settings page shows what the last run did and runs one now. Version 25 moved retire on-ship, version 26 the rest, version 35 added the scheduled and the delivery rules.
 
 ### Where facts come from
 
@@ -197,12 +197,12 @@ On her ship (point `API` and the cookie jar at it first), `GET /api/shares` list
 
 The unit of sharing is one body. Nothing else on your ship is visible to her. `DELETE /api/share/person/sarah/~sampel-palnet` ends it. A share carries the body whole, every attribute on it, so a body holding facts you would not share is not a body to share; the one filter is on the way back, where attributes named in her ship's `policy.sensitive` are never sent to yours. The whole protocol is in `docs/sharing.md`.
 
-## Keys for clients that do not run a ship
+## Clients and keys
 
-A phone app, a triager or a bot gets a key instead of your cookie. A key has a name, an identity it writes as, and a scope.
+A phone app, a triager or a bot that does not run a ship gets a key instead of your cookie. A key has a name, an identity it writes as, and a scope.
 
 ```bash
-post clients '{"name": "Talon on the phone", "by": "talon",
+post clients '{"name": "The phone client", "by": "phone",
                "scope": {"kinds": ["person", "place", "thing", "situation"], "actions": ["task"], "write": true}}'
 ```
 
@@ -212,15 +212,63 @@ The answer carries the `token` once; the ship keeps only a salted hash. The clie
 curl -s -H "Authorization: Bearer $TOKEN" $API/state
 ```
 
-What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The page's Keys view does all three: mint with a form, read the token once, revoke with a button. The rules are in `docs/keys.md`.
+What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The page's Keys view does all three: mint with a form, read the token once, revoke with a button. The rules are in `docs/keys.md`, and the contract a client follows is the client guide, [writing-a-client.md](https://github.com/nisfeb/orrery-utils/blob/main/docs/writing-a-client.md) in orrery-utils.
 
 ## Tools for an AI analyst
 
 If your analyst runs on the ship's MCP server, orrery ships eight tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions` and `orrery_schema`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
 
+## How orrery stores data
+
+Orrery is a desk in the grubbery shell, and everything it keeps is a grub: a file in the ship's content-addressed namespace, under the app's instance. Bodies, observations and actions are typed nouns stored under their own marks; everything else is JSON or a directory. One fiber, the writer at `main.sig`, is the only thing that mutates the tree: every route and every tool pokes it, and it applies the op or refuses it, leaving the outcome in `tr/last`. Current state is never stored; it is the fold over the live observations, computed on every read. The beacon at `beacon/rev` moves once per op that changed something, and is what a client keeps, over grubbery's keep-SSE, to learn that there is something new to fetch.
+
+```
+/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/   the app's instance
+  main.sig                    the writer: every mutation is a poke here
+  web.sig                     binds /apps/orrery; one request fiber per call under requests/<id>
+  requests/<id>               the request fibers, ephemeral
+  bodies/
+    person/sarah/
+      body                    kind, name, aliases, created, ship   [/orrery %body]
+      obs/
+        1758110400-3b9ac1f0   one observation: subject, attr, value, at, until, conf, source, by, seen, retracted, note   [/orrery %obs]
+        ...
+    situation/2026-09-16-breakdown/...
+    thing/subaru/...
+  actions/
+    1758110400-9c2e41aa       one action: kind, title, payload, about, due, by, proposed, status, note, history   [/orrery %action]
+  schema.json  policy.json    the vocabulary and the policy, seeded once, editable on the page
+  beacon/rev                  the change beacon clients keep
+  tr/last  tr/log  tr/inbox   the writer's last outcome, the audit ring (500), ship traffic (its own ring of 500)
+  shares.json                 what this ship shares out, by body id
+  shares.sig                  the inbox other ships poke offers, revokes and edits into
+  share-offers.json           what was offered to this ship
+  ship-remotes.json           what it accepted, a row per share
+  sync.sig                    the follower: pull, then push
+  clients.json                the minted keys, salted hashes only
+  generator.json              the generator's settings; the model key lives here and is never served
+  generator-last.json         what the generator's last pass did
+  gen.sig                     the generator fiber, woken by the beacon
+  reconcile.sig               the reconcile fiber, twice a day and on demand
+  reconcile-last.json         what its last run did
+  telegram.json               the reader's settings; the bot token and webhook secret live here and are never served
+  telegram-recent.json        the last five messages per chat, kept a day as context
+  telegram-last.json          the last update handled
+  telegram-connections.json   the Business connections checked
+  telegram-inbox/<update_id>  an update the webhook took, until the reader has read it
+  telegram-inbox/rev          the inbox's own beacon, which wakes the reader
+  telegram.sig                the reader: drains the inbox in id order
+  exec.sig                    the executor: approved actions carried out, the todo list kept in step
+  exec-last.json              what its last pass did
+  refining/<aid>              the lock a refine request holds on its action
+  tile.json  link.json  weir.json  icon.svg  orrery.html  orrery.css  orrery.js   the manifests and the page, laid fresh on every load
+```
+
+Every path is laid by `+on-load` in `code/nex/orrery/app.hoon` as a fall, so a reload never overwrites what is there, and a stored noun carries a version head (`%2` for bodies and actions, `%1` for observations) so a later shape is told apart by the reader instead of by luck. The three marks are in `code/mar/orrery`.
+
 ## Install
 
-Orrery is a desk in the grubbery shell, distributed by `~ricsul-bilwyt`. Today it runs on ricsul unpublished: only ships in its beta usergroup can read the desk, and it is not yet a stock desk. Once your ship is in that group (or once orrery is published), run grubbery from ricsul and add the desk through the shell.
+Orrery installs on any ship running grubbery. Run grubbery from the publishing ship, then add the desk through the shell by name and code path; it syncs within a few minutes.
 
 ```dojo
 |install ~ricsul-bilwyt %grubbery
@@ -231,46 +279,9 @@ curl -s -b jar -H 'content-type: application/json' -X POST $SHIP/apps/grubbery/d
   -d '{"name": "orrery", "code": "~ricsul-bilwyt/apps/shell.shell/desks/orrery.desk/desk/code"}'
 ```
 
-The desk syncs within a few minutes, and a consent prompt asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off. Then open `/apps/orrery`. Updates arrive on their own whenever ricsul republishes `code/version.json`.
+When the desk lands, a consent prompt on `/apps/grubbery/permits` asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, `/sys/iris/` for the model calls, the calendar and auspex desks for the executor, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off; refuse the calendar or auspex roads and those actions are left for another executor. Then open `/apps/orrery`.
 
-### Updating ricsul
-
-Ricsul's forge tracks this repository and polls it every 15 minutes. Its desk follows the forge's tree and pulls only when `code/version.json` differs from its own, so the one thing that ships a change is the version number.
-
-1. Bump `code/version.json` by one and push to `main`. A push without the bump reaches the forge and stops there, with nothing to tell you.
-2. Wait for the poll, or pull now:
-
-```bash
-curl -s -b jar -H 'content-type: application/json' -X POST https://urbit.sneagan.com/grubbery/forge/api/run \
-  -d '{"repo": "orrery.git_repo", "command": "pull"}'
-```
-
-3. Check that it landed: the desk's `version.json` reads the new number and the instance's `bang` is null.
-
-```bash
-R=https://urbit.sneagan.com
-curl -s -b jar "$R/grubbery/ball/apps/shell.shell/desks/orrery.desk/version.json?raw=1"
-curl -s -b jar "$R/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app?info=1" | python3 -c 'import sys, json; print(json.load(sys.stdin)["bang"])'
-```
-
-A release that adds a road to the ask raises a consent prompt on ricsul. Anything else lands on its own, and every ship following ricsul's desk syncs the new version by itself. `docs/releasing.md` has the failure modes and how to get out of each.
-
-### Opening it to beta testers
-
-The desk stays unpublished. Testers get it through a usergroup that may read the desk's code, and nothing else on ricsul.
-
-1. Make a usergroup for them on ricsul: a `<name>.grp` directory under `/sys/ames/usergroups` with the testers' ships in its `who.ships`, the way `/family` was made.
-2. Open the desk to that group: on `/grubbery/desk/orrery`, under "Usergroups allowed to peek /desk/code", add `/<name>`. Over HTTP:
-
-```bash
-curl -s -b jar -H 'content-type: application/json' -X POST https://urbit.sneagan.com/grubbery/desk/orrery/share -d '{"add": "/<name>"}'
-```
-
-`{"remove": "/<name>"}` closes it again. The grant is peek on the code and the version file, nothing else.
-
-3. Each tester runs the install above on a ship running grubbery, approves the ask when the desk prompts, and opens `/apps/orrery`. Every later version bump reaches them on its own.
-
-Publishing proper, when it is time, is the stock desk line beside calendar's in grubbery's `gub/nex/shell.hoon` and opening the desk to `/public`. Nothing about the beta group has to be undone first.
+First settings, all under Settings on the page: rename `person/me` and give it a `timezone`; on the Generator card set the model and the key and turn it on if you want the ship to propose; on the Telegram card set the bot token, a secret and the ship's public URL, list the chats and map the people, and press register if you want the ship to read Telegram. A later release that adds a road raises the consent prompt again; anything else lands on its own whenever the publisher republishes `code/version.json`. `docs/releasing.md` is the maintainer's side of that.
 
 ## Under the hood
 
@@ -337,7 +348,29 @@ Live updates come from the instance's change beacon, streamed through grubbery's
 ### The repository
 
 - `code/` is the desk: the nexus at `code/nex/orrery/app.hoon` with the page beside it, the model in `code/lib/orrery.hoon` (pure, import-free, unit-tested), the MCP tools under `code/lib/tools`, the marcs under `code/mar`. `code/version.json` is what replicates. The telegram reader's fibers live in the nexus beside the webhook route; its own settings, window and connections are kept in the instance's `telegram.json`, `telegram-recent.json`, `telegram-last.json` and `telegram-connections.json`, none of them in git. The executor is the fiber `exec.sig` in the nexus, its planners `plan-exec` and `plan-mirror` in the lib, and its record the instance's `exec-last.json`; `code/mar/auspex-action.hoon` is a copy of auspex's marc, since a guest distributes every marc it names. The lib's `system-prompt`, `analyst-prompt` and `refine-prompt` cords are `orrery-utils/common/generator-prompt.md`, `analyst-prompt.md` and `refine-prompt.md`, word for word, held to them by `scripts/prompt-drift.py`.
-- `tests/lib/orrery.hoon` is the unit suite for the model, run with `-test` on a dev ship.
+- `tests/lib/orrery.hoon` and `tests/lib/generator.hoon` are the unit suites for the model, run with `-test` on a dev ship.
 - `scripts/` holds the gates, all against a dev ship: `api-matrix.py` (the story above, over HTTP), `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py` with `page-test.js`, and `ship-share-matrix.py` across two ships.
-- `docs/`: the design at `docs/superpowers/specs/2026-09-16-orrery-design.md` and the plans under `docs/superpowers/plans`; `docs/sharing.md`, `docs/keys.md`, `docs/mcp.md`; `docs/releasing.md` for how a release reaches ricsul and its subscribers; `docs/kernel` for the MCP discovery patch.
-- Family: [lattice](https://github.com/nisfeb/lattice), [auspex](https://github.com/nisfeb/auspex), [calendar](https://github.com/nisfeb/calendar), installed from `~ricsul-bilwyt` the same way.
+- `docs/`: the design at `docs/superpowers/specs/2026-09-16-orrery-design.md` and the plans under `docs/superpowers/plans`; `docs/sharing.md`, `docs/keys.md`, `docs/mcp.md`; `docs/releasing.md` for how a release propagates from the publisher to its subscribers; `docs/kernel` for the MCP discovery patch; `docs/spikes` for what was measured before a design was settled.
+
+## Development
+
+Development happens against a dev ship running grubbery, with the desk's code tree written to directly (`write-text` through the ball browser compiles at once, with no commit) and the owner cookie in a jar. Below, `$SHIP` is that ship's web address, `$JAR` its cookie jar from `POST /~/login`, and `$SHIP2` and `$JAR2` a second ship for the sharing gate. Nothing is released until every gate is green:
+
+| gate | what it proves |
+|---|---|
+| `python3 scripts/code-closure.py code` | the code directory is closed under every marc and import a guest resolves; `--fill <grubbery desk>` vendors what is missing |
+| `cmp code/lib/tools.hoon <grubbery checkout>/desk/gub/lib/tools.hoon` | the vendored tool types equal the kernel's, or every tool call breaks |
+| `python3 scripts/prompt-drift.py <orrery-utils checkout>/common` | the prompt cords in the lib equal the shared prompt files word for word |
+| `-test /=grubbery=/tests/lib/orrery ~` and `-test /=grubbery=/tests/lib/generator ~` in the dojo of a ship whose grubbery desk holds `code/lib/orrery.hoon` and the test files | the unit suites |
+| `node scripts/page-test.js` | the page's render tests, no ship needed |
+| `python3 scripts/api-matrix.py $SHIP $JAR` | the HTTP API, the story above end to end, twice in a row; run it first, since it deletes the bodies the sharing gate shares |
+| `python3 scripts/key-matrix.py $SHIP $JAR` | what a scoped key can and cannot see and do |
+| `python3 scripts/mcp-matrix.py $SHIP $JAR` | the eight tools, checked against the HTTP API's answers |
+| `python3 scripts/page-smoke.py $SHIP $JAR` | the page and its assets are served |
+| `python3 scripts/ship-share-matrix.py $SHIP $JAR $SHIP2 $JAR2` | sharing across two ships, read mode and edit mode |
+
+Each prints `ALL OK` or names the first check that failed. A by-hand pass on `/apps/orrery` with the owner cookie closes a release: the views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon. The release itself is a bump of `code/version.json`; `docs/releasing.md` says why that number is the whole mechanism and how to tell a release that landed from one that did not.
+
+## Family
+
+[lattice](https://github.com/nisfeb/lattice), [auspex](https://github.com/nisfeb/auspex) and [calendar](https://github.com/nisfeb/calendar) are desks in the same shell, installed the same way; orrery's executor sends mail through auspex and keeps its tasks and events in the calendar. [orrery-utils](https://github.com/nisfeb/orrery-utils) holds the shared prompts, the generator bench, the Telegram bot the ship's reader replaced, and the client guide.

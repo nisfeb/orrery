@@ -2,11 +2,11 @@
 
 The question before the generator moves into Hoon: can a desk hold an outbound HTTPS request open for the minutes a reasoning model takes? The calendar desk already POSTs through `/sys/iris/` (`fetch-hdr` in its app.hoon), and what it shows is that **the ceiling is the app's own timer**: iris carries no request id and no timeout of its own, so the fiber sets a behn timer and answers status 0 when the timer wins. The calendar uses two minutes. The runtime side is the open question: whether the connection itself survives a five-minute wait.
 
-Run it on `~wex`, never on ricsul.
+Run it on the dev ship, never on the live ship.
 
 ## Result, 2026-09-19
 
-Run twice on `~wex` (orrery 17, the probe route written into the desk's code tree and taken out again afterwards):
+Run twice on the dev ship (orrery 17, the probe route written into the desk's code tree and taken out again afterwards):
 
 | request | status | seconds |
 |---|---|---|
@@ -23,22 +23,22 @@ Write `probe.json` into the instance's data tree, owner cookie, without printing
 
 ```sh
 python3 - <<'EOF'
-import json, subprocess
-c = json.load(open('/home/sneagan/software/personal/orrery-utils/config.json'))['model']
+import json, os, subprocess
+c = json.load(open('<the orrery-utils checkout>/config.json'))['model']   # the bench's model url and key
 body = {"model": "deepseek/deepseek-v4-pro", "max_tokens": 16000,
         "reasoning": {"effort": "high"}, "provider": {"zdr": True},
         "messages": [{"role": "user", "content": "Think as long as you need, then answer: how many distinct ways can 12 people be seated at a round table if two particular people must not sit together? Show the reasoning."}]}
 probe = {"url": c["url"].rstrip("/") + "/chat/completions", "api_key": c["api_key"], "body": body}
-base = "http://localhost:8080/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app"
-subprocess.run(["curl", "-s", "-b", "/tmp/wex.cookies", "-X", "POST", base, "--data-urlencode", "action=create-file", "--data-urlencode", "filename=probe.json"], check=False)
-subprocess.run(["curl", "-s", "-b", "/tmp/wex.cookies", "-X", "POST", base + "/probe.json", "--data-urlencode", "action=write-text", "--data-urlencode", "content=" + json.dumps(probe)], check=True)
+base = os.environ["SHIP"] + "/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app"
+subprocess.run(["curl", "-s", "-b", os.environ["JAR"], "-X", "POST", base, "--data-urlencode", "action=create-file", "--data-urlencode", "filename=probe.json"], check=False)
+subprocess.run(["curl", "-s", "-b", os.environ["JAR"], "-X", "POST", base + "/probe.json", "--data-urlencode", "action=write-text", "--data-urlencode", "content=" + json.dumps(probe)], check=True)
 print("probe.json written")
 EOF
 ```
 
 DeepSeek V4 Pro with high reasoning ran 200 seconds in the bench, which is the length we want to see survive.
 
-## 2. The probe route, into wex's copy of app.hoon only
+## 2. The probe route, into the dev ship's copy of app.hoon only
 
 Three edits to `code/nex/orrery/app.hoon`, written with `write-text` to the desk's code tree (never committed):
 
@@ -115,9 +115,9 @@ If `client-response:iris` or `request:http` are not in scope in orrery's build t
 ## 3. Consent, compile, run
 
 1. Write the file: `POST <ball>/desk/code/nex/orrery/app.hoon` with `action=write-text`, then read `?info=1`: `bang: null` compiles.
-2. The new road needs the owner's consent on wex: approve the weir on the grubbery permits page (the same step ricsul's install went through), then reload the nexus.
-3. `curl -s -m 700 -b /tmp/wex.cookies -X POST http://localhost:8080/apps/orrery/api/probe-iris` and read `status`, `seconds`, `head`.
-4. `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}` on wex puts the committed code back. Delete `probe.json` with the ball API.
+2. The new road needs the owner's consent on the dev ship: approve the weir on the grubbery permits page (the same step any install goes through), then reload the nexus.
+3. `curl -s -m 700 -b $JAR -X POST $SHIP/apps/orrery/api/probe-iris` and read `status`, `seconds`, `head`.
+4. `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}` on the dev ship puts the committed code back. Delete `probe.json` with the ball API.
 
 ## What the numbers mean
 

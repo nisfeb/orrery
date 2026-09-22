@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Orrery version 34 carries out its own approved actions (Telegram and mail messages, calendar events, todos) and keeps the calendar's todo list and its task actions in step, so Talon can drop those four jobs.
+**Goal:** Orrery version 34 carries out its own approved actions (Telegram and mail messages, calendar events, todos) and keeps the calendar's todo list and its task actions in step, so the phone client can drop those four jobs.
 
 **Architecture:** One `exec.sig` fiber keeps two things: orrery's own beacon and the calendar desk's store. On orrery's beacon it runs the executor: claim each open action it can serve, do the one poke or HTTP call, report done or failed. On the calendar's store it runs the mirror: read the todos, reconcile them with the actions in both directions. Every decision is a pure planner in `code/lib/orrery.hoon` over the actions and the todo list, answering writer ops and calendar pokes; the fiber files them. The two desks are found through `/sys/link/` the way `self-base` finds orrery itself. The reader loses its command grammar.
 
@@ -12,14 +12,14 @@
 
 ## Global Constraints
 
-- Builds run on ~wex through the ball fast loop, verified by read-back: `/tmp/claude-1001/-home-sneagan-software-personal-orrery/2a3e16c2-f1c6-43d8-a630-854483ecbe32/scratchpad/build.sh <file under code/>` prints `build: vase` (Hoon compiled), `build: mime` (a data file), or `build: tang` with the error and the offending lines; only `build.status` counts. Build the lib before the app. A new fiber may need `POST http://localhost:8080/apps/grubbery/permits/reload` with JSON `{"app": "orrery"}` and the jar `/tmp/wex.cookies` to rise.
-- Clay unit tests run on ~feb's grubbery desk: copy `code/lib/orrery.hoon` to `~/software/feb/grubbery/lib/orrery.hoon` and `tests/lib/generator.hoon` to `~/software/feb/grubbery/tests/lib/generator.hoon`, then in tmux window `0:6` (read the pane first; another session may be using it; wait for a bare `~feb:dojo>` prompt) send `|commit %grubbery`, wait for the prompt, send `-test /=grubbery=/tests/lib/generator ~`, wait for a bare prompt after new `OK`/`FAILED`/`CRASHED` lines, then `tmux capture-pane -p -S -3000 -t 0:6 | grep -aE "^(OK|FAILED|CRASHED) .*generator|expected|actual|nest-fail|find\.|mint|syntax error" | sort -u`. The pane drops lines under load; 40 OK lines at the start of this plan.
+- Builds run on the dev ship through the ball fast loop, verified by read-back: `<scratchpad>/build.sh <file under code/>` prints `build: vase` (Hoon compiled), `build: mime` (a data file), or `build: tang` with the error and the offending lines; only `build.status` counts. Build the lib before the app. A new fiber may need `POST $SHIP/apps/grubbery/permits/reload` with JSON `{"app": "orrery"}` and the jar `$JAR` to rise.
+- Clay unit tests run on the second ship's grubbery desk: copy `code/lib/orrery.hoon` to `<the second ship's mount>/lib/orrery.hoon` and `tests/lib/generator.hoon` to `<the second ship's mount>/tests/lib/generator.hoon`, then in its dojo (read the pane first; another session may be using it; wait for a bare `~sampel-palnet:dojo>` prompt) send `|commit %grubbery`, wait for the prompt, send `-test /=grubbery=/tests/lib/generator ~`, wait for a bare prompt after new `OK`/`FAILED`/`CRASHED` lines, then read the dojo pane and `grep -aE "^(OK|FAILED|CRASHED) .*generator|expected|actual|nest-fail|find\.|mint|syntax error" | sort -u`. The pane drops lines under load; 40 OK lines at the start of this plan.
 - Cross-instance addressing: a road to another instance is `[%& %& base name]` where `base` is the path from `/sys/link/<name>/dest.lanes` (see `self-base` in app.hoon near line 1776, which does it for `orrery`). The calendar claims the link name `calendar`; auspex claims `auspex`. The calendar's store and poke target are one grub, `[%& %& base %'calendar.calendar']`: it takes `[[/ %json] jon]` pokes with an `action` key (`add-event`, `edit-event`, `done-event`, `del-event`) and holds the events; keep it for news. Auspex's writer is `[%& %& base %'main.sig']`; it takes a raw noun poke with blot `[/auspex %auspex-action]` ... check the exact blot in `~/software/personal/auspex/code/nex/auspex/app.hoon` `apply` (`=([/ %auspex-action] p.sage)`) and use that; the noun is `[%send to=(set @p) subject=@t body=@t body-mime=@t prev=~ files=~ bcc=~]` with `body-mime` `''` meaning text/plain; the writer clams it with `;;(action:uc ...)` and refuses a poke from another ship (a local one passes).
-- Calendar event JSON for `add-event`: `cat` (`todo`, `timed`, `allday`), `meta` (an object passed through verbatim; `name` required; `orrery`, `tags`, `note`, `location` are ours), for a todo `due_ms` and `done_ms` (epoch milliseconds), for timed `start_ms`, `end_ms` (with `fin` `to`), `zone`; for allday `span_days` and the date fields `parse-recur` expects (read `parse-event` and `parse-recur` in `~/software/personal/calendar/code/nex/calendar/app.hoon` near line 3735 for the exact keys; the plan's Task 3 pins them). `done-event {id, done: <ms or null>}`, `del-event {id}`, `edit-event {id, ...the same fields as add}`; read those branches near lines 157, 267, 280.
-- Consent: three lines join `weir-json` in app.hoon (`/sys/link/` is already a peek road there): poke `'/apps/shell.shell/desks/calendar.desk/'` and `'/apps/shell.shell/desks/auspex.desk/'` (subtree roads, the way the calendar's `'/apps/calendar.calendar/'` line names one), and keep on the calendar subtree. Approving them on ricsul's permits page is the owner's step at release.
+- Calendar event JSON for `add-event`: `cat` (`todo`, `timed`, `allday`), `meta` (an object passed through verbatim; `name` required; `orrery`, `tags`, `note`, `location` are ours), for a todo `due_ms` and `done_ms` (epoch milliseconds), for timed `start_ms`, `end_ms` (with `fin` `to`), `zone`; for allday `span_days` and the date fields `parse-recur` expects (read `parse-event` and `parse-recur` in `<the calendar checkout>/code/nex/calendar/app.hoon` near line 3735 for the exact keys; the plan's Task 3 pins them). `done-event {id, done: <ms or null>}`, `del-event {id}`, `edit-event {id, ...the same fields as add}`; read those branches near lines 157, 267, 280.
+- Consent: three lines join `weir-json` in app.hoon (`/sys/link/` is already a peek road there): poke `'/apps/shell.shell/desks/calendar.desk/'` and `'/apps/shell.shell/desks/auspex.desk/'` (subtree roads, the way the calendar's `'/apps/calendar.calendar/'` line names one), and keep on the calendar subtree. Approving them on the live ship's permits page is the owner's step at release.
 - Facts and actions the mirror writes: `by` `calendar`, source `{"kind": "calendar", "id": <todo id>}`; the executor's claims and reports: `by` `ship`.
 - No secret is ever served; no message text is stored beyond an approved payload; no em dashes; commits as nisfeb with no attribution lines; do not push (the controller pushes and releases).
-- Every task ends with the gates that touch it green: `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, and `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies` (about fifteen minutes, block-buffered, 170 checks at the start of this plan) for tasks that change a route or a fiber.
+- Every task ends with the gates that touch it green: `node scripts/page-test.js`, `python3 scripts/code-closure.py code`, and `python3 scripts/api-matrix.py $SHIP $JAR` (about fifteen minutes, block-buffered, 170 checks at the start of this plan) for tasks that change a route or a fiber.
 
 ---
 
@@ -28,7 +28,7 @@
 - `code/lib/orrery.hoon`: a new section `::  ==  executors (version 34)` after the telegram section: `exec-config`, `+$  todo` and `todo-of`, `todos-of`, `plan-exec` (which open actions to take and the poke or call each needs), `event-json` (an action to `add-event` JSON), `plan-mirror` (the todo list against the actions: ops and pokes), `ms-of`/`da-of-ms`; the telegram section loses `tg-command`, `parse-value`, `tg-obs`.
 - `code/nex/orrery/app.hoon`: `exec-last.json`, `exec.sig`, `weir-json` lines, `find-base` (link lookup by name), `poke-calendar`, `poke-auspex`, `send-telegram`, `exec-pass`, `mirror-pass`, `exec-record`; `tg-handle` loses the command branch; routes `GET /api/exec/last`, `POST /api/exec/wake`.
 - `code/nex/orrery/orrery.js`, `orrery.css`: an Executor card under Settings.
-- `scripts/api-matrix.py`: the stub gains a calendar instance and an auspex writer on wex? No: a stub cannot stand in for another nexus instance. The executor section installs nothing; it exercises the Telegram send through the existing stub, and the calendar and auspex paths through a **fake base**: the fiber's `find-base` answers `~` on wex (neither desk is installed there... check `curl -s -b /tmp/wex.cookies http://localhost:8080/grubbery/ball/apps/shell.shell/desks?raw=1` for `calendar.desk`; if the calendar is installed on wex, the gate uses it for real and reads `calendar.calendar` back through the ball). The plan's Task 6 says which.
+- `scripts/api-matrix.py`: the stub gains a calendar instance and an auspex writer on the dev ship? No: a stub cannot stand in for another nexus instance. The executor section installs nothing; it exercises the Telegram send through the existing stub, and the calendar and auspex paths through a **fake base**: the fiber's `find-base` answers `~` on the dev ship (neither desk is installed there... check `curl -s -b $JAR $SHIP/grubbery/ball/apps/shell.shell/desks?raw=1` for `calendar.desk`; if the calendar is installed on the dev ship, the gate uses it for real and reads `calendar.calendar` back through the ball). The plan's Task 6 says which.
 - `tests/lib/generator.hoon`: the unit tests.
 - `README.md`, `docs/releasing.md`, `orrery-utils/docs/writing-a-client.md` (rule 11 and 14 rewritten: the ship executes; a client executor takes `chat` only; `mail` addresses a ship), `orrery-utils/telegram/README.md` (no commands).
 
@@ -50,7 +50,7 @@
 
 - [ ] **Step 3: Docs.** README.md's telegram paragraph: drop the sentence about the commands. `orrery-utils/telegram/README.md`: the grammar section stays for the Python bot (it still has commands for a ship older than 29); add one line under its opening paragraph: the ship's reader has no commands; a slash message is read as text.
 
-- [ ] **Step 4: Gates.** Feb suite: 39 OK (one fewer). Api gate: ALL OK (the telegram section two checks shorter). Closure clean.
+- [ ] **Step 4: Gates.** The second ship suite: 39 OK (one fewer). Api gate: ALL OK (the telegram section two checks shorter). Closure clean.
 
 - [ ] **Step 5: Commit** (orrery, and orrery-utils separately): `The reader has no commands: a slash message is text` and `The ship's reader has no commands`.
 
@@ -74,7 +74,7 @@
   ```
   and in the `keep` list (find how `weir-json` separates poke, peek and keep; add to the keep list, or the peek list if keep rides on peek in this kernel: read `lay-inbox-road` and the calendar's `weir-json` for the shape) the calendar subtree with the why `read your todo list, so a todo you tick or type is a task the ship knows`. Build: `vase`.
 
-- [ ] **Step 3: Gate check.** In the api gate, after the sharing section: `code, d = curl('GET', HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/weir.json?raw=1')` and check the three roads appear in the served weir (`'/apps/shell.shell/desks/calendar.desk/' in json.dumps(d)` and the auspex one). Consent on wex: the dev instance must have the new roads approved for the executor to work in Task 6; the gate's generator section already documents how (`POST /apps/grubbery/permits {action: approve-weir, app, picks, granted}` then `/apps/grubbery/permits/reload`); do that by hand on wex now for the three roads and note the exact calls in the report so Task 6 can repeat them.
+- [ ] **Step 3: Gate check.** In the api gate, after the sharing section: `code, d = curl('GET', HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/weir.json?raw=1')` and check the three roads appear in the served weir (`'/apps/shell.shell/desks/calendar.desk/' in json.dumps(d)` and the auspex one). Consent on the dev ship: the dev instance must have the new roads approved for the executor to work in Task 6; the gate's generator section already documents how (`POST /apps/grubbery/permits {action: approve-weir, app, picks, granted}` then `/apps/grubbery/permits/reload`); do that by hand on the dev ship now for the three roads and note the exact calls in the report so Task 6 can repeat them.
 
 - [ ] **Step 4: Commit:** `The executor finds the calendar and auspex through link, and asks consent for their roads`.
 
@@ -95,10 +95,10 @@
 ++  exec-acts
   ^-  (list [id=@ta a=action:orr])
   =/  pay  |=(t=@t ^-(json (need (de:json:html t))))
-  :~  ['m1' [%message 'Tell Rose' (pay '{"via": "telegram", "to": "person/rose", "text": "Susan could not call back"}') (sy ~['person/rose']) ~ 'telegram' now %approved '' ~]]
+  :~  ['m1' [%message 'Tell Nora' (pay '{"via": "telegram", "to": "person/nora", "text": "Dana could not call back"}') (sy ~['person/nora']) ~ 'telegram' now %approved '' ~]]
       ['m2' [%message 'Tell Bob' (pay '{"via": "mail", "to": "person/bob", "text": "hi"}') (sy ~['person/bob']) ~ 'telegram' now %approved '' ~]]
       ['m3' [%message 'Tell Eve' (pay '{"via": "telegram", "to": "person/eve", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
-      ['m4' [%message 'DM Rose' (pay '{"via": "chat", "to": "person/rose", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['m4' [%message 'DM Nora' (pay '{"via": "chat", "to": "person/nora", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c1' [%calendar 'Dinner with Sarah' (pay '{"title": "Dinner with Sarah", "starts": "2026-09-25T20:00:00Z", "ends": "2026-09-25T22:00:00Z", "location": "the usual place"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c2' [%calendar 'Field day' (pay '{"title": "Field day", "starts": "2026-10-03T00:00:00Z", "ends": "2026-10-04T00:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
       ['t1' [%task 'Call the shop' (pay '{"notes": "about the brakes"}') ~ `~2026.9.30 'generator' now %approved '' ~]]
@@ -107,7 +107,7 @@
   ==
 ++  exec-bodies
   ^-  (list loaded:orr)
-  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['telegram' s+'545179154']] now)
+  :~  (mkb 'person/nora' %person 'Nora' ~ ~[['telegram' s+'545179154']] now)
       (mkb 'person/bob' %person 'Bob' ~ ~[['ship' s+'~sampel-palnet']] now)
       (mkb 'person/eve' %person 'Eve' ~ ~ now)
   ==
@@ -118,7 +118,7 @@
     (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'c1' 'c2' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
     (expect-eq !>(%telegram) !>(target:(~(got by by-id) 'm1')))
     (expect-eq !>('545179154') !>(to:(~(got by by-id) 'm1')))
-    (expect-eq !>('Susan could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
+    (expect-eq !>('Dana could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
     (expect-eq !>('545179154') !>((gs:orr body:(~(got by by-id) 'm1') 'chat_id')))
     (expect-eq !>(%mail) !>(target:(~(got by by-id) 'm2')))
     (expect-eq !>('~sampel-palnet') !>(to:(~(got by by-id) 'm2')))
@@ -214,7 +214,7 @@ The epoch numbers: 2026-09-25T20:00:00Z is 1,790,366,400 seconds after 1970 (che
 
 Write the rest as the tests demand: `start` is `starts` (required; a missing one gives an event at the action's `proposed` time, which the validator never lets through anyway), `end` is `ends` or start plus an hour; `allday` when `whole-days`, then `span_days` the number of days and the date keys `parse-recur` expects for a one-off allday event (read `parse-recur`: likely `year`, `month`, `day` or a `start_ms`; the test only checks `cat`, so pin what the calendar takes and add an assertion for it); `timed` otherwise with `start_ms`, `end_ms`, `fin` `to`, `zone`. `location` goes under `meta.location` when given. `plan-exec` walks the approved actions: `message` → `via` lower-cased; `telegram` → `to` from the person's `telegram` attribute, body `{"chat_id": <to>, "text": <payload text>}`; `mail` → `to` from the person's `ship` attribute (with or without the leading `~`, normalised to have it), body `{"subject": <title>, "text": <payload text>}`; other `via` → skipped; `calendar` and `task` → `event-json` with `zone` the person/me `timezone` winner or `''` (the fiber passes it); an empty `to` for a message gets the `note` `<person> has no <attr> attribute`.
 
-- [ ] **Step 4: Tests OK on feb; lib `vase`; commit:** `The executor's plans: an approved action to the poke or call that carries it out`.
+- [ ] **Step 4: Tests OK on the second ship; lib `vase`; commit:** `The executor's plans: an approved action to the poke or call that carries it out`.
 
 ---
 
@@ -225,7 +225,7 @@ Write the rest as the tests demand: `start` is `starts` (required; a missing one
 - Test: `tests/lib/generator.hoon`
 
 **Interfaces:**
-- Produces: `+$  todo  [id=@t name=@t orrery=@t done=? due=(unit @da) note=@t]`; `todos-of |=(cal=json (list todo))` from the calendar's store as the ball serves it (the `calendar.calendar` grub read back as JSON through `?blot=/json`, or its noun; Task 6 decides which the fiber reads and this arm takes the JSON shape: read `~/software/personal/calendar/code/nex/calendar/app.hoon`'s JSON encoder of the store, the `events.json` route's shape: rows with `id`, `cat`, `meta` (`name`, `orrery`, `tags`, `note`), `done_ms`/`due_ms` for todos); `+$  mirror-op  $%([%writer json] [%calendar json])`; `plan-mirror |=([todos=(list todo) acts=(list [id=@ta a=action]) now=@da] (list mirror-op))` per the spec's four rules.
+- Produces: `+$  todo  [id=@t name=@t orrery=@t done=? due=(unit @da) note=@t]`; `todos-of |=(cal=json (list todo))` from the calendar's store as the ball serves it (the `calendar.calendar` grub read back as JSON through `?blot=/json`, or its noun; Task 6 decides which the fiber reads and this arm takes the JSON shape: read `<the calendar checkout>/code/nex/calendar/app.hoon`'s JSON encoder of the store, the `events.json` route's shape: rows with `id`, `cat`, `meta` (`name`, `orrery`, `tags`, `note`), `done_ms`/`due_ms` for todos); `+$  mirror-op  $%([%writer json] [%calendar json])`; `plan-mirror |=([todos=(list todo) acts=(list [id=@ta a=action]) now=@da] (list mirror-op))` per the spec's four rules.
 
 - [ ] **Step 1: Failing test**
 
@@ -278,7 +278,7 @@ Write the rest as the tests demand: `start` is `starts` (required; a missing one
 
 **Files:**
 - Modify: `code/nex/orrery/app.hoon`
-- Test: by hand on wex (Task 6 writes the gate)
+- Test: by hand on the dev ship (Task 6 writes the gate)
 
 **Interfaces:**
 - Produces: `exec.sig` (fall `[%fall %& [/ %'exec.sig'] [[/ %sig] ~]]`, `exec-last.json` fall `[%o ~]`); `exec-pass` and `mirror-pass`; `poke-calendar |=([base=path jon=json] (unit tang))`, `poke-auspex |=([base=path to=@p subject=@t body=@t] (unit tang))`, `send-telegram |=([cfg=tg-config chat=@t text=@t] [status=@ud body=@t])`; routes `GET /api/exec/last` (owner, `serve-doc`), `POST /api/exec/wake` (owner, poke `exec.sig` with `[[/ %sig] ~]`).
@@ -305,7 +305,7 @@ Write the rest as the tests demand: `start` is `starts` (required; a missing one
         $
 ```
 
-`take-gen-in /exec` filters news to the `/exec` wire; news on `/cal` must also wake the loop: write `take-any-of |=(wires=(list wire) ...)` beside `take-gen-in`, or call `take-gen-in` with `/exec` and a second keep on `/exec` for the calendar (one wire, two subscriptions: `keep:io /exec road` twice is allowed if the kernel keys keeps by wire and road; check `keep` in `~/software/groundwire/grubbery/desk/lib/fiberio.hoon`; if keyed by wire alone, use two wires and a taker that accepts either).
+`take-gen-in /exec` filters news to the `/exec` wire; news on `/cal` must also wake the loop: write `take-any-of |=(wires=(list wire) ...)` beside `take-gen-in`, or call `take-gen-in` with `/exec` and a second keep on `/exec` for the calendar (one wire, two subscriptions: `keep:io /exec road` twice is allowed if the kernel keys keeps by wire and road; check `keep` in `<the grubbery checkout>/desk/lib/fiberio.hoon`; if keyed by wire alone, use two wires and a taker that accepts either).
 
 A calendar that is not installed at rise: the fiber keeps only orrery's beacon and `mirror-pass` answers at once; `find-base` is retried on each pass, so installing the calendar later needs no restart.
 
@@ -317,7 +317,7 @@ A calendar that is not installed at rise: the fiber keeps only orrery's beacon a
 
 `exec-record`: `exec-last.json` with `at`, `sent`, `placed`, `failed` (a list of `{id, title, note}` at most 20), `ticked`, `deleted`, `adopted`, `missing` (a list of `calendar`/`auspex` when `find-base` answered `~`).
 
-- [ ] **Step 3: Routes, build, reload wex, a hand probe**: approve an action of each kind on wex through the API and read `exec-last.json` and the calendar (if installed on wex) or the stub's `sendMessage` (the api gate's stub does not run outside the gate; start it by hand from the gate's `Stub` class, or accept a `failed` with a connection error for the hand probe and let Task 6 prove the send). Build lib and app `vase`.
+- [ ] **Step 3: Routes, build, reload the dev ship, a hand probe**: approve an action of each kind on the dev ship through the API and read `exec-last.json` and the calendar (if installed on the dev ship) or the stub's `sendMessage` (the api gate's stub does not run outside the gate; start it by hand from the gate's `Stub` class, or accept a `failed` with a connection error for the hand probe and let Task 6 prove the send). Build lib and app `vase`.
 
 - [ ] **Step 4: Commit:** `The executor fiber: approved actions carried out on the ship, and the todo list kept in step`.
 
@@ -328,19 +328,19 @@ A calendar that is not installed at rise: the fiber keeps only orrery's beacon a
 **Files:**
 - Modify: `scripts/api-matrix.py`, `code/nex/orrery/orrery.js`, `orrery.css`, `scripts/page-test.js`, `README.md`, `docs/releasing.md`, `orrery-utils/docs/writing-a-client.md`, `orrery-utils/telegram/README.md`
 
-- [ ] **Step 1: Gate.** The section runs with the stub up and the telegram settings set (token `123:abc`, api_url the stub): `POST /act` a `message` `via telegram` to a person given a `telegram` attribute of `1001`, approve it, wait for `exec-last.json` to move; check the stub saw `/bot123:abc/sendMessage` with `chat_id` `1001` and the text; the action is `done` by `ship` with `sent to 1001`. A message to a person with no `telegram` attribute: `failed` with the note. A `via mail` message when auspex is absent on wex: `failed` `auspex is not installed` (or, when it is installed on wex, `done` and the report says so). A `calendar` action and a `task`: if the calendar is installed on wex and its roads approved (Task 2's report says), `done` with `on the calendar`/`in the todo list` and the event readable through the calendar's own API (`GET /apps/calendar/api/events` or the ball's `calendar.calendar?blot=/json`) with `meta.orrery` the action id; ticking it through the calendar's API (`done-event`) moves the action to `done` within a pass; a hand-typed todo posted through the calendar's API appears as an approved task on the ship with `by` `calendar` and the todo gains the mark. If the calendar is not on wex: the checks assert `failed` with `the calendar is not installed`, and the report says the mirror was proven only by the unit test; then the controller installs the calendar on wex before release (a note for the controller, not this task).
+- [ ] **Step 1: Gate.** The section runs with the stub up and the telegram settings set (token `123:abc`, api_url the stub): `POST /act` a `message` `via telegram` to a person given a `telegram` attribute of `1001`, approve it, wait for `exec-last.json` to move; check the stub saw `/bot123:abc/sendMessage` with `chat_id` `1001` and the text; the action is `done` by `ship` with `sent to 1001`. A message to a person with no `telegram` attribute: `failed` with the note. A `via mail` message when auspex is absent on the dev ship: `failed` `auspex is not installed` (or, when it is installed on the dev ship, `done` and the report says so). A `calendar` action and a `task`: if the calendar is installed on the dev ship and its roads approved (Task 2's report says), `done` with `on the calendar`/`in the todo list` and the event readable through the calendar's own API (`GET /apps/calendar/api/events` or the ball's `calendar.calendar?blot=/json`) with `meta.orrery` the action id; ticking it through the calendar's API (`done-event`) moves the action to `done` within a pass; a hand-typed todo posted through the calendar's API appears as an approved task on the ship with `by` `calendar` and the todo gains the mark. If the calendar is not on the dev ship: the checks assert `failed` with `the calendar is not installed`, and the report says the mirror was proven only by the unit test; then the controller installs the calendar on the dev ship before release (a note for the controller, not this task).
 - [ ] **Step 2: The card.** `executorCard(last)` under the Reconcile card: the counts, the failures with their notes, the missing desks, a wake button (`data-exec-wake`); the settings route fetches `/exec/last`; three page tests.
-- [ ] **Step 3: Docs.** README: two route rows, a paragraph after the telegram one (what the ship executes, how `mail` addresses a ship, the consent roads, that Talon's mirror must be off), the Under the hood files. `docs/releasing.md`: version 34's owner steps (approve three roads on the permits page, then reload; switch Talon's mirror off in the same hour). Client guide: rule 11 rewritten (the ship mirrors; a client does not; a hand-typed todo is adopted by the ship), rule 14's executor half (a client executor takes `chat` only; `mail` addresses a ship through auspex; `telegram`, `mail`, `calendar`, `task` are the ship's), rule 16 unchanged. Telegram README: the executor moved to the ship; the Python executor is for a ship older than 34.
-- [ ] **Step 4: Gates green** (api, page, closure, feb). **Commit** both repos.
+- [ ] **Step 3: Docs.** README: two route rows, a paragraph after the telegram one (what the ship executes, how `mail` addresses a ship, the consent roads, that the phone client's mirror must be off), the Under the hood files. `docs/releasing.md`: version 34's owner steps (approve three roads on the permits page, then reload; switch the phone client's mirror off in the same hour). Client guide: rule 11 rewritten (the ship mirrors; a client does not; a hand-typed todo is adopted by the ship), rule 14's executor half (a client executor takes `chat` only; `mail` addresses a ship through auspex; `telegram`, `mail`, `calendar`, `task` are the ship's), rule 16 unchanged. Telegram README: the executor moved to the ship; the Python executor is for a ship older than 34.
+- [ ] **Step 4: Gates green** (api, page, closure, the second ship). **Commit** both repos.
 
 ---
 
 ### Task 7: Release
 
-- [ ] `code/version.json` 34; every gate (api, key, mcp, page, smoke, closure, prompt-drift, feb suites); commit `Version 34: the ship carries out its own approved actions and keeps the todo list in step`. The push, the pull onto ricsul, the consent approval on ricsul's permits page (the owner), the Talon prompt and memory are the controller's.
+- [ ] `code/version.json` 34; every gate (api, key, mcp, page, smoke, closure, prompt-drift, the second ship's suites); commit `Version 34: the ship carries out its own approved actions and keeps the todo list in step`. The push, the pull onto the live ship, the consent approval on the live ship's permits page (the owner), the phone client's prompt and memory are the controller's.
 
 ## Self-review
 
-- Spec coverage: executor (3, 5, 6), mirror (4, 5, 6), discovery and consent (2), limits (5: one claim, failed with reason, nothing retried), record and card (5, 6), reader simplified (1), Talon's side (the controller's prompt), out of scope respected.
+- Spec coverage: executor (3, 5, 6), mirror (4, 5, 6), discovery and consent (2), limits (5: one claim, failed with reason, nothing retried), record and card (5, 6), reader simplified (1), the phone client's side (the controller's prompt), out of scope respected.
 - Placeholders: Task 3's `event-json` body says "write the rest as the tests demand" with the rules listed; Task 5's mirror-pass names an open question (how a fiber reads another desk's typed grub as JSON) with the order to try; both are decisions for the implementer to report, not gaps in what to build.
 - Types: `exec-plan`, `todo`, `mirror-op` consistent across 3, 4, 5, 6; `by` values `ship` and `calendar` consistent with the spec.

@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A body shared from one ship lands on another, keeps current, takes edits back in edit mode, and stops on revoke, proven by a two-ship gate with `~wex` as host and `~feb` as peer.
+**Goal:** A body shared from one ship lands on another, keeps current, takes edits back in edit mode, and stops on revoke, proven by a two-ship gate with the dev ship as host and the second ship as peer.
 
 **Architecture:** The shared unit is a body's directory. The host records shares in `shares.json`, grants the peer a peek on that directory through one usergroup per shared body, and pokes an offer at the peer's public inbox `shares.sig`. The peer records accepted offers in `ship-remotes.json` and runs one follower fiber, `sync.sig`, that every five minutes (and on a prod) deep-peeks each host's body directory over `/sys/ames/ships/`, rewrites the observations onto the local target body (`person/me` when the shared body's ship is our own) and hands them to the writer as an ordinary observe op with the host as asserter and source; in edit mode it also pokes the host's inbox with the local observations not yet pushed. Every mechanism is lifted from calendar's ship sharing, which runs on this same grubbery.
 
-**Tech Stack:** Hoon at zuse 408 on grubbery, `~wex` (host, `http://localhost:8080`, dojo tmux `0:2.0`, mount `~/software/wex/grubbery`) and `~feb` (peer, `http://localhost:8081`, dojo tmux `0:0.0`), Python 3 with `curl` for the gate.
+**Tech Stack:** Hoon at zuse 408 on grubbery, the dev ship (host, `$SHIP`, its dojo, mount `<the dev ship's mount>`) and the second ship (peer, `$SHIP2`, its dojo), Python 3 with `curl` for the gate.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-orrery-design.md`, section 11, "Phase 2: cross-ship sharing, the minimal protocol", which binds; sections 3, 5 and 6 for the model and routes it builds on.
 
@@ -14,7 +14,7 @@
 
 - Prose rules for every doc, comment and commit message: no em-dashes, no hard-wrapped markdown, simple sentences. Hoon comments follow grubbery's `style-guide.md`: `::  +arm: lowercase headline`, a bare `::` line below, plain ASCII, `::  ==  title` dividers.
 - No AI attribution anywhere. Commits go to `nisfeb/orrery` as nisfeb, one at the end of every task with the message given; push where a step says push.
-- Never touch `~ricsul-bilwyt`; never boot, kill or restart a pier; tmux window `0:3` is an ssh session to ricsul, never send keys there. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo.
+- Never touch the live ship; never boot, kill or restart a pier. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo.
 - Never run two gates against the same ship at once.
 - Every persistent path has a covering `%fall` row in `on-load`; every blot laid has a marc in `code/mar`; marcs are noun passthroughs; long-lived fibers use nexus-relative roads (`rf`/`rv`, depth 0 at the root, 1 under `/requests`); no `$` with arguments inside a `;<` continuation; the writer and the inbox never crash on input; the library stays import-free.
 - The sender of a cross-ship poke is read from the transport (`get-poke-src:io`), never from the payload. A peer may write only about a body shared with it in edit mode. An offer or revoke is accepted from any ship and only records or marks; nothing a foreign ship sends reaches the writer without the inbox rewriting `by` and `source`.
@@ -25,17 +25,17 @@
 
 ## Working with two ships
 
-Everything from phase 1's "Working with `~wex`" section still applies (login, the fast loop, the tree browser, the dojo recipe for `-test`, the stop rules; see `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`). Phase 2 adds `~feb`.
+Everything from phase 1's "Working with the dev ship" section still applies (login, the fast loop, the tree browser, the dojo recipe for `-test`, the stop rules; see `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`). Phase 2 adds the second ship.
 
-**Ships.** `~wex` is the host: `W=http://localhost:8080`, cookie jar `/tmp/wex.cookies`, dojo pane `0:2.0`, `+code` `novwel-tamfes-daplex-misdem`. `~feb` is the peer: `F=http://localhost:8081`, cookie jar `/tmp/feb.cookies`, dojo pane `0:0.0`. Read feb's code once with the dojo recipe (`tmux send-keys -t 0:0.0 -l '+code'; tmux send-keys -t 0:0.0 Enter; sleep 3; tmux capture-pane -p -t 0:0.0 | tail -3`), log in with it, and never write it into the repo or a report.
+**Ships.** The dev ship is the host: `W=$SHIP`, cookie jar `$JAR`, its own dojo. The second ship is the peer: `F=$SHIP2`, cookie jar `$JAR2`, its own dojo. Read the second ship's code once from its dojo, log in with it, and never write it into the repo or a report.
 
 **Two instance paths, one shape.** Both ships install the desk at `/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app`. The offer still carries the host's path, because a peer must not assume it.
 
-**The fast loop on the peer** is the same `write-text` and `reload-nexus` sequence against `F`; the desk on feb follows wex's desk over ames (Task 1), so a version bump on wex reaches feb on its own, but during development each ship's code tree is written directly and both must be kept identical to the repo file.
+**The fast loop on the peer** is the same `write-text` and `reload-nexus` sequence against `F`; the desk on the second ship follows the dev ship's desk over ames (Task 1), so a version bump on the dev ship reaches the second ship on its own, but during development each ship's code tree is written directly and both must be kept identical to the repo file.
 
 **The library must be written to both ships too.** The fast loop writes `code/lib/orrery.hoon` to `$D/code/lib/orrery.hoon` on each ship whenever the library changed (Task 3 found the ships still compiling against the phase 1 library after Task 2).
 
-**Unit tests** run on `~wex` only, as in phase 1.
+**Unit tests** run on the dev ship only, as in phase 1.
 
 ---
 
@@ -52,25 +52,25 @@ Everything from phase 1's "Working with `~wex`" section still applies (login, th
 
 ---
 
-### Task 1: The peer ship: `~feb` installs orrery from `~wex`
+### Task 1: The peer ship: The second ship installs orrery from the dev ship
 
-The production path for every subscriber is a desk whose source is the distributor's desk over ames. Rehearsing it on feb proves the path phase 5 will rely on, and gives the gate its second ship.
+The production path for every subscriber is a desk whose source is the distributor's desk over ames. Rehearsing it on the second ship proves the path phase 5 will rely on, and gives the gate its second ship.
 
 **Files:** none in the repo. Ship state only.
 
 - [ ] **Step 1: Log in to both ships**
 
 ```bash
-W=http://localhost:8080; CK=/tmp/wex.cookies
+W=$SHIP; CK=$JAR
 curl -s -c $CK -o /dev/null -w '%{http_code}\n' -X POST $W/~/login --data 'password=novwel-tamfes-daplex-misdem'   # 200
-tmux send-keys -t 0:0.0 -l '+code'; tmux send-keys -t 0:0.0 Enter; sleep 3; tmux capture-pane -p -t 0:0.0 | grep -v '^\s*$' | tail -3
-F=http://localhost:8081; FK=/tmp/feb.cookies
+# in the second ship's dojo: +code
+F=$SHIP2; FK=$JAR2
 curl -s -c $FK -o /dev/null -w '%{http_code}\n' -X POST $F/~/login --data 'password=<the code the pane printed>'   # 200
 ```
 
-- [ ] **Step 2: Open wex's desk to subscribers**
+- [ ] **Step 2: Open the dev ship's desk to subscribers**
 
-The distributor must open a desk to a usergroup before a subscriber can mirror it (the shell's `+published` comment: "without the grant a subscriber gets a desk that mirrors nothing"). The `/public` group is what calendar used on wex:
+The distributor must open a desk to a usergroup before a subscriber can mirror it (the shell's `+published` comment: "without the grant a subscriber gets a desk that mirrors nothing"). The `/public` group is what calendar used on the dev ship:
 
 ```bash
 curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"add":"/public"}' \
@@ -80,11 +80,11 @@ curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/share.usergr
 # expected: {/public}   (the node's mark is /usergroups, so ?raw=1 answers jam bytes, not text)
 ```
 
-- [ ] **Step 3: Install the desk on feb, following wex**
+- [ ] **Step 3: Install the desk on the second ship, following the dev ship**
 
 ```bash
 curl -s -b $FK -X POST -H 'content-type: application/json' \
-  -d '{"name":"orrery","code":"~wex/apps/shell.shell/desks/orrery.desk/desk/code"}' $F/apps/grubbery/desks/add
+  -d '{"name":"orrery","code":"~sampel-sipnym/apps/shell.shell/desks/orrery.desk/desk/code"}' $F/apps/grubbery/desks/add
 # expected: created
 ```
 
@@ -97,9 +97,9 @@ curl -s -b $FK "$I2?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin
 # expected: None, and the children phase 1 lays
 ```
 
-If the version stays `null` past 3 minutes, `POST $F/grubbery/desk/orrery/fetch-latest` pulls without the version gate; if that also does nothing in 3 minutes, STOP and report what the desk's `source.json` and feb's console show. A cross-ship read of wex's desk needs wex to answer feb over ames; both fake ships share this machine and did this for calendar on 2026-09-14.
+If the version stays `null` past 3 minutes, `POST $F/grubbery/desk/orrery/fetch-latest` pulls without the version gate; if that also does nothing in 3 minutes, STOP and report what the desk's `source.json` and the second ship's console show. A cross-ship read of the dev ship's desk needs the dev ship to answer the second ship over ames; both fake ships share this machine and did this for calendar on 2026-09-14.
 
-- [ ] **Step 4: Approve the ask on feb and confirm both APIs**
+- [ ] **Step 4: Approve the ask on the second ship and confirm both APIs**
 
 ```bash
 APP=/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app
@@ -108,14 +108,14 @@ curl -s -b $FK -X POST -H 'content-type: application/json' -d "{\"app\":\"$APP\"
 sleep 15
 curl -s -b $FK $F/apps/orrery/api/state | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["me"], [b["id"] for b in d["bodies"]])'
 # expected: person/me ['person/me']
-curl -s -b $FK -X POST -H 'content-type: application/json' $F/apps/orrery/api/bodies -d '{"id":"person/me","ship":"~feb"}'
+curl -s -b $FK -X POST -H 'content-type: application/json' $F/apps/orrery/api/bodies -d '{"id":"person/me","ship":"~sampel-palnet"}'
 # expected: {"id":"person/me","ok":true,"existing":true}
 curl -s -b $CK $W/apps/orrery/api/state | python3 -c 'import sys,json; print(json.load(sys.stdin)["me"])'   # person/me
 ```
 
 - [ ] **Step 5: Report**
 
-No commit. Report feb's desk version, the bang, and the two state answers, in the task report.
+No commit. Report the second ship's desk version, the bang, and the two state answers, in the task report.
 
 ### Task 2: The library: share keys, the target mapping, carried observations
 
@@ -134,10 +134,10 @@ No commit. Report feb's desk version, the bang, and the two state answers, in th
 ::
 ++  test-share-helpers
   ;:  weld
-    (expect-eq !>('~wex/person/sarah') !>((share-key:orr ~wex 'person/sarah')))
-    (expect-eq !>('person/me') !>((mirror-target:orr ~feb `~feb 'person/sarah')))
-    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb `~wex 'person/sarah')))
-    (expect-eq !>('person/sarah') !>((mirror-target:orr ~feb ~ 'person/sarah')))
+    (expect-eq !>('~sampel-sipnym/person/sarah') !>((share-key:orr the dev ship 'person/sarah')))
+    (expect-eq !>('person/me') !>((mirror-target:orr the second ship `the second ship 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr the second ship `the dev ship 'person/sarah')))
+    (expect-eq !>('person/sarah') !>((mirror-target:orr the second ship ~ 'person/sarah')))
     (expect-eq !>('orrery-person-sarah') !>((group-name:orr %person %sarah)))
   ==
 ::  a carried observation names the other side's body and carries the
@@ -146,28 +146,28 @@ No commit. Report feb's desk version, the bang, and the two state answers, in th
 ::  sender's claim
 ++  test-carry-and-receive
   =/  r=row:orr  ['1789596300-abcdef01' o1]
-  =/  j=json  (receive-obs:orr ~wex (carry-obs:orr 'person/me' r))
+  =/  j=json  (receive-obs:orr the dev ship (carry-obs:orr 'person/me' r))
   =/  back  (de-obs:orr j t0 'x')
   ?.  ?=(%& -.back)  (expect !>(|))
   ;:  weld
     (expect-eq !>('person/me') !>(subject.p.back))
-    (expect-eq !>('~wex') !>(by.p.back))
-    (expect-eq !>(`source:orr`['ship' '~wex/1789596300-abcdef01']) !>(source.p.back))
+    (expect-eq !>('~sampel-sipnym') !>(by.p.back))
+    (expect-eq !>(`source:orr`['ship' '~sampel-sipnym/1789596300-abcdef01']) !>(source.p.back))
     (expect-eq !>(value:o1) !>(value.p.back))
     (expect-eq !>(at:o1) !>(at.p.back))
     (expect-eq !>(90) !>(conf.p.back))
     (expect-eq !>(`json`b+|) !>((gj:orr j 'retracted')))
     (expect !>(!(is-local:orr p.back)))
     (expect !>((is-local:orr o1)))
-    (expect !>((from-ship:orr p.back ~wex)))
-    (expect !>(!(from-ship:orr p.back ~feb)))
-    (expect !>(!(from-ship:orr o1 ~wex)))
+    (expect !>((from-ship:orr p.back the dev ship)))
+    (expect !>(!(from-ship:orr p.back the second ship)))
+    (expect !>(!(from-ship:orr o1 the dev ship)))
   ==
 ```
 
 - [ ] **Step 2: Run the tests and watch the new ones fail**
 
-Copy the test file to the wex mount, commit, run (phase 1's recipe). Expected: a build failure naming an unknown arm such as `share-key`.
+Copy the test file to the dev ship's mount, commit, run (phase 1's recipe). Expected: a build failure naming an unknown arm such as `share-key`.
 
 - [ ] **Step 3: Append the arms**
 
@@ -252,7 +252,7 @@ git commit -m "Share helpers: keys, the target mapping, carried observations, wi
 
 **Files:**
 - Modify: `code/nex/orrery/app.hoon`
-- Create: `code/mar/gall-poke.hoon`, `code/mar/timer-set.hoon`, `code/mar/timer-rest.hoon`, `code/mar/timer-wake.hoon`, `code/mar/ships.hoon`, `code/mar/weir.hoon`, `code/mar/poke-ack.hoon`, `code/mar/usergroups/registry-action.hoon` (copied byte for byte from `/home/sneagan/software/groundwire/grubbery/desk/gub/mar/`)
+- Create: `code/mar/gall-poke.hoon`, `code/mar/timer-set.hoon`, `code/mar/timer-rest.hoon`, `code/mar/timer-wake.hoon`, `code/mar/ships.hoon`, `code/mar/weir.hoon`, `code/mar/poke-ack.hoon`, `code/mar/usergroups/registry-action.hoon` (copied byte for byte from `<the grubbery checkout>/desk/gub/mar/`)
 
 **Interfaces:**
 - Consumes: Task 2's helpers; phase 1's `rf`, `rv`, `body-dir`, `read-json`, `rows-in`, `note-by`, `send-json`, `send-err`, `handle-request`.
@@ -261,7 +261,7 @@ git commit -m "Share helpers: keys, the target mapping, carried observations, wi
 - [ ] **Step 1: Vendor the eight marcs**
 
 ```bash
-K=/home/sneagan/software/groundwire/grubbery/desk/gub/mar
+K=<the grubbery checkout>/desk/gub/mar
 mkdir -p code/mar/usergroups
 for f in gall-poke timer-set timer-rest timer-wake ships weir poke-ack; do cp $K/$f.hoon code/mar/$f.hoon; done
 cp $K/usergroups/registry-action.hoon code/mar/usergroups/registry-action.hoon
@@ -801,7 +801,7 @@ In `+handle-request`, after the `s3` line add `=/  s4=@ta  ?:(?=([@ @ @ @ @ *] s
 
 - [ ] **Step 6: Deploy to both ships and re-approve the grown ask**
 
-The fast loop on wex (`W`, `/tmp/wex.cookies`) and on feb (`F`, `/tmp/feb.cookies`): create each new marc file (`create-file` on `$D/code/mar`, and `$D/code/mar/usergroups` after a `create-folder` with `foldername=usergroups` on `$D/code/mar`), write every new or changed file, reload, bang `None` on both. Then approve the grown ask on both, since the shell replaces the weir with exactly what is granted:
+The fast loop on the dev ship (`W`, `$JAR`) and on the second ship (`F`, `$JAR2`): create each new marc file (`create-file` on `$D/code/mar`, and `$D/code/mar/usergroups` after a `create-folder` with `foldername=usergroups` on `$D/code/mar`), write every new or changed file, reload, bang `None` on both. Then approve the grown ask on both, since the shell replaces the weir with exactly what is granted:
 
 ```bash
 GR='{"poke":["/sys/bowl.sig","/sys/eyre/","/sys/push/","/sys/gall/","/sys/behn/","/sys/ames/registry"],"peek":["/sys/link/","/sys/ames/usergroups/","/sys/ames/ships/"],"make":["/sys/ames/usergroups/"]}'
@@ -818,24 +818,24 @@ curl -s -b $CK "$W/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=js
 
 ```bash
 A=$W/apps/orrery/api; B=$F/apps/orrery/api; J='-H content-type:application/json'
-curl -s -b $CK -X POST $J $A/bodies -d '{"id":"person/sarah","name":"Sarah","ship":"~feb"}'
-curl -s -b $CK -X POST $J $A/share -d '{"id":"person/sarah","ship":"~feb","mode":"read"}'
-#   {"ok":true,"notified":true}   (notified false means the ack did not come back in 30 s; check feb anyway)
+curl -s -b $CK -X POST $J $A/bodies -d '{"id":"person/sarah","name":"Sarah","ship":"~sampel-palnet"}'
+curl -s -b $CK -X POST $J $A/share -d '{"id":"person/sarah","ship":"~sampel-palnet","mode":"read"}'
+#   {"ok":true,"notified":true}   (notified false means the ack did not come back in 30 s; check the second ship anyway)
 curl -s -b $CK "$W/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp?info=1"
 #   the group exists, with who.ships and how.weir as children
 sleep 5; curl -s -b $FK $B/shares | python3 -m json.tool
-#   offers has the key "~wex/person/sarah" with host, id, ship "~feb", name "Sarah", mode "read", base "/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app"
-curl -s -b $FK -X POST $J $B/accept -d '{"host":"~wex","id":"person/sarah"}'
+#   offers has the key "~sampel-sipnym/person/sarah" with host, id, ship "~sampel-palnet", name "Sarah", mode "read", base "/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app"
+curl -s -b $FK -X POST $J $B/accept -d '{"host":"~sampel-sipnym","id":"person/sarah"}'
 #   {"ok":true,"target":"person/me"}
 curl -s -b $FK $B/shares | python3 -c 'import sys,json; d=json.load(sys.stdin); print(list(d["accepted"].keys()), d["offers"])'
-#   ['~wex/person/sarah'] {}
-curl -s -b $CK -X DELETE "$A/share/person/sarah/~feb"
-#   {"ok":true}; then feb's accepted is {} within a few seconds, and the group's who.ships on wex is empty
+#   ['~sampel-sipnym/person/sarah'] {}
+curl -s -b $CK -X DELETE "$A/share/person/sarah/the second ship"
+#   {"ok":true}; then the second ship's accepted is {} within a few seconds, and the group's who.ships on the dev ship is empty
 curl -s -b $FK "$F/grubbery/ball$APP/tr/last?raw=1"
-#   {"op":"revoke","ok":true,...,"by":"~wex"}
+#   {"op":"revoke","ok":true,...,"by":"~sampel-sipnym"}
 ```
 
-If `notified` is false and no offer reaches feb, read `/tr/last` on feb (the inbox notes every poke it refuses) and wex's console pane for a veto line. The two usual causes: a missing `/sys/gall/` grant on wex, or feb's inbox road not laid yet. `lay-inbox-road` runs at the inbox fiber's rise and on every follower tick once Task 4 lands (a request fiber cannot lay it: the registry scopes a `%how` to the poking fiber's directory), so after the consent reload confirm `GET $F/grubbery/ball/sys/ames/usergroups/public.grp/how.weir?info=1` answers (the group exists) before retrying.
+If `notified` is false and no offer reaches the second ship, read `/tr/last` on the second ship (the inbox notes every poke it refuses) and the dev ship's console pane for a veto line. The two usual causes: a missing `/sys/gall/` grant on the dev ship, or the second ship's inbox road not laid yet. `lay-inbox-road` runs at the inbox fiber's rise and on every follower tick once Task 4 lands (a request fiber cannot lay it: the registry scopes a `%how` to the poking fiber's directory), so after the consent reload confirm `GET $F/grubbery/ball/sys/ames/usergroups/public.grp/how.weir?info=1` answers (the group exists) before retrying.
 
 - [ ] **Step 8: Commit and push**
 
@@ -1127,7 +1127,7 @@ In `+remote-poke-wait` and `+peek-remote-wait`, the timer wire gets a nonce so a
 
 - [ ] **Step 3: Deploy to both ships and watch one round trip**
 
-Write `app.hoon` to wex and feb with the fast loop, reload both instances, bang `None` on both. Then, with the bodies and the share from Task 3 Step 7 in place (re-share if the smoke ended with a revoke):
+Write `app.hoon` to the dev ship and the second ship with the fast loop, reload both instances, bang `None` on both. Then, with the bodies and the share from Task 3 Step 7 in place (re-share if the smoke ended with a revoke):
 
 ```bash
 A=$W/apps/orrery/api; B=$F/apps/orrery/api; J='-H content-type:application/json'
@@ -1135,12 +1135,12 @@ NOW=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)
 curl -s -b $CK -X POST $J $A/observe -d "{\"bodies\":[],\"observations\":[{\"subject\":\"person/sarah\",\"attr\":\"location\",\"value\":\"at the lake house\",\"at\":\"$NOW\",\"source\":{\"kind\":\"smoke\",\"id\":\"1\"}}]}"
 curl -s -b $FK -X POST $B/sync; sleep 8
 curl -s -b $FK $B/body/person/me | python3 -c 'import sys,json; print(json.load(sys.stdin)["attrs"].get("location"))'
-#   {'value': 'at the lake house', ..., 'source': {'kind': 'ship', 'id': '~wex/<oid>'}, 'by': '~wex', 'obs': '<local oid>'}
+#   {'value': 'at the lake house', ..., 'source': {'kind': 'ship', 'id': '~sampel-sipnym/<oid>'}, 'by': '~sampel-sipnym', 'obs': '<local oid>'}
 curl -s -b $FK "$F/grubbery/ball$APP/ship-remotes.json?raw=1"
 #   the row shows last set and error ""
 ```
 
-If `error` reads "the host did not answer", the peek was vetoed: on wex, `GET $W/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/how.weir?info=1` must show the peek road on the body directory and `who.ships` must hold `~feb`; a missing `/sys/ames/ships/` peek grant on feb shows as a veto line in feb's console pane. Then share in edit mode, observe `mood` on feb's `person/me`, `POST $B/sync`, and read `mood` on wex's `person/sarah`: `by` is `~feb`, the source id starts `~feb/`. Then retract that `mood` on feb (`POST $B/retract` with its `obs` id), `POST $B/sync`, and read wex again: `mood` is gone from the attributes, and the body's timeline (`GET $A/body/person/sarah`, key `timeline`) shows the `mood` row with status `retracted` and note `retracted on ~feb` (the writer's `/tr/log` entry for a retract carries an empty `why`; the note lives on the row). Paste both reads: this is the only live exercise of `take-edit`, `apply-carried` and `retract-each` before the gate.
+If `error` reads "the host did not answer", the peek was vetoed: on the dev ship, `GET $W/grubbery/ball/sys/ames/usergroups/orrery-person-sarah.grp/how.weir?info=1` must show the peek road on the body directory and `who.ships` must hold the second ship; a missing `/sys/ames/ships/` peek grant on the second ship shows as a veto line in the second ship's console pane. Then share in edit mode, observe `mood` on the second ship's `person/me`, `POST $B/sync`, and read `mood` on the dev ship's `person/sarah`: `by` is the second ship, the source id starts `~sampel-palnet/`. Then retract that `mood` on the second ship (`POST $B/retract` with its `obs` id), `POST $B/sync`, and read the dev ship again: `mood` is gone from the attributes, and the body's timeline (`GET $A/body/person/sarah`, key `timeline`) shows the `mood` row with status `retracted` and note `retracted on the second ship` (the writer's `/tr/log` entry for a retract carries an empty `why`; the note lives on the row). Paste both reads: this is the only live exercise of `take-edit`, `apply-carried` and `retract-each` before the gate.
 
 - [ ] **Step 4: Commit and push**
 
@@ -1164,17 +1164,17 @@ git push origin main
 #!/usr/bin/env python3
 """ship-share-matrix.py HOST HJAR PEER PJAR
 The sharing gate for orrery (spec section 11) against two fake ships:
-HOST (~wex) shares person/sarah with PEER (~feb), whose person/me it is.
+HOST (the dev ship) shares person/sarah with PEER (the second ship), whose person/me it is.
 Read mode mirrors the host's observations and retractions; edit mode
 carries the peer's back; revoke keeps the data; a re-share works.
-HOST and PEER like http://localhost:8080; the jars from POST /~/login.
+HOST and PEER like $SHIP; the jars from POST /~/login.
 Exits 1 on any failure. Safe to rerun: it revokes, declines and retracts
 what an earlier run left."""
 import json, subprocess, sys, time
 from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
-HOSTNAME, PEERNAME = '~wex', '~feb'
+HOSTNAME, PEERNAME = '~sampel-sipnym', '~sampel-palnet'
 fails = []
 count = [0]
 
@@ -1409,9 +1409,9 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 ```
 
-Expected: `ALL OK (47 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on feb (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
+Expected: `ALL OK (47 checks)` both times. A `timed out` on the first mirror check means the follower did not run or the peek was vetoed: read `ship-remotes.json` on the second ship (`?raw=1`) for the row's `error`, then Task 4 Step 3's notes. A second run must pass too: it proves the cleanup and the re-share leave both ships usable.
 
-- [ ] **Step 3: Rerun the phase 1 gate on wex**
+- [ ] **Step 3: Rerun the phase 1 gate on the dev ship**
 
 ```bash
 python3 scripts/api-matrix.py $W $CK
@@ -1439,7 +1439,7 @@ git push origin main
 python3 scripts/code-closure.py code
 ```
 
-Expected: nothing missing. If it names a marc, vendor it from `/home/sneagan/software/groundwire/grubbery/desk/gub/mar/` byte for byte and rerun.
+Expected: nothing missing. If it names a marc, vendor it from `<the grubbery checkout>/desk/gub/mar/` byte for byte and rerun.
 
 - [ ] **Step 2: `docs/sharing.md`**
 
@@ -1450,11 +1450,11 @@ A body and its observations can be shared with another ship: read mode mirrors w
 
 ## How it works
 
-- `POST /apps/orrery/api/share` with `{"id": "person/sarah", "ship": "~feb", "mode": "read"}` (or `"edit"`) records the share in `shares.json`, lets `~feb` read the body's directory (a usergroup named `orrery-person-sarah` with one peek grant), and pokes an offer into `~feb`'s inbox. The answer's `notified` says whether the offer was acknowledged within thirty seconds; a false is worth a look at the other ship, not a retry.
-- On `~feb`, `GET /apps/orrery/api/shares` lists `offers`, `accepted` and `shares` (what this ship shares out). `POST /api/accept` with `{"host": "~wex", "id": "person/sarah"}` takes an offer. The first hop assumes the other ship installed orrery at the standard desk path; a ship that did not answers `notified` false. When the shared body's `ship` is `~feb` itself, it lands on `person/me`; otherwise on a body with the same id, created with the offered name and ship if absent. `POST /api/decline` drops an offer.
-- The follower runs every five minutes, on every accept and on `POST /api/sync`. It reads each accepted body whole from the host and submits the host's own observations to the local writer with `by` set to the host and `source` `{"kind": "ship", "id": "~wex/<host observation id>"}`. A row the host retracts is retracted here. A row the host itself mirrored from a third ship is not carried on: one hop.
+- `POST /apps/orrery/api/share` with `{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "read"}` (or `"edit"`) records the share in `shares.json`, lets the second ship read the body's directory (a usergroup named `orrery-person-sarah` with one peek grant), and pokes an offer into the second ship's inbox. The answer's `notified` says whether the offer was acknowledged within thirty seconds; a false is worth a look at the other ship, not a retry.
+- On the second ship, `GET /apps/orrery/api/shares` lists `offers`, `accepted` and `shares` (what this ship shares out). `POST /api/accept` with `{"host": "~sampel-sipnym", "id": "person/sarah"}` takes an offer. The first hop assumes the other ship installed orrery at the standard desk path; a ship that did not answers `notified` false. When the shared body's `ship` is the second ship itself, it lands on `person/me`; otherwise on a body with the same id, created with the offered name and ship if absent. `POST /api/decline` drops an offer.
+- The follower runs every five minutes, on every accept and on `POST /api/sync`. It reads each accepted body whole from the host and submits the host's own observations to the local writer with `by` set to the host and `source` `{"kind": "ship", "id": "~sampel-sipnym/<host observation id>"}`. A row the host retracts is retracted here. A row the host itself mirrored from a third ship is not carried on: one hop.
 - In edit mode the follower also sends the local observations on that body (the ones not mirrored from a ship) to the host's inbox, where they land with `by` set to the sender and the same source shape. Retractions travel the same way. The host's inbox checks the share record before it applies anything; the sender is the transport's, never the payload's.
-- `DELETE /apps/orrery/api/share/person/sarah/~feb` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
+- `DELETE /apps/orrery/api/share/person/sarah/the second ship` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
 
 ## What to know
 
@@ -1468,13 +1468,13 @@ A body and its observations can be shared with another ship: read mode mirrors w
 
 - [ ] **Step 3: README and the release doc**
 
-In `README.md`, add `docs/sharing.md` to the docs line, add the six share routes to the API line, and name `scripts/ship-share-matrix.py` (two ships: `~wex` and `~feb`) beside the other gates. In `docs/releasing.md` section 8 (orrery's checklist), add the two-ship gate as a step after the phase 1 gate: `python3 scripts/ship-share-matrix.py http://localhost:8080 /tmp/wex.cookies http://localhost:8081 /tmp/feb.cookies` must print `ALL OK`.
+In `README.md`, add `docs/sharing.md` to the docs line, add the six share routes to the API line, and name `scripts/ship-share-matrix.py` (two ships: the dev ship and the second ship) beside the other gates. In `docs/releasing.md` section 8 (orrery's checklist), add the two-ship gate as a step after the phase 1 gate: `python3 scripts/ship-share-matrix.py $SHIP $JAR $SHIP2 $JAR2` must print `ALL OK`.
 
 - [ ] **Step 4: The spec, only where the code deviated**
 
 Read section 11 of the spec against what landed: the row shape (`pushed` is an object), `POST /api/sync` laying the inbox road, one hop, refs verbatim, the mode update on an already accepted share. Where the spec says otherwise, change the spec sentence to match, one line per paragraph, no em-dashes. Do not add new promises.
 
-- [ ] **Step 5: Version 4 through the forge, and feb follows**
+- [ ] **Step 5: Version 4 through the forge, and the second ship follows**
 
 ```bash
 python3 - <<'PY'
@@ -1488,7 +1488,7 @@ curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.g
 sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 4}
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
-#   {"version": 4}; feb polls wex, allow up to five minutes
+#   {"version": 4}; the second ship polls the dev ship, allow up to five minutes
 for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
 #   None [('poke', 6), ('read', 3), ('write', 1)] on both (the info view names peek "read" and make "write"). A shorter weir means the sync replaced the consent: re-approve with Task 3 Step 6's granted object on that ship.
 python3 scripts/ship-share-matrix.py $W $CK $F $FK

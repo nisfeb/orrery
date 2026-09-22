@@ -20,7 +20,7 @@
 - `by` on every filed action is `generator`. At most `max_actions` (default 5) per pass. Word-overlap dedupe against open and decided titles, exactly as `same_title` in run.py.
 - `GET /api/generator` never returns `api_key`; it returns `"api_key_set": true|false`. A `PUT` whose `api_key` is absent or empty keeps the stored key.
 - The new road is `/sys/iris/` in the poke list of `weir-json`, with the why "ask a model over HTTPS when the state changes, so it can propose actions. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer".
-- `code/version.json` goes to 18 in the last task only. Gates before the bump: unit tests on wex, `api-matrix.py`, `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py`, `ship-share-matrix.py`, all `ALL OK`.
+- `code/version.json` goes to 18 in the last task only. Gates before the bump: unit tests on the dev ship, `api-matrix.py`, `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py`, `ship-share-matrix.py`, all `ALL OK`.
 - No secret in the repo, in a test, in a gate's output or in a log line. Commit messages carry no AI attribution. Markdown is not hard-wrapped and uses no em dashes.
 
 ---
@@ -99,7 +99,7 @@ The `row` shape above must match `+$  row` in `lib/orrery.hoon` (read it: an obs
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run, on wex with the desk's code tree written by the fast loop (docs/releasing.md section 7): `-test /~wex/grubbery/<rev>/tests/lib/generator ~`
+Run, on the dev ship with the desk's code tree written by the fast loop (docs/releasing.md section 7): `-test /=grubbery=/tests/lib/generator ~`
 Expected: a build failure, `generator` not found.
 
 - [ ] **Step 3: Write the library's first arms**
@@ -217,7 +217,7 @@ Add to `tests/lib/orrery.hoon`, next to the existing `is-closed` case if there i
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run both suites on wex. Expected: every `test-` arm passes; the count in `tests/lib/orrery.hoon` grows by one.
+Run both suites on the dev ship. Expected: every `test-` arm passes; the count in `tests/lib/orrery.hoon` grows by one.
 
 - [ ] **Step 6: Commit**
 
@@ -805,7 +805,7 @@ check('the last pass reads as an object', code == 200 and isinstance(d, dict), (
 
 - [ ] **Step 2: Run the gate to verify the section fails**
 
-Run: `python3 scripts/api-matrix.py http://localhost:8080 /tmp/wex.cookies`
+Run: `python3 scripts/api-matrix.py $SHIP $JAR`
 Expected: the new checks FAIL with 404 `no such route`.
 
 - [ ] **Step 3: The documents, the op and the routes**
@@ -873,7 +873,7 @@ and the masked read:
 
 Add `gen=generator` to the app's `/+` imports next to `orr=orrery`.
 
-- [ ] **Step 4: Write it to wex and run the gate**
+- [ ] **Step 4: Write it to the dev ship and run the gate**
 
 Fast loop: `write-text` the app, `?info=1` reads `bang: null`. Then the gate. Expected: the six new checks pass, and every earlier check still does.
 
@@ -1164,7 +1164,7 @@ The `unused` argument exists only to keep the two record call sites in the pass 
 
 `find-loaded` is a two-line search over the list by id; write it next to `load-bodies`. The trailing `/chat/completions` on the url matches the settings document's `url` being the API base, as in orrery-utils.
 
-- [ ] **Step 4: Consent on wex, then the gate**
+- [ ] **Step 4: Consent on the dev ship, then the gate**
 
 Write the app with the fast loop; `?info=1` must read `bang: null`. The new road needs consent: approve the weir on `/apps/grubbery/permits` with every road in orrery's ask (`asks.json` lists them), then `POST /apps/grubbery/permits/reload {"app": "<orrery's app path>"}`, then `?info=1` shows `/sys/iris/` under `weir.poke`. Run the gate. Expected: every check in both new sections passes, and the earlier sections too.
 
@@ -1279,7 +1279,7 @@ and the form reader next to `mintForm`:
 
 - [ ] **Step 4: Run the page tests, then the smoke gate**
 
-Run: `node scripts/page-test.js` then `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies`. Expected: `ALL OK` on both. Open `/apps/orrery#settings` on wex in a browser: the card renders, save round-trips without the key, run-now starts a pass.
+Run: `node scripts/page-test.js` then `python3 scripts/page-smoke.py $SHIP $JAR`. Expected: `ALL OK` on both. Open `/apps/orrery#settings` on the dev ship in a browser: the card renders, save round-trips without the key, run-now starts a pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1294,7 +1294,7 @@ git commit -m "The page's Settings has a Generator card: the settings without th
 
 **Files:**
 - Modify: `README.md` (The page; The HTTP API table; the "Tools for an AI analyst" or generator mention)
-- Modify: `docs/releasing.md` (section 9: the consent prompt this release raises on ricsul)
+- Modify: `docs/releasing.md` (section 9: the consent prompt this release raises on the live ship)
 - Modify: `orrery-utils/generator/README.md` and `orrery-utils/README.md` (the on-ship generator is the one that runs; the util stays for the bench and dry runs)
 - Modify: `code/version.json`
 
@@ -1313,11 +1313,11 @@ Add a paragraph under "Actions": "The ship proposes on its own. When the generat
 
 - [ ] **Step 2: releasing.md and the utils README**
 
-In `docs/releasing.md` section 9, after "A change to `ask.json` raises a consent prompt on ricsul": "Version 18 adds `/sys/iris/` and raises that prompt; approve it on `/apps/grubbery/permits` and the generator is live once its key is set on the page." In `orrery-utils/generator/README.md`, first paragraph: "As of orrery 18 the ship runs this itself (Settings, the Generator card). This util remains the bench and the dry-run harness, and the way to run a pass from a computer when the ship has no key."
+In `docs/releasing.md` section 9, after "A change to `ask.json` raises a consent prompt on the live ship": "Version 18 adds `/sys/iris/` and raises that prompt; approve it on `/apps/grubbery/permits` and the generator is live once its key is set on the page." In `orrery-utils/generator/README.md`, first paragraph: "As of orrery 18 the ship runs this itself (Settings, the Generator card). This util remains the bench and the dry-run harness, and the way to run a pass from a computer when the ship has no key."
 
 - [ ] **Step 3: Bump and gate**
 
-`code/version.json` to `{"version": 18}`. Run the checklist in `docs/releasing.md` section 8: `code-closure.py`, unit tests on wex, `api-matrix.py` twice, `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py`, `ship-share-matrix.py`. Every one `ALL OK`.
+`code/version.json` to `{"version": 18}`. Run the checklist in `docs/releasing.md` section 8: `code-closure.py`, unit tests on the dev ship, `api-matrix.py` twice, `key-matrix.py`, `mcp-matrix.py`, `page-smoke.py`, `ship-share-matrix.py`. Every one `ALL OK`.
 
 - [ ] **Step 4: Commit and release**
 
@@ -1327,7 +1327,7 @@ git commit -m "The generator runs on the ship: settings and key on the page, a p
 git push origin main
 ```
 
-Then the forge pull on wex and on ricsul, the four verification reads, and on ricsul: approve the consent prompt, set the key and the model on the Settings card, turn it on, press run now, and read the last pass line.
+Then the forge pull on the dev ship and on the live ship, the four verification reads, and on the live ship: approve the consent prompt, set the key and the model on the Settings card, turn it on, press run now, and read the last pass line.
 
 ---
 

@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** An analyst on the ship's MCP server (Claude Code today, Talon later) reads and writes orrery through eight tools that give the same views and take the same writes as the HTTP API, and the owner sees the model in a browser page that reloads on the beacon.
+**Goal:** An analyst on the ship's MCP server (Claude Code today, the phone client later) reads and writes orrery through eight tools that give the same views and take the same writes as the HTTP API, and the owner sees the model in a browser page that reloads on the beacon.
 
-**Architecture:** The view assembly that the HTTP arms do after their reads (attributes, involved, actions, timeline, the state envelope) moves into the pure library, so the HTTP API, the MCP tools and the page share one encoder. The tools are `tool:tools` cores under `code/lib/tools`, each reading the instance by absolute peek and writing through the one poke road to the writer, with a small shared core `code/lib/orrery-mcp.hoon` for the walkers and the per-item answers; they are callable today by absolute path through the mcp nexus, and by name once the kernel's discovery walks the shell's desks, which this phase confirms and rehearses on `~wex` with a patch left for the dist branch. The page is three static grubs (html, css, js) served by the nexus to the owner, a reader with buttons over the same API, refreshed by the raw beacon stream the way lattice's page is.
+**Architecture:** The view assembly that the HTTP arms do after their reads (attributes, involved, actions, timeline, the state envelope) moves into the pure library, so the HTTP API, the MCP tools and the page share one encoder. The tools are `tool:tools` cores under `code/lib/tools`, each reading the instance by absolute peek and writing through the one poke road to the writer, with a small shared core `code/lib/orrery-mcp.hoon` for the walkers and the per-item answers; they are callable today by absolute path through the mcp nexus, and by name once the kernel's discovery walks the shell's desks, which this phase confirms and rehearses on the dev ship with a patch left for the dist branch. The page is three static grubs (html, css, js) served by the nexus to the owner, a reader with buttons over the same API, refreshed by the raw beacon stream the way lattice's page is.
 
-**Tech Stack:** Hoon under zuse 408 (grubbery nexus, fibers, the import-free library, the kernel's `tools.hoon` vendored), plain JavaScript and CSS for the page (no framework, no build), Python 3 for the gates, node 26 for the page's render tests, the `~wex` and `~feb` dev ships.
+**Tech Stack:** Hoon under zuse 408 (grubbery nexus, fibers, the import-free library, the kernel's `tools.hoon` vendored), plain JavaScript and CSS for the page (no framework, no build), Python 3 for the gates, node 26 for the page's render tests, the dev ship and the second ship.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-orrery-design.md`, section 6 (MCP tools, where the analyst runs, the page), section 8 (the scenario the MCP gate replays), section 5 (the beacon).
 
@@ -14,7 +14,7 @@
 
 - Prose rules for every doc, comment and commit message: no em-dashes, no hard-wrapped markdown, simple sentences. Hoon comments follow grubbery's style: `::  +arm: lowercase headline`, a bare `::` line below, plain ASCII, `::  ==  title` dividers. JavaScript and CSS comments are plain ASCII too.
 - No AI attribution anywhere. Commits go to `nisfeb/orrery` as nisfeb, one at the end of every task with the message given; push where a step says push. The grubbery kernel repo is never committed to by this plan: the kernel patch is a file in this repo and a rehearsal on the dev ship.
-- Never touch `~ricsul-bilwyt`; never boot, kill or restart a pier; tmux window `0:3` is an ssh session to ricsul, never send keys there. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo. Only orrery's two library files ever go into the wex clay mount.
+- Never touch the live ship; never boot, kill or restart a pier. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo. Only orrery's two library files ever go into the dev ship's clay mount.
 - Never run two gates against the same ship at once.
 - Every persistent path has a covering `%fall` row in `on-load` (the page files are `%over` rows, laid fresh on every load); the writer never crashes on input; the library stays import-free; `code/lib/orrery-mcp.hoon` and the tools may import `/lib/orrery.hoon` and `/lib/tools.hoon` and nothing else; `scripts/code-closure.py code` stays clean, so `tools.hoon` is vendored byte for byte from the kernel.
 - The tools act as the owner: no key scope, no sensitive filter (spec section 6, "what the analyst can see"). Every write a tool makes carries `by` from its `by` parameter, default `mcp`. The tools answer exactly the JSON the HTTP routes answer for the same request, so a client can switch transports without relearning shapes.
@@ -26,12 +26,12 @@
 
 ## Working with the ships and the MCP server
 
-Everything from the earlier plans applies (phase 1's "Working with `~wex`", phase 2's two ships and the library deploy rule, phase 3's owner and key requests). Two new surfaces:
+Everything from the earlier plans applies (phase 1's "Working with the dev ship", phase 2's two ships and the library deploy rule, phase 3's owner and key requests). Two new surfaces:
 
-**The MCP server on `~wex`** answers JSON-RPC at `http://localhost:8080/grubbery/mcp` to the owner cookie (`src` equal to `our`; no OAuth for a curl with the jar). A tool call by absolute path, which works before any kernel change:
+**The MCP server on the dev ship** answers JSON-RPC at `$SHIP/grubbery/mcp` to the owner cookie (`src` equal to `our`; no OAuth for a curl with the jar). A tool call by absolute path, which works before any kernel change:
 
 ```bash
-W=http://localhost:8080; CK=/tmp/wex.cookies; MCP=$W/grubbery/mcp
+W=$SHIP; CK=$JAR; MCP=$W/grubbery/mcp
 T=/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools
 curl -s -b $CK -X POST -H 'content-type: application/json' $MCP -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$T/orrery-state\",\"arguments\":{}}}"
 #   {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{...the state view as a JSON string...}"}]}}
@@ -40,9 +40,9 @@ curl -s -b $CK -X POST -H 'content-type: application/json' $MCP -d '{"jsonrpc":"
 #   the registry the kernel discovers; orrery's tools are absent until Task 3's patch is rehearsed
 ```
 
-The tool runs on the mcp instance's `/tools` child nexus under that nexus's weir, which on `~wex` holds peek, poke and make on the whole ball. A tool that crashes prints `%mcp tool crashed` on the wex console pane (`tmux capture-pane -p -t 0:2.0`) and answers an error.
+The tool runs on the mcp instance's `/tools` child nexus under that nexus's weir, which on the dev ship holds peek, poke and make on the whole ball. A tool that crashes prints `%mcp tool crashed` on the dev ship's console pane and answers an error.
 
-**The page** is at `http://localhost:8080/apps/orrery` with the owner cookie in a browser; a curl with the jar fetches the HTML, the JS and the CSS. The render logic runs under node for the tests (`node scripts/page-test.js`).
+**The page** is at `$SHIP/apps/orrery` with the owner cookie in a browser; a curl with the jar fetches the HTML, the JS and the CSS. The render logic runs under node for the tests (`node scripts/page-test.js`).
 
 **Deploying tools.** A tool file is created in the desk code tree like any other file (`create-folder` `tools` under `$D/code/lib`, then `create-file` and `write-text` per tool); the mcp nexus compiles it on each call, so no reload is needed for a tool change. The library and the nexus still need the reload after a write.
 
@@ -87,7 +87,7 @@ The tool runs on the mcp instance's `/tools` child nexus under that nexus's weir
   =/  car=loaded:orr
     ['thing/subaru' [%thing 'the Subaru' (sy ~['the car']) t0 ~] ~[['1' base]]]
   =/  me=loaded:orr
-    :+  'person/me'  [%person 'me' ~ t0 `~wex]
+    :+  'person/me'  [%person 'me' ~ t0 `the dev ship]
     ~[['2' base(subject 'person/me', attr 'spouse', value (pairs:enjs:format ~[['ref' s+'person/sarah']]))]]
   =/  sit=loaded:orr
     :+  'situation/2026-09-16-breakdown'  [%situation 'breakdown' ~ t0 ~]
@@ -118,7 +118,7 @@ The tool runs on the mcp instance's `/tools` child nexus under that nexus's weir
 
 - [ ] **Step 2: Run the tests and watch the new one fail**
 
-Copy both files to the wex mount, commit, run (phase 1's recipe). Expected: a build failure naming `loaded` or `state-json`.
+Copy both files to the dev ship's mount, commit, run (phase 1's recipe). Expected: a build failure naming `loaded` or `state-json`.
 
 - [ ] **Step 3: The library arms**
 
@@ -258,7 +258,7 @@ In `code/nex/orrery/app.hoon`: delete `+$  loaded`, `+en-attr-row` and `+en-attr
 
 - [ ] **Step 5: Tests green, deploy, gates**
 
-Copy the two library files to the mount, commit, `-test`: 51 `OK`, `ok=%.y`. Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to wex with the fast loop, reload, `bang` `None`. Then, one at a time: `python3 scripts/api-matrix.py $W $CK` (`ALL OK`), `python3 scripts/key-matrix.py $W $CK` (`ALL OK (83 checks)`), `python3 scripts/ship-share-matrix.py $W $CK $F $FK` (`ALL OK (68 checks)`; feb still runs version 5 and only the host side changed).
+Copy the two library files to the mount, commit, `-test`: 51 `OK`, `ok=%.y`. Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to the dev ship with the fast loop, reload, `bang` `None`. Then, one at a time: `python3 scripts/api-matrix.py $W $CK` (`ALL OK`), `python3 scripts/key-matrix.py $W $CK` (`ALL OK (83 checks)`), `python3 scripts/ship-share-matrix.py $W $CK $F $FK` (`ALL OK (68 checks)`; the second ship still runs version 5 and only the host side changed).
 
 - [ ] **Step 6: Commit**
 
@@ -270,7 +270,7 @@ git commit -m "One view encoder for every surface: state-json and body-json in t
 ### Task 2: The eight MCP tools, callable by path
 
 **Files:**
-- Create: `code/lib/tools.hoon` (copied byte for byte from `/home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon`)
+- Create: `code/lib/tools.hoon` (copied byte for byte from `<the grubbery checkout>/desk/gub/lib/tools.hoon`)
 - Create: `code/lib/orrery-mcp.hoon`
 - Create: `code/lib/tools/orrery-state.hoon`, `orrery-body.hoon`, `orrery-resolve.hoon`, `orrery-observe.hoon`, `orrery-retract.hoon`, `orrery-act.hoon`, `orrery-actions.hoon`, `orrery-schema.hoon`
 - Create: `scripts/mcp-matrix.py`
@@ -282,8 +282,8 @@ git commit -m "One view encoder for every surface: state-json and body-json in t
 - [ ] **Step 1: Vendor the tool types**
 
 ```bash
-cp /home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon code/lib/tools.hoon
-cmp code/lib/tools.hoon /home/sneagan/software/groundwire/grubbery/desk/gub/lib/tools.hoon && echo identical
+cp <the grubbery checkout>/desk/gub/lib/tools.hoon code/lib/tools.hoon
+cmp code/lib/tools.hoon <the grubbery checkout>/desk/gub/lib/tools.hoon && echo identical
 ```
 
 - [ ] **Step 2: The shared core**
@@ -882,7 +882,7 @@ Every file starts the same way and differs in its core. Every tool lays `person/
 python3 scripts/code-closure.py code    # expected: closed; tools.hoon, orrery-mcp.hoon and the eight tools all resolve inside code/. The vendored tools.hoon names the necks %code and %tools and the foundational mark %hoon, which are not marcs: the checker's blot regex and its foundational set (%hoon %tang %mime %kelvin) were corrected for this in Task 2.
 ```
 
-On wex: `create-folder` `tools` under `$D/code/lib`, `create-file` and `write-text` each of the eight tools, `create-file` and `write-text` `code/lib/tools.hoon` and `code/lib/orrery-mcp.hoon` (the library from Task 1 is on the ship already). No reload is needed for tools; reload anyway so the instance's own compile confirms nothing in `code/lib` broke (`bang` `None`). Then one call by path:
+On the dev ship: `create-folder` `tools` under `$D/code/lib`, `create-file` and `write-text` each of the eight tools, `create-file` and `write-text` `code/lib/tools.hoon` and `code/lib/orrery-mcp.hoon` (the library from Task 1 is on the ship already). No reload is needed for tools; reload anyway so the instance's own compile confirms nothing in `code/lib` broke (`bang` `None`). Then one call by path:
 
 ```bash
 curl -s -b $CK -X POST -H 'content-type: application/json' $W/grubbery/mcp -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state\",\"arguments\":{}}}" | python3 -c 'import sys,json; d=json.load(sys.stdin); t=json.loads(d["result"]["content"][0]["text"]); print(t["me"], len(t["bodies"]), sorted(t.keys()))'
@@ -901,7 +901,7 @@ If the answer is an `error`, its `message` is the tool's refusal; if the request
 The MCP gate for orrery: the eight tools called by absolute path through
 the ship's MCP server, replaying a slice of spec section 8, and checked
 against the HTTP API's answers for the same reads. HOST like
-http://localhost:8080; JAR a curl cookie jar from POST /~/login (the
+$SHIP; JAR a curl cookie jar from POST /~/login (the
 MCP server answers JSON-RPC to the owner cookie). Exits 1 on any
 failure. Safe to rerun: it retracts and deletes what it made."""
 import json, subprocess, sys
@@ -1141,7 +1141,7 @@ const render = require(path.join(__dirname, '..', 'code', 'nex', 'orrery', 'orre
 const state = {
   rev: 1789600000000, at: '2026-09-17T00:00:00Z', me: 'person/me',
   bodies: [
-    { id: 'person/me', kind: 'person', name: 'me', aliases: [], ship: '~wex', attrs: { status: { value: 'home', at: '2026-09-16T22:00:00Z', by: 'talon', source: { kind: 'talon-dm', id: 'm1' }, obs: '1-a' } }, involved: ['situation/2026-09-16-breakdown'] },
+    { id: 'person/me', kind: 'person', name: 'me', aliases: [], ship: '~sampel-sipnym', attrs: { status: { value: 'home', at: '2026-09-16T22:00:00Z', by: 'phone', source: { kind: 'phone-dm', id: 'm1' }, obs: '1-a' } }, involved: ['situation/2026-09-16-breakdown'] },
     { id: 'thing/subaru', kind: 'thing', name: 'the <b>Subaru</b>', aliases: ['the car'], ship: null, attrs: {}, involved: [] },
     { id: 'situation/2026-09-16-breakdown', kind: 'situation', name: 'breakdown', aliases: [], ship: null, attrs: {}, involved: [] },
   ],
@@ -1151,13 +1151,13 @@ const state = {
 };
 const view = {
   id: 'thing/subaru', kind: 'thing', name: 'the Subaru', aliases: ['the car'], ship: null,
-  attrs: { location: { value: { ref: 'place/johns-machine-shop' }, at: '2026-09-17T02:10:00Z', until: null, conf: 90, source: { kind: 'talon-dm', id: 'm3' }, by: 'talon', obs: '3-c' } },
+  attrs: { location: { value: { ref: 'place/johns-machine-shop' }, at: '2026-09-17T02:10:00Z', until: null, conf: 90, source: { kind: 'phone-dm', id: 'm3' }, by: 'phone', obs: '3-c' } },
   involved: ['situation/2026-09-16-breakdown'],
   actions: [{ id: 'a1', kind: 'task', title: 'Call the shop', status: 'approved', proposed: '2026-09-17T02:10:00Z', by: 'mcp', about: ['thing/subaru'], history: [] }],
   observations: [
-    { id: '3-c', attr: 'location', value: { ref: 'place/johns-machine-shop' }, at: '2026-09-17T02:10:00Z', until: null, conf: 90, source: { kind: 'talon-dm', id: 'm3' }, by: 'talon', seen: '2026-09-17T02:10:05Z', status: 'live', retracted: false, note: '' },
-    { id: '2-b', attr: 'location', value: 'Route 9', at: '2026-09-16T22:00:00Z', until: null, conf: 90, source: { kind: 'talon-dm', id: 'm1' }, by: 'talon', seen: '2026-09-16T22:00:05Z', status: 'superseded', retracted: false, note: '' },
-    { id: '1-a', attr: 'status', value: 'broken down', at: '2026-09-16T22:00:00Z', until: null, conf: 90, source: { kind: 'talon-dm', id: 'm1' }, by: 'talon', seen: '2026-09-16T22:00:05Z', status: 'retracted', retracted: true, note: 'wrong car' },
+    { id: '3-c', attr: 'location', value: { ref: 'place/johns-machine-shop' }, at: '2026-09-17T02:10:00Z', until: null, conf: 90, source: { kind: 'phone-dm', id: 'm3' }, by: 'phone', seen: '2026-09-17T02:10:05Z', status: 'live', retracted: false, note: '' },
+    { id: '2-b', attr: 'location', value: 'Route 9', at: '2026-09-16T22:00:00Z', until: null, conf: 90, source: { kind: 'phone-dm', id: 'm1' }, by: 'phone', seen: '2026-09-16T22:00:05Z', status: 'superseded', retracted: false, note: '' },
+    { id: '1-a', attr: 'status', value: 'broken down', at: '2026-09-16T22:00:00Z', until: null, conf: 90, source: { kind: 'phone-dm', id: 'm1' }, by: 'phone', seen: '2026-09-16T22:00:05Z', status: 'retracted', retracted: true, note: 'wrong car' },
   ],
 };
 const inbox = [
@@ -1179,7 +1179,7 @@ ok('the body view names the body', body.includes('the Subaru') && body.includes(
 ok('a ref value is a link to that body', body.includes('href="#body/place/johns-machine-shop"'));
 ok('the timeline shows every row with its status', body.includes('superseded') && body.includes('retracted') && body.includes('Route 9'));
 ok('only a live row gets a retract button', (body.match(/data-retract="/g) || []).length === 1 && body.includes('data-retract="3-c"'));
-ok('a source pointer is shown', body.includes('talon-dm') && body.includes('m3'));
+ok('a source pointer is shown', body.includes('phone-dm') && body.includes('m3'));
 ok('the retraction note is shown', body.includes('wrong car'));
 ok('involved and actions are listed', body.includes('situation/2026-09-16-breakdown') && body.includes('Call the shop'));
 
@@ -1620,7 +1620,7 @@ print('ALL OK (%d checks)' % count[0])
 
 - [ ] **Step 5: Deploy, smoke, look**
 
-Write `app.hoon` and the three page files to wex (`create-file` for each new file under `$D/code/nex/orrery` with an explicit `blot=/mime` beside `filename=`, since the explorer would otherwise derive a marc from the extension that the desk does not vendor and the `/&` import only gathers a `[/ %mime]` grub; then `write-text`), reload, `bang` `None`. Run `python3 scripts/page-smoke.py $W $CK`: `ALL OK (8 checks)`. Then read the page by hand once as a person would, through curl: `curl -s -b $CK $W/apps/orrery | head -20` shows the shell. The interactive behaviour (a click that retracts, the beacon refresh) is verified in the report by reading the JS against the API routes it calls; the owner tries it in a browser after the release. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`.
+Write `app.hoon` and the three page files to the dev ship (`create-file` for each new file under `$D/code/nex/orrery` with an explicit `blot=/mime` beside `filename=`, since the explorer would otherwise derive a marc from the extension that the desk does not vendor and the `/&` import only gathers a `[/ %mime]` grub; then `write-text`), reload, `bang` `None`. Run `python3 scripts/page-smoke.py $W $CK`: `ALL OK (8 checks)`. Then read the page by hand once as a person would, through curl: `curl -s -b $CK $W/apps/orrery | head -20` shows the shell. The interactive behaviour (a click that retracts, the beacon refresh) is verified in the report by reading the JS against the API routes it calls; the owner tries it in a browser after the release. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`.
 
 - [ ] **Step 6: Commit and push**
 
@@ -1636,8 +1636,8 @@ git push origin main
 - Create: `docs/kernel/mcp-desk-tools.patch` (a unified diff against `desk/gub/nex/mcp.hoon` of the grubbery repo), `docs/kernel/README.md` (what it is, how it was rehearsed, how to apply on the dist branch)
 
 **Interfaces:**
-- Consumes: the mcp nexus's `+get-app-mcp-paths` and the app-name derivation in its discovery loop (`nex/mcp.hoon` in `/home/sneagan/software/groundwire/grubbery/desk/gub/`); Task 2's tools on wex.
-- Produces: the patch file; the rehearsal on `~wex` (the patched nexus written to the kernel's code tree there and the mcp instance reloaded); `tools/list` on wex advertising `apps/orrery.desk` with the eight tools.
+- Consumes: the mcp nexus's `+get-app-mcp-paths` and the app-name derivation in its discovery loop (`nex/mcp.hoon` in `<the grubbery checkout>/desk/gub/`); Task 2's tools on the dev ship.
+- Produces: the patch file; the rehearsal on the dev ship (the patched nexus written to the kernel's code tree there and the mcp instance reloaded); `tools/list` on the dev ship advertising `apps/orrery.desk` with the eight tools.
 
 - [ ] **Step 1: Confirm the gap**
 
@@ -1693,14 +1693,14 @@ so a desk's tools are advertised under `apps/<desk>` (for orrery, `apps/orrery.d
 
 The mcp nexus discovers app tools by scanning `/apps/<app>/desk/code/lib/tools`, which predates desks living under the shell at `/apps/shell.shell/desks/<name>.desk/desk/code`. Orrery's tools are callable by absolute path without this patch; with it they are discovered and callable by name, advertised under `apps/orrery.desk`.
 
-`mcp-desk-tools.patch` applies to `desk/gub/nex/mcp.hoon` in the grubbery repo: `git apply docs/kernel/mcp-desk-tools.patch` from the grubbery checkout, then release with the dist branch. It was rehearsed on `~wex` on <date> by writing the patched nexus into the kernel's code tree there and reloading the mcp instance; `tools/list` then advertised `apps/orrery.desk` with the eight tools and `tools/call` by name answered.
+`mcp-desk-tools.patch` applies to `desk/gub/nex/mcp.hoon` in the grubbery repo: `git apply docs/kernel/mcp-desk-tools.patch` from the grubbery checkout, then release with the dist branch. It was rehearsed on the dev ship on <date> by writing the patched nexus into the kernel's code tree there and reloading the mcp instance; `tools/list` then advertised `apps/orrery.desk` with the eight tools and `tools/call` by name answered.
 
 Calendar's and auspex's tools can leave the kernel's own bundle once this lands.
 ```
 
-- [ ] **Step 3: Rehearse on wex, reversibly**
+- [ ] **Step 3: Rehearse on the dev ship, reversibly**
 
-Find the kernel's mcp nexus source and instance on wex: `curl -s -b $CK "$W/grubbery/ball/code/nex?info=1"` lists the kernel's nexus files (expect `mcp.hoon` among them), and `curl -s -b $CK "$W/grubbery/ball/apps?info=1"` lists the instances (expect `mcp.mcp_app` or similar; confirm with `?info=1` on it that it is a nexus instance with a `bang`). Save the original: `curl -s -b $CK "$W/grubbery/ball/code/nex/mcp.hoon?raw=1" > $S/mcp.hoon.orig` (into the scratchpad; never into the repo) and `cmp` it against the upstream file to prove the ship runs the same source. Write the edited copy with `write-text` to `$W/grubbery/ball/code/nex/mcp.hoon`, `reload-nexus` on the mcp instance, twenty seconds, `bang` `None`. Then:
+Find the kernel's mcp nexus source and instance on the dev ship: `curl -s -b $CK "$W/grubbery/ball/code/nex?info=1"` lists the kernel's nexus files (expect `mcp.hoon` among them), and `curl -s -b $CK "$W/grubbery/ball/apps?info=1"` lists the instances (expect `mcp.mcp_app` or similar; confirm with `?info=1` on it that it is a nexus instance with a `bang`). Save the original: `curl -s -b $CK "$W/grubbery/ball/code/nex/mcp.hoon?raw=1" > $S/mcp.hoon.orig` (into the scratchpad; never into the repo) and `cmp` it against the upstream file to prove the ship runs the same source. Write the edited copy with `write-text` to `$W/grubbery/ball/code/nex/mcp.hoon`, `reload-nexus` on the mcp instance, twenty seconds, `bang` `None`. Then:
 
 ```bash
 curl -s -b $CK -X POST -H 'content-type: application/json' $W/grubbery/mcp -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -c 'import sys,json; d=json.load(sys.stdin); ns=[t["name"] for t in d["result"]["tools"]]; print(len(ns), sorted(n for n in ns if "orrery" in n))'
@@ -1709,7 +1709,7 @@ curl -s -b $CK -X POST -H 'content-type: application/json' $W/grubbery/mcp -d '{
 #   ['actions', 'at', 'bodies', 'me', 'rev', 'schema', 'situations']
 ```
 
-If `bang` is not `None`, or `tools/list` no longer answers, or the kernel's own tools are missing from it: write `$S/mcp.hoon.orig` back with `write-text`, reload, confirm `tools/list` answers as before, and report BLOCKED with the bang. A rehearsal that passes stays in place on wex (it is the dev ship, and the user's own MCP client points at it: the patched registry is a superset).
+If `bang` is not `None`, or `tools/list` no longer answers, or the kernel's own tools are missing from it: write `$S/mcp.hoon.orig` back with `write-text`, reload, confirm `tools/list` answers as before, and report BLOCKED with the bang. A rehearsal that passes stays in place on the dev ship (it is the dev ship, and the user's own MCP client points at it: the patched registry is a superset).
 
 Then `python3 scripts/mcp-matrix.py $W $CK` once more (by path, unchanged) and `python3 scripts/api-matrix.py $W $CK`: both `ALL OK`.
 
@@ -1717,7 +1717,7 @@ Then `python3 scripts/mcp-matrix.py $W $CK` once more (by path, unchanged) and `
 
 ```bash
 git add docs/kernel/mcp-desk-tools.patch docs/kernel/README.md
-git commit -m "The kernel discovery patch for desk tools, rehearsed on wex"
+git commit -m "The kernel discovery patch for desk tools, rehearsed on the dev ship"
 git push origin main
 ```
 
@@ -1762,13 +1762,13 @@ Over MCP the analyst is the owner: every body, every attribute, sensitive ones i
 
 - [ ] **Step 1b: One spelling for a tool's name**
 
-The tools tree and `call_tool` derive `orrery_state` from the file name, while each tool's own `++  name` said `orrery-state`, so `list_tools` and the tree disagreed. The MCP convention is underscores (`echo`, `call_tool`, `create_desk`): in each of the eight files under `code/lib/tools`, `++  name` becomes the underscore form (`'orrery_state'`, `'orrery_body'`, `'orrery_resolve'`, `'orrery_observe'`, `'orrery_retract'`, `'orrery_act'`, `'orrery_actions'`, `'orrery_schema'`). Write the eight files to wex (no reload needed), then `list_tools` through the MCP server names `orrery_state` and its siblings, and `python3 scripts/mcp-matrix.py $W $CK` (which calls by path) still prints `ALL OK (32 checks)`. `docs/mcp.md` names the tools in the underscore form and says the file names are the hyphenated ones.
+The tools tree and `call_tool` derive `orrery_state` from the file name, while each tool's own `++  name` said `orrery-state`, so `list_tools` and the tree disagreed. The MCP convention is underscores (`echo`, `call_tool`, `create_desk`): in each of the eight files under `code/lib/tools`, `++  name` becomes the underscore form (`'orrery_state'`, `'orrery_body'`, `'orrery_resolve'`, `'orrery_observe'`, `'orrery_retract'`, `'orrery_act'`, `'orrery_actions'`, `'orrery_schema'`). Write the eight files to the dev ship (no reload needed), then `list_tools` through the MCP server names `orrery_state` and its siblings, and `python3 scripts/mcp-matrix.py $W $CK` (which calls by path) still prints `ALL OK (32 checks)`. `docs/mcp.md` names the tools in the underscore form and says the file names are the hyphenated ones.
 
 - [ ] **Step 2: README, the release doc, the spec**
 
-In `README.md`: the docs line gains `docs/mcp.md` and `docs/kernel/README.md`; a line says the page is at `/apps/orrery` (owner cookie); the gates line gains `scripts/mcp-matrix.py` and `scripts/page-smoke.py`. In `docs/releasing.md` section 8, after the key gate step add two steps: `python3 scripts/mcp-matrix.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`, and `python3 scripts/page-smoke.py http://localhost:8080 /tmp/wex.cookies` prints `ALL OK`. In the spec's section 6: the MCP tools table gains `by` on `orrery-retract` and `orrery-actions` and `at` on `orrery-body`, matching the code; the kernel-gap paragraph says the fix is a patch to three kernel files (`nex/mcp.hoon`'s `+get-app-mcp-paths` and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`), that it lives in `docs/kernel` and was rehearsed on `~wex` on the date of Task 4, that `tools/list` stays the kernel's three-tool protocol allowlist by design so discovery shows in the tools tree and `list_tools`, and that `+await-tool` is not on the call path; the page paragraph says the raw beacon stream is read the way lattice's page reads it. One line per paragraph, no em-dashes, no new promises.
+In `README.md`: the docs line gains `docs/mcp.md` and `docs/kernel/README.md`; a line says the page is at `/apps/orrery` (owner cookie); the gates line gains `scripts/mcp-matrix.py` and `scripts/page-smoke.py`. In `docs/releasing.md` section 8, after the key gate step add two steps: `python3 scripts/mcp-matrix.py $SHIP $JAR` prints `ALL OK`, and `python3 scripts/page-smoke.py $SHIP $JAR` prints `ALL OK`. In the spec's section 6: the MCP tools table gains `by` on `orrery-retract` and `orrery-actions` and `at` on `orrery-body`, matching the code; the kernel-gap paragraph says the fix is a patch to three kernel files (`nex/mcp.hoon`'s `+get-app-mcp-paths` and the two walks in the tool bundle's `call-tool.hoon` and `list-tools.hoon`), that it lives in `docs/kernel` and was rehearsed on the dev ship on the date of Task 4, that `tools/list` stays the kernel's three-tool protocol allowlist by design so discovery shows in the tools tree and `list_tools`, and that `+await-tool` is not on the call path; the page paragraph says the raw beacon stream is read the way lattice's page reads it. One line per paragraph, no em-dashes, no new promises.
 
-- [ ] **Step 3: Version 6 through the forge, and feb follows**
+- [ ] **Step 3: Version 6 through the forge, and the second ship follows**
 
 ```bash
 python3 - <<'PY'
@@ -1782,7 +1782,7 @@ curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.g
 sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 6}
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
-#   {"version": 6}; feb polls wex, allow up to five minutes
+#   {"version": 6}; the second ship polls the dev ship, allow up to five minutes
 for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
 #   None [('poke', 6), ('read', 3), ('write', 1)] on both; re-approve with phase 2's granted object if a weir shrank
 python3 scripts/mcp-matrix.py $W $CK
@@ -1801,23 +1801,23 @@ python3 scripts/ship-share-matrix.py $W $CK $F $FK
 
 Six findings from the whole-branch review landed as one fix round; the plan records them so it mirrors the code.
 
-- A refused peek is not an absence: `exists:om` answers `(unit ?)` (`~` on a veto) and the tools answer `orrery: peek refused` instead of `unknown subject` or `about: no such body` when the mcp tools child's grants are narrower than wex's.
+- A refused peek is not an absence: `exists:om` answers `(unit ?)` (`~` on a veto) and the tools answer `orrery: peek refused` instead of `unknown subject` or `about: no such body` when the mcp tools child's grants are narrower than the dev ship's.
 - The MCP gate locks the transports: the state view compared whole (bodies, situations, schema) with at least one body, and one body view compared whole against the HTTP route.
 - The page smoke locks the beacon: it reads the keep path out of the served script, opens the stream, and asserts an `event:` line ending in `/rev` with a numeric `data:` line; the script and the style are refused without the cookie too.
 - `orrery_act` forwards `proposed`; `by` is capped at 64 on the retract and move tools; `serve-retract` honours an owner payload `by` and the page sends `by: page`; a post-write refresh waits 300 ms; the stream loop says `live updates off` on a non-ok keep answer and backs off.
 - The encoder unit test locks the open-only filters and an unknown kind.
-- The docs say what the code does: `docs/kernel/README.md` (names, the revert source, the threat-model change), `docs/mcp.md` (the refusal-text deltas, what stays HTTP-only, `by` per item and capped), `docs/releasing.md` (the vendored `tools.hoon` pin check; the owner's by-hand page pass before the ricsul publish), spec sections 6 (file names hyphenated, declared names underscored) and 10 (the gate that exists; the page pass is the owner's).
+- The docs say what the code does: `docs/kernel/README.md` (names, the revert source, the threat-model change), `docs/mcp.md` (the refusal-text deltas, what stays HTTP-only, `by` per item and capped), `docs/releasing.md` (the vendored `tools.hoon` pin check; the owner's by-hand page pass before the live ship's publish), spec sections 6 (file names hyphenated, declared names underscored) and 10 (the gate that exists; the page pass is the owner's).
 
 ---
 
 ## Self-review
 
-**Spec coverage (sections 5, 6, 8).** The eight tools with the spec's parameters: Task 2 (the table in section 6; `at` on the body tool and `by` on retract and actions are additions the spec gains in Task 5). Reads by absolute peek, writes by one poke road to `/main.sig`: Task 2 (`orrery-mcp.hoon`). Batches as array parameters with the object shape in the description: Task 2 (`orrery-observe`). Callable by location before discovery: Task 2 Step 4 and the gate. The kernel gap confirmed on wex before the patch, the patch rehearsed on wex and left for the dist branch: Task 4. The page's four views, reload on the beacon, a reader with buttons: Task 3. The beacon streaming through keep-SSE: Task 3 (the raw reader). The scenario replayed over MCP with the state matching: Task 2's gate compares the tool's reads with the HTTP reads.
+**Spec coverage (sections 5, 6, 8).** The eight tools with the spec's parameters: Task 2 (the table in section 6; `at` on the body tool and `by` on retract and actions are additions the spec gains in Task 5). Reads by absolute peek, writes by one poke road to `/main.sig`: Task 2 (`orrery-mcp.hoon`). Batches as array parameters with the object shape in the description: Task 2 (`orrery-observe`). Callable by location before discovery: Task 2 Step 4 and the gate. The kernel gap confirmed on the dev ship before the patch, the patch rehearsed on the dev ship and left for the dist branch: Task 4. The page's four views, reload on the beacon, a reader with buttons: Task 3. The beacon streaming through keep-SSE: Task 3 (the raw reader). The scenario replayed over MCP with the state matching: Task 2's gate compares the tool's reads with the HTTP reads.
 
 **Placeholders.** None: every step carries its code or its exact command. Task 4 Step 3 asks the implementer to find two ship paths with `?info=1` and paste what it finds, which is discovery, not a placeholder; Task 5 Step 2's spec edits are judgment against the code.
 
 **Type consistency.** `loaded` moves to the library with the same shape the nexus used; `state-json` takes `[all acts multi when kind rev schema]` in Task 1 and is called so by `serve-state` (Task 1) and `orrery-state` (Task 2); `body-json` takes `[l sits acts multi when]` and is called so by `serve-body` and `orrery-body`; `situations` takes `[all multi when]`. `orrery-mcp.hoon`'s `body-results`/`obs-results` mirror the nexus arms' signatures with `exists` in place of `peek-exists:io`. The page's render functions take the exact JSON the routes answer (`attrs` rows with `value/at/by/source/obs`, `observations` rows with `status` and `note`, actions with `status/title/kind/about/proposed/by/history`), and the node test's fixtures carry those keys.
 
-**Known limits, in the docs.** The tools are owner-level (spec). The page has no create form (a v2 question per the spec). The kernel patch reaches production only through the dist branch, which is the user's. A tool call runs on the tools child nexus and needs the whole-ball grants wex has; a ship that narrowed them would see peek or poke vetoes as tool errors.
+**Known limits, in the docs.** The tools are owner-level (spec). The page has no create form (a v2 question per the spec). The kernel patch reaches production only through the dist branch, which is the user's. A tool call runs on the tools child nexus and needs the whole-ball grants the dev ship has; a ship that narrowed them would see peek or poke vetoes as tool errors.
 
 

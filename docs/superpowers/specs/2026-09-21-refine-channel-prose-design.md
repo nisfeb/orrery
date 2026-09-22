@@ -18,9 +18,9 @@ On the page, a proposed action in the actions view gets one input under it with 
 
 ## The channel rule
 
-At `act`, a `message` whose `via` is `telegram` or `mail` and whose `to` is a person with a `ship` attribute is filed with `via` `chat` and the trail notes `via rewritten to chat: <to> has a ship`. Telegram is for a person with no ship; `mail` (auspex) stays for a person with a ship only when the proposer asked for mail and the person has no chat, which today never happens, so `mail` is also rewritten to `chat`. The schema's note for `via` becomes `required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none`. `plan-exec` is unchanged: `chat` is Talon's, and a rewritten message waits for Talon's pass.
+At `act`, a `message` whose `via` is `telegram` or `mail` and whose `to` is a person with a `ship` attribute is filed with `via` `chat` and the trail notes `via rewritten to chat: <to> has a ship`. Telegram is for a person with no ship; `mail` (auspex) stays for a person with a ship only when the proposer asked for mail and the person has no chat, which today never happens, so `mail` is also rewritten to `chat`. The schema's note for `via` becomes `required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none`. `plan-exec` is unchanged: `chat` is the phone client's, and a rewritten message waits for the phone client's pass.
 
-The starter schema is a fall; ricsul's stored `schema.json` is its own document. At release the controller merges the two changed notes (`via`, `text`) into ricsul's stored schema through `PUT /api/schema`, so the models on the live ship read the new notes at once.
+The starter schema is a fall; the live ship's stored `schema.json` is its own document. At release the controller merges the two changed notes (`via`, `text`) into the live ship's stored schema through `PUT /api/schema`, so the models on the live ship read the new notes at once.
 
 ## The prose rules
 

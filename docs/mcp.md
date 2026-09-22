@@ -25,7 +25,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 
 A refusal is an MCP error carrying the text the HTTP route would answer, with four deltas. `orrery_body` says `id: expected <kind>/<slug>` where the route says `expected <kind>/<slug>`; `orrery_actions` with no status to move says `status: required to move an action`; `orrery_observe` refuses a non-array `bodies` or `observations` where the route reads an absent one as empty; `orrery_retract` and `orrery_actions` refuse a `by` over 64 bytes, where the owner's own routes take any length. Everything else refuses with the route's text.
 
-One refusal has no route counterpart. `orrery: peek refused` means the mcp tools child was not granted a peek into the instance, so a missing body could not be told from a vetoed read. On `~wex` the mcp instance holds the whole ball and it never appears.
+One refusal has no route counterpart. `orrery: peek refused` means the mcp tools child was not granted a peek into the instance, so a missing body could not be told from a vetoed read. On a dev ship whose mcp instance holds the whole ball it never appears.
 
 ## What stays on HTTP
 

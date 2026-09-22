@@ -67,7 +67,7 @@ Reviewer: opus, whole repo at commit dd43228. No Critical or Important findings;
 - the carried group-check item: the ship-share gate's own descriptions claimed to prove a specific ship joined or left a group. Fixed: the three descriptions in `ship-share-matrix.py` were reworded to say only that the group is non-empty or empty.
 - N1: the file-top tree comment in `app.hoon` was two phases stale, missing the paths phases 2 and 3 added. Fixed: the missing rows were added to the map.
 - N2: `key-matrix.py`'s cleanup mutated the owner's schema in place before storing it as the restore baseline, so a schema that legitimately named `health` would lose it. Fixed: the baseline is now a deep copy taken before the mutation.
-- N3: an aborted `ship-share-matrix.py` run could leave `sensitive: ['health']` on `~feb` as a permanent policy, since the next run captured it as its own baseline. Fixed: the baseline capture now strips that exact marker before storing it.
+- N3: an aborted `ship-share-matrix.py` run could leave `sensitive: ['health']` on the second ship as a permanent policy, since the next run captured it as its own baseline. Fixed: the baseline capture now strips that exact marker before storing it.
 - N4: `api-matrix.py`'s day-keyed situation id could leave a stale open situation across a midnight UTC boundary. Fixed: section 0 now deletes every body whose id starts `situation/` and ends `-breakdown` before the fixed deletions.
 - N5: the three read tools, `orrery-state`, `orrery-body` and `orrery-resolve`, ignored a vetoed `ensure-me:om` peek and answered as if the body were simply missing, contradicting `docs/mcp.md`'s promise. Fixed: all three now check the peek's answer and refuse, matching `orrery-act` and `orrery-observe`.
 - N6: the audit log never named the actor on a local observe, since `app.hoon` computed `who` and then passed an empty string to the note. Fixed: the local branch now passes `who` to `note-by`.
@@ -104,10 +104,10 @@ Reviewer: opus, whole repo at commit dd43228. No Critical or Important findings;
 - the carried ship-refusal item: a key sending ship "" is refused while null passes, and a key cannot re-upsert a body carrying a ship. Left: `docs/keys.md` states the rule, and the refusal names `ship` accurately.
 - the carried actor-on-refusal item: a refused or no-op retract note names no actor. Left: `refuse` and `note-then-no` have sixteen callers between them, and most refuse before any actor is decoded, so the cost is above the value.
 - the carried uncapped-by item: the owner's HTTP `by` on retract and set-action is uncapped. Left: `docs/mcp.md` names this as one of four deliberate tool deltas, so a doc relies on it.
-- the carried fix-check-rows item: two retracted fix-check rows sit on `~wex`'s `person/me`. Left: ship residue, nothing in the repository to change.
+- the carried fix-check-rows item: two retracted fix-check rows sit on the dev ship's `person/me`. Left: ship residue, nothing in the repository to change.
 - the carried CSP item: the page has no Content-Security-Policy header. Left: one wrong header cannot break rendering, but a wrong CSP breaks the page silently and no gate can see it.
 - the carried call_tool item: the cost of a `call_tool` miss. Left: kernel behavior, already written up in `docs/kernel/README.md`.
-- the carried kernel-patch item: the nexus-versus-bundle early return and naming drifts in the kernel patch. Left: the patch is rehearsed byte for byte on `~wex` and `git apply --check` passes against it today; editing it would invalidate that rehearsal.
+- the carried kernel-patch item: the nexus-versus-bundle early return and naming drifts in the kernel patch. Left: the patch is rehearsed byte for byte on the dev ship and `git apply --check` passes against it today; editing it would invalidate that rehearsal.
 - the carried terminal-actions item: terminal gate actions accumulate with no way to delete one. Left: there is no route to delete an action, and adding one is a behavior change, not polish.
 - the carried closure-regex item: the positional regex in `code-closure.py`. Left: it works, is green today, and already carries eleven lines explaining why it is shaped that way.
 - the carried known-set item: `orrery-observe`'s known set is built from `bodies.prep` rather than the per-item answers. Left: unreachable after `ensure-me`, as the code's own note says.
@@ -121,7 +121,7 @@ Reviewer: opus, whole repo at commit dd43228. No Critical or Important findings;
 
 - `+note-inbox` at depth 1: the P1-I5 ruling said to note through `note-inbox` when `self-base` answers null, but `note-inbox`'s road is fixed at the nexus root while `+serve-delete-body` runs one step down on a request fiber, so `note-inbox` became a one-line wrapper over a new `+note-inbox-at`, called with `up` 1, leaving every existing call site unchanged.
 - `+ship-source` and `+mark-reserved` live in the library: the P2-M7 ruling put the refusal in the two callers, and it does live there, but the two predicates those callers share are now library arms so the nexus and the tool cannot drift apart; no unit case was added, as the ruling directed.
-- the two-ship gate's group check reads a size, not the ships: the P1-I5 ruling wanted a check that the group no longer lists `~feb`, but the `?info=1` read of a `who.ships` grub cannot be spelled that way, so the gate instead asserts the group's size is non-empty while the share is live and empty after the revoke, without naming the ship.
+- the two-ship gate's group check reads a size, not the ships: the P1-I5 ruling wanted a check that the group no longer lists the second ship, but the `?info=1` read of a `who.ships` grub cannot be spelled that way, so the gate instead asserts the group's size is non-empty while the share is live and empty after the revoke, without naming the ship.
 - the delete-body gate section re-creates and re-shares the body: the ruling allowed either order, and the gate runs the delete after the re-share section so the run ends with a live share record, which is what lets the next run's `clean()` revoke it; verified rerunnable across three consecutive green runs.
 - the 415 conjunct's exact shape: the item-23 finding expected one added conjunct checking that a body was present, but `app.hoon` already had that check; the real gap was that eyre hands a bodiless POST a present, zero-length body, so the added conjunct instead checks the body's length is nonzero.
 - the mixed-batch check's reading of "positive": rather than only requiring a 200 status, the fix pins the exact value the gate's setup wrote, which also rules out a read that returns 200 with stale or wrong data.
@@ -130,17 +130,17 @@ Reviewer: opus, whole repo at commit dd43228. No Critical or Important findings;
 
 ## Residues on the dev ships
 
-- old `orrery-person-sarah.grp` groups on both `~wex` and `~feb` still hold whatever ships were granted before the P2-M9 separator rename; nothing in the current build writes to those groups any more, so the stale grants stand until each ship is reset, and the release ship has none yet.
-- two retracted fix-check rows sit on `~wex`'s `person/me`, left over from an earlier round, with nothing in the repository to change.
-- the kernel patch's early-return and naming drifts were left because the patch is rehearsed byte for byte against `~wex`'s checkout and `git apply --check` passes against it today; editing the patch file in the repo would invalidate that rehearsal.
+- old `orrery-person-sarah.grp` groups on both the dev ship and the second ship still hold whatever ships were granted before the P2-M9 separator rename; nothing in the current build writes to those groups any more, so the stale grants stand until each ship is reset, and the release ship has none yet.
+- two retracted fix-check rows sit on the dev ship's `person/me`, left over from an earlier round, with nothing in the repository to change.
+- the kernel patch's early-return and naming drifts were left because the patch is rehearsed byte for byte against the dev ship's checkout and `git apply --check` passes against it today; editing the patch file in the repo would invalidate that rehearsal.
 
-- `~wex`'s kernel ball carries the three patched discovery files from the rehearsal of `docs/kernel/mcp-desk-tools.patch`; `~feb`'s does not. The patch reaches production only through grubbery's dist branch.
+- the dev ship's kernel ball carries the three patched discovery files from the rehearsal of `docs/kernel/mcp-desk-tools.patch`; the second ship's does not. The patch reaches production only through grubbery's dist branch.
 
 ## Gates at the close
 
 | Gate | Result at d5e7aa4 |
 |---|---|
-| unit arms (`~wex` rev 239) | 51 OK, 0 failed, 0 crashed |
+| unit arms (the dev ship's rev 239) | 51 OK, 0 failed, 0 crashed |
 | `api-matrix` | ALL OK, run twice |
 | `key-matrix` | ALL OK, 88 checks |
 | `mcp-matrix` | ALL OK, 35 checks |
@@ -159,5 +159,5 @@ Reviewer: opus, whole repo at commit dd43228. No Critical or Important findings;
 ## After the passes
 
 - The scoped re-review of the polish round (opus) found every item addressed and no new Critical or Important breakage. Two notes stay on record: the two-ship gate's peer baseline drops a `sensitive` list equal to the gate's own marker, so a peer that legitimately named only `health` would lose it after a run; and `api-matrix.py`'s deletion of stale breakdown situations is unchecked by design.
-- Version 7 went to `~wex` through the forge pull and `~feb` followed by version; every gate ran green on the synced code on both ships, with `bang` null on each.
+- Version 7 went to the dev ship through the forge pull and the second ship followed by version; every gate ran green on the synced code on both ships, with `bang` null on each.
 - The README was rewritten at the user's request as a walk from what orrery is for to the reference, in commits b4596c6, b2d08ae and a1606ae; the re-review checked its claims against the code and its ten corrections are in.

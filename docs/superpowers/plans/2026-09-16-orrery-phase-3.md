@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A client that does not run a ship (Talon, a todo app, a Claude Code session) gets a token bound to an identity and a scope, and sees and writes exactly what that scope allows; the owner cookie keeps everything, and attributes the owner marks sensitive never leave the ship over a key.
+**Goal:** A client that does not run a ship (the phone client, a todo app, a Claude Code session) gets a token bound to an identity and a scope, and sees and writes exactly what that scope allows; the owner cookie keeps everything, and attributes the owner marks sensitive never leave the ship over a key.
 
 **Architecture:** Keys are checked in-app, never by eyre, the way calendar checks CalDAV passwords: `clients.json` holds one row per key with a salted sha-256 of the secret, and every request without the owner cookie is identified from its `Authorization: Bearer <id>.<secret>` header before any route runs. The scope rides on the request as an actor (`owner`, `by`, `scope`) and each view or write arm applies it: bodies outside the scope's kinds are filtered or 404, observations and bodies outside them are refused whole, proposals outside the scope's action kinds are 403, `by` is forced to the key's identity, and the policy's `sensitive` attributes are dropped from every row a key can see. Minting and revoking are owner-only routes that go through the writer, so the file has one author.
 
-**Tech Stack:** Hoon under zuse 408 (grubbery nexus, fibers, the import-free library), Python 3 for the gate, the `~wex` and `~feb` dev ships.
+**Tech Stack:** Hoon under zuse 408 (grubbery nexus, fibers, the import-free library), Python 3 for the gate, the dev ship and the second ship.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-orrery-design.md`, section 11 phase 3, section 6 (the surfaces it scopes), section 3 (`policy.json`).
 
@@ -14,7 +14,7 @@
 
 - Prose rules for every doc, comment and commit message: no em-dashes, no hard-wrapped markdown, simple sentences. Hoon comments follow grubbery's style: `::  +arm: lowercase headline`, a bare `::` line below, plain ASCII, `::  ==  title` dividers.
 - No AI attribution anywhere. Commits go to `nisfeb/orrery` as nisfeb, one at the end of every task with the message given; push where a step says push.
-- Never touch `~ricsul-bilwyt`; never boot, kill or restart a pier; tmux window `0:3` is an ssh session to ricsul, never send keys there. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo.
+- Never touch the live ship; never boot, kill or restart a pier. Dojo discipline: one line, verify its echo, STOP after 2 minutes of waiting or 30 seconds without an echo.
 - Never run two gates against the same ship at once.
 - Every persistent path has a covering `%fall` row in `on-load`; long-lived fibers use nexus-relative roads (`rf`/`rv`, depth 0 at the root, 1 under `/requests`); the writer never crashes on input; the library stays import-free.
 - The owner cookie keeps full access on every route. A key never sees a sensitive attribute, whatever its scope, on any view (state, body, timeline, resolve) and cannot write one. A key never learns that a body outside its kinds exists: an out-of-scope body answers exactly what a missing body answers. Every write a key makes carries the key's identity as `by`, whatever the payload said.
@@ -26,9 +26,9 @@
 
 ## Working with the ships
 
-Everything from phase 1's "Working with `~wex`" section still applies (login, the fast loop, the tree browser, the dojo recipe for `-test`, the stop rules; see `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`), and phase 2's "Working with two ships" (`~feb` at http://localhost:8081, jar `/tmp/feb.cookies`, dojo pane `0:0.0`; the library must be written to a ship's code tree too when it changes; see `docs/superpowers/plans/2026-09-16-orrery-phase-2.md`).
+Everything from phase 1's "Working with the dev ship" section still applies (login, the fast loop, the tree browser, the dojo recipe for `-test`, the stop rules; see `docs/superpowers/plans/2026-09-16-orrery-phase-1.md`), and phase 2's "Working with two ships" (the second ship at $SHIP2, jar `$JAR2`, its dojo; the library must be written to a ship's code tree too when it changes; see `docs/superpowers/plans/2026-09-16-orrery-phase-2.md`).
 
-Development in this phase happens on `~wex` alone; `~feb` gets the code at the version bump in the last task, since keys are a single-ship feature. The two-ship gate is rerun at the end because the request path changed for every route.
+Development in this phase happens on the dev ship alone; the second ship gets the code at the version bump in the last task, since keys are a single-ship feature. The two-ship gate is rerun at the end because the request path changed for every route.
 
 A key is used with `curl -H 'Authorization: Bearer <token>'` and no cookie jar. The owner path is unchanged: the jar, no header.
 
@@ -41,7 +41,7 @@ A key is used with `curl -H 'Authorization: Bearer <token>'` and no cookie jar. 
 | `code/lib/orrery.hoon` | gains the pure key model: `scope`, `client`, their JSON codecs, the bearer parser, the secret and hash arms, the forcing fills, the sensitive filter, the batch scope check |
 | `tests/lib/orrery.hoon` | gains their tests |
 | `code/nex/orrery/app.hoon` | gains the `clients.json` row, the writer ops (`add-client`, `drop-client`, `touch-client`), `identify` and the actor, the client routes, and the scope applied in every view and write arm |
-| `scripts/key-matrix.py` | the key gate: two keys with different scopes against `~wex`, plus the refusals |
+| `scripts/key-matrix.py` | the key gate: two keys with different scopes against the dev ship, plus the refusals |
 | `docs/keys.md` | how keys work for a person, and the routes |
 
 ---
@@ -114,7 +114,7 @@ A key is used with `curl -H 'Authorization: Bearer <token>'` and no cookie jar. 
   ==
 ++  test-client-roundtrip
   =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) &]
-  =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
+  =/  c=client:orr  ['abc' 'phone' 'phone' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
   =/  back=(unit client:orr)  (de-client:orr (en-client-row:orr c))
   =/  view=json  (en-client-view:orr c)
   ;:  weld
@@ -143,9 +143,9 @@ A key is used with `curl -H 'Authorization: Bearer <token>'` and no cookie jar. 
 ++  test-fill-as-forces-by
   =/  j=json  (pairs:enjs:format ~[['by' s+'liar'] ['subject' s+'person/me']])
   ;:  weld
-    (expect-eq !>(`json`s+'talon') !>((gj:orr (fill-obs-as:orr j t0 'talon') 'by')))
-    (expect-eq !>(`json`s+'talon') !>((gj:orr (fill-act-as:orr j t0 'talon') 'by')))
-    (expect-eq !>(`json`s+(en-iso:orr t0)) !>((gj:orr (fill-obs-as:orr j t0 'talon') 'at')))
+    (expect-eq !>(`json`s+'phone') !>((gj:orr (fill-obs-as:orr j t0 'phone') 'by')))
+    (expect-eq !>(`json`s+'phone') !>((gj:orr (fill-act-as:orr j t0 'phone') 'by')))
+    (expect-eq !>(`json`s+(en-iso:orr t0)) !>((gj:orr (fill-obs-as:orr j t0 'phone') 'at')))
   ==
 ++  test-out-of-scope
   =/  sc=scope:orr  [(sy ~[%person]) ~ &]
@@ -174,7 +174,7 @@ A key is used with `curl -H 'Authorization: Bearer <token>'` and no cookie jar. 
 
 - [ ] **Step 2: Run the tests and watch the new ones fail**
 
-Copy both files to the wex mount, commit, run (phase 1's recipe). Expected: a build failure naming an unknown arm such as `de-scope`.
+Copy both files to the dev ship's mount, commit, run (phase 1's recipe). Expected: a build failure naming an unknown arm such as `de-scope`.
 
 - [ ] **Step 3: Append the arms**
 
@@ -603,9 +603,9 @@ Append before the closing `--`:
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ```
 
-- [ ] **Step 5: Deploy to wex and smoke by hand**
+- [ ] **Step 5: Deploy to the dev ship and smoke by hand**
 
-Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to wex with the fast loop, reload, `bang` `None`. Then:
+Write `code/lib/orrery.hoon` and `code/nex/orrery/app.hoon` to the dev ship with the fast loop, reload, `bang` `None`. Then:
 
 ```bash
 A=$W/apps/orrery/api; J='-H content-type:application/json'
@@ -944,9 +944,9 @@ In `+handle-request`, the scoped routes drop their `own` and pass `act`:
 
 Everything else (delete body, schema, policy, share, revoke, shares, accept, decline, sync, clients) stays wrapped in `own`.
 
-- [ ] **Step 5: Deploy to wex and smoke by hand**
+- [ ] **Step 5: Deploy to the dev ship and smoke by hand**
 
-Write `app.hoon` to wex, reload, `bang` `None`. Mint a triage key (`kinds` person, thing, place, situation; no actions; write) and a todo key (no kinds; `actions` task; write); as the owner, `PUT /api/policy` with the starter policy plus `"sensitive": ["health"]` and observe `person/me.health` and `person/me.status`. Then read `GET /api/state` and `GET /api/body/person/me` with the triage token: `status` present, `health` absent from `attrs` and from `observations`; with the todo token: `bodies` empty, `person/me` a 404. Observe `thing/subaru.status` with the triage token and read it as the owner: `by` is the key's identity. Propose a task with the todo token: approved, and it lists it with `by` the key's; propose a note with it: 403. `GET /api/clients` with either token: 403 `owner only`. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`. Paste every read in the report; Task 4 automates them.
+Write `app.hoon` to the dev ship, reload, `bang` `None`. Mint a triage key (`kinds` person, thing, place, situation; no actions; write) and a todo key (no kinds; `actions` task; write); as the owner, `PUT /api/policy` with the starter policy plus `"sensitive": ["health"]` and observe `person/me.health` and `person/me.status`. Then read `GET /api/state` and `GET /api/body/person/me` with the triage token: `status` present, `health` absent from `attrs` and from `observations`; with the todo token: `bodies` empty, `person/me` a 404. Observe `thing/subaru.status` with the triage token and read it as the owner: `by` is the key's identity. Propose a task with the todo token: approved, and it lists it with `by` the key's; propose a note with it: 403. `GET /api/clients` with either token: 403 `owner only`. Then `python3 scripts/api-matrix.py $W $CK`: `ALL OK`. Paste every read in the report; Task 4 automates them.
 
 - [ ] **Step 6: Commit and push**
 
@@ -1087,7 +1087,7 @@ code, d = owner('POST', '/observe', {'bodies': [], 'observations': [
 check('owner observes health and status', code == 200 and all_ok(d, 'observations', 2), d)
 
 print('== minting')
-code, d = owner('POST', '/clients', {'name': 'key-gate triage', 'by': 'talon',
+code, d = owner('POST', '/clients', {'name': 'key-gate triage', 'by': 'phone',
                                      'scope': {'kinds': ['person', 'thing', 'place', 'situation'], 'actions': [], 'write': True}})
 check('mint the triage key', code == 200 and '.' in str(dictish(d).get('token', '')), d)
 triage_id, triage_tok = dictish(d).get('id'), str(dictish(d).get('token', ''))
@@ -1138,7 +1138,7 @@ print('== writes carry the key identity and stay in scope')
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('thing/subaru', 'status', 'in the shop', T0, 'kg-3')]})
 check('the triage key observes in scope', code == 200 and all_ok(d, 'observations', 1), d)
 code, a = attrs_of(owner, 'thing/subaru')
-check('by is the key identity, not the payload', dictish(dictish(a).get('status')).get('by') == 'talon', a)
+check('by is the key identity, not the payload', dictish(dictish(a).get('status')).get('by') == 'phone', a)
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'health', 'better', T0, 'kg-4')]})
 check('a sensitive attribute is 403 for a key', code == 403, d)
 code, d = triage('POST', '/observe', {'bodies': [{'id': 'org/acme', 'name': 'Acme'}], 'observations': []})
@@ -1226,7 +1226,7 @@ for label, fn in (('clients', lambda: triage('GET', '/clients')),
                   ('schema', lambda: triage('GET', '/schema')),
                   ('shares', lambda: triage('GET', '/shares')),
                   ('delete body', lambda: triage('DELETE', '/body/place/lake-house')),
-                  ('share', lambda: triage('POST', '/share', {'id': 'person/me', 'ship': '~feb'}))):
+                  ('share', lambda: triage('POST', '/share', {'id': 'person/me', 'ship': '~sampel-palnet'}))):
     code, d = fn()
     check('a key may not reach ' + label, code == 403 and dictish(d).get('error') == 'owner only', (code, d))
 
@@ -1266,7 +1266,7 @@ python3 scripts/api-matrix.py $W $CK
 python3 scripts/ship-share-matrix.py $W $CK $F $FK
 ```
 
-Expected: `ALL OK` with the check count printed, both times; then the phase 1 gate `ALL OK`; then the two-ship gate `ALL OK (68 checks)` (feb still runs version 4; the host side of every route is what changed, and the two-ship gate only uses the owner cookie). A failure in the key gate whose cause is the nexus code is reported, not patched around: the controller rules.
+Expected: `ALL OK` with the check count printed, both times; then the phase 1 gate `ALL OK`; then the two-ship gate `ALL OK (68 checks)` (the second ship still runs version 4; the host side of every route is what changed, and the two-ship gate only uses the owner cookie). A failure in the key gate whose cause is the nexus code is reported, not patched around: the controller rules.
 
 - [ ] **Step 3: Commit and push**
 
@@ -1291,7 +1291,7 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 
 ## Minting and revoking
 
-- `POST /apps/orrery/api/clients` with `{"name": "Talon on the phone", "by": "talon", "scope": {"kinds": ["person", "thing", "place", "situation"], "actions": [], "write": true}}` answers the row and the `token` once. Store it in the client; the ship keeps only a salted hash.
+- `POST /apps/orrery/api/clients` with `{"name": "The phone client", "by": "phone", "scope": {"kinds": ["person", "thing", "place", "situation"], "actions": [], "write": true}}` answers the row and the `token` once. Store it in the client; the ship keeps only a salted hash.
 - `GET /apps/orrery/api/clients` lists the keys with their scope, when they were made and last used (to the hour), never the secret.
 - `DELETE /apps/orrery/api/clients/<id>` revokes one. The next request with it is refused.
 
@@ -1317,13 +1317,13 @@ A key is a token for one client: a name, the identity it writes as, and a scope.
 
 - [ ] **Step 2: README and the release doc**
 
-In `README.md`, add `docs/keys.md` to the docs line, add the three client routes to the API line and say the API is owner cookie or a minted key, and name `scripts/key-matrix.py` beside the other gates. In `docs/releasing.md` section 8, add the key gate as a step after the phase 1 gate: `python3 scripts/key-matrix.py http://localhost:8080 /tmp/wex.cookies` must print `ALL OK`.
+In `README.md`, add `docs/keys.md` to the docs line, add the three client routes to the API line and say the API is owner cookie or a minted key, and name `scripts/key-matrix.py` beside the other gates. In `docs/releasing.md` section 8, add the key gate as a step after the phase 1 gate: `python3 scripts/key-matrix.py $SHIP $JAR` must print `ALL OK`.
 
 - [ ] **Step 3: The spec, only where the code deviated**
 
 Read section 11 phase 3 against what landed: the token is `<id>.<secret>`; a batch with one item outside the scope is refused whole with 403 naming the first offender; a body, observation or action outside the scope answers exactly what a missing one answers (404, or 400 `about: no such body` for an action's `about`); `write` false is a read-only key; last use is stamped at most hourly; the owner-only routes are the client routes, delete body, schema, policy and everything under sharing. Where the spec says otherwise, change the sentence to match, one line per paragraph, no em-dashes. Do not add new promises.
 
-- [ ] **Step 4: Version 5 through the forge, and feb follows**
+- [ ] **Step 4: Version 5 through the forge, and the second ship follows**
 
 ```bash
 python3 - <<'PY'
@@ -1337,7 +1337,7 @@ curl -s -b $CK -X POST -H 'content-type: application/json' -d '{"repo":"orrery.g
 sleep 30; curl -s -b $CK "$W/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
 #   {"version": 5}
 sleep 60; curl -s -b $FK "$F/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/code/version.json?raw=1"
-#   {"version": 5}; feb polls wex, allow up to five minutes
+#   {"version": 5}; the second ship polls the dev ship, allow up to five minutes
 for pair in "$W $CK" "$F $FK"; do set -- $pair; curl -s -b $2 "$1/grubbery/ball$APP?info=1" | python3 -c 'import sys,json; d=json.load(sys.stdin); w=d.get("weir") or {}; print(d["bang"], [(k, len(v)) for k, v in w.items()])'; done
 #   None [('poke', 6), ('read', 3), ('write', 1)] on both. A shorter weir means the sync replaced the consent: re-approve with phase 2's granted object on that ship.
 python3 scripts/key-matrix.py $W $CK

@@ -9,7 +9,7 @@ Telegram pushes each update to the ship over HTTPS (`setWebhook`, with a secret 
 ## What stays the same
 
 - The ship stores facts, never messages. The one exception is the context window: the last five free-text messages per chat, text included, in the reader's own data file, dropped after a day, never in any view, key, share or prompt other than the reader's own. That window exists on the box today in `state.json`; only where it sits changes.
-- The prompts are the shared files: `orrery-utils/common/analyst-prompt.md` word for word, and the decider questions as `analyze.py` states them. Talon reads the same files.
+- The prompts are the shared files: `orrery-utils/common/analyst-prompt.md` word for word, and the decider questions as `analyze.py` states them. The phone client reads the same files.
 - The rules of the client guide, 1 to 16, hold for the ship's own reader as they hold for any client: never triage a message twice, resolve before you create, the schedule is not the fact, a status is a circumstance, the message window, replay safety, dismissal reasons, the calendar action rules, the escalate question.
 - Facts are signed `telegram`, source kind `chat`, source id `telegram/<chat id>/<message id>`, exactly as the bot signs them, so a backfill from an export and the live reader agree on what was read.
 

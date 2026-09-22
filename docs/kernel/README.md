@@ -34,7 +34,7 @@ After the patch, on a ship with orrery installed:
 
 `tools/list` does not change, and is not the thing to watch. `+handle-request` in `desk/gub/lib/mcp-rpc.hoon` filters that method to a three tool protocol allowlist (`echo`, `list_tools`, `call_tool`) whatever the registry holds, by design: `nex/mcp.hoon` calls it "the three-tool protocol allowlist that tools/list advertises to MCP clients". Clients reach everything else through `list_tools` and `call_tool`.
 
-Every desk under the shell that ships a `code/lib/tools` directory joins the registry, not just orrery. On `~wex` that means `wallet.desk` and its fourteen tools arrived alongside orrery's eight. Worth a line in the release notes.
+Every desk under the shell that ships a `code/lib/tools` directory joins the registry, not just orrery. On the dev ship that means `wallet.desk` and its fourteen tools arrived alongside orrery's eight. Worth a line in the release notes.
 
 The threat model changes, and it is worth stating plainly. The patch does not widen reachability: any file in any code namespace was already runnable by absolute path through `tools/call`, which runs it on the tools child, so no tool becomes callable that was not callable before. It widens advertisement: every installed desk's `code/lib/tools` directory is now listed to the user's MCP client, so a desk that ships tools is announcing them to whoever holds that client. Those tools run under the mcp tools child's weir, not under the desk's own ask, so what a desk tool can reach is what the mcp nexus was granted. And a bare-name collision across desks resolves in map order, so a desk's tools should carry a prefix the way orrery's do.
 
@@ -42,7 +42,7 @@ The threat model changes, and it is worth stating plainly. The patch does not wi
 
 ## How it was rehearsed
 
-On `~wex`, 2026-09-17, in two passes, each saving the original and comparing it byte for byte against the upstream file first, so the rehearsal patched what the ship actually runs.
+On the dev ship, 2026-09-17, in two passes, each saving the original and comparing it byte for byte against the upstream file first, so the rehearsal patched what the ship actually runs.
 
 | file | where it lives in the ball |
 |---|---|
@@ -51,7 +51,7 @@ On `~wex`, 2026-09-17, in two passes, each saving the original and comparing it 
 | `list-tools.hoon` | `/grubbery/ball/apps/mcp.mcp/tools.tools/code/lib/tools/list-tools.hoon` |
 
 ```bash
-W=http://localhost:8080; CK=/tmp/wex.cookies
+W=$SHIP; CK=$JAR                                                      # the dev ship's URL and its owner cookie jar
 F=$W/grubbery/ball/code/nex/mcp.hoon                                  # or a tools.tools file
 curl -s -b $CK "$F?raw=1" > orig.hoon                                 # keep this
 curl -s -b $CK -X POST --data-urlencode action=write-text \
@@ -61,7 +61,7 @@ sleep 20
 curl -s -b $CK "$W/grubbery/ball/apps/mcp.mcp?info=1"                 # bang: null
 ```
 
-To revert, write the originals back the same way and reload again. The `orig.hoon` copies are one source of them. The other is the grubbery checkout at `/home/sneagan/software/groundwire/grubbery`, whose `desk/gub/nex/mcp.hoon`, `desk/gub/lib/tool-bundle/tools/call-tool.hoon` and `desk/gub/lib/tool-bundle/tools/list-tools.hoon` are the unpatched originals until `git apply` lands the patch there.
+To revert, write the originals back the same way and reload again. The `orig.hoon` copies are one source of them. The other is the grubbery checkout, whose `desk/gub/nex/mcp.hoon`, `desk/gub/lib/tool-bundle/tools/call-tool.hoon` and `desk/gub/lib/tool-bundle/tools/list-tools.hoon` are the unpatched originals until `git apply` lands the patch there.
 
 The nexus needs the reload. The two bundle tools do not: the tools nexus compiles a tool on each call, so `call_tool` answered the new way the moment the file was saved. Both instances read `bang: null` afterward.
 
@@ -77,6 +77,6 @@ api/tools-tree                            root 15 + apps/orrery.desk 8 + apps/wa
 
 `list_tools` prints each tool's own declared `++  name`. For orrery's tools that is the underscore form, `orrery_state`, which is also the name the tools tree derives from the file name `orrery-state.hoon`. So the two listings agree, and `call_tool` reaches the same tool under either spelling, because it maps underscores to hyphens before it looks for the file.
 
-The rehearsal was left in place on `~wex`: no bang, the kernel's own tools all still answer, and the registry is a strict superset of the old one. Both gates (`scripts/mcp-matrix.py`, `scripts/api-matrix.py`) pass with it.
+The rehearsal was left in place on the dev ship: no bang, the kernel's own tools all still answer, and the registry is a strict superset of the old one. Both gates (`scripts/mcp-matrix.py`, `scripts/api-matrix.py`) pass with it.
 
 Calendar's and auspex's tools can leave the kernel's own bundle once this lands.
