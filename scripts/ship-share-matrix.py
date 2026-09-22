@@ -7,7 +7,9 @@ carries the peer's back; revoke keeps the data; a re-share works.
 HOST and PEER like http://localhost:8080; the jars from POST /~/login.
 Exits 1 on any failure. Safe to rerun: it revokes, declines and retracts
 what an earlier run left."""
-import json, subprocess, sys, time
+import sys, time
+from gate import fails, count, check, wait, dictish, listish, iso
+import gate
 from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
@@ -15,34 +17,13 @@ HOSTNAME, PEERNAME = '~wex', '~feb'
 GROUP = '/grubbery/ball/sys/ames/usergroups/orrery-person.sarah.grp?info=1'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
 PEER_POLICY = [None]
-fails = []
-count = [0]
-
-
 def curl(base, jar, method, path, body=None, timeout=60):
-    cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}',
-           '-b', jar, base + '/apps/orrery/api' + path]
-    if body is not None:
-        cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
+    return gate.curl(method, base + '/apps/orrery/api' + path, body, jar=jar, timeout=timeout)
 
 
 def raw(base, jar, path, timeout=60):
     """a read of the ship's own tree, outside /apps/orrery/api"""
-    cmd = ['curl', '-s', '-m', str(timeout), '-w', '\n%{http_code}', '-b', jar, base + path]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
+    return gate.curl('GET', base + path, jar=jar, timeout=timeout)
 
 
 def host(method, path, body=None):
@@ -51,34 +32,6 @@ def host(method, path, body=None):
 
 def peer(method, path, body=None):
     return curl(PEER, PJAR, method, path, body)
-
-
-def check(label, cond, detail=''):
-    count[0] += 1
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
-    if not cond:
-        fails.append(label)
-
-
-def wait(label, fn, secs):
-    """poll fn every 2 s until it answers truthy; check the result"""
-    deadline = time.time() + secs
-    got = None
-    while time.time() < deadline:
-        got = fn()
-        if got:
-            break
-        time.sleep(2)
-    check(label, bool(got), 'timed out after %ds' % secs)
-    return got
-
-
-def dictish(x):
-    return x if isinstance(x, dict) else {}
-
-
-def listish(x):
-    return x if isinstance(x, list) else []
 
 
 def group_ships():
@@ -92,10 +45,6 @@ def group_ships():
         if dictish(c).get('name') == 'who.ships':
             return dictish(c).get('size')
     return None
-
-
-def iso(dt):
-    return dt.replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def attrs_of(side, bid):

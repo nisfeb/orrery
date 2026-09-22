@@ -308,8 +308,43 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast) + telegramCard(telegram, telegramLast) +
+  // the chat card: the Tlon reader's settings, the DMs and channels the
+  // ship holds offered as boxes beside the lists, the people map, the last pass
+  function chatCard(c, last, dms, channels) {
+    c = c || {}; last = last || {}; dms = dms || {}; channels = channels || {};
+    var people = c.people ? JSON.stringify(c.people, null, 2) : '{}';
+    function boxes(name, held, picked, note) {
+      var items = (held.items || []).filter(function (x) { return picked.indexOf(x) < 0; });
+      if (!items.length) return note ? '<p class="muted">' + esc(note) + '</p>' : '';
+      return '<p class="muted">also on this ship: ' + items.map(function (x) {
+        return '<label class="box"><input type="checkbox" name="' + name + '-more" value="' + esc(x) + '"> ' + esc(x) + '</label>';
+      }).join(' ') + '</p>';
+    }
+    var out = '<div class="card"><h2>Chat</h2><div id="chat">' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the Tlon DMs and channels below every few minutes</label></p>' +
+      '<p><label class="field wide">DMs and group DMs (whom, comma separated) <input name="dms" value="' + esc((c.dms || []).join(',')) + '"></label></p>' + boxes('dms', dms, c.dms || [], dms.note) +
+      '<p><label class="field wide">channels (nests, comma separated) <input name="channels" value="' + esc((c.channels || []).join(',')) + '"></label></p>' + boxes('channels', channels, c.channels || [], channels.note) +
+      '<p><label class="field wide">people (ship to body id, JSON; a person body with a ship needs no row) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +
+      '<p><label class="box"><input type="checkbox" name="read_own"' + (c.read_own ? ' checked' : '') + '> read my own messages too</label> ' +
+      '<label class="field">every (minutes) <input name="poll_minutes" value="' + esc(c.poll_minutes != null ? c.poll_minutes : '') + '"></label> ' +
+      '<label class="field">first look back (hours) <input name="backfill_hours" value="' + esc(c.backfill_hours != null ? c.backfill_hours : '') + '"></label></p>' +
+      '<p><label class="field">gate (hundredths) <input name="gate" value="' + esc(c.gate != null ? c.gate : '') + '"></label> ' +
+      '<label class="field">escalate (hundredths) <input name="escalate" value="' + esc(c.escalate != null ? c.escalate : '') + '"></label> ' +
+      '<label class="field">messages per day at most <input name="max_daily_messages" value="' + esc(c.max_daily_messages != null ? c.max_daily_messages : '') + '"></label> ' +
+      '<label class="field">reader model <input name="model" value="' + esc(c.model || '') + '"></label></p>' +
+      '<p><button data-save-chat="1">save chat</button><button data-chat-wake="1">read now</button></p></div>';
+    if (last.at) {
+      out += '<p class="muted">Last pass at ' + fmtTime(last.at) + ', from ' + fmtTime(last.since) + ': read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + ', strangers ' + (last.strangers || 0) + ', held ' + (last.held || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    if (last.down && last.down.at) {
+      out += '<p class="bad">The model could not be read at ' + fmtTime(last.down.at) + '; the pass stopped there and retries on the next tick. Fix the model or the key and press read now.</p>';
+      (last.down.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -404,6 +439,7 @@
   var minted = null;
 
   function say(msg, bad) { statusEl.textContent = msg; statusEl.className = 'status' + (bad ? ' bad' : ''); }
+  function oops(e) { say(e.message, true); }
   function api(path, opts) {
     return fetch(API + path, Object.assign({ cache: 'no-store' }, opts || {})).then(function (r) {
       if (!r.ok) {
@@ -427,14 +463,23 @@
     var r = route(location.hash);
     var p;
     if (r.name !== 'keys') minted = null;
-    function state() { return api('/state').then(function (s) { if (typeof s.rev === 'number') lastRev = String(s.rev); return s; }); }
+    var proposed = null;
+    function state() {
+      return api('/state').then(function (s) {
+        if (typeof s.rev === 'number') lastRev = String(s.rev);
+        proposed = (s.actions || []).filter(function (a) { return a.status === 'proposed'; }).length;
+        return s;
+      });
+    }
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/dms'), api('/chat/channels')]).then(function (d) { view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10], d[11]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); });
-    p = p.then(function () { return api('/actions?status=proposed'); }).then(function (a) {
-      countEl.textContent = a.length ? String(a.length) : '';
+    // the state view carries every open action, so a view that read it
+    // has the count already; only settings and keys ask for it
+    p = p.then(function () { return proposed === null ? api('/actions?status=proposed').then(function (a) { return a.length; }) : proposed; }).then(function (n) {
+      countEl.textContent = n ? String(n) : '';
       say('');
     }).catch(function (e) { say(String(e.message || e), true); });
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
@@ -449,7 +494,7 @@
     if (b.dataset.retract) {
       var note = prompt('Why retract this observation?');
       if (note === null) return;
-      post('/retract', { id: b.dataset.retract, note: note, by: 'page' }).then(later).catch(function (e) { say(e.message, true); });
+      post('/retract', { id: b.dataset.retract, note: note, by: 'page' }).then(later).catch(oops);
     } else if (b.dataset.move) {
       var cut = b.dataset.move.indexOf(':');
       var moveId = b.dataset.move.slice(0, cut), moveTo = b.dataset.move.slice(cut + 1);
@@ -463,7 +508,7 @@
         if (!why.trim()) { say('a reason is needed to dismiss: it is what the generator learns from', true); return; }
         move.note = why.trim().slice(0, 500);
       }
-      post('/actions/' + seg(moveId), move).then(later).catch(function (e) { say(e.message, true); });
+      post('/actions/' + seg(moveId), move).then(later).catch(oops);
     } else if (b.dataset.refine) {
       var rid = b.dataset.refine;
       // The row is looked up fresh each time, since the writer's revision
@@ -499,12 +544,12 @@
       var which = b.dataset.save;
       var parsed;
       try { parsed = JSON.parse(document.getElementById(which).value); } catch (e) { say(which + ': ' + e.message, true); return; }
-      post('/' + which, parsed, 'PUT').then(function () { say(which + ' saved'); dirty = false; }).catch(function (e) { say(e.message, true); });
+      post('/' + which, parsed, 'PUT').then(function () { say(which + ' saved'); dirty = false; }).catch(oops);
     } else if (b.dataset.revoke) {
       if (!confirm('Revoke "' + b.dataset.name + '"? Its next request is refused.')) return;
-      api('/clients/' + seg(b.dataset.revoke), { method: 'DELETE' }).then(later).catch(function (e) { say(e.message, true); });
+      api('/clients/' + seg(b.dataset.revoke), { method: 'DELETE' }).then(later).catch(oops);
     } else if (b.dataset.mint) {
-      post('/clients', mintForm()).then(function (d) { minted = d; dirty = false; refresh(true); }).catch(function (e) { say(e.message, true); });
+      post('/clients', mintForm()).then(function (d) { minted = d; dirty = false; refresh(true); }).catch(oops);
     } else if (b.dataset.copy) {
       var text = document.getElementById(b.dataset.copy).textContent;
       if (!navigator.clipboard) { say('copy by hand: the browser offers no clipboard here', true); return; }
@@ -515,11 +560,11 @@
       refresh(true);
     } else if (b.dataset.saveGenerator) {
       say('saving generator settings');
-      post('/generator', generatorForm(), 'PUT').then(function () { dirty = false; say('generator saved'); }).catch(function (e) { say(e.message, true); });
+      post('/generator', generatorForm(), 'PUT').then(function () { dirty = false; say('generator saved'); }).catch(oops);
     } else if (b.dataset.generate) {
-      post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(function (e) { say(e.message, true); });
+      post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(oops);
     } else if (b.dataset.reconcile) {
-      post('/reconcile', {}).then(function () { say('reconcile started; the last run line updates when it ends'); setTimeout(refresh, 15000); }).catch(function (e) { say(e.message, true); });
+      post('/reconcile', {}).then(function () { say('reconcile started; the last run line updates when it ends'); setTimeout(refresh, 15000); }).catch(oops);
     } else if (b.dataset.saveTelegram) {
       var t = telegramForm();
       if (!t) return;
@@ -536,15 +581,22 @@
         say('telegram saved');
         b.disabled = false;
       }).catch(function (e) { say(e.message, true); b.disabled = false; });
+    } else if (b.dataset.saveChat) {
+      var c = chatForm();
+      if (!c) return;
+      say('saving chat settings');
+      post('/chat', c, 'PUT').then(function () { dirty = false; say('chat saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.chatWake) {
+      post('/chat/wake', {}).then(function () { say('reader woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.webhook) {
       say('asking Telegram to send updates here');
-      post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(function (e) { say(e.message, true); });
+      post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(oops);
     } else if (b.dataset.wake) {
-      post('/telegram/wake', {}).then(function () { say('reader woken; the card updates when it has read'); setTimeout(function () { refresh(true); }, 20000); }).catch(function (e) { say(e.message, true); });
+      post('/telegram/wake', {}).then(function () { say('reader woken; the card updates when it has read'); setTimeout(function () { refresh(true); }, 20000); }).catch(oops);
     } else if (b.dataset.execWake) {
       // the pass follows within a second or two, so the card is read back soon after
       say('waking the executor');
-      post('/exec/wake', {}).then(function () { say('executor woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 5000); }).catch(function (e) { say(e.message, true); });
+      post('/exec/wake', {}).then(function () { say('executor woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 5000); }).catch(oops);
     } else if (b.dataset.webhookInfo) {
       say('asking Telegram');
       api('/telegram/webhook').then(function (d) {
@@ -554,7 +606,7 @@
         el.textContent = 'Telegram holds url ' + (d.url || '(none: not registered)') + '; ' + (d.pending_update_count || 0) + ' updates waiting' +
           (d.last_error_message ? '; last delivery error ' + when + ': ' + d.last_error_message : '; no delivery error') + '.';
         say('');
-      }).catch(function (e) { say(e.message, true); });
+      }).catch(oops);
     } else if (b.dataset.makeSecret) {
       // a fresh secret: 32 random bytes as hex, in the field until saved
       var bytes = new Uint8Array(32);
@@ -566,8 +618,9 @@
   });
   // the generator form as the API takes it; a blank key is left out so
   // the stored one stays; "off" reasoning is {"enabled": false}
+  function field(scope, name) { var el = view.querySelector(scope + ' [name="' + name + '"]'); return el ? el.value.trim() : ''; }
   function generatorForm() {
-    function val(name) { var el = view.querySelector('#generator input[name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    var val = function (name) { return field('#generator', name); };
     var effort = val('effort').toLowerCase();
     var g = { enabled: !!view.querySelector('#generator input[name="enabled"]:checked'), url: val('url'), model: val('model'),
       reasoning: effort === 'off' ? { enabled: false } : { effort: effort || 'high' },
@@ -581,7 +634,7 @@
   // out so the stored one stays; people is JSON, and a parse error stops the
   // save with the message, so the form answers null
   function telegramForm() {
-    function val(name) { var el = view.querySelector('#telegram [name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    var val = function (name) { return field('#telegram', name); };
     var people;
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
     var t = { enabled: !!view.querySelector('#telegram input[name="enabled"]:checked'), public_url: val('public_url'), model: val('model'),
@@ -592,9 +645,26 @@
     if (val('secret')) t.secret = val('secret');
     return t;
   }
+  // the chat form as the API takes it: the typed lists plus the boxes
+  // ticked beside them; people is JSON, and a parse error stops the save
+  function chatForm() {
+    var val = function (name) { return field('#chat', name); };
+    function list(name) {
+      var typed = val(name).split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      Array.prototype.forEach.call(view.querySelectorAll('#chat input[name="' + name + '-more"]:checked'), function (el) { if (typed.indexOf(el.value) < 0) typed.push(el.value); });
+      return typed;
+    }
+    var people;
+    try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
+    return { enabled: !!view.querySelector('#chat input[name="enabled"]:checked'), dms: list('dms'), channels: list('channels'), people: people,
+      read_own: !!view.querySelector('#chat input[name="read_own"]:checked'),
+      poll_minutes: parseInt(val('poll_minutes'), 10) || 5, backfill_hours: parseInt(val('backfill_hours'), 10) || 24,
+      gate: parseInt(val('gate'), 10) || 0, escalate: parseInt(val('escalate'), 10) || 0,
+      max_daily_messages: parseInt(val('max_daily_messages'), 10) || 0, model: val('model') };
+  }
   // the mint form as the API takes it; sensitive: write only rides with write
   function mintForm() {
-    function val(name) { var el = view.querySelector('#mint input[name="' + name + '"]'); return el ? el.value.trim() : ''; }
+    var val = function (name) { return field('#mint', name); };
     function picked(name) {
       return Array.prototype.map.call(view.querySelectorAll('#mint input[name="' + name + '"]:checked'), function (el) { return el.value; });
     }
@@ -609,9 +679,6 @@
   // /rev", which EventSource cannot subscribe to; it carries the current
   // rev, so a bump missed while nobody watched shows as a difference) ----
   var timer = null;
-  // a re-render replaces the settings textareas and the mint form, so a
-  // bump waits while one of them has focus; the next bump after blur
-  // refreshes
   // a re-render replaces every form on the page, so it waits while a
   // field has focus or while any field holds what has not been saved:
   // a token pasted into the telegram card was lost to a timed refresh

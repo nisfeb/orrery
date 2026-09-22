@@ -8,32 +8,17 @@ exactly their scope and read nothing sensitive.
 Exits 1 on any failure. Safe to rerun: it revokes what it minted,
 retracts what it observed, deletes the bodies it made and restores the
 starter policy and the schema it found."""
-import json, subprocess, sys, time
+import json, sys, time
+from gate import fails, count, check, dictish, listish, iso, all_ok
+import gate
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
 API = HOST + '/apps/orrery/api'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
 STARTER_SCHEMA = [None]
-fails = []
-count = [0]
-
-
 def curl(method, path, body=None, jar=None, token=None, timeout=60):
-    cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', API + path]
-    if jar:
-        cmd += ['-b', jar]
-    if token:
-        cmd += ['-H', 'Authorization: Bearer ' + token]
-    if body is not None:
-        cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
+    return gate.curl(method, API + path, body, jar=jar, token=token, timeout=timeout)
 
 
 def owner(method, path, body=None):
@@ -42,25 +27,6 @@ def owner(method, path, body=None):
 
 def as_key(token):
     return lambda method, path, body=None: curl(method, path, body, token=token)
-
-
-def check(label, cond, detail=''):
-    count[0] += 1
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
-    if not cond:
-        fails.append(label)
-
-
-def dictish(x):
-    return x if isinstance(x, dict) else {}
-
-
-def listish(x):
-    return x if isinstance(x, list) else []
-
-
-def iso(dt):
-    return dt.replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def obs(subject, attr, value, at, sid):
@@ -80,11 +46,6 @@ def state_ids(side):
     if code != 200:
         return None
     return {b.get('id'): b for b in listish(dictish(d).get('bodies')) if isinstance(b, dict)}
-
-
-def all_ok(d, key, n):
-    items = listish(dictish(d).get(key))
-    return len(items) == n and all(dictish(r).get('ok') is True for r in items)
 
 
 def retract_all(bid, names):

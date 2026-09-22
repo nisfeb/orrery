@@ -60,9 +60,7 @@
   ;<  now=@da  bind:m  get-time:io
   =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
   ?^  no  (pure:m (fail:om u.no))
-  =/  op=json
-    %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]
+  =/  op=json  (set-action-op:orr `@ta`id want why who)
   ;<  err=(unit tang)  bind:m  (poke-writer:om op)
   ?^  err  (pure:m (fail:om 'the writer refused the poke'))
   =/  ans=json

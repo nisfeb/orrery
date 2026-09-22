@@ -36,7 +36,7 @@
     (expect !>((same-title:gen 'Call John\'s shop about the Subaru' 'Call the shop about the Subaru')))
     (expect !>(!(same-title:gen 'Pay the electricity bill' 'Call the shop about the Subaru')))
     (expect !>(!(same-title:gen '' 'Call the shop')))
-    (expect-eq !>(~['call' 'the' 'shop']) !>((norm-words:gen 'Call the SHOP!')))
+    (expect-eq !>(~['call' 'the' 'shop']) !>((tokens:gen 'Call the SHOP!')))
   ==
 ::  ==  the prompt
 ::
@@ -606,22 +606,23 @@
     (expect-eq !>('c1') !>(business:(need (tg-message:orr biz))))
     (expect-eq !>(*(unit tg-msg:orr)) !>((tg-message:orr (jo '{"update_id": 9, "edited_message": {}}'))))
     (expect-eq !>(*(unit tg-msg:orr)) !>((tg-message:orr (jo '{"update_id": 10, "message": {"message_id": 1, "date": 1, "text": "x"}}'))))
-    (expect-eq !>(`source:orr`['chat' 'telegram/-1001/13']) !>((tg-source:orr (need got))))
+    (expect-eq !>(`source:orr`['chat' 'telegram/-1001/13']) !>((tg-source:orr (need got) telegram-kind:orr)))
+    (expect-eq !>('chat/~sampel-palnet/~sampel-palnet/170.141.184.505') !>(id:(tg-source:orr ['~sampel-palnet' '~sampel-palnet' 'hi' now '~sampel-palnet/170.141.184.505' ''] chat-kind:orr)))
   ==
 ++  test-tg-window
   =/  m1=tg-msg:orr  ['1001' '42' 'first' (sub now ~h2) '1' '']
   =/  m2=tg-msg:orr  ['1001' '42' 'second' (sub now ~h1) '2' '']
   =/  old=tg-msg:orr  ['1001' '42' 'stale' (sub now ~d2) '0' '']
   =/  cmd=tg-msg:orr  ['1001' '42' '/status x' now '3' '']
-  =/  w=json  (tg-remember:orr (jo '{}') old 'person/me' (sub now ~d2))
-  =.  w  (tg-remember:orr w m1 'person/me' (sub now ~h2))
-  =.  w  (tg-remember:orr w m2 'person/me' (sub now ~h1))
-  =.  w  (tg-remember:orr w cmd 'person/me' now)
+  =/  w=json  (tg-remember:orr (jo '{}') old 'person/me' (sub now ~d2) telegram-kind:orr)
+  =.  w  (tg-remember:orr w m1 'person/me' (sub now ~h2) telegram-kind:orr)
+  =.  w  (tg-remember:orr w m2 'person/me' (sub now ~h1) telegram-kind:orr)
+  =.  w  (tg-remember:orr w cmd 'person/me' now telegram-kind:orr)
   =/  win  (tg-window:orr w '1001')
   =/  six=json
     %+  roll  (gulf 1 6)
     |=  [n=@ud acc=json]
-    (tg-remember:orr acc ['9' '42' (crip (a-co:co n)) now (crip (a-co:co n)) ''] 'person/me' now)
+    (tg-remember:orr acc ['9' '42' (crip (a-co:co n)) now (crip (a-co:co n)) ''] 'person/me' now telegram-kind:orr)
   ;:  weld
     ::  the stale one aged out, the command never went in
     (expect-eq !>(`(list @t)`~['telegram/1001/1' 'telegram/1001/2']) !>((turn win |=([id=@t *] id))))
@@ -646,12 +647,13 @@
     :~  ['telegram/1/1' '2026-09-17T16:00:00Z' 'person/me' 'jury duty tomorrow' &]
         ['telegram/1/2' '2026-09-17T16:10:00Z' 'person/me' 'home now, car is at the shop' |]
     ==
-  =/  p=tape  (trip (reader-prompt:orr rows ctx 'America/New_York'))
+  =/  p=tape  (trip (reader-prompt:orr rows ctx 'America/New_York' telegram-kind:orr))
   ;:  weld
     (expect-eq !>(`(list @t)`~['task' 'calendar' 'message']) !>(kinds.ctx))
     (expect-eq !>(3) !>((lent bodies.ctx)))
     (expect !>(?=(^ (find "person/sarah | Sarah | wife" p))))
     (expect !>(?=(^ (find "Channel: telegram" p))))
+    (expect !>(?=(^ (find "Channel: chat" (trip (reader-prompt:orr rows ctx 'America/New_York' chat-kind:orr))))))
     (expect !>(?=(^ (find "person: status, location" p))))
     (expect !>(?=(^ (find "person.status: what they are doing" p))))
     (expect !>(?=(^ (find "Action kinds you may propose: task, calendar, message" p))))
@@ -691,6 +693,80 @@
   ^-  (list window-row:orr)
   :~  ['telegram/1/1' '2026-09-17T16:00:00Z' 'person/me' 'jury duty tomorrow' &]
       ['telegram/1/2' '2026-09-17T16:10:00Z' 'person/me' 'home now, car is at the shop; dinner with sarah friday at 8 at the usual place' |]
+  ==
+::  ==  the chat reader: settings, story text and rows
+::
+++  test-chat-config
+  =/  c=chat-config:orr  (de-chat-config:orr (jo '{}'))
+  =/  full=chat-config:orr
+    %-  de-chat-config:orr
+    %-  jo
+    '{"enabled": true, "dms": [" ~sampel-palnet ", "0v4.abcde", ""], "channels": ["chat/~host/general"], "people": {"SAMPEL-PALNET": "person/sam", "~host": "person/me"}, "read_own": true, "poll_minutes": 2, "backfill_hours": 6, "gate": 0.5, "escalate": 70, "max_daily_messages": 9, "model": "x/y"}'
+  =/  back=chat-config:orr  (de-chat-config:orr (en-chat-config:orr full))
+  ;:  weld
+    (expect-eq !>(|) !>(enabled.c))
+    (expect-eq !>(5) !>(poll.c))
+    (expect-eq !>(24) !>(backfill.c))
+    (expect-eq !>(30) !>(gate.c))
+    (expect-eq !>(60) !>(escalate.c))
+    (expect-eq !>(500) !>(max-daily.c))
+    (expect-eq !>('deepseek/deepseek-v4-flash') !>(model.c))
+    (expect-eq !>((sy ~['~sampel-palnet' '0v4.abcde'])) !>(dms.full))
+    (expect-eq !>((sy ~['chat/~host/general'])) !>(channels.full))
+    (expect-eq !>(`(unit @t)``'person/sam') !>((~(get by people.full) '~sampel-palnet')))
+    (expect-eq !>(&) !>(read-own.full))
+    (expect-eq !>(2) !>(poll.full))
+    (expect-eq !>(50) !>(gate.full))
+    (expect-eq !>(70) !>(escalate.full))
+    (expect-eq !>(full) !>(back))
+    (expect-eq !>(50) !>(gate:(chat-as-tg:orr full)))
+  ==
+++  test-story-text
+  =/  story=json  (jo '[{"inline": ["hi ", {"bold": ["there"]}, {"break": null}, {"ship": "~sampel-palnet"}, " ", {"link": {"href": "https://x", "content": "a link"}}, {"inline-code": "ls"}]}, {"block": {"image": {"src": "x"}}}, {"inline": ["second verse"]}]')
+  ;:  weld
+    (expect-eq !>('hi there\0a~sampel-palnet a linkls\0asecond verse') !>((story-text:orr story)))
+    (expect-eq !>('') !>((story-text:orr ~)))
+  ==
+++  test-chat-rows
+  =/  cfg=chat-config:orr  (de-chat-config:orr (jo '{"dms": ["~sampel-palnet"], "channels": ["chat/~host/general"]}'))
+  =/  since=@da  (da-of-ms:orr 1.777.054.900.000)
+  =/  changes=json
+    %-  jo
+    '''
+    {"~sampel-palnet": {
+       "170.141.184.505.999.000.000.000.000.000.000.001": {"seal": {"id": "~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.001", "replies": {}}, "essay": {"content": [{"inline": ["old"]}], "author": "~sampel-palnet", "sent": 1777054800000}},
+       "170.141.184.505.999.000.000.000.000.000.000.002": {"seal": {"id": "~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.002", "replies": {}}, "essay": {"content": [{"inline": ["later"]}], "author": {"ship": "~sampel-palnet", "nickname": "Sam"}, "sent": 1777054920000}},
+       "170.141.184.505.999.000.000.000.000.000.000.003": {"seal": {"id": "~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.003", "replies": {"170.141.184.505.999.000.000.000.000.000.000.004": {"seal": {"id": "~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.004", "parent-id": "x"}, "reply-essay": {"content": [{"inline": ["a reply"]}], "author": "~sampel-palnet", "sent": 1777054930000}}}}, "essay": {"content": [{"inline": ["first"]}], "author": "~sampel-palnet", "sent": 1777054910000}},
+       "170.141.184.505.999.000.000.000.000.000.000.005": {"id": "x", "author": "~sampel-palnet", "seq": 5, "type": "tombstone"},
+       "170.141.184.505.999.000.000.000.000.000.000.006": {"seal": {"id": "~zod/170.141.184.505.999.000.000.000.000.000.000.006", "replies": {}}, "essay": {"content": [{"inline": ["mine"]}], "author": "~zod", "sent": 1777054940000}}
+     },
+     "~other-ship": {"170.141.184.505.999.000.000.000.000.000.000.007": {"seal": {"id": "~other-ship/170.141.184.505.999.000.000.000.000.000.000.007", "replies": {}}, "essay": {"content": [{"inline": ["not picked"]}], "author": "~other-ship", "sent": 1777054950000}}},
+     "0v4.club": null}
+    '''
+  =/  rows=(list tg-msg:orr)  (chat-rows:orr changes cfg since '~zod')
+  =/  own=(list tg-msg:orr)  (chat-rows:orr changes cfg(read-own &) since '~zod')
+  =/  posts=json
+    %-  jo
+    '''
+    {"chat/~host/general": {"170141184507933044937549665940933705728": {"seal": {"id": "170141184507933044937549665940933705728", "mod-at": "170.141", "seq": 961, "reacts": {}, "replies": {"170.141.184.507.933.045.432": {"seal": {"id": "170141184507933045432608980879542321152", "parent-id": "170141184507933044937549665940933705728", "reacts": {}}, "reply-essay": {"content": [{"inline": ["nice"]}], "author": "~sampel-palnet", "sent": 1777054928725, "blob": null}}}, "meta": null}, "essay": {"content": [{"inline": ["hello channel"]}], "author": "~ricsul-bilwyt-dozzod-nisfeb", "sent": 1777054902389, "kind": "/chat", "blob": null, "meta": null}, "type": "post"}},
+     "chat/~host/other": null}
+    '''
+  =/  prows=(list tg-msg:orr)  (channel-rows:orr posts cfg since '~zod')
+  ;:  weld
+    (expect-eq !>(3) !>((lent rows)))
+    (expect-eq !>(`(list @t)`~['first' 'later' 'a reply']) !>((turn rows |=(m=tg-msg:orr text.m))))
+    (expect-eq !>('~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.003') !>(mid:(snag 0 rows)))
+    (expect-eq !>('~sampel-palnet') !>(chat:(snag 0 rows)))
+    (expect-eq !>('~sampel-palnet') !>(from:(snag 1 rows)))
+    (expect-eq !>('~sampel-palnet/170.141.184.505.999.000.000.000.000.000.000.004') !>(mid:(snag 2 rows)))
+    (expect-eq !>(4) !>((lent own)))
+    (expect-eq !>('mine') !>(text:(rear own)))
+    (expect-eq !>(2) !>((lent prows)))
+    (expect-eq !>('hello channel') !>(text:(snag 0 prows)))
+    (expect-eq !>('170141184507933044937549665940933705728') !>(mid:(snag 0 prows)))
+    (expect-eq !>('~ricsul-bilwyt-dozzod-nisfeb') !>(from:(snag 0 prows)))
+    (expect-eq !>('chat/~host/general') !>(chat:(snag 1 prows)))
+    (expect-eq !>('nice') !>(text:(snag 1 prows)))
   ==
 ++  test-validate-reader
   =/  answer=json

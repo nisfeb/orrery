@@ -190,6 +190,12 @@ An update the analyst could not read (unreachable, a timeout, 401 to 404, 408, 4
 
 The reader sends nothing: the `via: telegram` executor is the ship's own, below.
 
+#### The chat reader
+
+The ship reads your Tlon DMs, group DMs and the group channels you pick (version 39). Turn it on on the Chat card under Settings, list the conversations (a DM is its `whom`, `~ship` or `0v...`; a channel its nest, `chat/~host/name`; the card offers what the ship holds), and map any sender the ship does not know to a person; a person body that carries a ship needs no row. Every `poll_minutes` (5) the reader asks the groups desk for what changed since its last pass, through the ship's own scry service (the `/sys/scry/` road, approved on the permits page), and reads each new writ or post through the pipeline the Telegram reader uses, with the same gate, analyst, checks and window, the analyst told `Channel: chat`. The first pass looks back `backfill_hours` (24). Your own words are skipped unless `read_own` is set. A sender in no map is a stranger and is counted, not read.
+
+Facts are signed `chat`, their source `{"kind": "chat", "id": "chat/<whom or nest>/<message id>"}`, the ids the phone client's reader used, so a client that still reads chats must stop or the same message is triaged twice. `GET` and `PUT /api/chat` take the owner or a key with `write`, so a client can set the lists. `GET /api/chat/last` is the record: `since` is where the next pass starts, and it moves only when every message of a pass was read, so a model outage leaves the rest for the next tick, said under `down`; `POST /api/chat/wake` runs a pass now. Without the groups desk, or with the road refused, the record says so and nothing is read.
+
 #### The executor
 
 The ship carries out its own approved actions (version 34). An executor fiber keeps the beacon and, on every change, takes each approved action it can serve.
@@ -372,7 +378,7 @@ curl -s -b jar -H 'content-type: application/json' -X POST $SHIP/apps/grubbery/d
   -d '{"name": "orrery", "code": "~ricsul-bilwyt/apps/shell.shell/desks/orrery.desk/desk/code"}'
 ```
 
-When the desk lands, a consent prompt on `/apps/grubbery/permits` asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, `/sys/iris/` for the model calls, the calendar and auspex desks for the executor, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off; refuse the calendar or auspex roads and those actions are left for another executor. Then open `/apps/orrery`.
+When the desk lands, a consent prompt on `/apps/grubbery/permits` asks you to approve the roads it reaches outside its own tree: the time and your ship, the web binding, notifications, the link registry, `/sys/iris/` for the model calls, `/sys/scry/` for the chat reader, the calendar and auspex desks for the executor, and the sharing roads (the poke that reaches the other ship, behn timers, ames peeks and usergroups). Refuse the sharing roads and everything else keeps working with sharing off; refuse the calendar or auspex roads and those actions are left for another executor. Then open `/apps/orrery`.
 
 First settings, all under Settings on the page: rename `person/me` and give it a `timezone`; on the Generator card set the model and the key and turn it on if you want the ship to propose; on the Telegram card set the bot token, a secret and the ship's public URL, list the chats and map the people, and press register if you want the ship to read Telegram. A later release that adds a road raises the consent prompt again; anything else lands on its own whenever the publisher republishes `code/version.json`. `docs/releasing.md` is the maintainer's side of that.
 
@@ -423,6 +429,10 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; the owner or a key with `write` (version 38), so a client walking the owner through the setup can finish it |
 | `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; the owner or a key with `write` |
 | `POST /telegram/wake` | wake the reader: drain the inbox now, an update kept through a model outage included, or restart a reader that crashed; owner only |
+| `GET` and `PUT /chat` | the chat reader's settings (`enabled`, `dms`, `channels`, `people`, `read_own`, `poll_minutes`, `backfill_hours`, `gate`, `escalate`, `max_daily_messages`, `model`); a key given replaces its value whole, one left out keeps it; the owner or a key with `write` |
+| `GET /chat/last` | the last pass: `since`, `at`, `read`, `filed`, `strangers`, `held`, `notes`, `read_today`, `down`; owner only |
+| `POST /chat/wake` | run a pass now, or restart a reader that crashed; owner only |
+| `GET /chat/dms`, `GET /chat/channels` | what the groups desk holds, for the card: `items` and a `note` when there are none; owner only |
 | `GET /exec/last` | what the executor's last pass did: `claimed`, `sent`, `placed`, `failed` (id, title and note, newest first, twenty at most), todos `ticked`, `deleted` and `moved`, tasks `closed` from the calendar, todos `adopted`, the desks link could not find in `missing`, and `notes`; `at` is when it last looked, `acted_at` when those counts happened, since a pass that did nothing keeps the last one that did; owner only |
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
@@ -433,7 +443,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
 | `POST /actions/<id>/refine` | `{"text"}`: a note at approval revises a `proposed` action, owner or a key whose `actions` names the kind, with `write`; answers `{"ok", "action", "extras", "note"}`; 409 unless the action is `proposed` and a task, a calendar event or a message |
 | `GET` and `PUT /schema`, `/policy` | the whole document; owner only |
-| `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only |
+| `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only. `/sync` prods the follower and answers 500 when that fiber refused the poke, as the telegram and executor wakes do |
 | `POST /clients`, `GET /clients`, `DELETE /clients/<id>` | keys; owner only |
 
 Live updates come from the instance's change beacon, streamed through grubbery's keep-SSE at `/grubbery/api/keep/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/beacon/rev`. It moves once per write that changed something, and a client that sees it move refetches what it shows. A write answers before the writer applies it, so read the state view for the new `rev`.

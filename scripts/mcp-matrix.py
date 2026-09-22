@@ -6,41 +6,24 @@ against the HTTP API's answers for the same reads. HOST like
 http://localhost:8080; JAR a curl cookie jar from POST /~/login (the
 MCP server answers JSON-RPC to the owner cookie). Exits 1 on any
 failure. Safe to rerun: it retracts and deletes what it made."""
-import json, subprocess, sys
+import json, sys
+from gate import fails, count, check, dictish, listish, iso, all_ok
+import gate
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
 MCP = HOST + '/grubbery/mcp'
 API = HOST + '/apps/orrery/api'
 TOOLS = '/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/'
-fails = []
-count = [0]
 seq = [0]
 
 
 def post(url, body, timeout=120):
-    cmd = ['curl', '-s', '-m', str(timeout), '-X', 'POST', '-w', '\n%{http_code}', '-b', JAR,
-           '-H', 'content-type: application/json', '-d', json.dumps(body), url]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
+    return gate.curl('POST', url, body, jar=JAR, timeout=timeout)
 
 
 def http(method, path, body=None):
-    cmd = ['curl', '-s', '-m', '60', '-X', method, '-w', '\n%{http_code}', '-b', JAR, API + path]
-    if body is not None:
-        cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
+    return gate.curl(method, API + path, body, jar=JAR)
 
 
 def call(tool, args):
@@ -59,30 +42,6 @@ def call(tool, args):
         return True, json.loads(text)
     except (json.JSONDecodeError, TypeError):
         return True, text
-
-
-def check(label, cond, detail=''):
-    count[0] += 1
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
-    if not cond:
-        fails.append(label)
-
-
-def dictish(x):
-    return x if isinstance(x, dict) else {}
-
-
-def listish(x):
-    return x if isinstance(x, list) else []
-
-
-def iso(dt):
-    return dt.replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-def all_ok(d, key, n):
-    items = listish(dictish(d).get(key))
-    return len(items) == n and all(dictish(r).get('ok') is True for r in items)
 
 
 def body_attrs(bid):

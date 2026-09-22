@@ -310,6 +310,20 @@
   ^-  @t
   =/  v=json  (gj jon k)
   ?:(?=([%s *] v) p.v '')
+++  num-cord                                    ::  a number or a string as text, or ''
+  |=  j=json
+  ^-  @t
+  ?:  ?=([%n *] j)  p.j
+  ?:  ?=([%s *] j)  p.j
+  ''
+++  err-entry                                   ::  a refused item's answer
+  |=  msg=@t
+  ^-  json
+  (pairs:enjs:format ~[['ok' b+|] ['error' s+msg]])
+++  err-json                                    ::  a refused request's body: the page reads error, a client note
+  |=  msg=@t
+  ^-  json
+  (pairs:enjs:format ~[['error' s+msg] ['note' s+msg]])
 ++  gn                                          ::  a whole number
   |=  [jon=json k=@t]
   ^-  (unit @ud)
@@ -693,6 +707,22 @@
   =/  ps=(list row)  (fall (~(get by winners) 'participants') ~)
   ?.  (lien (refs-in ps) |=(b=bid =(b target)))  ~
   `id
+::  +involvement: every body's open situations, from one walk over the
+::  situations rather than one per body, for the state view
+::
+++  involvement
+  |=  sits=(list [id=bid winners=(map @t (list row))])
+  ^-  (map bid (list bid))
+  =/  acc=(map bid (list bid))
+    %+  roll  sits
+    |=  [[id=bid winners=(map @t (list row))] acc=(map bid (list bid))]
+    ?:  (is-closed winners)  acc
+    %+  roll  (refs-in (fall (~(get by winners) 'participants') ~))
+    |=  [b=bid acc=_acc]
+    =/  cur=(list bid)  (fall (~(get by acc) b) ~)
+    ?:  &(?=(^ cur) =(i.cur id))  acc
+    (~(put by acc) b [id cur])
+  (~(run by acc) flop)
 ::  ==  resolve
 ::
 ++  lower  |=(t=@t ^-(@t (crip (cass (trip t)))))
@@ -1512,6 +1542,7 @@
   =/  shown=(list loaded)
     ?:  =('' kind)  all
     (skim all |=(l=loaded =(kind `@t`kind.body.l)))
+  =/  inv=(map bid (list bid))  (involvement sits)
   =/  bodies=(list json)
     %+  turn  shown
     |=  l=loaded
@@ -1522,7 +1553,7 @@
     :-  %o
     %-  ~(gas by p.base)
     :~  ['attrs' (en-attrs winners multi)]
-        ['involved' a+(turn (involved id.l sits) |=(b=bid `json`s+b))]
+        ['involved' a+(turn (fall (~(get by inv) id.l) ~) |=(b=bid `json`s+b))]
     ==
   %-  pairs:enjs:format
   :~  ['rev' rev]
@@ -1571,46 +1602,15 @@
   ?:(=('' st) 'open' st)
 ::  +lte-iso: ISO 8601 UTC strings of one shape compare as text
 ::
-++  lte-iso  |=([a=@t b=@t] ^-(? !(gth-cord a b)))
-++  gth-cord
-  |=  [a=@t b=@t]
-  ^-  ?
-  =/  ta=tape  (trip a)
-  =/  tb=tape  (trip b)
-  |-
-  ?~  ta  |
-  ?~  tb  &
-  ?:  =(i.ta i.tb)  $(ta t.ta, tb t.tb)
-  (gth i.ta i.tb)
-::  +norm-words: a title as lowercase words, punctuation gone
-::
-++  norm-words
-  |=  t=@t
-  ^-  (list @t)
-  =/  low=tape  (cass (trip t))
-  =/  clean=tape
-    %+  turn  low
-    |=(c=@ ?:(|(&((gte c 'a') (lte c 'z')) &((gte c '0') (lte c '9'))) c ' '))
-  (turn (split-spaces clean) crip)
-::  +split-spaces: the non-empty runs between spaces
-::
-++  split-spaces
-  |=  t=tape
-  ^-  (list tape)
-  =|  cur=tape
-  =|  out=(list tape)
-  |-
-  ?~  t  (flop ?:(=(~ cur) out [(flop cur) out]))
-  ?:  =(' ' i.t)  $(t t.t, cur ~, out ?:(=(~ cur) out [(flop cur) out]))
-  $(t t.t, cur [i.t cur])
+++  lte-iso  |=([a=@t b=@t] ^-(? (aor a b)))
 ::  +same-title: the same words, or four fifths of the shorter title's
 ::  words (at least two) in the longer
 ::
 ++  same-title
   |=  [a=@t b=@t]
   ^-  ?
-  =/  ka=(set @t)  (sy (norm-words a))
-  =/  kb=(set @t)  (sy (norm-words b))
+  =/  ka=(set @t)  (sy (tokens a))
+  =/  kb=(set @t)  (sy (tokens b))
   ?:  |(=(~ ka) =(~ kb))  |
   ?:  =(ka kb)  &
   =/  both=@ud  ~(wyt in (~(int in ka) kb))
@@ -1641,7 +1641,7 @@
   |=  t=@t
   ^-  @t
   =/  flat=tape  (turn (trip t) |=(c=@ ?:(|(=(c 10) =(c 9) =(c 13)) ' ' c)))
-  (crip (join-tapes " " (split-spaces flat)))
+  (crip (join-tapes " " (split-char ' ' flat)))
 ++  join-tapes
   |=  [sep=tape xs=(list tape)]
   ^-  tape
@@ -2006,8 +2006,8 @@
 ++  restates
   |=  [title=@t event=@t]
   ^-  ?
-  =/  kt=(set @t)  (sy (norm-words title))
-  =/  ke=(set @t)  (sy (norm-words event))
+  =/  kt=(set @t)  (sy (tokens title))
+  =/  ke=(set @t)  (sy (tokens event))
   ?:  =(~ ke)  |
   ?.  =(~ (~(dif in ke) kt))  |
   =(~ (~(dif in (~(dif in kt) ke)) attend-words))
@@ -2018,9 +2018,6 @@
   ^-  (unit @t)
   ?~  xs  ~
   ?:((f i.xs) `i.xs $(xs t.xs))
-::  +cass-cord: a cord lowercased
-::
-++  cass-cord  |=(t=@t ^-(@t (crip (cass (trip t)))))
 ::  +validate: what the answer keeps. A kind the schema lists (task and
 ::  note when it lists none), a title, not a rewording of anything open
 ::  or decided, not a todo for an event the calendar already holds (a
@@ -2049,7 +2046,7 @@
     [(flop acts) (weld (flop notes) said)]
   =/  a=json  i.todo
   ?.  ?=([%o *] a)  $(todo t.todo)
-  =/  kind=@t  =/(k (cass-cord (gs a 'kind')) ?:(=('' k) 'task' k))
+  =/  kind=@t  =/(k (lower (gs a 'kind')) ?:(=('' k) 'task' k))
   =/  title=@t  (end [3 200] (gs a 'title'))
   ?:  |(!(~(has in kinds) kind) =('' title))
     $(todo t.todo, notes [(rap 3 'dropped: kind ' kind ' or no title (' (end [3 40] title) ')' ~) notes])
@@ -2058,7 +2055,7 @@
   =/  restated=(unit @t)  (find-first events |=(e=@t (restates title e)))
   ?^  restated
     $(todo t.todo, notes [(rap 3 'dropped as a todo for an event on the calendar: ' title ' (' u.restated ')' ~) notes])
-  =/  about=(list @t)  (turn (strings (ga a 'about')) cass-cord)
+  =/  about=(list @t)  (turn (strings (ga a 'about')) lower)
   =/  bad=(list @t)  (skip about |=(b=@t (~(has in known) b)))
   ?^  bad
     $(todo t.todo, notes [(rap 3 'dropped ' title ': names bodies that do not exist: ' (join-cords ', ' bad) ~) notes])
@@ -2157,16 +2154,18 @@
   =.  latest  (max latest u.start)
   ?.  &((lth u.start cutoff) (lth latest cutoff))  ~
   `[id.l (after latest) (rap 3 'started ' (en-iso u.start) ', nothing since ' (en-iso latest) ~)]
-::  +retire-ops: the plans as observe ops for the writer, each a status
-::  closed row at its close time, signed retire
+::  +retire-ops, +expire-ops, +status-ops: the plans as observe ops for
+::  the writer, each a status row at its time, signed retire
 ::
-++  retire-ops
-  |=  plans=(list [id=bid at=@da why=@t])
+++  retire-ops  |=(plans=(list [id=bid at=@da why=@t]) (status-ops plans 'closed' 90))
+++  expire-ops  |=(plans=(list [id=bid at=@da why=@t]) (status-ops plans 'delivered' 60))
+++  status-ops
+  |=  [plans=(list [id=bid at=@da why=@t]) status=@t conf=@ud]
   ^-  (list json)
   %+  observe-ops  ~
   %+  turn  plans
   |=  [id=bid at=@da why=@t]
-  (obs-row id 'status' s+'closed' at ~ 90 ['retire' (cat 3 'retire/' id)] 'retire')
+  (obs-row id 'status' s+status at ~ conf ['retire' (cat 3 'retire/' id)] 'retire')
 ::  +plan-expire: a thing whose status is a stage of a delivery and has
 ::  stood past its grace is presumed delivered: out for delivery three
 ::  days on, shipped or in transit a fortnight on. The new row is dated
@@ -2196,13 +2195,6 @@
   =/  due=@da  (add at.obs.i.w u.grace)
   ?.  (lth due now)  ~
   `[id.l due (rap 3 st ' since ' (en-iso at.obs.i.w) ', presumed delivered' ~)]
-++  expire-ops
-  |=  plans=(list [id=bid at=@da why=@t])
-  ^-  (list json)
-  %+  observe-ops  ~
-  %+  turn  plans
-  |=  [id=bid at=@da why=@t]
-  (obs-row id 'status' s+'delivered' at ~ 60 ['retire' (cat 3 'retire/' id)] 'retire')
 ::  ==  reconcile: associating what the readers left apart (the passes of
 ::  reconcile.py, on-ship 2026-09-20). Each planner is pure over the
 ::  loaded bodies and answers the writer ops to file, in order.
@@ -2237,9 +2229,9 @@
       ==
   $(bodies (slag 50 bodies), rows (slag 200 rows))
 ++  retract-op
-  |=  [id=@ta why=@t]
+  |=  [id=@ta why=@t by=@t]
   ^-  json
-  (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+'reconcile']])
+  (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+by]])
 ++  delete-op
   |=  id=bid
   ^-  json
@@ -2249,9 +2241,9 @@
   ^-  json
   (pairs:enjs:format ~[['op' s+'merge'] ['from' s+from] ['into' s+into]])
 ++  set-action-op
-  |=  [id=@ta status=@t why=@t]
+  |=  [id=@ta status=@t why=@t by=@t]
   ^-  json
-  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'reconcile']])
+  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+by]])
 ::  the settings, under policy.reconcile
 ::
 ++  reconcile-of
@@ -2632,7 +2624,7 @@
       =/  v=(unit @da)  (de-iso p.value.obs.r)
       ?~(v | (lte u.v now))
     =/  rs=(list json)
-      (turn stale |=(r=row (retract-op id.r 'reconcile: this occurrence has passed')))
+      (turn stale |=(r=row (retract-op id.r 'reconcile: this occurrence has passed' 'reconcile')))
     =/  ws=(list json)
       ?~  ahead  ~
       %+  turn  stale
@@ -2645,7 +2637,7 @@
       =/  v=(unit @da)  (de-iso-any p.value.obs.r)
       ?~(v | (lte u.v (sub now ~d1)))
     =/  skipped-rs=(list json)
-      (turn skipped-stale |=(r=row (retract-op id.r 'reconcile: the occurrence has passed')))
+      (turn skipped-stale |=(r=row (retract-op id.r 'reconcile: the occurrence has passed' 'reconcile')))
     $(rest t.rest, retracts (weld (flop (weld rs skipped-rs)) retracts), writes (weld (flop ws) writes))
   ?.  =(%situation kind.body.l)  $(rest t.rest)
   =/  got=[rs=(list json) ws=(list json)]
@@ -2656,13 +2648,13 @@
     =/  src=source  ['reconcile' (cat 3 'times/' id.r)]
     =/  sv=(unit @da)  ?.(?=([%s *] value.obs.r) ~ (de-iso p.value.obs.r))
     ?:  &(|(=('started' a) =('ended' a)) ?=(^ sv) (gth u.sv now))
-      :-  [(retract-op id.r 'reconcile: a future time is a schedule, not a fact') rs.acc]
+      :-  [(retract-op id.r 'reconcile: a future time is a schedule, not a fact' 'reconcile') rs.acc]
       [(obs-row id.l ?:(=('started' a) 'starts' 'ends') s+(en-iso u.sv) learned ~ conf.obs.r src 'reconcile') ws.acc]
     ?:  &(|(=('starts' a) =('ends' a)) ?=([%s *] value.obs.r) (gth at.obs.r now))
-      :-  [(retract-op id.r 'reconcile: a schedule is known when it was learned') rs.acc]
+      :-  [(retract-op id.r 'reconcile: a schedule is known when it was learned' 'reconcile') rs.acc]
       [(obs-row id.l a value.obs.r now ~ conf.obs.r src 'reconcile') ws.acc]
     ?:  &(=('status' a) ?=([%s *] value.obs.r) !(status-word (lower p.value.obs.r)))
-      [[(retract-op id.r 'reconcile: a situation is open, closed or cancelled; the times say the rest') rs.acc] ws.acc]
+      [[(retract-op id.r 'reconcile: a situation is open, closed or cancelled; the times say the rest' 'reconcile') rs.acc] ws.acc]
     acc
   $(rest t.rest, retracts (weld rs.got retracts), writes (weld ws.got writes))
 ::  +plan-activities: situations that are occurrences of one repeating
@@ -2756,16 +2748,10 @@
       |=(x=@t =('' x))
     ?~(ls '' i.ls)
   =/  parts=(list bid)
-    =/  raw=(list bid)
-      %-  zing
-      %+  turn  occ
-      |=(o=[* * * w=(map @t (list row))] (refs-in (fall (~(get by w.o) 'participants') ~)))
-    =|  seen=(set bid)
-    =|  out=(list bid)
-    |-
-    ?~  raw  (flop out)
-    ?:  (~(has in seen) i.raw)  $(raw t.raw)
-    $(raw t.raw, seen (~(put in seen) i.raw), out [i.raw out])
+    %-  dedupe
+    %-  zing
+    %+  turn  occ
+    |=(o=[* * * w=(map @t (list row))] (refs-in (fall (~(get by w.o) 'participants') ~)))
   =/  rows=(list json)
     %-  zing
     :~  ~[(obs-row aid 'status' s+'active' base ~ 90 src0 'reconcile')]
@@ -2934,7 +2920,7 @@
     |=  [id=@ta a=action]
     ^-  (unit json)
     ?.  =(key (sy `(list @t)`~[(gs payload.a 'from') (gs payload.a 'into')]))  ~
-    `(set-action-op id 'dismissed' why)
+    `(set-action-op id 'dismissed' why 'reconcile')
   %+  roll  props
   |=  [[from=bid into=bid why=@t] acc=[ops=(list json) proposed=@ud]]
   =/  key=(set @t)  (sy `(list @t)`~[from into])
@@ -2966,7 +2952,7 @@
     |=  [id=@ta a=action]
     ^-  (unit json)
     ?:  &((~(has in ids) (gs payload.a 'from')) (~(has in ids) (gs payload.a 'into')))  ~
-    `(set-action-op id 'dismissed' 'reconcile: a body in this pair is gone')
+    `(set-action-op id 'dismissed' 'reconcile: a body in this pair is gone' 'reconcile')
   =/  got  (people-ops (plan-people all multi now) acts now)
   [(weld stale ops.got) proposed.got]
 ::  +approved-merges: the merge actions the owner approved, for the
@@ -3053,6 +3039,26 @@
       escalate=@ud
       max-daily=@ud
   ==
+::  +merge-settings: a settings document merged over the stored one. A
+::  secret left blank keeps the stored value, a JSON null clears it.
+::
+++  merge-settings
+  |=  [base=(map @t json) doc=(map @t json) secrets=(set @t)]
+  ^-  (map @t json)
+  %+  roll  ~(tap by doc)
+  |=  [[k=@t v=json] acc=_base]
+  ?.  (~(has in secrets) k)  (~(put by acc) k v)
+  ?:  ?=(~ v)  (~(del by acc) k)
+  ?:  &(?=([%s *] v) =('' p.v))  acc
+  (~(put by acc) k v)
+::  +short-secret: a webhook secret under 16 bytes, which is refused;
+::  a blank one is not a secret at all and keeps the stored one
+::
+++  short-secret
+  |=  doc=json
+  ^-  ?
+  =/  s=@t  (gs doc 'secret')
+  &(!=('' s) (lth (met 3 s) 16))
 ::  +hundredths: a JSON number (0.3, "0.6", 1) as hundredths, 0 to 100.
 ::  A value at or above 1 is already hundredths, so 30 stays 30 and the
 ::  page can read a threshold back and write it again unchanged; 0.3 is
@@ -3062,14 +3068,20 @@
 ++  hundredths
   |=  [j=json default=@ud]
   ^-  @ud
-  =/  t=@t
-    ?:  ?=([%n *] j)  p.j
-    ?:  ?=([%s *] j)  p.j
-    ''
+  =/  t=@t  (num-cord j)
   ?:  =('' t)  default
   =/  micro=@ud  (micro-of t)
   ?:  (gte micro 1.000.000)  (min 100 (div micro 1.000.000))
   (min 100 (div micro 10.000))
+::  +$  reader-kind: what tells one reader's rows from another's: the
+::  channel word the analyst reads, the signer on every fact, the
+::  source-id prefix, and the reader's own window and record files.
+::  The Telegram reader and the chat reader share every arm below
+::  through it.
+::
++$  reader-kind  [channel=@t by=@t prefix=@t recent=@ta last=@ta]
+++  telegram-kind  ^-(reader-kind ['telegram' 'telegram' 'telegram/' %'telegram-recent.json' %'telegram-last.json'])
+++  chat-kind      ^-(reader-kind ['chat' 'chat' 'chat/' %'chat-recent.json' %'chat-last.json'])
 ::  +de-tg-config: the stored telegram.json as the reader's settings. A
 ::  chat id arrives as a number or a string and is kept as text either
 ::  way, since a chat id is a name, not a quantity.
@@ -3077,15 +3089,7 @@
 ++  de-tg-config
   |=  j=json
   ^-  tg-config
-  =/  chats=(set @t)
-    %-  sy
-    ^-  (list @t)
-    %+  turn  (ga j 'chats')
-    |=  c=json
-    ^-  @t
-    ?:  ?=([%s *] c)  p.c
-    ?:  ?=([%n *] c)  p.c
-    ''
+  =/  chats=(set @t)  (sy (turn (ga j 'chats') num-cord))
   =/  people=(map @t @t)
     =/  p=json  (gj j 'people')
     ?.  ?=([%o *] p)  ~
@@ -3137,14 +3141,8 @@
   =/  biz=json  (gj update 'business_message')
   =/  msg=json  ?:(?=([%o *] biz) biz (gj update 'message'))
   ?.  ?=([%o *] msg)  ~
-  =/  num
-    |=  j=json
-    ^-  @t
-    ?:  ?=([%n *] j)  p.j
-    ?:  ?=([%s *] j)  p.j
-    ''
-  =/  chat=@t  (num (gj (gj msg 'chat') 'id'))
-  =/  from=@t  (num (gj (gj msg 'from') 'id'))
+  =/  chat=@t  (num-cord (gj (gj msg 'chat') 'id'))
+  =/  from=@t  (num-cord (gj (gj msg 'from') 'id'))
   ?:  |(=('' chat) =('' from))  ~
   =/  secs=@ud  (fall (gn msg 'date') 0)
   :-  ~
@@ -3152,13 +3150,13 @@
       from
       (crip (trim-tape (trip (gs msg 'text'))))
       (add ~1970.1.1 (mul secs ~s1))
-      (num (gj msg 'message_id'))
+      (num-cord (gj msg 'message_id'))
       ?:(?=([%o *] biz) (gs msg 'business_connection_id') '')
   ==
 ++  tg-source
-  |=  m=tg-msg
+  |=  [m=tg-msg kind=reader-kind]
   ^-  source
-  ['chat' (rap 3 'telegram/' chat.m '/' mid.m ~)]
+  ['chat' (rap 3 prefix.kind chat.m '/' mid.m ~)]
 ::  +tg-window: a chat's last free-text messages, oldest first, as the
 ::  analyst's context rows
 ++  tg-window
@@ -3173,7 +3171,7 @@
 ::  with a slash and an empty text never go in, five per chat, nothing
 ::  older than a day
 ++  tg-remember
-  |=  [recent=json m=tg-msg who=@t now=@da]
+  |=  [recent=json m=tg-msg who=@t now=@da kind=reader-kind]
   ^-  json
   =/  base=(map @t json)  ?:(?=([%o *] recent) p.recent ~)
   ?:  |(=('' text.m) =('/' (end [3 1] text.m)))  [%o base]
@@ -3185,7 +3183,7 @@
     ?~(at & (lth u.at cutoff))
   =/  row=json
     %-  pairs:enjs:format
-    :~  ['id' s+id:(tg-source m)]
+    :~  ['id' s+id:(tg-source m kind)]
         ['at' s+(en-iso at.m)]
         ['who' s+who]
         ['text' s+(end [3 2.000] text.m)]
@@ -3193,6 +3191,199 @@
   =/  all=(list json)  (snoc kept row)
   =/  n=@ud  (lent all)
   [%o (~(put by base) chat.m a+(slag (sub n (min n 5)) all))]
+::  ==  the chat reader (version 39): Tlon's DMs, group DMs and the group
+::  channels the owner picks, polled through two changes scries and read
+::  through the same pipeline as Telegram
+::
+::  +$  chat-config: chat.json as the reader reads it. dms are whom
+::  strings (~ship or 0v...), channels are nests (chat/~host/name),
+::  people maps a ship to a body id and is merged over the ship
+::  attributes of the person bodies each pass, settings winning.
+::
++$  chat-config
+  $:  enabled=?
+      dms=(set @t)
+      channels=(set @t)
+      people=(map @t @t)
+      read-own=?
+      poll=@ud
+      backfill=@ud
+      gate=@ud
+      escalate=@ud
+      max-daily=@ud
+      model=@t
+  ==
+::  +ship-key: a ship as the people map keys it: lower case, one sig
+::
+++  ship-key
+  |=  k=@t
+  ^-  @t
+  =/  t=@t  (lower (trim-cord k))
+  ?:  |(=('' t) =('~' (end [3 1] t)))  t
+  (cat 3 '~' t)
+++  de-chat-config
+  |=  j=json
+  ^-  chat-config
+  =/  names  |=(k=@t ^-((set @t) (~(del in (sy (turn (strings (ga j k)) trim-cord))) '')))
+  =/  people=(map @t @t)
+    =/  p=json  (gj j 'people')
+    ?.  ?=([%o *] p)  ~
+    %-  ~(gas by *(map @t @t))
+    %+  murn  ~(tap by p.p)
+    |=  [k=@t v=json]
+    ^-  (unit [@t @t])
+    ?.(?=([%s *] v) ~ `[(ship-key k) p.v])
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+      (names 'dms')
+      (names 'channels')
+      people
+      =/(r (gj j 'read_own') ?:(?=([%b *] r) p.r |))
+      (fall (gn j 'poll_minutes') 5)
+      (fall (gn j 'backfill_hours') 24)
+      (hundredths (gj j 'gate') 30)
+      (hundredths (gj j 'escalate') 60)
+      (fall (gn j 'max_daily_messages') 500)
+      =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
+  ==
+++  en-chat-config
+  |=  c=chat-config
+  ^-  json
+  =/  names  |=(xs=(set @t) ^-(json a+(turn (sort ~(tap in xs) aor) |=(x=@t `json`s+x))))
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.c]
+      ['dms' (names dms.c)]
+      ['channels' (names channels.c)]
+      ['people' [%o (~(run by people.c) |=(v=@t `json`s+v))]]
+      ['read_own' b+read-own.c]
+      ['poll_minutes' (numb:enjs:format poll.c)]
+      ['backfill_hours' (numb:enjs:format backfill.c)]
+      ['gate' (numb:enjs:format gate.c)]
+      ['escalate' (numb:enjs:format escalate.c)]
+      ['max_daily_messages' (numb:enjs:format max-daily.c)]
+      ['model' s+model.c]
+  ==
+::  +chat-as-tg: the chat settings as the shared reader arms take them
+::
+++  chat-as-tg
+  |=  c=chat-config
+  ^-  tg-config
+  %*  .  *tg-config
+    enabled     enabled.c
+    model       model.c
+    max-tokens  4.000
+    people      people.c
+    gate        gate.c
+    escalate    escalate.c
+    max-daily   max-daily.c
+  ==
+::  +story-text: a Tlon story (tlon-apps desk/lib/story-json.hoon,
+::  +enjs: a story is an array of verses, each {inline: [...]} or
+::  {block: ...}) as the text a reader reads: inline strings appended,
+::  a break a newline, a ship its @p, bold, italics, strike and
+::  blockquote their contents, a link its content, code and tags their
+::  text; a block verse says nothing.
+::
+++  story-text
+  |=  story=json
+  ^-  @t
+  %-  crip
+  %-  zing
+  %+  join  "\0a"
+  %+  murn  ?:(?=([%a *] story) p.story ~)
+  |=  v=json
+  ^-  (unit tape)
+  =/  inl=json  (gj v 'inline')
+  ?.(?=([%a *] inl) ~ `(inlines-text p.inl))
+++  inlines-text
+  |=  xs=(list json)
+  ^-  tape
+  %-  zing
+  %+  turn  xs
+  |=  x=json
+  ^-  tape
+  ?:  ?=([%s *] x)  (trip p.x)
+  ?.  ?=([%o *] x)  ""
+  ?:  (~(has by p.x) 'break')  "\0a"
+  =/  ship=json  (gj x 'ship')
+  ?:  ?=([%s *] ship)  (trip p.ship)
+  =/  nested=(unit (list json))
+    =/  keys=(list @t)  ~['bold' 'italics' 'strike' 'blockquote']
+    |-
+    ?~  keys  ~
+    =/  v=json  (gj x i.keys)
+    ?:(?=([%a *] v) `p.v $(keys t.keys))
+  ?^  nested  (inlines-text u.nested)
+  =/  link=json  (gj x 'link')
+  ?:  ?=([%o *] link)  (trip (gs link 'content'))
+  =/  task=json  (gj x 'task')
+  ?:  ?=([%o *] task)  (inlines-text (ga task 'content'))
+  =/  plain=@t
+    =/  keys=(list @t)  ~['inline-code' 'code' 'tag']
+    |-
+    ?~  keys  ''
+    =/  t=@t  (gs x i.keys)
+    ?:(!=('' t) t $(keys t.keys))
+  (trip plain)
+::  +chat-rows, +channel-rows: the reader's message rows from the chat
+::  agent's changes answer (a map from whom to writs or null, tlon-apps
+::  desk/mar/chat/changed-writs-1.hoon) and the channels agent's (a
+::  map from nest to posts or null, desk/mar/channel/changed-posts-1.
+::  hoon). A writ or post is {seal, essay, type} (chat-json v7 +writ,
+::  channel-json v10 +post); a tombstone has no essay and is skipped;
+::  a reply under seal.replies is {seal, reply-essay} and counts as a
+::  message of its own. essay.sent is epoch milliseconds, essay.author
+::  a ship string or {ship, nickname, avatar}. Only the conversations
+::  the owner picked are read, only what came after since, and the
+::  owner's own words only when read_own says so. Oldest first.
+::
+++  chat-rows
+  |=  [changes=json cfg=chat-config since=@da our=@t]
+  ^-  (list tg-msg)
+  (conv-rows changes dms.cfg cfg since our)
+++  channel-rows
+  |=  [changes=json cfg=chat-config since=@da our=@t]
+  ^-  (list tg-msg)
+  (conv-rows changes channels.cfg cfg since our)
+++  conv-rows
+  |=  [changes=json picked=(set @t) cfg=chat-config since=@da our=@t]
+  ^-  (list tg-msg)
+  ?.  ?=([%o *] changes)  ~
+  =/  out=(list tg-msg)
+    %-  zing
+    %+  turn  ~(tap by p.changes)
+    |=  [whom=@t bag=json]
+    ^-  (list tg-msg)
+    ?.  (~(has in picked) whom)  ~
+    ?.  ?=([%o *] bag)  ~
+    %-  zing
+    %+  turn  ~(tap by p.bag)
+    |=  [k=@t w=json]
+    ^-  (list tg-msg)
+    =/  top=(list tg-msg)
+      =/  t=(unit tg-msg)  (post-row whom w 'essay' cfg since our)
+      ?~(t ~ ~[u.t])
+    =/  replies=json  (gj (gj w 'seal') 'replies')
+    ?.  ?=([%o *] replies)  top
+    %+  weld  top
+    ^-  (list tg-msg)
+    %+  murn  ~(tap by p.replies)
+    |=  [k=@t r=json]
+    (post-row whom r 'reply-essay' cfg since our)
+  (sort out |=([a=tg-msg b=tg-msg] (lth at.a at.b)))
+++  post-row
+  |=  [whom=@t w=json key=@t cfg=chat-config since=@da our=@t]
+  ^-  (unit tg-msg)
+  =/  essay=json  (gj w key)
+  ?.  ?=([%o *] essay)  ~
+  =/  sent=@da  (da-of-ms (fall (gn essay 'sent') 0))
+  ?.  (gth sent since)  ~
+  =/  author=@t
+    =/  a=json  (gj essay 'author')
+    (ship-key ?:(?=([%s *] a) p.a (gs a 'ship')))
+  ?:  &(!read-own.cfg =(author (ship-key our)))  ~
+  =/  mid=@t  (num-cord (gj (gj w 'seal') 'id'))
+  ?:  =('' mid)  ~
+  `[whom author (trim-cord (story-text (gj essay 'content'))) sent mid '']
 ::  what one message says: bodies and observation rows for the writer,
 ::  action rows, notes to answer with, and, when the analyst calls for
 ::  it, the ids for an urgent pass (~ means no escalation)
@@ -3301,10 +3492,10 @@
 ::  writes it
 ::
 ++  reader-prompt
-  |=  [rows=(list window-row) ctx=reader-ctx tz=@t]
+  |=  [rows=(list window-row) ctx=reader-ctx tz=@t kind=reader-kind]
   ^-  @t
   =/  head=(list @t)
-    :~  'Channel: telegram'
+    :~  (cat 3 'Channel: ' channel.kind)
         (cat 3 'The owner is ' (cat 3 me.ctx '.'))
     ==
   =/  attr-lines=(list @t)
@@ -3321,15 +3512,8 @@
     ^-  (list @t)
     %+  turn  (sort ~(tap by ns) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
     |=([a=@t t=@t] (rap 3 '  ' k '.' a ': ' t ~))
-  =/  kind-lines=(list @t)
-    :-  (cat 3 'Action kinds you may propose: ' (join-cords ', ' kinds.ctx))
-    %+  turn  (sort ~(tap by payloads.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
-    |=([k=@t shape=json] (rap 3 '  ' k ' payload: ' (en:json:html shape) ~))
-  =/  body-lines=(list @t)
-    :-  'Existing bodies (id | name | aliases):'
-    ?~  bodies.ctx  `(list @t)`~['  (none known)']
-    %+  turn  bodies.ctx
-    |=(b=ctx-body (rap 3 '  ' id.b ' | ' name.b ' | ' (join-cords ', ' aliases.b) ~))
+  =/  shapes=(list @t)
+    (ctx-lines ctx 'Action kinds you may propose: ' 'Existing bodies (id | name | aliases):')
   =/  earlier=(list window-row)  (skim rows |=(r=window-row context.r))
   =/  fresh=(list window-row)  (skip rows |=(r=window-row context.r))
   =/  line
@@ -3352,10 +3536,36 @@
         `(list @t)`~['---' 'Answer with the JSON object.']
     ==
   %+  join-cords  nl
-  ;:  weld  head  attr-lines  note-lines  kind-lines  body-lines  `(list @t)`~['']  msg-lines  ==
+  ;:  weld  head  attr-lines  note-lines  shapes  `(list @t)`~['']  msg-lines  ==
 ::  ==  the reader's validation: the model's answer as facts the ship
 ::  will take, with notes on what was dropped (analyze.validate)
 ::
+::  +ctx-lines: the action kinds with their payload shapes and the bodies
+::  the ship knows, as the reader and the refiner both list them
+::
+++  ctx-lines
+  |=  [ctx=reader-ctx kinds-head=@t bodies-head=@t]
+  ^-  (list @t)
+  %+  weld
+    :-  (cat 3 kinds-head (join-cords ', ' kinds.ctx))
+    %+  turn  (sort ~(tap by payloads.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
+    |=([k=@t shape=json] (rap 3 '  ' k ' payload: ' (en:json:html shape) ~))
+  :-  bodies-head
+  ?~  bodies.ctx  `(list @t)`~['  (none known)']
+  %+  turn  bodies.ctx
+  |=(b=ctx-body (rap 3 '  ' id.b ' | ' name.b ' | ' (join-cords ', ' aliases.b) ~))
+::  +clean-aliases: an answer's alias strings, held to de-body's caps
+::
+++  clean-aliases
+  |=  raw=(list json)
+  ^-  (list @t)
+  %+  scag  max-aliases
+  %+  murn  raw
+  |=  a=json
+  ^-  (unit @t)
+  ?.  ?=([%s *] a)  ~
+  =/  t=@t  (trim-cord p.a)
+  ?:(=('' t) ~ `(end [3 max-alias] t))
 ++  sink-attrs       `(set @t)`(sy `(list @t)`~['mood' 'feeling' 'feelings' 'emotion'])
 ++  sensitive-attrs  `(set @t)`(sy `(list @t)`~['health' 'income'])
 ++  body-kinds       `(set @t)`(sy `(list @t)`~['person' 'place' 'thing' 'org' 'situation' 'note' 'activity'])
@@ -3624,14 +3834,7 @@
   ?~  pk  $(raw t.raw, notes [(cat 3 'dropped body with a bad id: ' bid) notes])
   ?.  (~(has in body-kinds) `@t`kind.u.pk)
     $(raw t.raw, notes [(cat 3 'dropped body of an unknown kind: ' bid) notes])
-  =/  aliases=(list @t)
-    %+  scag  32
-    %+  murn  (ga b 'aliases')
-    |=  a=json
-    ^-  (unit @t)
-    ?.  ?=([%s *] a)  ~
-    =/  t=@t  (trim-cord p.a)
-    ?:(=('' t) ~ `(end [3 100] t))
+  =/  aliases=(list @t)  (clean-aliases (ga b 'aliases'))
   ?:  (~(has in known) bid)
     =/  have=(set @t)
       =/  hit=(unit ctx-body)  (find-ctx bodies.ctx bid)
@@ -4175,20 +4378,10 @@
 ++  refine-user
   |=  [a=action id=@ta ctx=reader-ctx text=@t now=@da tz=@t]
   ^-  @t
-  =/  kind-lines=(list @t)
-    :-  (cat 3 'Action kinds an extra may have: ' (join-cords ', ' kinds.ctx))
-    %+  turn  (sort ~(tap by payloads.ctx) |=([a=[@t *] b=[@t *]] (aor -.a -.b)))
-    |=([k=@t shape=json] (rap 3 '  ' k ' payload: ' (en:json:html shape) ~))
-  =/  body-lines=(list @t)
-    :-  'Bodies the ship knows (id | name | aliases):'
-    ?~  bodies.ctx  `(list @t)`~['  (none known)']
-    %+  turn  bodies.ctx
-    |=(b=ctx-body (rap 3 '  ' id.b ' | ' name.b ' | ' (join-cords ', ' aliases.b) ~))
   %+  join-cords  nl
   ;:  weld
     `(list @t)`~[(rap 3 'The owner\'s clock reads ' (local-iso (en-iso now) tz) '.' ~)]
-    kind-lines
-    body-lines
+    (ctx-lines ctx 'Action kinds an extra may have: ' 'Bodies the ship knows (id | name | aliases):')
     `(list @t)`~[(cat 3 'The action: ' (en:json:html (en-action id a)))]
     `(list @t)`~[(cat 3 'The note: ' text)]
   ==
@@ -4253,15 +4446,7 @@
     ?.  (~(has by attrs.ctx) `@t`kind.u.pk)  ~
     =/  name=@t  (end [3 120] (trim-cord (gs b 'name')))
     ?:  =('' name)  ~
-    ::  the aliases held to de-body's limits, as validate-bodies holds them
-    =/  aliases=(list @t)
-      %+  scag  32
-      %+  murn  (ga b 'aliases')
-      |=  x=json
-      ^-  (unit @t)
-      ?.  ?=([%s *] x)  ~
-      =/  t=@t  (trim-cord p.x)
-      ?:(=('' t) ~ `(end [3 100] t))
+    =/  aliases=(list @t)  (clean-aliases (ga b 'aliases'))
     :-  ~
     %-  pairs:enjs:format
     :~  ['id' s+bid]
@@ -4464,17 +4649,20 @@
 ::  for a person, numbered by its place in the observations, put as a
 ::  choice question naming its own proposal
 ::
+++  status-asked
+  |=  obs=(list json)
+  ^-  (list [i=@ud o=json])
+  =/  n=@ud  0
+  |-
+  ?~  obs  ~
+  =/  rest  $(obs t.obs, n +(n))
+  ?:  &(=('status' (gs i.obs 'attr')) =('person/' (end [3 7] (gs i.obs 'subject'))))  [[n i.obs] rest]
+  rest
 ++  status-body
   |=  [rows=(list window-row) obs=(list json)]
   ^-  json
   =/  new=(list window-row)  (skip rows |=(r=window-row context.r))
-  =/  asked=(list [i=@ud o=json])
-    =/  n=@ud  0
-    |-  ^-  (list [i=@ud o=json])
-    ?~  obs  ~
-    =/  rest  $(obs t.obs, n +(n))
-    ?:  &(=('status' (gs i.obs 'attr')) =('person/' (end [3 7] (gs i.obs 'subject'))))  [[n i.obs] rest]
-    rest
+  =/  asked=(list [i=@ud o=json])  (status-asked obs)
   %-  pairs:enjs:format
   :~  :-  'state'
       %-  pairs:enjs:format
@@ -4832,7 +5020,7 @@
 ++  calendar-set-action
   |=  [id=@t status=@t why=@t]
   ^-  json
-  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'calendar']])
+  (set-action-op `@ta`id status why 'calendar')
 ::  +adopt-ops: a todo the owner typed becomes a task on the ship. The
 ::  writer's act op files a proposal, so the approval is a second op
 ::  on the id the writer will assign (act-id of the stamped action, as

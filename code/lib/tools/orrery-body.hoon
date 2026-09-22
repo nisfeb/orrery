@@ -30,7 +30,7 @@
   ?~  when  (pure:m (fail:om 'at: expected an ISO 8601 UTC time'))
   ;<  schema=json  bind:m  (read-json:om / %'schema.json')
   ;<  all=(list loaded:orr)  bind:m  load-bodies:om
-  =/  mine=(unit loaded:orr)  (find-loaded:om all u.id)
+  =/  mine=(unit loaded:orr)  (loaded-of:orr all u.id)
   ?~  mine  (pure:m (fail:om 'no such body'))
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  load-actions:om
   =/  multi=(set @t)  (multi-of:orr schema)

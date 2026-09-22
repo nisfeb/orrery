@@ -5,10 +5,9 @@ refused without the cookie; the beacon stream the page reads for live
 updates answers; then the render tests run under node. Exits 1 on any
 failure."""
 import os, re, subprocess, sys
+from gate import fails, count, check
 
 HOST, JAR = sys.argv[1:3]
-fails = []
-count = [0]
 
 
 def get(path, jar=True):
@@ -25,13 +24,6 @@ def get(path, jar=True):
         k, _, v = ln.partition(':')
         headers[k.strip().lower()] = v.strip()
     return code, headers, body
-
-
-def check(label, cond, detail=''):
-    count[0] += 1
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
-    if not cond:
-        fails.append(label)
 
 
 code, h, b = get('/apps/orrery')

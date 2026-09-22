@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 39's owner steps
+
+Version 39 adds one road, `/sys/scry/`, so the consent prompt comes back: approve it on `/apps/grubbery/permits` and reload the instance. Then on the Chat card under Settings pick the DMs and the channels the ship should read, add a people row for any sender who is not a person body with a ship, and turn it on; the first pass looks back 24 hours. The phone client's chat reader is then switched off, since both write the same source ids and a message must be triaged once.
+
 ### Version 38's owner steps
 
 None. Version 38 opens `POST` and `GET /api/telegram/webhook` to a key with `write` beside the owner, so a client that walks the owner through the Telegram setup can register the webhook and read back what Telegram holds; it raises no consent prompt and adds no road. The tlon reader the 2026-09-21 spec calls version 38 becomes 39.

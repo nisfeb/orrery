@@ -4,7 +4,9 @@ The HTTP gate for orrery: spec section 8, the stranded car, against a
 fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
 retracts and dismisses what an earlier run left."""
-import json, subprocess, sys, threading, time, urllib.parse
+import json, sys, threading, time, urllib.parse
+from gate import fails, check, dictish, listish, iso, all_ok
+import gate
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
@@ -12,7 +14,6 @@ HOST, JAR = sys.argv[1:3]
 OUR = sys.argv[3] if len(sys.argv) > 3 else '~wex'
 API = HOST + '/apps/orrery/api'
 INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-fails = []
 # the ids of the task actions this run files: the executor on the ship
 # places each one in the calendar's todo list, and the last section
 # deletes those todos so repeated runs do not pile them up
@@ -20,30 +21,7 @@ MADE = []
 
 
 def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
-    cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', url]
-    if token:
-        cmd += ['-H', 'Authorization: Bearer ' + token]
-    elif jar:
-        cmd += ['-b', jar]
-    if body is not None:
-        cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    try:
-        data = json.loads(text) if text else None
-    except json.JSONDecodeError:
-        data = text
-    return int(code or 0), data
-
-
-def check(label, cond, detail=''):
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
-    if not cond:
-        fails.append(label)
-
-
-def iso(dt):
-    return dt.replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return gate.curl(method, url, body, jar=jar, token=token, timeout=timeout)
 
 
 now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -102,15 +80,6 @@ def obs(subject, attr, value, at, source, until=None, conf=100):
     if until is not None:
         o['until'] = iso(until)
     return o
-
-
-def dictish(x):
-    return x if isinstance(x, dict) else {}
-
-
-def all_ok(d, key, n):
-    items = dictish(d).get(key, [])
-    return len(items) == n and all(x.get('ok') for x in items)
 
 
 def retract_matrix(bid):
@@ -685,17 +654,9 @@ def update(uid, mid, text, chat=1001, user=1001, business=None):
         return {'update_id': uid, 'business_message': msg}
     return {'update_id': uid, 'message': msg}
 def hook(body, secret='hook-secret-abcdef', full=False):
-    cmd = ['curl', '-s', '-m', '30', '-X', 'POST', '-w', '\n%{http_code}', HOOK, '-H', 'content-type: application/json', '-d', json.dumps(body)]
-    if secret is not None:
-        cmd += ['-H', 'x-telegram-bot-api-secret-token: ' + secret]
-    out = subprocess.run(cmd, capture_output=True, text=True).stdout
-    text, _, code = out.rpartition('\n')
-    if full:
-        try:
-            return int(code or 0), json.loads(text)
-        except ValueError:
-            return int(code or 0), text
-    return int(code or 0)
+    heads = () if secret is None else ('x-telegram-bot-api-secret-token: ' + secret,)
+    code, d = gate.curl('POST', HOOK, body, timeout=30, headers=heads)
+    return (code, d) if full else code
 def tg_last(after_uid):
     deadline = time.time() + 60
     while time.time() < deadline:
@@ -880,6 +841,42 @@ code, d = curl('GET', API + '/telegram')
 check('a write without the token keeps it', dictish(d).get('token_set') is True and sorted(dictish(d).get('chats') or []) == ['1001', '1002'], d)
 code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
 check('a short secret is refused', code == 400, (code, d))
+
+# ---- the chat reader (version 39): its settings, the key rule, a pass and its record ----
+code, d = curl('PUT', API + '/chat', {'enabled': False, 'dms': [], 'channels': [], 'people': {}})
+code, d = curl('PUT', API + '/chat', {'enabled': True, 'dms': ['~sampel-palnet', ' 0v4.club '], 'channels': ['chat/~host/general'], 'people': {'SAMPEL-PALNET': 'person/me'}, 'poll_minutes': 2, 'gate': 0.4})
+time.sleep(0.5)
+code, d = curl('GET', API + '/chat')
+check('the chat settings read back normalised', code == 200 and dictish(d).get('enabled') is True and sorted(dictish(d).get('dms') or []) == ['0v4.club', '~sampel-palnet'] and dictish(d).get('channels') == ['chat/~host/general'] and dictish(d).get('people') == {'~sampel-palnet': 'person/me'} and dictish(d).get('poll_minutes') == 2 and dictish(d).get('gate') == 40 and dictish(d).get('backfill_hours') == 24, (code, d))
+code, d = curl('PUT', API + '/chat', {'poll_minutes': 7})
+time.sleep(0.5)
+code, d = curl('GET', API + '/chat')
+check('a write of one key keeps the lists', dictish(d).get('poll_minutes') == 7 and dictish(d).get('channels') == ['chat/~host/general'], d)
+code, k = curl('POST', API + '/clients', {'name': 'gate chat setter', 'by': 'gate-chat', 'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
+code, ro = curl('POST', API + '/clients', {'name': 'gate chat reader', 'by': 'gate-chat-ro', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})
+code, d = curl('PUT', API + '/chat', {'read_own': True}, token=dictish(k).get('token'))
+check('a key with write may set the chat settings', code == 200, (code, d))
+code, d = curl('GET', API + '/chat', token=dictish(k).get('token'))
+check('and read them', code == 200 and dictish(d).get('read_own') is True, (code, d))
+code, d = curl('PUT', API + '/chat', {'read_own': False}, token=dictish(ro).get('token'))
+check('a read-only key may not', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
+code, d = curl('GET', API + '/chat/last', token=dictish(k).get('token'))
+check('the record is the owner\'s', code == 403, (code, d))
+curl('DELETE', API + '/clients/' + str(dictish(k).get('id')))
+curl('DELETE', API + '/clients/' + str(dictish(ro).get('id')))
+code, d = curl('POST', API + '/chat/wake')
+check('the reader takes a wake', code == 200 and dictish(d).get('ok') is True, (code, d))
+deadline = time.time() + 30
+while time.time() < deadline:
+    code, last = curl('GET', API + '/chat/last')
+    if dictish(last).get('at'):
+        break
+    time.sleep(2)
+check('the pass wrote its record: since and at set, nothing read on a ship with no messages', code == 200 and bool(dictish(last).get('since')) and bool(dictish(last).get('at')) and dictish(last).get('read') == 0 and isinstance(dictish(last).get('notes'), list), (code, last))
+code, d = curl('GET', API + '/chat/dms')
+check('the DM list answers items and a note', code == 200 and isinstance(dictish(d).get('items'), list) and 'note' in dictish(d), (code, d))
+code, d = curl('PUT', API + '/chat', {'enabled': False})
+check('the reader is switched off again', code == 200, (code, d))
 
 # ---- the executor (version 34): approved actions carried out on the ship, the todo list kept in step ----
 # the stub stands in for Telegram again (the telegram section shut it

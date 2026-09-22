@@ -133,12 +133,6 @@
   (pure:m (read-action:orr (sang-noun:tarball sang.u.vw)))
 ::  ==  lookups
 ::
-++  find-loaded
-  |=  [all=(list loaded:orr) id=bid:orr]
-  ^-  (unit loaded:orr)
-  ?~  all  ~
-  ?:  =(id.i.all id)  `i.all
-  $(all t.all)
 ::  +find-obs: the body holding an observation id, by a sweep
 ::
 ++  find-obs
@@ -180,16 +174,16 @@
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    =/  entry=json  (err-entry:orr p.i.items)
     (body-results t.items seen [entry acc])
   =/  pk  (parse-bid:orr id.p.i.items)
   ?~  pk
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']])
+    =/  entry=json  (err-entry:orr 'id: bad')
     (body-results t.items seen [entry acc])
   =/  bd=bid:orr  id.p.i.items
   ;<  ex=(unit ?)  bind:m  (exists (body-dir kind.u.pk slug.u.pk) %body)
   ?~  ex
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    =/  entry=json  (err-entry:orr 'orrery: peek refused')
     (body-results t.items seen [entry acc])
   =/  entry=json
     (pairs:enjs:format ~[['id' s+bd] ['ok' b+&] ['existing' b+|(u.ex (~(has in seen) bd))]])
@@ -204,27 +198,27 @@
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    =/  entry=json  (err-entry:orr p.i.items)
     (obs-results t.items known seen [entry acc])
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']])
+    =/  entry=json  (err-entry:orr 'subject: bad')
     (obs-results t.items known seen [entry acc])
   ;<  has=(unit ?)  bind:m
     ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,(unit ?)) `&)
     (exists (body-dir kind.u.pk slug.u.pk) %body)
   ?~  has
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    =/  entry=json  (err-entry:orr 'orrery: peek refused')
     (obs-results t.items known seen [entry acc])
   ?.  u.has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+why]])
+    =/  entry=json  (err-entry:orr why)
     (obs-results t.items known seen [entry acc])
   =/  id=@ta  (obs-id:orr o)
   ;<  ex=(unit ?)  bind:m  (exists (obs-dir kind.u.pk slug.u.pk) id)
   ?~  ex
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'orrery: peek refused']])
+    =/  entry=json  (err-entry:orr 'orrery: peek refused')
     (obs-results t.items known seen [entry acc])
   =/  entry=json
     (pairs:enjs:format ~[['id' s+id] ['ok' b+&] ['existing' b+|(u.ex (~(has in seen) id))]])

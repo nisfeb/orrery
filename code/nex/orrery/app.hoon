@@ -35,6 +35,7 @@
 ::  branch that returns cleanly and writes /tr/last.
 ::
 /<  orr   /lib/orrery.hoon
+/<  om    /lib/orrery-mcp.hoon
 /&  icon  icon.svg
 /&  page-html  orrery.html
 /&  page-css   orrery.css
@@ -115,6 +116,13 @@
           ::  todo list in step, and what its last pass did
           [%fall %& [/ %'exec.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'exec-last.json'] [[/ %json] [%o ~]]]
+          ::  the chat reader (version 39): its settings, its record, the
+          ::  ids it has read, its window, and the fiber that polls
+          [%fall %& [/ %'chat.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'chat-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
+          [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'chat.sig'] [[/ %sig] ~]]
           ::  refine (version 36): one lock grub per action being refined
           [%fall %| /refining empty-dir:loader]
       ==
@@ -245,6 +253,21 @@
         ;<  ~  bind:m  tg-drain
         ;<  *  bind:m  (take-gen-in /tg)
         $
+          ::  the chat reader (version 39): every poll_minutes, the writs
+          ::  and posts changed since the last pass, read through Tlon's
+          ::  own JSON, each through the reader's pipeline. Nothing pokes
+          ::  it but the owner's wake, which runs a pass at once.
+          [~ %'chat.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery chat: failed")
+        |-
+        ;<  ~  bind:m  chat-pass
+        ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
+        =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (cancel-timer:io /poll)
+        ;<  ~  bind:m  (set-timer:io /poll (add now (mul (max 1 poll.cfg) ~m1)))
+        ;<  *  bind:m  (take-gen-in /chat)
+        $
           ::  the executor (version 34): on orrery's beacon it carries out
           ::  the approved actions it can serve; on the calendar's store it
           ::  keeps the todo list and the task actions in step. It pokes
@@ -298,6 +321,7 @@
           (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
           (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
+          (line '/sys/scry/' 'read your Tlon messages, the DMs and the group channels you pick, so what people tell you on Urbit becomes facts the ship knows. Refuse this and the ship reads no chat')
           (line '/apps/shell.shell/desks/calendar.desk/' 'put an approved calendar action on your calendar, an approved task in its todo list, and keep the two in step. Refuse this and those actions wait for another executor')
           (line '/apps/shell.shell/desks/auspex.desk/' 'send an approved message by mail. Refuse this and mail actions wait for another executor')
       ==
@@ -344,6 +368,7 @@
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
   ?:  =('set-telegram' op)  (do-set-telegram jon)
+  ?:  =('set-chat' op)  (do-set-chat jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -432,8 +457,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  ms=@ud  ?:((lth now ~1970.1.1) 0 (div (sub now ~1970.1.1) (div ~s1 1.000)))
-  (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format ms)])
+  (over:io (rf 0 /beacon %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
 ::  +ensure-me: person/me, named "me", aliased me and I, on our ship
 ::
 ++  ensure-me
@@ -579,6 +603,15 @@
   ;<  vw=view:nexus  bind:m  (peek:io road ~)
   ?.  ?=([%file *] vw)  (pure:m [%o ~])
   (pure:m (fall (mole |.(!<(json (need-vase:tarball sang.vw)))) [%o ~]))
+::  +read-map: a JSON object grub as its map, empty when absent or not
+::  an object
+::
+++  read-map
+  |=  road=road:tarball
+  =/  m  (fiber:fiber:nexus ,(map @t json))
+  ^-  form:m
+  ;<  j=json  bind:m  (read-json road)
+  (pure:m ?:(?=([%o *] j) p.j ~))
 ::  +load-bodies: every body under /bodies with its observation rows
 ::
 ++  load-bodies
@@ -587,39 +620,7 @@
   ^-  form:m
   ;<  vw=view:nexus  bind:m  (peek:io (rv up /bodies) ~)
   ?.  ?=([%ball *] vw)  (pure:m ~)
-  (pure:m (bodies-in ball.vw))
-++  bodies-in
-  |=  b=ball:tarball
-  ^-  (list loaded:orr)
-  %-  zing
-  %+  turn  ~(tap by dir.b)
-  |=  [kind=@ta kb=ball:tarball]
-  ^-  (list loaded:orr)
-  %+  murn  ~(tap by dir.kb)
-  |=  [slug=@ta sb=ball:tarball]
-  ^-  (unit loaded:orr)
-  =/  bf=(unit body:orr)  (body-in sb)
-  ?~  bf  ~
-  `[(rap 3 kind '/' slug ~) u.bf (rows-in sb)]
-++  body-in
-  |=  sb=ball:tarball
-  ^-  (unit body:orr)
-  ?~  fil.sb  ~
-  =/  got  (~(get by contents.u.fil.sb) %body)
-  ?~  got  ~
-  (read-body:orr (sang-noun:tarball sang.u.got))
-++  rows-in
-  |=  sb=ball:tarball
-  ^-  (list row:orr)
-  =/  ob=(unit ball:tarball)  (~(get by dir.sb) %obs)
-  ?~  ob  ~
-  ?~  fil.u.ob  ~
-  %+  murn  ~(tap by contents.u.fil.u.ob)
-  |=  [nam=@ta c=[=sang:tarball gain=? bang=(unit tang)]]
-  ^-  (unit row:orr)
-  =/  o=(unit obs:orr)  (read-obs:orr (sang-noun:tarball sang.c))
-  ?~  o  ~
-  `[nam u.o]
+  (pure:m (bodies-in:om ball.vw))
 ::  ==  HTTP
 ::
 ++  send-json
@@ -634,7 +635,17 @@
   |=  [eyre-id=@ta code=@ud msg=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-json eyre-id code (pairs:enjs:format ~[['error' s+msg]]))
+  (send-json eyre-id code (err-json:orr msg))
+::  +write-then: one op to the writer from a request fiber, then the
+::  rest of the answer; 500 when the writer refused the poke
+::
+++  write-then
+  =/  m  (fiber:fiber:nexus ,~)
+  |=  [eyre-id=@ta op=json then=form:m]
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
+  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  then
 ::  +when-arg: ?at=<iso>, or now. ~ when given and unreadable.
 ::
 ++  when-arg
@@ -735,7 +746,7 @@
   ?:  &(=('GET' meth) ?=([%api %shares ~] suffix))          (own (serve-shares eyre-id))
   ?:  &(=('POST' meth) ?=([%api %accept ~] suffix))         (own (serve-accept eyre-id jon))
   ?:  &(=('POST' meth) ?=([%api %decline ~] suffix))        (own (serve-decline eyre-id jon))
-  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))           (own (serve-sync eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))           (own (serve-prod eyre-id %'sync.sig' 'follower'))
   ?:  &(=('POST' meth) ?=([%api %clients ~] suffix))        (own (serve-mint eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %clients ~] suffix))         (own (serve-clients eyre-id))
   ?:  &(=('DELETE' meth) ?=([%api %clients @ ~] suffix))    (own (serve-drop-client eyre-id s2))
@@ -750,9 +761,15 @@
   ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
   ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (writes (serve-set-webhook eyre-id))
   ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   (writes (serve-webhook-info eyre-id))
-  ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-telegram-wake eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-prod eyre-id %'telegram.sig' 'telegram'))
+  ?:  &(=('GET' meth) ?=([%api %chat ~] suffix))             (writes (serve-chat eyre-id))
+  ?:  &(=('PUT' meth) ?=([%api %chat ~] suffix))             (writes (serve-set-doc eyre-id 'set-chat' jon))
+  ?:  &(=('GET' meth) ?=([%api %chat %last ~] suffix))       (own (serve-doc eyre-id %'chat-last.json'))
+  ?:  &(=('POST' meth) ?=([%api %chat %wake ~] suffix))      (own (serve-prod eyre-id %'chat.sig' 'chat'))
+  ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-list eyre-id /gx/chat/dm/json))
+  ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-list eyre-id /gx/channels/v5/channels/json))
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
-  ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-exec-wake eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-prod eyre-id %'exec.sig' 'executor'))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
 ::  situations, the open actions and the schema, as of ?at
@@ -838,8 +855,7 @@
   ::  nothing about whether the row was already there
   =/  hush=(set @t)  (hidden-for act policy)
   ;<  obs-res=(list json)  bind:m  (obs-results items known hush ~ ~)
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] stamped])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  stamped
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['bodies' a+bodies-res] ['observations' a+obs-res]])
 ::  +body-results: one answer per body in a batch: whether it parsed,
@@ -856,11 +872,11 @@
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
     %^  body-results  t.items  seen
-    [(pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]]) acc]
+    [(err-entry:orr p.i.items) acc]
   =/  pk  (parse-bid:orr id.p.i.items)
   ?~  pk
     %^  body-results  t.items  seen
-    [(pairs:enjs:format ~[['ok' b+|] ['error' s+'id: bad']]) acc]
+    [(err-entry:orr 'id: bad') acc]
   =/  bd=bid:orr  id.p.i.items
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   =/  entry=json
@@ -883,19 +899,19 @@
   ^-  form:m
   ?~  items  (pure:m (flop acc))
   ?:  ?=(%| -.i.items)
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+p.i.items]])
+    =/  entry=json  (err-entry:orr p.i.items)
     (obs-results t.items known hush seen [entry acc])
   =/  o=obs:orr  p.i.items
   =/  pk  (parse-bid:orr subject.o)
   ?~  pk
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+'subject: bad']])
+    =/  entry=json  (err-entry:orr 'subject: bad')
     (obs-results t.items known hush seen [entry acc])
   ;<  has=?  bind:m
     ?:  (~(has in known) subject.o)  (pure:(fiber:fiber:nexus ,?) &)
     (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   ?.  has
     =/  why=@t  (cat 3 'unknown subject ' subject.o)
-    =/  entry=json  (pairs:enjs:format ~[['ok' b+|] ['error' s+why]])
+    =/  entry=json  (err-entry:orr why)
     (obs-results t.items known hush seen [entry acc])
   =/  id=@ta  (obs-id:orr o)
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (obs-dir kind.u.pk slug.u.pk) id))
@@ -924,12 +940,6 @@
   ?~  rs  ~
   ?:  =(id.i.rs id)  `i.rs
   $(rs t.rs)
-++  find-loaded
-  |=  [all=(list loaded:orr) id=bid:orr]
-  ^-  (unit loaded:orr)
-  ?~  all  ~
-  ?:  =(id.i.all id)  `i.all
-  $(all t.all)
 ::  +do-retract: the retracted flag and its note. The grub stays.
 ::
 ++  do-retract
@@ -946,7 +956,8 @@
   ;<  ~  bind:m
     %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
     [[/orrery %obs] `stored-obs:orr`[%1 o]]
-  ;<  ~  bind:m  (compact kind.u.hit slug.u.hit)
+  ;<  terms=compact-terms  bind:m  read-compact-terms
+  ;<  ~  bind:m  (compact kind.u.hit slug.u.hit terms)
   =/  who=@t  (gs:orr jon 'by')
   ;<  ~  bind:m
     ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'retract' & why who)
@@ -985,9 +996,9 @@
   ?~  ik  (refuse 'merge' (cat 3 'no such body ' into))
   ;<  now=@da  bind:m  get-time:io
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  =/  src=(unit loaded:orr)  (find-loaded all from)
+  =/  src=(unit loaded:orr)  (loaded-of:orr all from)
   ?~  src  (refuse 'merge' (cat 3 'no such body ' from))
-  =/  dst=(unit loaded:orr)  (find-loaded all into)
+  =/  dst=(unit loaded:orr)  (loaded-of:orr all into)
   ?~  dst  (refuse 'merge' (cat 3 'no such body ' into))
   =/  fresh=(list row:orr)  (move-rows:orr rows.u.src rows.u.dst into)
   =/  pointing=(list [id=bid:orr r=row:orr])  (ref-rows:orr all from now)
@@ -1002,7 +1013,8 @@
     %+  over:io  (rf 0 (body-dir kind.u.ik slug.u.ik) %body)
     [[/orrery %body] `stored-body:orr`[%2 merged]]
   ;<  *  bind:m  (cull-soft:io (rv 0 (body-dir kind.u.fk slug.u.fk)))
-  ;<  ~  bind:m  (compact kind.u.ik slug.u.ik)
+  ;<  terms=compact-terms  bind:m  read-compact-terms
+  ;<  ~  bind:m  (compact kind.u.ik slug.u.ik terms)
   =/  why=@t
     %+  rap  3
     :~  from  ' -> '  into
@@ -1077,6 +1089,32 @@
   =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.c))
   ?~  a  ~
   `[nam u.a]
+::  +load-action: one action grub, or why it could not be read: absent,
+::  or there but not an action the decoder takes
+::
+++  load-action
+  |=  [up=@ud id=@ta]
+  =/  m  (fiber:fiber:nexus ,(each action:orr ?(%absent %unreadable)))
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rf up /actions id) ~)
+  ?.  ?=([%file *] vw)  (pure:m [%| %absent])
+  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.vw))
+  (pure:m ?~(a [%| %unreadable] [%& u.a]))
+::  +scoped-action: an action a route may move, or the answer when it
+::  is absent, outside the key's action kinds (the same 404, so a key
+::  never learns the id is taken) or the key is read only
+::
+++  scoped-action
+  |=  [id=@ta act=actor]
+  =/  m  (fiber:fiber:nexus ,(each action:orr [code=@ud msg=@t]))
+  ^-  form:m
+  ;<  a=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 1 id)
+  ?:  ?=(%| -.a)
+    (pure:m [%| ?:(?=(%absent p.a) [404 'no such action'] [500 'unreadable action'])])
+  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.p.a))
+    (pure:m [%| 404 'no such action'])
+  ?:  &(?=(^ scope.act) !write.u.scope.act)  (pure:m [%| 403 'read only key'])
+  (pure:m [%& p.a])
 ::  +first-missing: the first body id in the list that does not exist
 ::
 ++  first-missing
@@ -1104,10 +1142,19 @@
   ?~  pk  (pure:m '')
   ;<  vw=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
   ?.  ?=([%ball *] vw)  (pure:m '')
-  =/  bf=(unit body:orr)  (body-in ball.vw)
+  =/  bf=(unit body:orr)  (body-in:om ball.vw)
   ?~  bf  (pure:m '')
   ;<  now=@da  bind:m  get-time:io
-  (pure:m (attr-text:orr ~[[id u.bf (rows-in ball.vw)]] ~ now id attr))
+  (pure:m (attr-text:orr ~[[id u.bf (rows-in:om ball.vw)]] ~ now id attr))
+::  +route-to: an action with the channel rule run for its recipient,
+::  whose ship is read from the store
+::
+++  route-to
+  |=  [up=@ud a=action:orr]
+  =/  m  (fiber:fiber:nexus ,[a=action:orr note=@t])
+  ^-  form:m
+  ;<  ship=@t  bind:m  (body-attr up (gs:orr payload.a 'to') 'ship')
+  (pure:m (route-message:orr a ship))
 ::  +open-twin: an open action with this kind and title, if any
 ::
 ++  open-twin
@@ -1134,8 +1181,7 @@
   ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
   =/  auto=?  =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))
   =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
-  ;<  ship=@t  bind:m  (body-attr 0 (gs:orr payload.a 'to') 'ship')
-  =/  routed  (route-message:orr a ship)
+  ;<  routed=[a=action:orr note=@t]  bind:m  (route-to 0 a)
   =.  a  a.routed
   ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'act' & note.routed))
   =/  id=@ta  (act-id:orr a)
@@ -1177,14 +1223,14 @@
   =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
   ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
-  ;<  cur=view:nexus  bind:m  (peek:io road ~)
-  ?.  ?=([%file *] cur)  (refuse 'set-action' (cat 3 'no action ' id))
-  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
-  ?~  a  (refuse 'set-action' 'unreadable action')
+  ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
+  ?:  ?=(%| -.got)
+    (refuse 'set-action' ?:(?=(%absent p.got) (cat 3 'no action ' id) 'unreadable action'))
+  =/  a=action:orr  p.got
   ;<  now=@da  bind:m  get-time:io
-  =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
+  =/  no=(unit @t)  (move-refusal:orr a `@tas`want who now)
   ?^  no  (refuse 'set-action' u.no)
-  =/  next=action:orr  (transition:orr u.a `@tas`want who why now)
+  =/  next=action:orr  (transition:orr a `@tas`want who why now)
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
   ;<  ~  bind:m  (note-by 'set-action' & '' who)
   (pure:m &)
@@ -1201,11 +1247,11 @@
   =/  id=@t  (gs:orr jon 'id')
   =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
-  ;<  cur=view:nexus  bind:m  (peek:io road ~)
-  ?.  ?=([%file *] cur)  (refuse 'revise-action' (cat 3 'no action ' id))
-  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
-  ?~  a  (refuse 'revise-action' 'unreadable action')
-  ?.  =(%proposed status.u.a)
+  ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
+  ?:  ?=(%| -.got)
+    (refuse 'revise-action' ?:(?=(%absent p.got) (cat 3 'no action ' id) 'unreadable action'))
+  =/  a=action:orr  p.got
+  ?.  =(%proposed status.a)
     (refuse 'revise-action' 'only a proposed action can be revised')
   =/  title=@t  (gs:orr jon 'title')
   ?:  |(=('' title) (gth (met 3 title) max-title:orr))
@@ -1224,9 +1270,9 @@
   =/  due=(unit @da)  ?:(=('' due-s) ~ (de-iso-any:orr due-s))
   ?:  &(!=('' due-s) =(~ due))  (refuse 'revise-action' 'due: not a time')
   ;<  now=@da  bind:m  get-time:io
-  =/  next=action:orr  (revise:orr u.a title payload about due who now)
+  =/  next=action:orr  (revise:orr a title payload about due who now)
   ;<  ship=@t  bind:m  (body-attr 0 (gs:orr payload 'to') 'ship')
-  =/  routed  (reroute-on-revise:orr u.a next ship)
+  =/  routed  (reroute-on-revise:orr a next ship)
   =.  next  a.routed
   ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'revise-action' & note.routed))
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
@@ -1255,18 +1301,15 @@
 ::    superseded.
 ::
 ++  compact
-  |=  [kind=@tas slug=@ta]
+  |=  [kind=@tas slug=@ta terms=compact-terms]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
-  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  =/  span=@dr  (mul (retention-of:orr policy) ~d1)
-  =/  horizon=@da  ?:((lth now span) ~1970.1.1 (sub now span))
+  =/  horizon=@da  horizon.terms
   ;<  vw=view:nexus  bind:m  (peek:io (rv 0 (body-dir kind slug)) ~)
   ?.  ?=([%ball *] vw)  (pure:m ~)
-  =/  rows=(list row:orr)  (rows-in ball.vw)
-  =/  winners  (fold:orr rows (multi-of:orr schema) now)
+  =/  rows=(list row:orr)  (rows-in:om ball.vw)
+  =/  winners  (fold:orr rows multi.terms now)
   =/  dead=(list @ta)
     %+  murn  rows
     |=  r=row:orr
@@ -1282,16 +1325,30 @@
   ?~  names  (pure:m ~)
   ;<  *  bind:m  (cull-soft:io (rf up dir i.names))
   (cull-each up dir t.names)
+::  +compact-terms, +read-compact-terms: the retention horizon and the
+::  multi set, read once for every compact an op runs
+::
++$  compact-terms  [horizon=@da multi=(set @t)]
+++  read-compact-terms
+  =/  m  (fiber:fiber:nexus ,compact-terms)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  span=@dr  (mul (retention-of:orr policy) ~d1)
+  (pure:m [?:((lth now span) ~1970.1.1 (sub now span)) (multi-of:orr schema)])
 ++  compact-each
   |=  ids=(list bid:orr)
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  terms=compact-terms  bind:m  read-compact-terms
+  |-
   ?~  ids  (pure:m ~)
   =/  pk  (parse-bid:orr i.ids)
   ;<  ~  bind:m
     ?~  pk  (pure:(fiber:fiber:nexus ,~) ~)
-    (compact kind.u.pk slug.u.pk)
-  (compact-each t.ids)
+    (compact kind.u.pk slug.u.pk terms)
+  $(ids t.ids)
 ::  +serve-body: one body with its attributes, its situations, the open
 ::  actions about it, and its full timeline newest first
 ::
@@ -1309,7 +1366,7 @@
   =/  hide=(set @t)  (hidden-for act policy)
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
   =/  all=(list loaded:orr)  all:(view-of act all0 ~ hide)
-  =/  mine=(unit loaded:orr)  (find-loaded all id)
+  =/  mine=(unit loaded:orr)  (loaded-of:orr all id)
   ?~  mine  (send-err eyre-id 404 'no such body')
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  acts=(list [id=@ta a=action:orr])  acts:(view-of act ~ acts0 hide)
@@ -1327,8 +1384,7 @@
   ;<  ex=?  bind:m  (peek-exists:io (rv 1 /bodies/[kind]/[slug]))
   ?.  ex  (send-err eyre-id 404 'no such body')
   =/  op=json  (pairs:enjs:format ~[['op' s+'delete-body'] ['id' s+id]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   ;<  ~  bind:m  (drop-share kind.u.pk slug.u.pk id)
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ::  +drop-share: a deleted body is shared with nobody. The record goes
@@ -1367,16 +1423,15 @@
   ?~  ik  (send-err eyre-id 404 (cat 3 'no such body ' into))
   ;<  now=@da  bind:m  get-time:io
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
-  =/  src=(unit loaded:orr)  (find-loaded all from)
+  =/  src=(unit loaded:orr)  (loaded-of:orr all from)
   ?~  src  (send-err eyre-id 404 (cat 3 'no such body ' from))
-  =/  dst=(unit loaded:orr)  (find-loaded all into)
+  =/  dst=(unit loaded:orr)  (loaded-of:orr all into)
   ?~  dst  (send-err eyre-id 404 (cat 3 'no such body ' into))
   =/  moved=@ud  (lent (move-rows:orr rows.u.src rows.u.dst into))
   =/  repointed=@ud  (lent (ref-rows:orr all from now))
   =/  op=json
     (pairs:enjs:format ~[['op' s+'merge'] ['from' s+from] ['into' s+into]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   ;<  ~  bind:m  (drop-share kind.u.fk slug.u.fk from)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
@@ -1448,8 +1503,7 @@
   =/  who=@t  ?:(owner.act ?:(=('' (gs:orr jon 'by')) 'http' (gs:orr jon 'by')) by.act)
   =/  op=json
     (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+who]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ::  +serve-bodies: POST one body, laid or replaced. A key never sends a
 ::  ship: identity is the owner's to assign.
@@ -1470,8 +1524,7 @@
     (send-err eyre-id 403 'not in scope: ship')
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   =/  op=json  (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' jon]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id.p.got] ['ok' b+&] ['existing' b+ex]]))
 ::  +serve-act: a proposal. The request stamps proposed and by, decodes
 ::  once for its answer, and the writer decodes the same JSON, so both
@@ -1511,11 +1564,10 @@
   ::  the writer's own decode of stamped runs the same channel rule on
   ::  the same 'to', so this echoes the id the writer will actually
   ::  store under, ship or no ship
-  ;<  ship=@t  bind:m  (body-attr 1 (gs:orr payload.a 'to') 'ship')
-  =.  a  a:(route-message:orr a ship)
+  ;<  r=[a=action:orr note=@t]  bind:m  (route-to 1 a)
+  =.  a  a.r
   =/  op=json  (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['id' s+(act-id:orr a)] ['status' s+status.a] ['existing' b+|]])
 ::  +serve-actions: ?status=open (the default: proposed, approved and
@@ -1550,23 +1602,15 @@
   =/  want=@t  (gs:orr jon 'status')
   =/  why=@t  (gs:orr jon 'note')
   ?:  (gth (met 3 why) max-note:orr)  (send-err eyre-id 400 'note: over 500 bytes')
-  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
-  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such action')
-  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
-  ?~  a  (send-err eyre-id 500 'unreadable action')
-  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
-    (send-err eyre-id 404 'no such action')
-  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
   =/  said=@t  ?:(owner.act (gs:orr jon 'by') by.act)
   =/  who=@t  ?:(=('' said) 'user' said)
   ;<  now=@da  bind:m  get-time:io
-  =/  no=(unit @t)  (move-refusal:orr u.a `@tas`want who now)
+  =/  no=(unit @t)  (move-refusal:orr p.got `@tas`want who now)
   ?^  no  (send-err eyre-id 409 u.no)
-  =/  op=json
-    %-  pairs:enjs:format
-    ~[['op' s+'set-action'] ['id' s+id] ['status' s+want] ['note' s+why] ['by' s+who]]
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  =/  op=json  (set-action-op:orr id want why who)
+  %^  write-then  eyre-id  op
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['by' s+who] ['ok' b+&]])
 ::  +serve-refine: POST /api/actions/<id>/refine {"text"}, the owner's
@@ -1586,45 +1630,33 @@
   =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
   ?:  =('' text)  (send-err eyre-id 400 'text: required')
   ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
-  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
-  ?.  ?=([%file *] cur)  (send-refused eyre-id 404 'no such action')
-  =/  a=(unit action:orr)  (read-action:orr (sang-noun:tarball sang.cur))
-  ?~  a  (send-err eyre-id 500 'unreadable action')
-  ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.u.a))
-    (send-refused eyre-id 404 'no such action')
-  ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-refused eyre-id 403 'read only key')
-  ?.  =(%proposed status.u.a)  (send-refused eyre-id 409 'only a proposed action can be refined')
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
+  =/  a=action:orr  p.got
+  ?.  =(%proposed status.a)  (send-err eyre-id 409 'only a proposed action can be refined')
   ;<  now=@da  bind:m  get-time:io
   =/  lock=road:tarball  (rf 1 /refining id)
   ;<  first=(unit @t)  bind:m  (lock-stamp id)
   ::  A lock with no readable stamp counts as older than any bound.
   =/  at=@da  ?~(first *@da (fall (de-iso:orr u.first) *@da))
-  ?:  &(?=(^ first) (lth now (add at ~m5)))  (send-refused eyre-id 409 'a refinement is running')
+  ?:  &(?=(^ first) (lth now (add at ~m5)))  (send-err eyre-id 409 'a refinement is running')
   ::  A stale lock is dropped only while it is the one read above. One
   ::  with another stamp by now is a fresh request's, and stands.
   ;<  same=?  bind:m
     ?~  first  (pure:(fiber:fiber:nexus ,?) &)
     ;<  again=(unit @t)  bind:(fiber:fiber:nexus ,?)  (lock-stamp id)
     (pure:(fiber:fiber:nexus ,?) =(first again))
-  ?.  same  (send-refused eyre-id 409 'a refinement is running')
+  ?.  same  (send-err eyre-id 409 'a refinement is running')
   ;<  ~  bind:m  ?~(first (pure:(fiber:fiber:nexus ,~) ~) (drop-lock id))
   ::  The make is the arbiter: two requests can pass the checks at once,
   ::  and the second make fails on the name, the way a resent telegram
   ::  update's does.
   ;<  err=(unit tang)  bind:m
     (make-soft:io lock |+[[[/ %json] (pairs:enjs:format ~[['at' s+(en-iso:orr now)]])] ~])
-  ?^  err  (send-refused eyre-id 409 'a refinement is running')
-  ;<  got=[code=@ud body=json]  bind:m  (refine-run u.a id text act now)
+  ?^  err  (send-err eyre-id 409 'a refinement is running')
+  ;<  got=[code=@ud body=json]  bind:m  (refine-run a id text act now)
   ;<  ~  bind:m  (drop-lock id)
   (send-json eyre-id code.got body.got)
-::  +send-refused: a refusal a client written to rule 17 reads from
-::  note, and the page from error, so both keys carry the text.
-::
-++  send-refused
-  |=  [eyre-id=@ta code=@ud msg=@t]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  (send-json eyre-id code (pairs:enjs:format ~[['error' s+msg] ['note' s+msg]]))
 ::  +lock-stamp: the at of the lock on an action, ~ when there is no
 ::  lock, '' when the lock has no readable stamp.
 ::
@@ -1662,10 +1694,7 @@
   |=  [a=action:orr id=@ta text=@t act=actor now=@da]
   =/  m  (fiber:fiber:nexus ,[code=@ud body=json])
   ^-  form:m
-  =/  fail
-    |=  [code=@ud msg=@t]
-    ^-  [code=@ud body=json]
-    [code (pairs:enjs:format ~[['error' s+msg] ['note' s+msg]])]
+  =/  fail  |=([code=@ud msg=@t] ^-([code=@ud body=json] [code (err-json:orr msg)]))
   ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
   =/  cfg=config:orr  (de-config:orr cfg-j)
   ?:  =('' api-key.cfg)  (pure:m (fail 503 'the generator has no key'))
@@ -1726,10 +1755,8 @@
   ;<  *  bind:m  (keep:io /refine (rf 1 /beacon %rev) ~)
   ;<  ~  bind:m  (poke-each 1 (skip ops is-act))
   ;<  ~  bind:m  (settle /refine)
-  ;<  after=view:nexus  bind:m  (peek:io (rf 1 /actions id) ~)
-  =/  revised=(unit action:orr)
-    ?.  ?=([%file *] after)  ~
-    (read-action:orr (sang-noun:tarball sang.after))
+  ;<  found=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 1 id)
+  =/  revised=(unit action:orr)  ?:(?=(%& -.found) `p.found ~)
   ?~  revised  (pure:m (fail 500 'the revised action cannot be read back'))
   ::  The writer's refusal leaves the action as it was, so a last step
   ::  that is not this request's revision means the note did not land.
@@ -1784,12 +1811,10 @@
   ?.  =('act' (gs:orr i.ops 'op'))  $(ops t.ops)
   =/  got  (de-action:orr (gj:orr i.ops 'action') now who)
   ?:  ?=(%| -.got)  $(ops t.ops)
-  ;<  ship=@t  bind:m  (body-attr 1 (gs:orr payload.p.got 'to') 'ship')
-  =/  eid=@ta  (act-id:orr a:(route-message:orr p.got ship))
-  ;<  vw=view:nexus  bind:m  (peek:io (rf 1 /actions eid) ~)
-  =/  e=(unit action:orr)
-    ?.  ?=([%file *] vw)  ~
-    (read-action:orr (sang-noun:tarball sang.vw))
+  ;<  r=[a=action:orr note=@t]  bind:m  (route-to 1 p.got)
+  =/  eid=@ta  (act-id:orr a.r)
+  ;<  found=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 1 eid)
+  =/  e=(unit action:orr)  ?:(?=(%& -.found) `p.found ~)
   ?~  e
     =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed, the trail says why' ~)
     $(ops t.ops, notes.acc [why notes.acc])
@@ -1894,7 +1919,7 @@
   |-
   ?~  todo  (pure:m n)
   =/  aid=@ta  id.i.todo
-  ;<  *  bind:m  (file-ops ~[(set-action-op:orr aid 'claimed' '')])
+  ;<  *  bind:m  (file-ops ~[(set-action-op:orr aid 'claimed' '' 'reconcile')])
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  mine=?
     %+  lien  acts
@@ -1902,12 +1927,19 @@
   ?.  mine  $(todo t.todo)
   ;<  *  bind:m  (file-ops ~[(merge-op:orr from.i.todo into.i.todo)])
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  =/  ok=?  &(?=(~ (find-loaded all from.i.todo)) ?=(^ (find-loaded all into.i.todo)))
+  =/  ok=?  &(?=(~ (loaded-of:orr all from.i.todo)) ?=(^ (loaded-of:orr all into.i.todo)))
   ;<  *  bind:m
-    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' 'the merge was refused'))])
+    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' 'the merge was refused') 'reconcile')])
   $(todo t.todo, n ?:(ok +(n) n))
+::  +reload-if: the bodies again when ops were filed, else the ones read
+::
+++  reload-if
+  |=  [n=@ud all=(list loaded:orr)]
+  =/  m  (fiber:fiber:nexus ,(list loaded:orr))
+  ^-  form:m
+  ?:(=(0 n) (pure:m all) (load-bodies 0))
 ::  +reconcile-pass: the passes in order, the bodies re-read between
-::  them since each files changes the next one reads; then the record
+::  them when a pass filed something the next one reads; then the record
 ::
 ++  reconcile-pass
   =/  m  (fiber:fiber:nexus ,~)
@@ -1919,20 +1951,21 @@
   =/  cfg  (reconcile-of:orr policy)
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  times=(list json)  (plan-times:orr all now)
-  ;<  *  bind:m  (file-ops times)
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  n=@ud  bind:m  (file-ops times)
+  ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   =/  activities  (plan-activities:orr all multi now min.cfg)
-  ;<  *  bind:m  (file-ops ops.activities)
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  n=@ud  bind:m  (file-ops ops.activities)
+  ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   =/  parts  (plan-participants:orr all multi now)
-  ;<  *  bind:m  (file-ops ops.parts)
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  n=@ud  bind:m  (file-ops ops.parts)
+  ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  people  (people-pass:orr all acts multi now)
   ;<  *  bind:m  (file-ops ops.people)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  ;<  merged=@ud  bind:m  (run-merges (approved-merges:orr acts))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  merges  (approved-merges:orr acts)
+  ;<  merged=@ud  bind:m  (run-merges merges)
+  ;<  all=(list loaded:orr)  bind:m  (reload-if (lent merges) all)
   =/  retire  (plan-retire:orr all multi now (mul stale.cfg ~d1))
   ;<  *  bind:m  (file-ops (retire-ops:orr retire))
   =/  expire  (plan-expire:orr all multi now)
@@ -1979,9 +2012,7 @@
   |=  [eyre-id=@ta jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  sec=@t  (gs:orr jon 'secret')
-  ?:  &(!=('' sec) (lth (met 3 sec) 16))
-    (send-err eyre-id 400 'secret: 16 bytes at least')
+  ?:  (short-secret:orr jon)  (send-err eyre-id 400 'secret: 16 bytes at least')
   (serve-set-doc eyre-id 'set-telegram' jon)
 ::  +serve-set-webhook: the ship tells Telegram where to send updates:
 ::  setWebhook with the public url (a trailing slash trimmed), the
@@ -2044,30 +2075,18 @@
       ['max_connections' (gj:orr r 'max_connections')]
       ['allowed_updates' (gj:orr r 'allowed_updates')]
   ==
-::  +serve-telegram-wake: the owner pokes the reader: a live one drains
+::  +serve-prod: the owner pokes a fiber's sig: a live reader drains
 ::  the inbox now (an update the model could not read waits on a five
-::  minute timer otherwise), a crashed one restarts on the poke, since
-::  nothing else pokes it
-::
-++  serve-telegram-wake
-  |=  eyre-id=@ta
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  err=(unit tang)  bind:m
-    (poke-soft:io (rf 1 / %'telegram.sig') [[/ %sig] ~])
-  ?^  err  (send-err eyre-id 500 'the telegram fiber refused the poke')
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
-::  +serve-exec-wake: the owner pokes the executor: a live one runs a
-::  pass now, a crashed one restarts on the poke, since nothing else
+::  minute timer otherwise), a live executor or follower runs a pass
+::  now, and a crashed one restarts on the poke, since nothing else
 ::  pokes it
 ::
-++  serve-exec-wake
-  |=  eyre-id=@ta
+++  serve-prod
+  |=  [eyre-id=@ta sig=@ta what=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  err=(unit tang)  bind:m
-    (poke-soft:io (rf 1 / %'exec.sig') [[/ %sig] ~])
-  ?^  err  (send-err eyre-id 500 'the executor fiber refused the poke')
+  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / sig) [[/ %sig] ~])
+  ?^  err  (send-err eyre-id 500 (rap 3 'the ' what ' fiber refused the poke' ~))
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +serve-telegram-hook: an update from Telegram. The secret header must
 ::  equal the stored secret; the update goes to the inbox as its own grub
@@ -2109,8 +2128,7 @@
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] pk])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  pk
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  ==  sharing: where things are
 ::
@@ -2312,8 +2330,7 @@
   ?:  &(!=('' oship) ?=(~ (slaw %p oship)))  (note-inbox 'offer' | 'ship: expected an @p' (scot %p src))
   ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-inbox 'offer' | 'name: over 200 bytes' (scot %p src))
   ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-inbox 'offer' | 'base: over 200 bytes' (scot %p src))
-  ;<  rows=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
-  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ;<  rm=(map @t json)  bind:m  (read-map (rf 0 / %'ship-remotes.json'))
   ?:  (~(has by rm) key)
     =/  row=json  (fall (~(get by rm) key) ~)
     ?.  ?=([%o *] row)  (note-inbox 'offer' | 'accepted row unreadable' (scot %p src))
@@ -2325,8 +2342,7 @@
     ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(put by rm) key next)]])
     ::  a wider offer filed earlier goes with the narrowing, so it can
     ::  no longer be accepted after the host changed its mind
-    ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
-    =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+    ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'share-offers.json'))
     ;<  ~  bind:m
       ?.  (~(has by cur) key)  (pure:(fiber:fiber:nexus ,~) ~)
       (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
@@ -2362,11 +2378,9 @@
   |=  [src=@p key=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
-  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'share-offers.json'))
   ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
-  ;<  rows=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
-  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ;<  rm=(map @t json)  bind:m  (read-map (rf 0 / %'ship-remotes.json'))
   ;<  ~  bind:m  (over:io (rf 0 / %'ship-remotes.json') [[/ %json] [%o (~(del by rm) key)]])
   (note-inbox 'revoke' & key (scot %p src))
 ::  +take-edit: a peer's observations on a body we shared with it in
@@ -2423,7 +2437,7 @@
   ::  what we hold from this ship, by the sender's grub name
   =/  held=(map @t [oid=@ta retracted=?])
     %-  ~(gas by *(map @t [oid=@ta retracted=?]))
-    %+  murn  (rows-in ball.vw)
+    %+  murn  (rows-in:om ball.vw)
     |=  r=row:orr
     ^-  (unit [@t [@ta ?]])
     ?.  (from-ship:orr obs.r src)  ~
@@ -2590,8 +2604,7 @@
   ?~  host  (send-err eyre-id 400 'host: expected an @p')
   =/  id=@t  (gs:orr jon 'id')
   =/  key=@t  (share-key:orr u.host id)
-  ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
-  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ;<  cur=(map @t json)  bind:m  (read-map (rf 1 / %'share-offers.json'))
   =/  offer=(unit json)  (~(get by cur) key)
   ?~  offer  (send-err eyre-id 404 'no such offer')
   ;<  our=@p  bind:m  get-our:io
@@ -2622,8 +2635,7 @@
             ['ship' `json`?~(oship ~ s+(scot %p u.oship))]
         ==
     ==
-  ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
-  =/  rm=(map @t json)  ?:(?=([%o *] rows) p.rows ~)
+  ;<  rm=(map @t json)  bind:m  (read-map (rf 1 / %'ship-remotes.json'))
   =/  old=json  (fall (~(get by rm) key) [%o ~])
   ::  what we already pushed counts only if we were pushing: a row that
   ::  was read mode until now has sent the host nothing
@@ -2655,17 +2667,8 @@
   =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
   ?~  host  (send-err eyre-id 400 'host: expected an @p')
   =/  key=@t  (share-key:orr u.host (gs:orr jon 'id'))
-  ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
-  =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
+  ;<  cur=(map @t json)  bind:m  (read-map (rf 1 / %'share-offers.json'))
   ;<  ~  bind:m  (over:io (rf 1 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
-::  +serve-sync: prod the follower to make a pass now
-::
-++  serve-sync
-  |=  eyre-id=@ta
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  ==  the follower: what other ships shared with us
 ::
@@ -2687,8 +2690,7 @@
   ^-  form:m
   ?~  rows
     ?:  =(~ done)  (pure:m ~)
-    ;<  fresh=json  bind:m  (read-json (rf 0 / %'ship-remotes.json'))
-    =/  cur=(map @t json)  ?:(?=([%o *] fresh) p.fresh ~)
+    ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'ship-remotes.json'))
     =/  merged=(map @t json)
       %+  roll  ~(tap by done)
       |=  [[key=@t row=json] acc=_cur]
@@ -2779,7 +2781,7 @@
     (pure:m [[~ 'the host did not answer (down, or the share was revoked)'] ~])
   ?.  ?=([%ball *] u.vw)
     (pure:m [[~ 'the host no longer shares this body'] ~])
-  =/  rows=(list row:orr)  (skim (rows-in ball.u.vw) |=(r=row:orr (is-local:orr obs.r)))
+  =/  rows=(list row:orr)  (skim (rows-in:om ball.u.vw) |=(r=row:orr (is-local:orr obs.r)))
   ;<  got=[pokes=@ud refused=(list [oid=@t why=@t])]  bind:m
     (apply-carried 0 host (turn rows |=(r=row:orr (carry-obs:orr target r))))
   (pure:m [~ refused.got])
@@ -2809,7 +2811,7 @@
   ;<  vw=view:nexus  bind:m  (peek:io (rv 0 (body-dir kind.u.pk slug.u.pk)) ~)
   ?.  ?=([%ball *] vw)  (pure:m [& pushed])
   =/  todo=(list row:orr)
-    %+  skim  (rows-in ball.vw)
+    %+  skim  (rows-in:om ball.vw)
     |=  r=row:orr
     ?.  (is-local:orr obs.r)  |
     ?:  (~(has in hide) attr.obs.r)  |
@@ -2927,16 +2929,13 @@
   =/  decided=(list [id=@ta a=action:orr])
     %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
     |=([[* a=action:orr] [* b=action:orr]] (lth proposed.a proposed.b))
-  =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
   =/  tz=@t
-    =/  from-me=@t
-      ?~  me  ''
-      (winner-text:orr (fold:orr rows.u.me (multi-of:orr schema) now) 'timezone')
+    =/  from-me=@t  (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone')
     ?:(=('' from-me) timezone.cfg from-me)
   =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg)
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
-  ;<  last=json  bind:m  (read-json (rf 0 / %'generator-last.json'))
+  =/  last=json  last0
   ?:  &(!force =((gs:orr last 'digest') (scot %ux dg)))
     ;<  ~  bind:m  (gen-record `dg 0 0 ~['nothing the model would see has changed: no pass'] ~ ~ 0 & rev)
     (pure:m ~)
@@ -3141,14 +3140,8 @@
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-generator' 'doc: expected an object')
-  ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
-  =/  base=(map @t json)  ?:(?=([%o *] cur) p.cur ~)
-  =/  incoming=(map @t json)  p.doc
-  ::  a blank or missing key keeps the stored one; a JSON null clears it
-  =/  clear=?  ?=([~ ~] (~(get by incoming) 'api_key'))
-  =?  incoming  |(clear =('' (gs:orr doc 'api_key')))  (~(del by incoming) 'api_key')
-  =?  base  clear  (~(del by base) 'api_key')
-  =/  merged=json  [%o (~(uni by base) incoming)]
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'generator.json'))
+  =/  merged=json  [%o (merge-settings:orr base p.doc (sy ~['api_key']))]
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
   (pure:m |)
@@ -3168,29 +3161,239 @@
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-telegram' 'doc: expected an object')
-  =/  sec=@t  (gs:orr doc 'secret')
-  ?:  &(!=('' sec) (lth (met 3 sec) 16))
-    (refuse 'set-telegram' 'secret: 16 bytes at least')
-  ;<  cur=json  bind:m  (read-json (rf 0 / %'telegram.json'))
-  =/  base=(map @t json)  ?:(?=([%o *] cur) p.cur ~)
-  =/  merged=(map @t json)
-    %+  roll  ~(tap by p.doc)
-    |=  [[k=@t v=json] acc=_base]
-    ?.  |(=('token' k) =('secret' k))  (~(put by acc) k v)
-    ?:  ?=(~ v)  (~(del by acc) k)
-    ?:  &(?=([%s *] v) =('' p.v))  acc
-    (~(put by acc) k v)
+  ?:  (short-secret:orr doc)  (refuse 'set-telegram' 'secret: 16 bytes at least')
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'telegram.json'))
+  =/  merged=(map @t json)  (merge-settings:orr base p.doc (sy ~['token' 'secret']))
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram.json') [[/ %json] [%o merged]])
   =/  token=@t  (gs:orr doc 'token')
   ;<  ~  bind:m
     =/  n  (fiber:fiber:nexus ,~)
     ^-  form:n
-    ?:  |(=('' token) =(token (gs:orr cur 'token')))  (pure:n ~)
+    ?:  |(=('' token) =(token (gs:orr [%o base] 'token')))  (pure:n ~)
     ;<  last=json  bind:n  (read-json (rf 0 / %'telegram-last.json'))
     %+  over:io  (rf 0 / %'telegram-last.json')
     [[/ %json] (set-key:orr last 'update_id' (numb:enjs:format 0))]
   ;<  ~  bind:m  (note 'set-telegram' & '')
   (pure:m |)
+::  +do-set-chat: merge the owner's chat reader settings over the stored
+::  ones. There is no secret: a key given replaces its value whole, a
+::  key left out keeps it. Settings are not model state: no beacon bump.
+::
+++  do-set-chat
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-chat' 'doc: expected an object')
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'chat.json'))
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'chat.json') [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
+  ;<  ~  bind:m  (note 'set-chat' & '')
+  (pure:m |)
+::  +serve-chat: the chat reader's settings, as stored, normalised
+::
+++  serve-chat
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'chat.json'))
+  (send-json eyre-id 200 (en-chat-config:orr (de-chat-config:orr doc)))
+::  +serve-chat-list: what the groups desk holds, for the card to offer:
+::  the DM list or the channel list, through the same scries the reader
+::  uses. An absent groups desk or a refused road answers an empty list
+::  with a note, never an error, since the card renders either way.
+::
+++  serve-chat-list
+  |=  [eyre-id=@ta pax=path]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+~] ['note' s+'the /sys/scry/ road is refused']]))
+  ?.  u.live  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+~] ['note' s+'groups desk not installed']]))
+  ;<  got=(unit json)  bind:m  (scry-json pax)
+  =/  items=(list @t)
+    ?~  got  ~
+    ?:  ?=([%a *] u.got)  (strings:orr p.u.got)
+    ?:  ?=([%o *] u.got)  (sort ~(tap in ~(key by p.u.got)) aor)
+    ~
+  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+(turn items |=(t=@t `json`s+t))] ['note' s+'']]))
+::  ==  the scries (version 39): a gall agent's answer through the
+::  /sys/scry service, the way fiberio's +typed-scry asks, but soft: a
+::  refused road answers ~ instead of failing the fiber, so the chat
+::  reader stays alive with a note. The path is what gall sees after
+::  our ship and the desk, with the mark it should answer in last.
+::
+++  scry-json
+  |=  pax=path
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [%json pax]])
+  ?^  err  (pure:m ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto *]  [%done ~]
+      [~ %poke * *]
+    ?.  =([/ %json] p.sage.u.in)  [%skip ~]
+    [%done `(fall (mole |.(!<(json q.sage.u.in))) [%o ~])]
+  ==
+++  scry-loob
+  |=  pax=path
+  =/  m  (fiber:fiber:nexus ,(unit ?))
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [%loob pax]])
+  ?^  err  (pure:m ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto *]  [%done ~]
+      [~ %poke * *]
+    ?.  =([/ %loob] p.sage.u.in)  [%skip ~]
+    [%done `(fall (mole |.(!<(? q.sage.u.in))) |)]
+  ==
+::  +groups-live: whether the chat and channels agents answer at all,
+::  asked with %gu first: a %gx at an absent agent bails the event.
+::  ~ when the scry road is refused.
+::
+++  groups-live
+  =/  m  (fiber:fiber:nexus ,(unit ?))
+  ^-  form:m
+  ;<  a=(unit ?)  bind:m  (scry-loob /gu/chat/$)
+  ?~  a  (pure:m ~)
+  ?.  u.a  (pure:m `|)
+  ;<  b=(unit ?)  bind:m  (scry-loob /gu/channels/$)
+  ?~  b  (pure:m ~)
+  (pure:m `u.b)
+::  +chat-pass: one pass of the chat reader. Off means nothing. The
+::  groups desk is asked whether it is there, then the two changes
+::  scries since the last pass (the first pass looks back backfill
+::  hours), and every writ or post they carry becomes a row: the ones
+::  already read are skipped by id, a sender not in people (the settings
+::  merged over the person bodies' ships) is a stranger and counted,
+::  the daily cap holds, and each survivor goes through the pipeline
+::  Telegram uses, signed chat. A model that cannot answer stops the
+::  pass where it stood: since does not move, the rows read so far are
+::  remembered as read, and the record says the model is down.
+::
+++  chat-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
+  =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
+  ?.  enabled.cfg  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'chat-last.json'))
+  =/  since=@da
+    =/  s=(unit @da)  (de-iso:orr (gs:orr last 'since'))
+    ?^  s  u.s
+    (sub now (mul backfill.cfg ~h1))
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (chat-record last now since *chat-tally ~['the /sys/scry/ road is refused: approve it on the permits page'] ~)
+  ?.  u.live  (chat-record last now since *chat-tally ~['groups desk not installed'] ~)
+  ;<  chat=(unit json)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
+  ;<  chans=(unit json)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
+  ?:  |(?=(~ chat) ?=(~ chans))
+    (chat-record last now since *chat-tally ~['the /sys/scry/ road is refused: approve it on the permits page'] ~)
+  ;<  our=@p  bind:m  get-our:io
+  =/  me=@t  (scot %p our)
+  =/  rows=(list tg-msg:orr)
+    %+  sort  (weld (chat-rows:orr u.chat cfg since me) (channel-rows:orr u.chans cfg since me))
+    |=([a=tg-msg:orr b=tg-msg:orr] (lth at.a at.b))
+  ;<  seen-j=json  bind:m  (read-json (rf 0 / %'chat-seen.json'))
+  =/  seen=(set @t)  (sy (strings:orr ?:(?=([%a *] seen-j) p.seen-j ~)))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  people=(map @t @t)  (~(uni by (people-of-ships all)) people.cfg)
+  =?  people  !(~(has by people) me)  (~(put by people) me 'person/me')
+  =/  tg=tg-config:orr  (chat-as-tg:orr cfg)
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  =|  tally=chat-tally
+  =|  new=(list @t)
+  |-
+  ?~  rows
+    ;<  ~  bind:m  (chat-remember seen-j new)
+    (chat-record last now now tally ~ ~)
+  =/  msg=tg-msg:orr  i.rows
+  =/  key=@t  (rap 3 chat.msg '/' mid.msg ~)
+  ?:  (~(has in seen) key)  $(rows t.rows)
+  =/  who=(unit @t)  (~(get by people) from.msg)
+  ?~  who  $(rows t.rows, strangers.tally +(strangers.tally), new [key new])
+  ?:  =('' text.msg)  $(rows t.rows, new [key new])
+  ?:  (gte (add today read.tally) max-daily.cfg)  $(rows t.rows, held.tally +(held.tally))
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg msg u.who now chat-kind:orr)
+  ?:  down
+    ;<  ~  bind:m  (chat-remember seen-j new)
+    (chat-record last now since tally ~ `notes.facts)
+  ;<  ~  bind:m  (tg-file facts u.who now chat-kind:orr)
+  ;<  recent=json  bind:m  (read-json (rf 0 / %'chat-recent.json'))
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'chat-recent.json') [[/ %json] (tg-remember:orr recent msg u.who now chat-kind:orr)])
+  =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
+  %=  $
+    rows  t.rows
+    new   [key new]
+    read.tally   ?:(read +(read.tally) read.tally)
+    filed.tally  (add filed.tally n)
+    notes.tally  (weld notes.tally notes.facts)
+  ==
+::  +$  chat-tally: what one pass did
+::
++$  chat-tally  [read=@ud filed=@ud strangers=@ud held=@ud notes=(list @t)]
+::  +people-of-ships: every person body with a ship, keyed by that ship
+::  as the settings key one, so a person the owner named on the ship is
+::  known to the reader without a row on the card
+::
+++  people-of-ships
+  |=  all=(list loaded:orr)
+  ^-  (map @t @t)
+  %-  ~(gas by *(map @t @t))
+  %+  murn  all
+  |=  l=loaded:orr
+  ^-  (unit [@t @t])
+  ?.  =(%person kind.body.l)  ~
+  ?~  ship.body.l  ~
+  `[(ship-key:orr (scot %p u.ship.body.l)) id.l]
+::  +chat-remember: the ids read, appended to the seen ring (the last
+::  5000), so a writ Tlon reports changed again is read once
+::
+++  chat-remember
+  |=  [seen=json new=(list @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  new  (pure:m ~)
+  =/  ring=json  (roll (flop new) |=([k=@t acc=_seen] (ring:orr acc s+k 5.000)))
+  (over:io (rf 0 / %'chat-seen.json') [[/ %json] ring])
+::  +chat-record: what the pass did, for the card and the next pass:
+::  since is where the next pass starts, read_today the cap's count,
+::  and down, when given, says the model could not answer
+::
+++  chat-record
+  |=  [last=json now=@da since=@da t=chat-tally notes=(list @t) down=(unit (list @t))]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  =/  said=(list @t)  (scag 20 (weld notes notes.t))
+  %+  over:io  (rf 0 / %'chat-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['since' s+(en-iso:orr since)]
+      ['at' s+(en-iso:orr now)]
+      ['read' (numb:enjs:format read.t)]
+      ['filed' (numb:enjs:format filed.t)]
+      ['strangers' (numb:enjs:format strangers.t)]
+      ['held' (numb:enjs:format held.t)]
+      ['notes' a+(turn said |=(n=@t `json`s+(end [3 300] n)))]
+      ['day' s+day]
+      ['read_today' (numb:enjs:format (add today read.t))]
+      :-  'down'
+      ?~  down  ~
+      (pairs:enjs:format ~[['at' s+(en-iso:orr now)] ['notes' a+(turn (scag 6 u.down) |=(n=@t `json`s+(end [3 300] n)))]])
+  ==
 ::  ==  the telegram reader (version 29): the bot's pipeline on the ship
 ::
 ::  +tg-drain: every update in the inbox, in order, each handled then
@@ -3222,11 +3425,13 @@
   |=  names=(list @ta)
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
   =/  culled=?  &
   |-
   ?~  names  (pure:m culled)
   ;<  update=json  bind:m  (read-json (rf 0 /telegram-inbox i.names))
-  ;<  down=?  bind:m  (tg-handle update)
+  ;<  down=?  bind:m  (tg-handle cfg update)
   ?:  down
     ;<  now=@da  bind:m  get-time:io
     ;<  ~  bind:m  (cancel-timer:io /retry)
@@ -3259,18 +3464,17 @@
 ::  so nothing was filed and nothing recorded.
 ::
 ++  tg-handle
-  |=  update=json
+  |=  [cfg=tg-config:orr update=json]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
-  =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
   ::  a recorded update is done with
   =/  done
     |=  [chat=@t from=@t outcome=@t notes=(list @t) read=?]
     ^-  form:m
-    ;<  ~  bind:m  (tg-record now uid chat from outcome notes read)
+    ;<  ~  bind:m  (tg-record last now uid chat from outcome notes read)
     (pure:m |)
   =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
   ?~  mu  (done '' '' 'ignored' ~['not a message'] |)
@@ -3284,24 +3488,23 @@
   ?:  stranger
     (done chat.msg from.msg 'ignored' ~['business connection of an account not in people'] |)
   ?:  =('' text.msg)  (done chat.msg from.msg 'ignored' ~['no text'] |)
-  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   ?:  (gte today max-daily.cfg)
     (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
-  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now)
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now telegram-kind:orr)
   ::  kept for the retry, and said so: the record's update_id stays, a
   ::  down key names the update, the moment and the model's answer, so
   ::  a model the ship cannot reach reads off the card instead of
   ::  looking like a reader that never ran (ricsul, 2026-09-21)
   ?:  down
-    ;<  ~  bind:m  (tg-record-down now uid notes.facts)
+    ;<  ~  bind:m  (tg-record-down last now uid notes.facts)
     (pure:m &)
-  ;<  ~  bind:m  (tg-file facts u.who now)
+  ;<  ~  bind:m  (tg-file facts u.who now telegram-kind:orr)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
   ::  a chat taken out of the settings loses its window
   =/  window=json
-    =/  r=json  (tg-remember:orr recent msg u.who now)
+    =/  r=json  (tg-remember:orr recent msg u.who now telegram-kind:orr)
     ?.  ?=([%o *] r)  r
     [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
@@ -3318,7 +3521,7 @@
 ::  worth asking about again.
 ::
 ++  tg-read
-  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da]
+  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da kind=reader-kind:orr]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
   =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
@@ -3329,13 +3532,13 @@
     (pure:m [| | ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
   =/  rows=(list window-row:orr)
     %+  snoc
       (turn (tg-window:orr recent chat.msg) |=([id=@t at=@t w=@t t=@t] ^-(window-row:orr [id at w t &])))
     ^-  window-row:orr
-    [id:(tg-source:orr msg) (en-iso:orr at.msg) who text.msg |]
+    [id:(tg-source:orr msg kind) (en-iso:orr at.msg) who text.msg |]
   ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
   =/  p=@ud  ?~(gate 100 (noul-of:orr u.gate 'worth_reading'))
   =/  gate-note=@t
@@ -3343,10 +3546,7 @@
     (rap 3 'gate: ' (crip (a-co:co p)) ?:((lth p gate.cfg) ', not read' ', read') ~)
   ?:  (lth p gate.cfg)  (pure:m [| | ~ ~ ~ ~[gate-note] ~])
   =/  tz=@t
-    =/  me=(unit loaded:orr)  (find-loaded all 'person/me')
-    =/  from-me=@t
-      ?~  me  ''
-      (winner-text:orr (fold:orr rows.u.me (multi-of:orr schema) now) 'timezone')
+    =/  from-me=@t  (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone')
     ?:(=('' from-me) timezone.gen from-me)
   =/  small=config:orr
     gen(model model.cfg, max-tokens max-tokens.cfg, reasoning [%o (my ~[['enabled' b+|]])])
@@ -3354,7 +3554,7 @@
     %:  post-json
       (cat 3 url.gen '/chat/completions')
       api-key.gen
-      (chat-body-with:orr small analyst-prompt:orr ~[(reader-prompt:orr rows ctx tz)])
+      (chat-body-with:orr small analyst-prompt:orr ~[(reader-prompt:orr rows ctx tz kind)])
       ~m5
       %reader
     ==
@@ -3391,16 +3591,7 @@
   |=  [gen=config:orr rows=(list window-row:orr) facts=tg-facts:orr]
   =/  m  (fiber:fiber:nexus ,tg-facts:orr)
   ^-  form:m
-  =/  asked=(list @ud)
-    =/  n=@ud  0
-    |-  ^-  (list @ud)
-    ?~  obs.facts  ~
-    =/  rest  $(obs.facts t.obs.facts, n +(n))
-    ?:  ?&  =('status' (gs:orr i.obs.facts 'attr'))
-            =('person/' (end [3 7] (gs:orr i.obs.facts 'subject')))
-        ==
-      [n rest]
-    rest
+  =/  asked=(list @ud)  (turn (status-asked:orr obs.facts) |=([i=@ud *] i))
   ?~  asked  (pure:m facts)
   ;<  ans=(unit json)  bind:m  (ask-decider gen (status-body:orr rows obs.facts))
   ?~  ans  (pure:m facts(notes (snoc notes.facts 'status check unavailable, kept')))
@@ -3425,14 +3616,14 @@
 ::  poke serve-generate sends, force with the ids to look at first
 ::
 ++  tg-file
-  |=  [facts=tg-facts:orr who=@t now=@da]
+  |=  [facts=tg-facts:orr who=@t now=@da kind=reader-kind:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  obs=(list json)  (turn obs.facts tg-final-row)
+  =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind)))
   ;<  *  bind:m  (file-ops-on (observe-ops:orr bodies.facts obs) /tg)
   =/  act-ops=(list json)
     %+  turn  acts.facts
-    |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now 'telegram')]]))
+    |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now by.kind)]]))
   ;<  *  bind:m  (file-ops-on act-ops /tg)
   ?~  escalate.facts  (pure:m ~)
   ;<  *  bind:m
@@ -3445,7 +3636,7 @@
 ::  it came from, by telegram, the message key gone.
 ::
 ++  tg-final-row
-  |=  o=json
+  |=  [o=json signer=@t]
   ^-  json
   ?.  ?=([%o *] o)  o
   =/  msg=@t  (gs:orr o 'message')
@@ -3453,7 +3644,7 @@
   :-  %o
   %-  ~(gas by (~(del by p.o) 'message'))
   :~  ['source' (pairs:enjs:format ~[['kind' s+'chat'] ['id' s+msg]])]
-      ['by' s+'telegram']
+      ['by' s+signer]
   ==
 ::  +tg-stranger: whether a business message comes through a connection
 ::  of an account not in people. The connection's owner is read from
@@ -3474,7 +3665,7 @@
       ~s30
     %telegram
   =/  id=json  (gj:orr (gj:orr (gj:orr (fall (de:json:html body.got) ~) 'result') 'user') 'id')
-  =/  found=@t  ?:(?=([%n *] id) p.id ?:(?=([%s *] id) p.id ''))
+  =/  found=@t  (num-cord:orr id)
   ?:  |(!=(200 status.got) =('' found))  (pure:m &)
   ;<  ~  bind:m
     (over:io (rf 0 / %'telegram-connections.json') [[/ %json] (set-key:orr known conn s+found)])
@@ -3485,10 +3676,9 @@
 ::  a held message and an ignored update do not move it
 ::
 ++  tg-record-down
-  |=  [now=@da uid=@ud notes=(list @t)]
+  |=  [last=json now=@da uid=@ud notes=(list @t)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  down=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]
@@ -3497,10 +3687,9 @@
     ==
   (over:io (rf 0 / %'telegram-last.json') [[/ %json] (set-key:orr last 'down' down)])
 ++  tg-record
-  |=  [now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=?]
+  |=  [last=json now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=?]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   %+  over:io  (rf 0 / %'telegram-last.json')
@@ -3672,7 +3861,7 @@
 ++  ship-set-action
   |=  [id=@t status=@t why=@t]
   ^-  json
-  (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+id] ['status' s+status] ['note' s+why] ['by' s+'ship']])
+  (set-action-op:orr `@ta`id status why 'ship')
 ::  +tang-head: a refusal's first line, as the note an action fails with
 ::
 ++  tang-head
@@ -3716,10 +3905,12 @@
   |=  cal=exec-cal
   =/  m  (fiber:fiber:nexus ,exec-tally)
   ^-  form:m
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ::  nothing approved plans nothing, and the tree is not read for it
+  ?.  (lien acts |=([* a=action:orr] =(%approved status.a)))  (pure:m *exec-tally)
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
   =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now)
@@ -4175,8 +4366,7 @@
   =/  secret=@t  (secret-of:orr (rsh [3 15] eny))
   =/  c=client:orr  [id name who p.sc salt (hash-token:orr salt secret) now ~]
   =/  op=json  (pairs:enjs:format ~[['op' s+'add-client'] ['client' (en-client-row:orr c)]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['id' s+id]
@@ -4192,8 +4382,7 @@
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
-  =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
+  ;<  cm=(map @t json)  bind:m  (read-map (rf 1 / %'clients.json'))
   =/  rows=(list json)
     %+  murn  ~(tap by cm)
     |=  [id=@t j=json]
@@ -4210,8 +4399,7 @@
   ;<  clients=json  bind:m  (read-json (rf 1 / %'clients.json'))
   ?~  (gj:orr clients id)  (send-err eyre-id 404 'no such client')
   =/  op=json  (pairs:enjs:format ~[['op' s+'drop-client'] ['id' s+id]])
-  ;<  err=(unit tang)  bind:m  (poke-soft:io (rf 1 / %'main.sig') [[/ %json] op])
-  ?^  err  (send-err eyre-id 500 'the writer refused the poke')
+  %^  write-then  eyre-id  op
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ::  ==  the scope, applied
 ::
