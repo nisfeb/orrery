@@ -8,6 +8,8 @@ import json, subprocess, sys, threading, time, urllib.parse
 from datetime import datetime, timedelta, timezone
 
 HOST, JAR = sys.argv[1:3]
+#  the ship the gate runs on, so a letter to it lands in its own inbox
+OUR = sys.argv[3] if len(sys.argv) > 3 else '~wex'
 API = HOST + '/apps/orrery/api'
 INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 fails = []
@@ -135,7 +137,7 @@ for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, ORG, SIT]:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')
 check('person/me exists', code == 200, (code, me))
-curl('POST', API + '/bodies', {'id': 'person/me', 'ship': '~wex'})
+curl('POST', API + '/bodies', {'id': 'person/me', 'ship': OUR})
 retract_matrix('person/me')
 code, acts = curl('GET', API + '/actions?status=open')
 for a in (acts if isinstance(acts, list) else []):
@@ -158,10 +160,10 @@ check('setup answers 200', code == 200, (code, d))
 check('setup bodies all ok', all_ok(d, 'bodies', 3), d)
 check('setup observations all ok', all_ok(d, 'observations', 3), d)
 code, me = body('person/me')
-check('the API emits the ship on a body', code == 200 and dictish(me).get('ship') == '~wex', me)
+check('the API emits the ship on a body', code == 200 and dictish(me).get('ship') == OUR, me)
 s = state()
 check('me.spouse is sarah, read back at once', val(s, 'person/me', 'spouse') == ref('person/sarah'), attrs(s, 'person/me'))
-code, r = curl('GET', API + '/resolve?q=%7Ewex')
+code, r = curl('GET', API + '/resolve?q=' + urllib.parse.quote(OUR))
 check('resolve finds me by ship', code == 200 and isinstance(r, list)
       and [x.get('id') for x in r if isinstance(x, dict)] == ['person/me'], r)
 code, d = curl('POST', API + '/bodies', {'id': 'person/sarah', 'ship': 'sarah'})
@@ -1045,7 +1047,7 @@ check('the stub saw the second sendMessage under the chat id from the people map
 # a message to a person with a ship: the channel rule files it via chat before the id is computed, and the rewrite is on the trail
 code, d = observe(
     [{'id': 'person/gate-shipped', 'name': 'the gate person with a ship'}],
-    [obs('person/gate-shipped', 'ship', '~wex', now - timedelta(minutes=1), USER),
+    [obs('person/gate-shipped', 'ship', OUR, now - timedelta(minutes=1), USER),
      obs('person/gate-shipped', 'telegram', '1002', now - timedelta(minutes=1), USER)])
 SHIPID = propose('message', 'Gate shipped %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-shipped', 'text': 'routed to chat'})
 a = action(SHIPID)
@@ -1124,7 +1126,7 @@ check('a note sets the channel to mail and the revision is not rerouted',
       code == 200 and dictish(d).get('ok') is True and dictish(dictish(dictish(d).get('action')).get('payload')).get('via') == 'mail' and dictish(a.get('payload')).get('via') == 'mail', (code, d, a.get('payload')))
 approve(MAILREFID)
 a = settled(MAILREFID, bound=90)
-check('approved, the executor sends it by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ~wex' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+check('approved, the executor sends it by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ' + OUR and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
 curl('PUT', API + '/generator', {'api_key': None})
 before = exec_last()
 approve(SHIPID)
@@ -1154,14 +1156,14 @@ last = exec_last(notes=[])
 check('dismissed, it is noted no more', last.get('notes') == [], last)
 # a message via mail: a send poke to auspex's writer, which probes its peer before it lands
 MAILID = propose('message', 'Gate mail %s' % XRUN, payload={'via': 'mail', 'to': 'person/gate-ship', 'text': 'a letter from the gate %s' % XRUN})
-code, d = observe([], [obs('person/gate-ship', 'ship', '~wex', now - timedelta(minutes=1), USER)])
+code, d = observe([], [obs('person/gate-ship', 'ship', OUR, now - timedelta(minutes=1), USER)])
 check('the gate ship person\'s ship lands, after the mail message was proposed via mail', code == 200 and all_ok(d, 'observations', 1), (code, d))
 approve(MAILID)
 a = settled(MAILID, bound=90)
-check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ~wex' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ' + OUR and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
 code, box = curl('GET', HOST + '/apps/auspex/api/inbox')
 threads = [t for t in dictish(box).get('threads', []) if dictish(t).get('subject') == 'Gate mail %s' % XRUN]
-check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == '~wex' and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
+check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == OUR and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
 # a message via chat is Talon's: the ship never claims it
 CHATID = propose('message', 'Gate chat %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-ship', 'text': 'a DM the ship does not send'})
 approve(CHATID)
@@ -1225,7 +1227,7 @@ while time.time() < deadline and DROP in standing:
     time.sleep(2)
     standing = occurrences(REPEAT_ID)
 check('the named occurrence is off the calendar and the other occurrences stand', standing == [o for o in was if o != DROP], (was, standing))
-GONEID = propose('calendar', 'Gate cancel a stranger %s' % XRUN, payload={'mode': 'cancel', 'event': '0v0.no.such@~wex'})
+GONEID = propose('calendar', 'Gate cancel a stranger %s' % XRUN, payload={'mode': 'cancel', 'event': '0v0.no.such@' + OUR})
 approve(GONEID)
 a = settled(GONEID)
 check('a cancel naming an event the calendar does not have is failed, with the reason',

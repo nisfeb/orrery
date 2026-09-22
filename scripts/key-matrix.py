@@ -413,6 +413,21 @@ for label, fn in (('clients', lambda: triage('GET', '/clients')),
     code, d = fn()
     check('a key may not reach ' + label, code == 403 and dictish(d).get('error') == 'owner only', (code, d))
 
+print('== the telegram webhook: a key with write, never a read-only one')
+# The dev ship has no bot token, so the route refuses at 400 for the
+# owner and a writing key alike; what is held is that a writing key
+# gets past the gate and a read-only one does not.
+code, d = triage('POST', '/telegram/webhook')
+check('a key with write may register the webhook', code != 403, (code, d))
+code, d = triage('GET', '/telegram/webhook')
+check('a key with write may read what telegram holds', code != 403, (code, d))
+code, d = reader('POST', '/telegram/webhook')
+check('a read-only key may not register the webhook', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
+code, d = reader('GET', '/telegram/webhook')
+check('a read-only key may not read what telegram holds', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
+code, d = triage('GET', '/telegram')
+check('the telegram settings stay the owner\'s', code == 403 and dictish(d).get('error') == 'owner only', (code, d))
+
 print('== last use, revocation, bad tokens')
 code, d = owner('GET', '/clients')
 rows = {c.get('id'): c for c in listish(d) if isinstance(c, dict)}

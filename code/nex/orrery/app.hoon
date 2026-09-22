@@ -683,6 +683,14 @@
   =/  act=actor  u.who
   ::  +own: a route the owner alone may take
   =/  own  |=(f=form:m ^-(form:m ?:(owner.act f (send-err eyre-id 403 'owner only'))))
+  ::  +writes: a route the owner or a key with write may take, so a
+  ::  client that walks the owner through a setup can finish it
+  =/  writes
+    |=  f=form:m
+    ^-  form:m
+    ?:  owner.act  f
+    ?:  &(?=(^ scope.act) write.u.scope.act)  f
+    (send-err eyre-id 403 'read only key')
   ::  a body is read as JSON, so a request carrying one says it is JSON.
   ::  The gates and the page all send the header. A POST with no body
   ::  carries no JSON to mistype, so it is not a 415.
@@ -740,8 +748,8 @@
   ?:  &(=('GET' meth) ?=([%api %telegram ~] suffix))         (own (serve-telegram eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))         (own (serve-set-telegram eyre-id jon))
   ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))   (own (serve-doc eyre-id %'telegram-last.json'))
-  ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (own (serve-set-webhook eyre-id))
-  ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   (own (serve-webhook-info eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  (writes (serve-set-webhook eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   (writes (serve-webhook-info eyre-id))
   ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))  (own (serve-telegram-wake eyre-id))
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
   ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-exec-wake eyre-id))

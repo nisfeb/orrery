@@ -196,7 +196,7 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 4. `python3 scripts/prompt-drift.py <orrery-utils checkout>/common` exits 0: the prompt cords in the lib equal the shared prompt files.
 5. Unit tests green on a ship whose grubbery desk holds the lib and the test files: `-test /=grubbery=/tests/lib/orrery ~` and `-test /=grubbery=/tests/lib/generator ~`.
 6. `node scripts/page-test.js` passes.
-7. `python3 scripts/api-matrix.py $SHIP $JAR` prints `ALL OK`, twice in a row. Run it first, because it deletes the bodies the sharing gate shares.
+7. `python3 scripts/api-matrix.py $SHIP $JAR [~ship]` prints `ALL OK`, twice in a row; the third argument is the dev ship's own name, `~wex` unless given, so the mail check's letter lands in its own inbox. Run it first, because it deletes the bodies the sharing gate shares.
 8. `python3 scripts/key-matrix.py $SHIP $JAR` prints `ALL OK`.
 9. `python3 scripts/mcp-matrix.py $SHIP $JAR` prints `ALL OK`.
 10. `python3 scripts/page-smoke.py $SHIP $JAR` prints `ALL OK`.
@@ -206,6 +206,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 14. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
+
+### Version 38's owner steps
+
+None. Version 38 opens `POST` and `GET /api/telegram/webhook` to a key with `write` beside the owner, so a client that walks the owner through the Telegram setup can register the webhook and read back what Telegram holds; it raises no consent prompt and adds no road. The tlon reader the 2026-09-21 spec calls version 38 becomes 39.
 
 ### Version 37's owner steps
 

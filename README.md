@@ -420,8 +420,8 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /apps/orrery/telegram` | Telegram's webhook, outside `/api`; the secret header is its whole credential, 403 on a wrong or missing one; 413 on a body over 64 KB, answered before the parse; a disabled reader, or an update whose id is not past the last one handled, answers 200 and drops |
 | `GET` and `PUT /telegram` | the reader's settings, the token and secret masked as `token_set` and `secret_set`; a blank field on PUT keeps the stored value, a JSON `null` clears it, a secret under 16 bytes is refused; owner only |
 | `GET /telegram/last` | the last update handled: outcome, notes, messages read today |
-| `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; owner only |
-| `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; owner only |
+| `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; the owner or a key with `write` (version 38), so a client walking the owner through the setup can finish it |
+| `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; the owner or a key with `write` |
 | `POST /telegram/wake` | wake the reader: drain the inbox now, an update kept through a model outage included, or restart a reader that crashed; owner only |
 | `GET /exec/last` | what the executor's last pass did: `claimed`, `sent`, `placed`, `failed` (id, title and note, newest first, twenty at most), todos `ticked`, `deleted` and `moved`, tasks `closed` from the calendar, todos `adopted`, the desks link could not find in `missing`, and `notes`; `at` is when it last looked, `acted_at` when those counts happened, since a pass that did nothing keeps the last one that did; owner only |
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
