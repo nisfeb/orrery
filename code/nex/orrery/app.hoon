@@ -3752,9 +3752,11 @@
     $(plans t.plans, tally (note-once tally (cat 3 'a message waits: ' note.p)))
   ?:  &(=(%telegram target.p) =('' token.tg))
     $(plans t.plans, tally (note-once tally 'a message waits: no bot token'))
-  ::  the desk the plan needs, or why it is left approved
+  ::  the desk the plan needs, or why it is left approved. An uncalendar
+  ::  plan is Task 4's to serve; the default arm refuses it for now so
+  ::  the union the planner widened still typechecks here.
   =/  desk=(each path exec-tally)
-    ?-    target.p
+    ?+    target.p  [%| (note-once tally 'the executor does not serve this yet')]
         %telegram  [%& /]
         %mail
       ?~  aus  [%| (note-missing tally 'auspex')]

@@ -1046,6 +1046,8 @@
               ['starts' 'required: ISO 8601 UTC']
               ['ends' 'optional: ISO 8601 UTC']
               ['location' 'optional']
+              ['mode' 'optional: add (the default) or cancel']
+              ['event' 'optional: the calendar id of the event to cancel']
           ==
       ==
   ==
@@ -4538,7 +4540,7 @@
 +$  exec-plan
   $:  id=@ta
       kind=@tas
-      target=?(%telegram %mail %calendar %todo)
+      target=?(%telegram %mail %calendar %todo %uncalendar)
       to=@t
       body=json
       note=@t
@@ -4639,9 +4641,14 @@
 ::  ship (with its ~); another via is not ours. The chat id is the
 ::  person's telegram attribute, or failing that the reader's people
 ::  map read backwards (the Telegram user id whose body is the person),
-::  which is how the bot found it too. A calendar or task action
-::  becomes an add-event in the owner's zone. Anything else, or a
-::  calendar action without a start, yields nothing.
+::  which is how the bot found it too. A calendar or task action whose
+::  mode is add (the default) becomes an add-event in the owner's zone.
+::  A calendar action whose mode is cancel becomes an uncalendar plan
+::  naming the event and, when the payload carries starts, the
+::  occurrence's epoch ms as body's start_ms, else an empty body. A
+::  mode that is neither add nor cancel, or a cancel with no event, is
+::  left approved and noted, the way a message with no address is.
+::  Anything else, or an add with no start, yields nothing.
 ::
 ++  plan-exec
   |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da]
@@ -4674,10 +4681,27 @@
           note
       ==
     ~
-  ?.  |(=(%calendar kind.a) =(%task kind.a))  ~
+  ?:  =(%task kind.a)
+    =/  ej=(unit json)  (event-json id a zone)
+    ?~  ej  ~
+    `[id kind.a %todo '' u.ej '']
+  ?.  =(%calendar kind.a)  ~
+  =/  raw-mode=@t  (lower (gs payload.a 'mode'))
+  =/  mode=@t  ?:(=('' raw-mode) 'add' raw-mode)
+  ?:  =('cancel' mode)
+    =/  event=@t  (gs payload.a 'event')
+    ?:  =('' event)
+      `[id kind.a %calendar '' (pairs:enjs:format ~) 'cancel needs the event']
+    =/  s=(unit @da)  (gt payload.a 'starts')
+    =/  body=json
+      ?~  s  (pairs:enjs:format ~)
+      (pairs:enjs:format ~[['start_ms' (numb:enjs:format (ms-of u.s))]])
+    `[id kind.a %uncalendar event body '']
+  ?.  =('add' mode)
+    `[id kind.a %calendar '' (pairs:enjs:format ~) 'mode must be add or cancel']
   =/  ej=(unit json)  (event-json id a zone)
   ?~  ej  ~
-  `[id kind.a ?:(=(%task kind.a) %todo %calendar) '' u.ej '']
+  `[id kind.a %calendar '' u.ej '']
 ::  +route-message: the owner's channel rule. A person with a ship is
 ::  reached on Urbit, so a message proposed for telegram or mail to
 ::  such a person is filed via chat, which Talon sends; telegram is for

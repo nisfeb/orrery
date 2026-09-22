@@ -860,6 +860,9 @@
       ['m5' [%message 'Tell Ann' (pay '{"via": "telegram", "to": "person/ann", "text": "y"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c1' [%calendar 'Dinner with Sarah' (pay '{"title": "Dinner with Sarah", "starts": "2026-09-25T20:00:00Z", "ends": "2026-09-25T22:00:00Z", "location": "the usual place"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c2' [%calendar 'Field day' (pay '{"title": "Field day", "starts": "2026-10-03T00:00:00Z", "ends": "2026-10-04T00:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['c3' [%calendar 'Cancel practice' (pay '{"mode": "cancel", "event": "cal-abc", "starts": "2026-10-01T15:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['c4' [%calendar 'Cancel field day' (pay '{"mode": "cancel", "event": "cal-def"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['c5' [%calendar 'Cancel unknown' (pay '{"mode": "cancel"}') ~ ~ 'telegram' now %approved '' ~]]
       ['t1' [%task 'Call the shop' (pay '{"notes": "about the brakes"}') ~ `~2026.9.30 'generator' now %approved '' ~]]
       ['t2' [%task 'Old one' ~ ~ ~ 'generator' now %proposed '' ~]]
       ['t3' [%task 'Done one' ~ ~ ~ 'generator' now %done '' ~]]
@@ -879,7 +882,7 @@
   =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
-    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm5' 'c1' 'c2' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
+    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm5' 'c1' 'c2' 'c3' 'c4' 'c5' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
     (expect-eq !>(%telegram) !>(target:(~(got by by-id) 'm1')))
     (expect-eq !>('545179154') !>(to:(~(got by by-id) 'm1')))
     (expect-eq !>('Dana could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
@@ -902,10 +905,35 @@
     (expect-eq !>(%todo) !>(target:(~(got by by-id) 't1')))
     (expect-eq !>('todo') !>((gs:orr body:(~(got by by-id) 't1') 'cat')))
   ==
+::  a calendar action whose mode is cancel: c3 has an event and a
+::  start, c4 an event and no start, c5 no event at all
+::
+++  test-plan-exec-cancel
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
+  =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
+  ;:  weld
+    ::  c3: a cancel with an event and a start becomes an uncalendar
+    ::  plan, to the event id, body's start_ms the occurrence's epoch ms
+    (expect-eq !>(%uncalendar) !>(target:(~(got by by-id) 'c3')))
+    (expect-eq !>('cal-abc') !>(to:(~(got by by-id) 'c3')))
+    (expect-eq !>(1.790.866.800.000) !>((need (gn:orr body:(~(got by by-id) 'c3') 'start_ms'))))
+    (expect-eq !>('') !>(note:(~(got by by-id) 'c3')))
+    ::  c4: a cancel with an event and no start still names the event,
+    ::  with an empty body, since there is no one occurrence to drop
+    (expect-eq !>(%uncalendar) !>(target:(~(got by by-id) 'c4')))
+    (expect-eq !>('cal-def') !>(to:(~(got by by-id) 'c4')))
+    (expect-eq !>(`(unit @ud)`~) !>((gn:orr body:(~(got by by-id) 'c4') 'start_ms')))
+    (expect-eq !>('') !>(note:(~(got by by-id) 'c4')))
+    ::  c5: a cancel with no event is left approved and noted, the way
+    ::  a message with no address is, so it never becomes an uncalendar
+    (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c5')))
+    (expect-eq !>('') !>(to:(~(got by by-id) 'c5')))
+    (expect-eq !>('cancel needs the event') !>(note:(~(got by by-id) 'c5')))
+  ==
 ++  test-event-json
   =/  c1  (snag 5 exec-acts)
   =/  c2  (snag 6 exec-acts)
-  =/  t1  (snag 7 exec-acts)
+  =/  t1  (snag 10 exec-acts)
   =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York'))
   =/  aj=json  (need (event-json:orr id.c2 a.c2 ''))
   ::  a whole day on New York's clock starts at 04:00Z in summer
