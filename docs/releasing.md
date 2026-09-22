@@ -206,3 +206,16 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 14. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
+
+### Version 37's owner steps
+
+Version 37 raises no consent prompt: a cancel rides the calendar roads version 34 already asked for. Two things belong to the owner, in this order.
+
+1. The calendar desk reaches version 16 or later first, on every ship that will run orrery 37. Skipping one occurrence of a repeat is the `skip-at {id, start_ms}` poke that release adds, and an older calendar takes a poke it does not know and does nothing with it, so the action would read `done` with `that occurrence skipped` while the occurrence stayed on the calendar. Cancelling a one-off is `del-event` and works against any calendar.
+2. After the pull, merge the changed schema notes into the ship's stored document. The starter schema in the lib is only a fall for a ship that has none, so a ship that already runs orrery keeps the schema it was seeded with: read it with `GET /api/schema`, change the keys below, and write the whole thing back with `PUT /api/schema`, the bare document and not a patch. Word for word:
+   - `kinds.activity.attrs` gains `skipped` (a stored schema seeded before the activity kind existed has no `kinds.activity` at all, in which case copy the whole block from `starter-schema` in `code/lib/orrery.hoon`).
+   - `kinds.activity.notes.status`: `active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped`
+   - `kinds.activity.notes.skipped`: `the start of one occurrence that is off, ISO 8601 UTC, one row per occurrence; the activity itself stays active`
+   - `payloads.calendar.mode`: `optional: add (the default) or cancel`
+   - `payloads.calendar.event`: `optional: the calendar id of the event to cancel`
+   - `multi` gains `skipped`, beside `participants`. Multi-valued is the one thing the ship enforces and it reads that list from the stored document, so until `skipped` is there a second cancelled occurrence supersedes the first instead of standing beside it.

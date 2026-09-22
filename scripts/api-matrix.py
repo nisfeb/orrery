@@ -911,6 +911,26 @@ def todo_for(aid, bound=30, gone=False):
         time.sleep(2)
 
 
+def event_named(name, bound=30, gone=False):
+    #  the calendar's own id for the event with this name, waited for
+    #  (or waited to go), since the store takes a poke after acking it
+    deadline = time.time() + bound
+    while True:
+        code, ev = curl('GET', HOST + '/apps/calendar/events.json')
+        hits = [e for e in (ev if isinstance(ev, list) else []) if dictish(dictish(e).get('meta')).get('name') == name]
+        if bool(hits) != gone or time.time() >= deadline:
+            return dictish(hits[0]).get('id') if hits else None
+        time.sleep(2)
+
+
+def occurrences(eid, days=40):
+    #  the starts the calendar's own expansion gives this event over
+    #  the next few weeks, which is the only place a skip shows
+    frm, to = int(now.timestamp() * 1000), int((now + timedelta(days=days)).timestamp() * 1000)
+    code, w = curl('GET', HOST + '/apps/calendar/window.json?from=%d&to=%d' % (frm, to))
+    return sorted(dictish(r).get('l') for r in dictish(w).get('rows', []) if dictish(r).get('id') == eid)
+
+
 def is_open(aid):
     code, acts = curl('GET', API + '/actions?status=open')
     return any(dictish(a).get('id') == aid for a in (acts if isinstance(acts, list) else []))
@@ -1170,6 +1190,54 @@ check('the event reads back through the calendar: timed, from starts to ends, at
       and ev.get('start_ms') == int(EV_START.timestamp() * 1000) and ev.get('end_ms') == int((EV_START + timedelta(minutes=90)).timestamp() * 1000)
       and dictish(ev.get('meta')) == {'name': 'Gate event %s' % XRUN, 'orrery': EVID, 'tags': ['orrery'], 'location': 'the gate'}, ev)
 EVENT_ID = events[0]['id'] if events else ''
+# a calendar action that cancels: a one-off comes off the calendar, one
+# occurrence of a repeat is skipped. Both events are made through the
+# calendar's own poke, so the cancel meets events the ship never placed,
+# which is the case the owner has
+CANCEL_ONCE = (now + timedelta(days=6)).replace(hour=9, minute=0, second=0)
+ONCE_NAME, REPEAT_NAME = 'Gate cancel once %s' % XRUN, 'Gate cancel repeat %s' % XRUN
+cal_poke({'action': 'add-event', 'cat': 'timed', 'kind': 'once', 'fin': 'to', 'meta': {'name': ONCE_NAME},
+          'start_ms': int(CANCEL_ONCE.timestamp() * 1000), 'end_ms': int((CANCEL_ONCE + timedelta(minutes=60)).timestamp() * 1000)})
+cal_poke({'action': 'add-event', 'cat': 'timed', 'kind': 'weekly', 'fin': 'dur', 'dur_min': 60, 'args': {'days': ['thu'], 'at': 600},
+          'meta': {'name': REPEAT_NAME}, 'start_ms': int((now + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp() * 1000)})
+ONCE_ID, REPEAT_ID = event_named(ONCE_NAME), event_named(REPEAT_NAME)
+check('a one-off and a repeat the owner keeps are on the calendar', bool(ONCE_ID) and bool(REPEAT_ID), (ONCE_ID, REPEAT_ID))
+was = occurrences(REPEAT_ID) if REPEAT_ID else []
+check('the repeat expands into several occurrences ahead', len(was) > 2, was)
+OFFID = propose('calendar', 'Gate cancel the one-off %s' % XRUN, payload={'mode': 'cancel', 'event': ONCE_ID or 'none'})
+approve(OFFID)
+a = settled(OFFID)
+check('an approved cancel of a one-off is done, off the calendar',
+      a.get('status') == 'done' and a.get('note') == 'off the calendar' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+check('the one-off is gone from the calendar', event_named(ONCE_NAME, gone=True) is None, ONCE_ID)
+DROP = was[1] if len(was) > 1 else 0
+SKIPID = propose('calendar', 'Gate cancel one occurrence %s' % XRUN,
+                 payload={'mode': 'cancel', 'event': REPEAT_ID or 'none', 'starts': iso(datetime.fromtimestamp(DROP / 1000, timezone.utc))})
+approve(SKIPID)
+a = settled(SKIPID)
+check('an approved cancel naming an occurrence is done, that occurrence skipped',
+      a.get('status') == 'done' and a.get('note') == 'that occurrence skipped' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+# the calendar takes the skip after acking the poke, so the window is
+# read again until the occurrence goes
+deadline = time.time() + 20
+standing = occurrences(REPEAT_ID) if REPEAT_ID else []
+while time.time() < deadline and DROP in standing:
+    time.sleep(2)
+    standing = occurrences(REPEAT_ID)
+check('the named occurrence is off the calendar and the other occurrences stand', standing == [o for o in was if o != DROP], (was, standing))
+GONEID = propose('calendar', 'Gate cancel a stranger %s' % XRUN, payload={'mode': 'cancel', 'event': '0v0.no.such@~wex'})
+approve(GONEID)
+a = settled(GONEID)
+check('a cancel naming an event the calendar does not have is failed, with the reason',
+      a.get('status') == 'failed' and a.get('note') == 'the calendar does not have that event' and steps(a)[-2:] == [('claimed', 'ship'), ('failed', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+BAREID = propose('calendar', 'Gate cancel with no event %s' % XRUN, payload={'mode': 'cancel'})
+approve(BAREID)
+time.sleep(8)
+a = action(BAREID)
+check('a cancel with no event is left approved, with no claim', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
+last = exec_last(notes=['a message waits: cancel needs the event'])
+check('the record says what the cancel is missing', 'a message waits: cancel needs the event' in (last.get('notes') or []), last)
+curl('POST', API + f'/actions/{BAREID}', {'status': 'dismissed', 'note': 'gate'})
 # a task: placed in the todo list without a claim, and done when the owner ticks it in the calendar
 TASK_DUE = (now + timedelta(days=4)).replace(hour=15, minute=0, second=0)
 TASKID = propose('task', 'Gate task %s' % XRUN, due=iso(TASK_DUE), payload={'notes': 'from the gate'})
@@ -1234,9 +1302,10 @@ while time.time() < deadline and exec_last().get('at') == before.get('at'):
 after = exec_last()
 check('the owner wakes the executor and the record follows', code == 200 and dictish(d).get('ok') is True and after.get('at') != before.get('at'), (code, d, before.get('at'), after.get('at')))
 check('an idle pass keeps the last active pass\'s counts and acted_at', after.get('acted_at') == before.get('acted_at') and after.get('deleted') == before.get('deleted'), (before, after))
-# teardown: the event and the todos this run's own actions made, and the three people
-if EVENT_ID:
-    cal_poke({'action': 'del-event', 'id': EVENT_ID})
+# teardown: the events and the todos this run made, and the three people
+for e in [EVENT_ID, ONCE_ID, REPEAT_ID]:
+    if e:
+        cal_poke({'action': 'del-event', 'id': e})
 MADE = [m for m in MADE if m]
 for t in todos():
     if dictish(t.get('meta')).get('orrery') in MADE:

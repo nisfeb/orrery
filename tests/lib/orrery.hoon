@@ -411,7 +411,7 @@
   ;:  weld
     (expect-eq !>(one) !>((hits 'alice')))
     (expect-eq !>(two) !>((hits 'Alice Baker')))
-    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'baker alicia')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'baker alicias')))
   ==
 ::  ==  merge: the pure parts
 ::

@@ -197,11 +197,12 @@ The ship carries out its own approved actions (version 34). An executor fiber ke
 - A `message` whose `via` is `telegram` goes as one `sendMessage` through the reader's token to the chat id in the person's `telegram` attribute, or, when there is none, to the Telegram user id the reader's `people` map gives that person.
 - A `message` via `mail` goes through auspex, which is mail between ships, so `to` is a person whose `ship` attribute names their ship; the action's title is the subject and the payload's text the body.
 - A `calendar` action becomes an event on the calendar, timed from `starts` to `ends` (an hour when `ends` is absent) or all-day when both are whole days, in the owner's `timezone` from `person/me`, carrying the action id as `meta.orrery` and the tag `orrery`.
+- A `calendar` action whose payload says `mode: cancel` takes an event off the calendar instead: the event is `event`, the calendar's own id, and one that repeats is skipped for the occurrence `starts` names rather than deleted.
 - A `task` becomes a todo in the calendar's list with its notes and its due, marked the same way.
 
 A message to a person with a `ship` attribute is always filed `via` `chat` instead, whatever channel it was proposed on, since Telegram is only for a person with none and mail stays for a person with a ship only when they have no chat, which today never happens; the trail notes the rewrite. A note at approval (below) can still choose the channel by hand, "send this as mail" or "over telegram", since that rewrite runs only when an action is first filed, never on a revision.
 
-Messages and calendar actions follow the claim protocol: claimed `by` `ship`, then `done` with `sent to <chat>`, `sent by mail to <ship>` or `on the calendar`, or `failed` with the reason (Telegram's own description, auspex's refusal).
+Messages and calendar actions follow the claim protocol: claimed `by` `ship`, then `done` with `sent to <chat>`, `sent by mail to <ship>`, `on the calendar`, `off the calendar` or `that occurrence skipped`, or `failed` with the reason (Telegram's own description, auspex's refusal, or, for a cancel, `the calendar does not have that event` or `that event repeats, so the occurrence is needed`).
 
 As the last step before a message leaves the ship, whether by `sendMessage` or the auspex poke, an em dash (U+2014) in its text is swapped for a comma, with one space after and none before, so none leaves the ship whatever a model wrote.
 
@@ -271,6 +272,8 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 ### The vocabulary
 
 `GET` and `PUT /schema` hold the vocabulary the models are advised to use: the kinds, the attributes each kind commonly has, notes saying what an attribute means where the name alone misleads, the action kinds with the payload shape each takes (`payloads`: a message's `via` is one of the channels listed there, `to` a body id; a calendar event's `starts`), and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted; adding a new kind of fact never changes a type.
+
+Two notes are worth reading before a client writes a cancellation. An activity's `status` is the series, `active` until it folds and `cancelled` when it has, while `skipped` is multi-valued and holds the start of one occurrence that is off, so one practice called off never cancels the class. A `calendar` payload's `mode` is `add`, the default and everything before version 37, or `cancel`, which takes `event`, the calendar's own id for the event to remove, and `starts` when it repeats.
 
 `GET` and `PUT /policy` hold the rules: `auto`, the action kinds approved on proposal; `push`, when to send a notification (`proposed`, `all` or `none`); `retention_days`, how long superseded, expired and retracted rows are kept; and `sensitive`, the attribute names a client key never sees, `health` and `income` from the start.
 
