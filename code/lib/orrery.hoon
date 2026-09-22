@@ -714,8 +714,8 @@
     ?:(=(~ cur.st) acc.st [(crip (flop cur.st)) acc.st])
   (flop out)
 ::  +token-hit: the shorter side's tokens all appear in the longer
-::  side's, and the shorter side has at least one token. "andrea" hits
-::  "Andrea Egan" in both directions; "andrea" never hits "Andrew Egan".
+::  side's, and the shorter side has at least one token. "alice" hits
+::  "Alice Baker" in both directions; "alice" never hits "Alicia Baker".
 ::
 ++  token-hit
   |=  [a=(list @t) b=(list @t)]
@@ -1029,7 +1029,7 @@
           :-  'message'
           %-  shape
           :~  ['via' 'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none']
-              ['to' 'required: the body id of the person, e.g. person/andrea']
+              ['to' 'required: the body id of the person, e.g. person/alice']
               ['text' 'required: the message, short, in the owner\'s own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.']
           ==
           :-  'home'
@@ -4259,7 +4259,7 @@
     ==
   =/  known=(set @t)  (~(gas in had) (turn made |=(b=json (gs b 'id'))))
   ::  a name or an alias, lower-cased, stands for its id: the model may
-  ::  write "susan" where the ship says person/susan-egan
+  ::  write "dana" where the ship says person/dana-hill
   =/  alias=(map @t @t)
     %-  ~(gas by *(map @t @t))
     ^-  (list [@t @t])

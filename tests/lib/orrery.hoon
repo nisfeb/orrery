@@ -381,13 +381,13 @@
 ::
 ++  test-resolve-identity
   =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
-    :~  ['person/andrea' [%person 'Andrea' ~ t0 ~] (wn 'email' ~['Andrea.Egan@example.com'])]
+    :~  ['person/alice' [%person 'Alice' ~ t0 ~] (wn 'email' ~['Alice.Baker@example.com'])]
         ['person/bo' [%person 'Bo' ~ t0 ~] (wn 'phone' ~['+1 555 0100' '+1 555 0199'])]
         ['person/cy' [%person 'Cy' ~ t0 ~] none]
     ==
   =/  hits  |=(q=@t ^-((list [id=bid:orr match=@tas]) (marks (resolve:orr q bodies))))
   ;:  weld
-    (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/andrea' %exact]]) !>((hits 'ANDREA.egan@example.com')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/alice' %exact]]) !>((hits 'ALICE.baker@example.com')))
     (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/bo' %exact]]) !>((hits '+1 555 0100')))
     (expect-eq !>(`(list [id=bid:orr match=@tas])`~[['person/bo' %exact]]) !>((hits '+1 555 0199')))
     (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'nobody@example.com')))
@@ -398,20 +398,20 @@
 ::
 ++  test-resolve-tokens
   =/  bodies=(list [id=bid:orr =body:orr winners=(map @t (list row:orr))])
-    :~  ['person/andrea' [%person 'Andrea' ~ t0 ~] none]
-        ['org/andrea-egan' [%org 'Andrea Egan' ~ t0 ~] none]
-        ['person/andrew' [%person 'Andrew Egan' ~ t0 ~] none]
-        ['person/andreasson' [%person 'Andreasson' ~ t0 ~] none]
+    :~  ['person/alice' [%person 'Alice' ~ t0 ~] none]
+        ['org/alice-baker' [%org 'Alice Baker' ~ t0 ~] none]
+        ['person/andrew' [%person 'Alicia Baker' ~ t0 ~] none]
+        ['person/alicesson' [%person 'Alicesson' ~ t0 ~] none]
     ==
   =/  hits  |=(q=@t ^-((list [id=bid:orr match=@tas]) (marks (resolve:orr q bodies))))
   =/  one=(list [id=bid:orr match=@tas])
-    ~[['person/andrea' %exact] ['org/andrea-egan' %token] ['person/andreasson' %prefix]]
+    ~[['person/alice' %exact] ['org/alice-baker' %token] ['person/alicesson' %prefix]]
   =/  two=(list [id=bid:orr match=@tas])
-    ~[['org/andrea-egan' %exact] ['person/andrea' %token]]
+    ~[['org/alice-baker' %exact] ['person/alice' %token]]
   ;:  weld
-    (expect-eq !>(one) !>((hits 'andrea')))
-    (expect-eq !>(two) !>((hits 'Andrea Egan')))
-    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'egan andrews')))
+    (expect-eq !>(one) !>((hits 'alice')))
+    (expect-eq !>(two) !>((hits 'Alice Baker')))
+    (expect-eq !>(`(list [id=bid:orr match=@tas])`~) !>((hits 'baker alicia')))
   ==
 ::  ==  merge: the pure parts
 ::
@@ -431,14 +431,14 @@
 ::  keeps into's name, ship and created
 ::
 ++  test-absorb
-  =/  into=body:orr  [%person 'Andrea' (sy ~['Andy']) t0 `~sampel-palnet]
-  =/  gone=body:orr  [%org 'Andrea Egan' (sy ~['AE']) (add t0 ~d1) ~]
+  =/  into=body:orr  [%person 'Alice' (sy ~['Andy']) t0 `~sampel-palnet]
+  =/  gone=body:orr  [%org 'Alice Baker' (sy ~['AE']) (add t0 ~d1) ~]
   =/  got=body:orr  (absorb:orr into gone)
   ;:  weld
-    (expect-eq !>('Andrea') !>(name.got))
+    (expect-eq !>('Alice') !>(name.got))
     (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship.got))
     (expect-eq !>(t0) !>(created.got))
-    (expect-eq !>((sy `(list @t)`~['Andy' 'AE' 'Andrea Egan'])) !>(aliases.got))
+    (expect-eq !>((sy `(list @t)`~['Andy' 'AE' 'Alice Baker'])) !>(aliases.got))
   ==
 ::  ==  actions, policy, encoders
 ::

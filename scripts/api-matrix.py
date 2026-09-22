@@ -967,7 +967,7 @@ def completion(answer):
 # carries the run so an earlier run's leftover is never its twin
 REFINE_EXTRA = 'Gate: buy the tow guy a coffee %s' % XRUN
 REFINE_CANNED = {
-    '': completion({'action': {'title': 'Tell Rose and Susan the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked. Susan knows too.'}, 'about': ['person/gate-shipped'], 'due': None},
+    '': completion({'action': {'title': 'Tell Rose and Dana the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked. Dana knows too.'}, 'about': ['person/gate-shipped'], 'due': None},
                     'extras': [{'kind': 'task', 'title': REFINE_EXTRA, 'payload': {'notes': 'before the tow'}, 'about': ['person/gate-shipped'], 'due': '2099-01-01T12:00:00Z'}], 'refused': ''}),
     'include karl in this': completion({'bodies': [{'id': 'person/gate-karl', 'kind': 'person', 'name': 'Gate Karl', 'aliases': []}],
                                         'action': {'title': 'Tell Rose and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped', 'person/gate-karl'], 'due': None},
@@ -1038,12 +1038,12 @@ check('the trail carries the rewrite', code == 200 and isinstance(log, list)
 curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
 time.sleep(0.5)
 n_refine = len(seen)
-code, d = refine(SHIPID, 'include susan in this')
+code, d = refine(SHIPID, 'include dana in this')
 d = dictish(d)
 ra, rx = dictish(d.get('action')), [dictish(x) for x in (d.get('extras') or [])]
 check('a note refines the proposed message: ok, the revised action with the canned title and via chat, one extra',
-      code == 200 and d.get('ok') is True and ra.get('id') == SHIPID and ra.get('title') == 'Tell Rose and Susan the tow is booked'
-      and dictish(ra.get('payload')).get('via') == 'chat' and dictish(ra.get('payload')).get('text') == 'The tow is booked. Susan knows too.' and len(rx) == 1, (code, d))
+      code == 200 and d.get('ok') is True and ra.get('id') == SHIPID and ra.get('title') == 'Tell Rose and Dana the tow is booked'
+      and dictish(ra.get('payload')).get('via') == 'chat' and dictish(ra.get('payload')).get('text') == 'The tow is booked. Dana knows too.' and len(rx) == 1, (code, d))
 EXTRAID = rx[0].get('id', '') if rx else ''
 MADE.append(EXTRAID)
 check('the extra is a task carrying refined_from and the original\'s about, approved under auto',
@@ -1055,7 +1055,7 @@ check('the model was asked once under the generator\'s key, with the refine prom
       len(asked) == 1 and sysblock.startswith('You refine') and any(h.get('authorization') == 'Bearer sk-stub' for p, h, _ in seen[n_refine:] if p.endswith('/chat/completions')), (len(asked), sysblock[:40]))
 a = action(SHIPID)
 check('read back, the action is still proposed under the new title with a last step revised by user',
-      a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Susan the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
+      a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
 check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the trail records the revision', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log), log[-4:] if isinstance(log, list) else log)
@@ -1074,9 +1074,9 @@ code, d = refine(SHIPID, '')
 check('an empty note is refused', code == 400, (code, d))
 code, taskkey = curl('POST', API + '/clients', {'name': 'gate task key', 'by': 'gate-task', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})
 code, rokey = curl('POST', API + '/clients', {'name': 'gate read key', 'by': 'gate-read', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': False, 'sensitive': 'none'}})
-code, d = refine(SHIPID, 'include susan in this', token=dictish(taskkey).get('token'))
+code, d = refine(SHIPID, 'include dana in this', token=dictish(taskkey).get('token'))
 check('a key whose actions lack the kind does not see the action', code == 404 and dictish(d).get('note') == 'no such action', (code, d))
-code, d = refine(SHIPID, 'include susan in this', token=dictish(rokey).get('token'))
+code, d = refine(SHIPID, 'include dana in this', token=dictish(rokey).get('token'))
 check('a read only key may not refine', code == 403 and dictish(d).get('note') == 'read only key', (code, d))
 code, msgkey = curl('POST', API + '/clients', {'name': 'gate message key', 'by': 'gate-msg', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': True, 'sensitive': 'none'}})
 code, d = refine(SHIPID, 'also add a todo', token=dictish(msgkey).get('token'))
@@ -1114,7 +1114,7 @@ after = exec_last()
 check('approved, it is left for the client that sends chat and the claimed count does not move',
       a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed'),
       (a.get('status'), steps(a), before.get('claimed'), after.get('claimed')))
-code, d = refine(SHIPID, 'include susan in this')
+code, d = refine(SHIPID, 'include dana in this')
 check('an approved action is not refined, with the reason as error and as note', code == 409 and dictish(d).get('error') == 'only a proposed action can be refined' and dictish(d).get('note') == 'only a proposed action can be refined', (code, d))
 curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'})
 if EXTRAID:
