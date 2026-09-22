@@ -3753,16 +3753,15 @@
   ?:  &(=(%telegram target.p) =('' token.tg))
     $(plans t.plans, tally (note-once tally 'a message waits: no bot token'))
   ::  the desk the plan needs, or why it is left approved. An uncalendar
-  ::  plan is Task 4's to serve; the default arm refuses it for now so
-  ::  the union the planner widened still typechecks here.
+  ::  plan needs the calendar, the same road a calendar action needs.
   =/  desk=(each path exec-tally)
-    ?+    target.p  [%| (note-once tally 'the executor does not serve this yet')]
+    ?-    target.p
         %telegram  [%& /]
         %mail
       ?~  aus  [%| (note-missing tally 'auspex')]
       ?~  aus-shut  [%& u.aus]
       [%| (note-once tally (cat 3 'a message waits: the auspex road is refused: ' u.aus-shut))]
-        ?(%calendar %todo)
+        ?(%calendar %todo %uncalendar)
       ?~  base.cal  [%| (note-missing tally 'calendar')]
       ?~  cal-shut  [%& u.base.cal]
       [%| (note-once tally (cat 3 'an action waits: the calendar road is refused: ' u.cal-shut))]
@@ -3849,6 +3848,40 @@
     ;<  err=(unit tang)  bind:m  (poke-calendar base body.p)
     ?^  err  (pure:m [| (tang-head u.err)])
     (pure:m [& 'on the calendar'])
+  ::
+      %uncalendar
+    ::  a cancel takes the event off the calendar, or skips the one
+    ::  occurrence the plan names. The store says which it is: a timed
+    ::  or allday row whose kind is once happens once and is deleted,
+    ::  anything else repeats and needs the occurrence, since the
+    ::  calendar skips by the moment an occurrence starts.
+    ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& base %'calendar.calendar'] ~)
+    ?.  ?=([~ %file *] vw)  (pure:m [| 'the calendar\'s store could not be read'])
+    ;<  store=(unit json)  bind:m  (calendar-json base (sang-noun:tarball sang.u.vw))
+    ?~  store  (pure:m [| 'the calendar\'s store could not be read'])
+    =/  rows=(list json)
+      %+  skim  (ga:orr u.store 'events')
+      |=(e=json =(to.p (gs:orr e 'id')))
+    ?~  rows  (pure:m [| 'the calendar does not have that event'])
+    =/  row=json  i.rows
+    =/  once=?  =('once' (gs:orr row 'kind'))
+    =/  start=(unit @ud)  (gn:orr body.p 'start_ms')
+    ?:  once
+      ;<  err=(unit tang)  bind:m
+        %+  poke-calendar  base
+        (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+to.p]])
+      ?^  err  (pure:m [| (tang-head u.err)])
+      (pure:m [& 'off the calendar'])
+    ?~  start  (pure:m [| 'that event repeats, so the occurrence is needed'])
+    ;<  err=(unit tang)  bind:m
+      %+  poke-calendar  base
+      %-  pairs:enjs:format
+      :~  ['action' s+'skip-at']
+          ['id' s+to.p]
+          ['start_ms' (numb:enjs:format u.start)]
+      ==
+    ?^  err  (pure:m [| (tang-head u.err)])
+    (pure:m [& 'that occurrence skipped'])
   ==
 ::  +send-telegram: one sendMessage through the reader's token, the
 ::  body the planner made (chat_id and text). Telegram answers ok false
