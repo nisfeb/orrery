@@ -3221,10 +3221,18 @@
   =/  t=@t  (lower (trim-cord k))
   ?:  |(=('' t) =('~' (end [3 1] t)))  t
   (cat 3 '~' t)
+::  +whom-key: a DM's whom as Tlon keys it: a club id as written, a
+::  ship lower case with one sig
+::
+++  whom-key
+  |=  k=@t
+  ^-  @t
+  =/  t=@t  (lower (trim-cord k))
+  ?:(=('0v' (end [3 2] t)) t (ship-key t))
 ++  de-chat-config
   |=  j=json
   ^-  chat-config
-  =/  names  |=(k=@t ^-((set @t) (~(del in (sy (turn (strings (ga j k)) trim-cord))) '')))
+  =/  names  |=([k=@t f=$-(@t @t)] ^-((set @t) (~(del in (sy (turn (strings (ga j k)) f))) '')))
   =/  people=(map @t @t)
     =/  p=json  (gj j 'people')
     ?.  ?=([%o *] p)  ~
@@ -3234,8 +3242,8 @@
     ^-  (unit [@t @t])
     ?.(?=([%s *] v) ~ `[(ship-key k) p.v])
   :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
-      (names 'dms')
-      (names 'channels')
+      (names 'dms' whom-key)
+      (names 'channels' |=(t=@t (lower (trim-cord t))))
       people
       =/(r (gj j 'read_own') ?:(?=([%b *] r) p.r |))
       (fall (gn j 'poll_minutes') 5)
@@ -3333,50 +3341,52 @@
 ::  a reply under seal.replies is {seal, reply-essay} and counts as a
 ::  message of its own. essay.sent is epoch milliseconds, essay.author
 ::  a ship string or {ship, nickname, avatar}. Only the conversations
-::  the owner picked are read, only what came after since, and the
-::  owner's own words only when read_own says so. Oldest first.
+::  the owner picked are read, only what was sent after floor (the
+::  first pass's look-back; later passes take everything the scry
+::  says changed, since a writ delivered late arrives once and the
+::  seen ring drops repeats), and the owner's own words only when
+::  read_own says so. In no order: the caller sorts the two lists
+::  together.
 ::
 ++  chat-rows
-  |=  [changes=json cfg=chat-config since=@da our=@t]
+  |=  [changes=json cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
-  (conv-rows changes dms.cfg cfg since our)
+  (conv-rows changes dms.cfg cfg floor our)
 ++  channel-rows
-  |=  [changes=json cfg=chat-config since=@da our=@t]
+  |=  [changes=json cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
-  (conv-rows changes channels.cfg cfg since our)
+  (conv-rows changes channels.cfg cfg floor our)
 ++  conv-rows
-  |=  [changes=json picked=(set @t) cfg=chat-config since=@da our=@t]
+  |=  [changes=json picked=(set @t) cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
   ?.  ?=([%o *] changes)  ~
-  =/  out=(list tg-msg)
-    %-  zing
-    %+  turn  ~(tap by p.changes)
-    |=  [whom=@t bag=json]
-    ^-  (list tg-msg)
-    ?.  (~(has in picked) whom)  ~
-    ?.  ?=([%o *] bag)  ~
-    %-  zing
-    %+  turn  ~(tap by p.bag)
-    |=  [k=@t w=json]
-    ^-  (list tg-msg)
-    =/  top=(list tg-msg)
-      =/  t=(unit tg-msg)  (post-row whom w 'essay' cfg since our)
-      ?~(t ~ ~[u.t])
-    =/  replies=json  (gj (gj w 'seal') 'replies')
-    ?.  ?=([%o *] replies)  top
-    %+  weld  top
-    ^-  (list tg-msg)
-    %+  murn  ~(tap by p.replies)
-    |=  [k=@t r=json]
-    (post-row whom r 'reply-essay' cfg since our)
-  (sort out |=([a=tg-msg b=tg-msg] (lth at.a at.b)))
+  %-  zing
+  %+  turn  ~(tap by p.changes)
+  |=  [whom=@t bag=json]
+  ^-  (list tg-msg)
+  ?.  (~(has in picked) whom)  ~
+  ?.  ?=([%o *] bag)  ~
+  %-  zing
+  %+  turn  ~(tap by p.bag)
+  |=  [k=@t w=json]
+  ^-  (list tg-msg)
+  =/  top=(list tg-msg)
+    =/  t=(unit tg-msg)  (post-row whom w 'essay' cfg floor our)
+    ?~(t ~ ~[u.t])
+  =/  replies=json  (gj (gj w 'seal') 'replies')
+  ?.  ?=([%o *] replies)  top
+  %+  weld  top
+  ^-  (list tg-msg)
+  %+  murn  ~(tap by p.replies)
+  |=  [k=@t r=json]
+  (post-row whom r 'reply-essay' cfg floor our)
 ++  post-row
-  |=  [whom=@t w=json key=@t cfg=chat-config since=@da our=@t]
+  |=  [whom=@t w=json key=@t cfg=chat-config floor=@da our=@t]
   ^-  (unit tg-msg)
   =/  essay=json  (gj w key)
   ?.  ?=([%o *] essay)  ~
   =/  sent=@da  (da-of-ms (fall (gn essay 'sent') 0))
-  ?.  (gth sent since)  ~
+  ?.  (gth sent floor)  ~
   =/  author=@t
     =/  a=json  (gj essay 'author')
     (ship-key ?:(?=([%s *] a) p.a (gs a 'ship')))

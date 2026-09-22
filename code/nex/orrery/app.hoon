@@ -260,12 +260,10 @@
           [~ %'chat.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%orrery chat: failed")
         |-
-        ;<  ~  bind:m  chat-pass
-        ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
-        =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
+        ;<  poll=@ud  bind:m  chat-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (cancel-timer:io /poll)
-        ;<  ~  bind:m  (set-timer:io /poll (add now (mul (max 1 poll.cfg) ~m1)))
+        ;<  ~  bind:m  (set-timer:io /poll (add now (mul (max 1 poll) ~m1)))
         ;<  *  bind:m  (take-gen-in /chat)
         $
           ::  the executor (version 34): on orrery's beacon it carries out
@@ -1961,11 +1959,11 @@
   ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  people  (people-pass:orr all acts multi now)
-  ;<  *  bind:m  (file-ops ops.people)
+  ;<  np=@ud  bind:m  (file-ops ops.people)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  merges  (approved-merges:orr acts)
   ;<  merged=@ud  bind:m  (run-merges merges)
-  ;<  all=(list loaded:orr)  bind:m  (reload-if (lent merges) all)
+  ;<  all=(list loaded:orr)  bind:m  (reload-if (add np (lent merges)) all)
   =/  retire  (plan-retire:orr all multi now (mul stale.cfg ~d1))
   ;<  *  bind:m  (file-ops (retire-ops:orr retire))
   =/  expire  (plan-expire:orr all multi now)
@@ -3223,38 +3221,34 @@
 ::  reader stays alive with a note. The path is what gall sees after
 ::  our ship and the desk, with the mark it should answer in last.
 ::
+++  scry-soft
+  |=  [mark=@tas pax=path]
+  =/  m  (fiber:fiber:nexus ,(unit vase))
+  ^-  form:m
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [mark pax]])
+  ?^  err  (pure:m ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %veto *]  [%done ~]
+      [~ %poke * *]
+    ?.  =([/ mark] p.sage.u.in)  [%skip ~]
+    [%done `q.sage.u.in]
+  ==
 ++  scry-json
   |=  pax=path
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
-  ;<  err=(unit tang)  bind:m
-    (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [%json pax]])
-  ?^  err  (pure:m ~)
-  |=  input:fiber:nexus
-  :+  ~  q.state
-  ?+  in  [%skip ~]
-      ~  [%wait ~]
-      [~ %veto *]  [%done ~]
-      [~ %poke * *]
-    ?.  =([/ %json] p.sage.u.in)  [%skip ~]
-    [%done `(fall (mole |.(!<(json q.sage.u.in))) [%o ~])]
-  ==
+  ;<  v=(unit vase)  bind:m  (scry-soft %json pax)
+  (pure:m ?~(v ~ `(fall (mole |.(!<(json u.v))) [%o ~])))
 ++  scry-loob
   |=  pax=path
   =/  m  (fiber:fiber:nexus ,(unit ?))
   ^-  form:m
-  ;<  err=(unit tang)  bind:m
-    (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [%loob pax]])
-  ?^  err  (pure:m ~)
-  |=  input:fiber:nexus
-  :+  ~  q.state
-  ?+  in  [%skip ~]
-      ~  [%wait ~]
-      [~ %veto *]  [%done ~]
-      [~ %poke * *]
-    ?.  =([/ %loob] p.sage.u.in)  [%skip ~]
-    [%done `(fall (mole |.(!<(? q.sage.u.in))) |)]
-  ==
+  ;<  v=(unit vase)  bind:m  (scry-soft %loob pax)
+  (pure:m ?~(v ~ `(fall (mole |.(!<(? u.v))) |)))
 ::  +groups-live: whether the chat and channels agents answer at all,
 ::  asked with %gu first: a %gx at an absent agent bails the event.
 ::  ~ when the scry road is refused.
@@ -3280,28 +3274,35 @@
 ::  remembered as read, and the record says the model is down.
 ::
 ++  chat-pass
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
   ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
   =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
-  ?.  enabled.cfg  (pure:m ~)
+  ?.  enabled.cfg  (pure:m poll.cfg)
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'chat-last.json'))
-  =/  since=@da
-    =/  s=(unit @da)  (de-iso:orr (gs:orr last 'since'))
-    ?^  s  u.s
-    (sub now (mul backfill.cfg ~h1))
+  ::  the first pass looks back backfill hours and reads nothing sent
+  ::  before that; a later pass takes whatever the scry says changed,
+  ::  however old its sent, since a writ delivered late shows up once
+  =/  first=(unit @da)  (de-iso:orr (gs:orr last 'since'))
+  =/  since=@da  ?^(first u.first (sub now (mul backfill.cfg ~h1)))
+  =/  floor=@da  ?^(first *@da since)
+  =/  record
+    |=  [notes=(list @t)]
+    ^-  form:m
+    ;<  ~  bind:m  (chat-record last now since *chat-tally notes ~)
+    (pure:m poll.cfg)
   ;<  live=(unit ?)  bind:m  groups-live
-  ?~  live  (chat-record last now since *chat-tally ~['the /sys/scry/ road is refused: approve it on the permits page'] ~)
-  ?.  u.live  (chat-record last now since *chat-tally ~['groups desk not installed'] ~)
+  ?~  live  (record ~['the /sys/scry/ road is refused: approve it on the permits page'])
+  ?.  u.live  (record ~['groups desk not installed'])
   ;<  chat=(unit json)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
   ;<  chans=(unit json)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
   ?:  |(?=(~ chat) ?=(~ chans))
-    (chat-record last now since *chat-tally ~['the /sys/scry/ road is refused: approve it on the permits page'] ~)
+    (record ~['the /sys/scry/ road is refused: approve it on the permits page'])
   ;<  our=@p  bind:m  get-our:io
   =/  me=@t  (scot %p our)
   =/  rows=(list tg-msg:orr)
-    %+  sort  (weld (chat-rows:orr u.chat cfg since me) (channel-rows:orr u.chans cfg since me))
+    %+  sort  (weld (chat-rows:orr u.chat cfg floor me) (channel-rows:orr u.chans cfg floor me))
     |=([a=tg-msg:orr b=tg-msg:orr] (lth at.a at.b))
   ;<  seen-j=json  bind:m  (read-json (rf 0 / %'chat-seen.json'))
   =/  seen=(set @t)  (sy (strings:orr ?:(?=([%a *] seen-j) p.seen-j ~)))
@@ -3316,7 +3317,10 @@
   |-
   ?~  rows
     ;<  ~  bind:m  (chat-remember seen-j new)
-    (chat-record last now now tally ~ ~)
+    ::  a message the cap held is neither read nor remembered, so since
+    ::  stays where it was and tomorrow's pass finds it again
+    ;<  ~  bind:m  (chat-record last now ?:(=(0 held.tally) now since) tally ~ ~)
+    (pure:m poll.cfg)
   =/  msg=tg-msg:orr  i.rows
   =/  key=@t  (rap 3 chat.msg '/' mid.msg ~)
   ?:  (~(has in seen) key)  $(rows t.rows)
@@ -3327,7 +3331,8 @@
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg msg u.who now chat-kind:orr)
   ?:  down
     ;<  ~  bind:m  (chat-remember seen-j new)
-    (chat-record last now since tally ~ `notes.facts)
+    ;<  ~  bind:m  (chat-record last now since tally ~ `notes.facts)
+    (pure:m poll.cfg)
   ;<  ~  bind:m  (tg-file facts u.who now chat-kind:orr)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'chat-recent.json'))
   ;<  ~  bind:m
@@ -3498,7 +3503,7 @@
   ::  a model the ship cannot reach reads off the card instead of
   ::  looking like a reader that never ran (ricsul, 2026-09-21)
   ?:  down
-    ;<  ~  bind:m  (tg-record-down last now uid notes.facts)
+    ;<  ~  bind:m  (tg-record-down now uid notes.facts)
     (pure:m &)
   ;<  ~  bind:m  (tg-file facts u.who now telegram-kind:orr)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
@@ -3676,9 +3681,12 @@
 ::  a held message and an ignored update do not move it
 ::
 ++  tg-record-down
-  |=  [last=json now=@da uid=@ud notes=(list @t)]
+  |=  [now=@da uid=@ud notes=(list @t)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ::  read again here: the model call took minutes, and a token saved
+  ::  meanwhile reset update_id in this file
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
   =/  down=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]

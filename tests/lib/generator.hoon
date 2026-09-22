@@ -712,6 +712,7 @@
     (expect-eq !>(500) !>(max-daily.c))
     (expect-eq !>('deepseek/deepseek-v4-flash') !>(model.c))
     (expect-eq !>((sy ~['~sampel-palnet' '0v4.abcde'])) !>(dms.full))
+    (expect-eq !>((sy ~['~zod' '0v4.x'])) !>(dms:(de-chat-config:orr (jo '{"dms": ["Zod", "0v4.X"]}'))))
     (expect-eq !>((sy ~['chat/~host/general'])) !>(channels.full))
     (expect-eq !>(`(unit @t)``'person/sam') !>((~(get by people.full) '~sampel-palnet')))
     (expect-eq !>(&) !>(read-own.full))
@@ -743,15 +744,16 @@
      "~other-ship": {"170.141.184.505.999.000.000.000.000.000.000.007": {"seal": {"id": "~other-ship/170.141.184.505.999.000.000.000.000.000.000.007", "replies": {}}, "essay": {"content": [{"inline": ["not picked"]}], "author": "~other-ship", "sent": 1777054950000}}},
      "0v4.club": null}
     '''
-  =/  rows=(list tg-msg:orr)  (chat-rows:orr changes cfg since '~zod')
-  =/  own=(list tg-msg:orr)  (chat-rows:orr changes cfg(read-own &) since '~zod')
+  =/  byat  |=([a=tg-msg:orr b=tg-msg:orr] (lth at.a at.b))
+  =/  rows=(list tg-msg:orr)  (sort (chat-rows:orr changes cfg since '~zod') byat)
+  =/  own=(list tg-msg:orr)  (sort (chat-rows:orr changes cfg(read-own &) since '~zod') byat)
   =/  posts=json
     %-  jo
     '''
     {"chat/~host/general": {"170141184507933044937549665940933705728": {"seal": {"id": "170141184507933044937549665940933705728", "mod-at": "170.141", "seq": 961, "reacts": {}, "replies": {"170.141.184.507.933.045.432": {"seal": {"id": "170141184507933045432608980879542321152", "parent-id": "170141184507933044937549665940933705728", "reacts": {}}, "reply-essay": {"content": [{"inline": ["nice"]}], "author": "~sampel-palnet", "sent": 1777054928725, "blob": null}}}, "meta": null}, "essay": {"content": [{"inline": ["hello channel"]}], "author": "~ricsul-bilwyt-dozzod-nisfeb", "sent": 1777054902389, "kind": "/chat", "blob": null, "meta": null}, "type": "post"}},
      "chat/~host/other": null}
     '''
-  =/  prows=(list tg-msg:orr)  (channel-rows:orr posts cfg since '~zod')
+  =/  prows=(list tg-msg:orr)  (sort (channel-rows:orr posts cfg since '~zod') byat)
   ;:  weld
     (expect-eq !>(3) !>((lent rows)))
     (expect-eq !>(`(list @t)`~['first' 'later' 'a reply']) !>((turn rows |=(m=tg-msg:orr text.m))))

@@ -656,11 +656,15 @@
     }
     var people;
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
-    return { enabled: !!view.querySelector('#chat input[name="enabled"]:checked'), dms: list('dms'), channels: list('channels'), people: people,
-      read_own: !!view.querySelector('#chat input[name="read_own"]:checked'),
-      poll_minutes: parseInt(val('poll_minutes'), 10) || 5, backfill_hours: parseInt(val('backfill_hours'), 10) || 24,
-      gate: parseInt(val('gate'), 10) || 0, escalate: parseInt(val('escalate'), 10) || 0,
-      max_daily_messages: parseInt(val('max_daily_messages'), 10) || 0, model: val('model') };
+    var c = { enabled: !!view.querySelector('#chat input[name="enabled"]:checked'), dms: list('dms'), channels: list('channels'), people: people,
+      read_own: !!view.querySelector('#chat input[name="read_own"]:checked'), model: val('model') };
+    // a number left blank is left out, so the ship's default stands
+    // rather than a zero that would hold every message
+    ['poll_minutes', 'backfill_hours', 'gate', 'escalate', 'max_daily_messages'].forEach(function (k) {
+      var n = parseInt(val(k), 10);
+      if (!isNaN(n)) c[k] = n;
+    });
+    return c;
   }
   // the mint form as the API takes it; sensitive: write only rides with write
   function mintForm() {

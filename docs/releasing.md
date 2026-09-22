@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 40's owner steps
+
+None. Version 40 fixes the chat reader's first release from the review of version 39: a message the daily cap held is found again the next day, a writ delivered late is read, a DM typed with a capital or without its sig is matched, a blank number on the Chat card leaves the ship's default in place, and the record of a Telegram token reset survives a model outage. No new road.
+
 ### Version 39's owner steps
 
 Version 39 adds one road, `/sys/scry/`, so the consent prompt comes back: approve it on `/apps/grubbery/permits` and reload the instance. Then on the Chat card under Settings pick the DMs and the channels the ship should read, add a people row for any sender who is not a person body with a ship, and turn it on; the first pass looks back 24 hours. The phone client's chat reader is then switched off, since both write the same source ids and a message must be triaged once.

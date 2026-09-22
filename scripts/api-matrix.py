@@ -864,15 +864,17 @@ code, d = curl('GET', API + '/chat/last', token=dictish(k).get('token'))
 check('the record is the owner\'s', code == 403, (code, d))
 curl('DELETE', API + '/clients/' + str(dictish(k).get('id')))
 curl('DELETE', API + '/clients/' + str(dictish(ro).get('id')))
+before_at = dictish(curl('GET', API + '/chat/last')[1]).get('at')
+time.sleep(1.1)
 code, d = curl('POST', API + '/chat/wake')
 check('the reader takes a wake', code == 200 and dictish(d).get('ok') is True, (code, d))
 deadline = time.time() + 30
 while time.time() < deadline:
     code, last = curl('GET', API + '/chat/last')
-    if dictish(last).get('at'):
+    if dictish(last).get('at') and dictish(last).get('at') != before_at:
         break
     time.sleep(2)
-check('the pass wrote its record: since and at set, nothing read on a ship with no messages', code == 200 and bool(dictish(last).get('since')) and bool(dictish(last).get('at')) and dictish(last).get('read') == 0 and isinstance(dictish(last).get('notes'), list), (code, last))
+check('the woken pass wrote a new record: since and at set, nothing read on a ship with no messages', code == 200 and bool(dictish(last).get('since')) and dictish(last).get('at') != before_at and dictish(last).get('read') == 0 and isinstance(dictish(last).get('notes'), list), (code, last, before_at))
 code, d = curl('GET', API + '/chat/dms')
 check('the DM list answers items and a note', code == 200 and isinstance(dictish(d).get('items'), list) and 'note' in dictish(d), (code, d))
 code, d = curl('PUT', API + '/chat', {'enabled': False})
