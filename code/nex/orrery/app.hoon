@@ -3722,7 +3722,7 @@
   =/  need-cal=?
     %+  lien  plans
     |=  p=exec-plan:orr
-    ?:  =(%calendar target.p)  &
+    ?:  ?=(?(%calendar %uncalendar) target.p)  &
     ?.  =(%todo target.p)  |
     ?~  todos.cal  |
     =/  was=(unit action:orr)  (act-of acts id.p)
@@ -3788,7 +3788,7 @@
     =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
     tally(failed (scag 20 f))
   =?  tally  &(ok ?=(?(%telegram %mail) target.p))  tally(sent +(sent.tally))
-  =?  tally  &(ok ?=(%calendar target.p))  tally(placed +(placed.tally))
+  =?  tally  &(ok ?=(?(%calendar %uncalendar) target.p))  tally(placed +(placed.tally))
   $(plans t.plans)
 ::  +road-shut: why a poke road is refused, or ~ when it is open. The
 ::  proof is a poke the target ignores: the calendar drops an action
@@ -3855,24 +3855,25 @@
     ::  or allday row whose kind is once happens once and is deleted,
     ::  anything else repeats and needs the occurrence, since the
     ::  calendar skips by the moment an occurrence starts.
-    ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& base %'calendar.calendar'] ~)
-    ?.  ?=([~ %file *] vw)  (pure:m [| 'the calendar\'s store could not be read'])
-    ;<  store=(unit json)  bind:m  (calendar-json base (sang-noun:tarball sang.u.vw))
-    ?~  store  (pure:m [| 'the calendar\'s store could not be read'])
-    =/  rows=(list json)
-      %+  skim  (ga:orr u.store 'events')
-      |=(e=json =(to.p (gs:orr e 'id')))
-    ?~  rows  (pure:m [| 'the calendar does not have that event'])
-    =/  row=json  i.rows
-    =/  once=?  =('once' (gs:orr row 'kind'))
+    ;<  row=(each json @t)  bind:m  (event-row base to.p)
+    ?:  ?=(%| -.row)  (pure:m [| p.row])
+    =/  cat=@t  (gs:orr p.row 'cat')
+    ?:  |(=('todo' cat) =('date' cat))
+      (pure:m [| 'a task or a date is not something a cancel takes off the calendar'])
+    =/  once=?  =('once' (gs:orr p.row 'kind'))
     =/  start=(unit @ud)  (gn:orr body.p 'start_ms')
     ?:  once
       ;<  err=(unit tang)  bind:m
         %+  poke-calendar  base
         (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+to.p]])
       ?^  err  (pure:m [| (tang-head u.err)])
-      (pure:m [& 'off the calendar'])
+      ::  the poke is acked, not answered, so the proof that the event
+      ::  is gone is that the store no longer has it.
+      ;<  after=(each json @t)  bind:m  (event-row base to.p)
+      ?:  ?=(%| -.after)  (pure:m [& 'off the calendar'])
+      (pure:m [| 'the calendar kept the event'])
     ?~  start  (pure:m [| 'that event repeats, so the occurrence is needed'])
+    =/  before=@ud  (lent (ga:orr p.row 'except'))
     ;<  err=(unit tang)  bind:m
       %+  poke-calendar  base
       %-  pairs:enjs:format
@@ -3881,8 +3882,33 @@
           ['start_ms' (numb:enjs:format u.start)]
       ==
     ?^  err  (pure:m [| (tang-head u.err)])
-    (pure:m [& 'that occurrence skipped'])
+    ::  the calendar drops a skip it cannot place (no occurrence starts
+    ::  at that moment, or it is already skipped) without saying so, so
+    ::  the proof is the event's own list of dropped occurrences: one
+    ::  longer means this skip took.
+    ;<  after=(each json @t)  bind:m  (event-row base to.p)
+    ?:  ?=(%| -.after)  (pure:m [| p.after])
+    ?:  (gth (lent (ga:orr p.after 'except')) before)
+      (pure:m [& 'that occurrence skipped'])
+    (pure:m [| 'the calendar skipped nothing: no occurrence starts then, or it is skipped already'])
   ==
+::  +event-row: one event as the store's JSON gives it, or why not. The
+::  store is read fresh each time, since a cancel acts on what the
+::  calendar holds now, not on what the mirror last saw.
+::
+++  event-row
+  |=  [base=path id=@t]
+  =/  m  (fiber:fiber:nexus ,(each json @t))
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& base %'calendar.calendar'] ~)
+  ?.  ?=([~ %file *] vw)  (pure:m [%| 'the calendar\'s store could not be read'])
+  ;<  store=(unit json)  bind:m  (calendar-json base (sang-noun:tarball sang.u.vw))
+  ?~  store  (pure:m [%| 'the calendar\'s store could not be read'])
+  =/  rows=(list json)
+    %+  skim  (ga:orr u.store 'events')
+    |=(e=json =(id (gs:orr e 'id')))
+  ?~  rows  (pure:m [%| 'the calendar does not have that event'])
+  (pure:m [%& i.rows])
 ::  +send-telegram: one sendMessage through the reader's token, the
 ::  body the planner made (chat_id and text). Telegram answers ok false
 ::  with a description, which is the failure note; no answer at all
