@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 43's owner steps
+
+None. Version 43 makes a missing scry answer legible: the chat record's notes now say by name when the chat or channels agent gave no answer, an answer that is not JSON, or a JSON null, which is what an older groups desk answers for a scry it lacks; the two list routes say the same in their note. No new road.
+
 ### Version 42's owner steps
 
 None. Version 42 is the Chat card and the settings routes after the owner's first use: the picked DMs and channels are lists with a filtered picker that shows a DM's nickname from the contact book and a channel's group and channel titles (two new scries on the same road, `/gx/contacts/v1/book/json` and `/gx/groups/v2/light/groups/json`); every stamp on the page is in the reader's local time; a settings `PUT` answers the document as stored once the write has landed, so a client that read straight back no longer sees its save as lost; and the chat record says how many conversations and messages the scries answered. No new road.

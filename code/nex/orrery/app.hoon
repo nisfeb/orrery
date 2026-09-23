@@ -3257,19 +3257,20 @@
   ;<  live=(unit ?)  bind:m  groups-live
   ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
   ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
-  ;<  dms=(unit json)  bind:m  (scry-json /gx/chat/dm/json)
+  ;<  dms=(each json @t)  bind:m  (scry-json /gx/chat/dm/json)
+  ?:  ?=(%| -.dms)  (send-list eyre-id ~ (cat 3 'the DM list: ' p.dms))
   ;<  has-book=(unit ?)  bind:m  (scry-loob /gu/contacts/$)
-  ;<  book=(unit json)  bind:m
-    ?.  (fall has-book |)  (pure:(fiber:fiber:nexus ,(unit json)) ~)
+  ;<  book=(each json @t)  bind:m
+    ?.  (fall has-book |)  (pure:(fiber:fiber:nexus ,(each json @t)) [%| 'no contacts agent'])
     (scry-json /gx/contacts/v1/book/json)
   =/  nick
     |=  ship=@t
     ^-  @t
-    =/  page=json  (gj:orr (fall book ~) ship)
+    =/  page=json  (gj:orr ?:(?=(%& -.book) p.book ~) ship)
     ?.  ?=([%a * * ~] page)  ''
     =/  mod=@t  (gs:orr (gj:orr i.t.p.page 'nickname') 'value')
     ?:(!=('' mod) mod (gs:orr (gj:orr i.p.page 'nickname') 'value'))
-  =/  ships=(list @t)  (sort (strings:orr ?:(?=([~ %a *] dms) p.u.dms ~)) aor)
+  =/  ships=(list @t)  (sort (strings:orr ?:(?=([%a *] p.dms) p.p.dms ~)) aor)
   (send-list eyre-id (turn ships |=(s=@t [s (nick s)])) '')
 ++  serve-chat-channels
   |=  eyre-id=@ta
@@ -3280,11 +3281,12 @@
   ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
   ;<  has-groups=(unit ?)  bind:m  (scry-loob /gu/groups/$)
   ?.  (fall has-groups |)  (send-list eyre-id ~ 'groups desk not installed')
-  ;<  groups=(unit json)  bind:m  (scry-json /gx/groups/v2/light/groups/json)
+  ;<  groups=(each json @t)  bind:m  (scry-json /gx/groups/v2/light/groups/json)
+  ?:  ?=(%| -.groups)  (send-list eyre-id ~ (cat 3 'the group list: ' p.groups))
   =/  items=(list [id=@t name=@t])
-    ?.  ?=([~ %o *] groups)  ~
+    ?.  ?=([%o *] p.groups)  ~
     %-  zing
-    %+  turn  ~(tap by p.u.groups)
+    %+  turn  ~(tap by p.p.groups)
     |=  [flag=@t g=json]
     ^-  (list [id=@t name=@t])
     =/  gt=@t  (gs:orr (gj:orr g 'meta') 'title')
@@ -3347,12 +3349,21 @@
     ==
   ;<  ~  bind:m  (cancel-timer:io /scry)
   (pure:m got)
+::  +scry-json: the answer as JSON, or why there is none: no answer at
+::  all (the road refused, the desk silent), an answer that is not
+::  JSON, or a JSON null, which is what a path the agent does not know
+::  comes back as (an older groups desk without that scry).
+::
 ++  scry-json
   |=  pax=path
-  =/  m  (fiber:fiber:nexus ,(unit json))
+  =/  m  (fiber:fiber:nexus ,(each json @t))
   ^-  form:m
   ;<  v=(unit vase)  bind:m  (scry-soft %json pax)
-  (pure:m ?~(v ~ `(fall (mole |.(!<(json u.v))) [%o ~])))
+  ?~  v  (pure:m [%| 'no answer: the road is refused or the desk did not reply'])
+  =/  j=(unit json)  (mole |.(!<(json u.v)))
+  ?~  j  (pure:m [%| 'the answer is not JSON'])
+  ?~  u.j  (pure:m [%| 'a null answer: this groups desk has no such scry'])
+  (pure:m [%& u.j])
 ++  scry-loob
   |=  pax=path
   =/  m  (fiber:fiber:nexus ,(unit ?))
@@ -3406,19 +3417,22 @@
   ;<  live=(unit ?)  bind:m  groups-live
   ?~  live  (record ~['the /sys/scry/ road is refused: approve it on the permits page'])
   ?.  u.live  (record ~['groups desk not installed'])
-  ;<  chat=(unit json)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
-  ;<  chans=(unit json)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
-  ::  neither answering is the road; one short is that agent's, and
-  ::  the other's rows are read all the same
-  ?:  &(?=(~ chat) ?=(~ chans))
-    (record ~['the /sys/scry/ road is refused, or the groups desk did not answer'])
+  ;<  chat=(each json @t)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
+  ;<  chans=(each json @t)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
+  ::  an agent that did not answer is said by name; the other's rows are
+  ::  read all the same, and both short ends the pass with both reasons
+  =/  said=(list @t)
+    %+  weld
+      ?:(?=(%& -.chat) ~ ~[(cat 3 'chat changes: ' p.chat)])
+    ?:(?=(%& -.chans) ~ ~[(cat 3 'channel changes: ' p.chans)])
+  ?:  &(?=(%| -.chat) ?=(%| -.chans))  (record said)
   ;<  our=@p  bind:m  get-our:io
   =/  me=@t  (scot %p our)
   =/  rows=(list tg-msg:orr)
     %+  sort
       %+  weld
-        (chat-rows:orr (fall chat [%o ~]) cfg floor me)
-      (channel-rows:orr (fall chans [%o ~]) cfg floor me)
+        (chat-rows:orr ?:(?=(%& -.chat) p.chat [%o ~]) cfg floor me)
+      (channel-rows:orr ?:(?=(%& -.chans) p.chans [%o ~]) cfg floor me)
     |=([a=tg-msg:orr b=tg-msg:orr] (lth at.a at.b))
   ;<  seen-j=json  bind:m  (read-json (rf 0 / %'chat-seen.json'))
   =/  seen=(set @t)  (sy (strings:orr ?:(?=([%a *] seen-j) p.seen-j ~)))
@@ -3431,8 +3445,9 @@
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   =|  tally=chat-tally
   =.  changed.tally  (lent rows)
+  =.  notes.tally  said
   =.  conversations.tally
-    =/  keys  |=(j=(unit json) ^-(@ud ?:(?=([~ %o *] j) ~(wyt by p.u.j) 0)))
+    =/  keys  |=(j=(each json @t) ^-(@ud ?:(?=([%& %o *] j) ~(wyt by p.p.j) 0)))
     (add (keys chat) (keys chans))
   =|  new=(list @t)
   =|  held-at=(unit @da)
