@@ -764,8 +764,8 @@
   ?:  &(=('PUT' meth) ?=([%api %chat ~] suffix))             (writes (serve-set-doc eyre-id 'set-chat' jon))
   ?:  &(=('GET' meth) ?=([%api %chat %last ~] suffix))       (own (serve-doc eyre-id %'chat-last.json'))
   ?:  &(=('POST' meth) ?=([%api %chat %wake ~] suffix))      (own (serve-prod eyre-id %'chat.sig' 'chat'))
-  ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-list eyre-id /gx/chat/dm/json))
-  ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-list eyre-id /gx/channels/v5/channels/json))
+  ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-dms eyre-id))
+  ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-channels eyre-id))
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
   ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-prod eyre-id %'exec.sig' 'executor'))
   (send-err eyre-id 404 'no such route')
@@ -2120,14 +2120,57 @@
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +serve-set-doc: PUT one of those documents, through the writer
 ::
+::  +serve-set-doc: PUT one of those documents, through the writer. The
+::  answer is the document as stored, in the shape its GET gives, read
+::  once the write has landed: a poke resolves when the writer takes it,
+::  not when the write lands, so a client that read straight back saw
+::  the old settings and thought its save was lost (Talon, 2026-09-23).
+::  The route computes what the writer will store and waits for it, two
+::  seconds at most; an unchanged document answers at once.
+::
 ++  serve-set-doc
   |=  [eyre-id=@ta op=@t jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  name=@ta  (settings-file op)
+  ;<  base=(map @t json)  bind:m  (read-map (rf 1 / name))
+  =/  expected=json
+    ?+  op  jon
+      %'set-generator'  [%o (merge-settings:orr base p.jon (sy ~['api_key']))]
+      %'set-telegram'   [%o (merge-settings:orr base p.jon (sy ~['token' 'secret']))]
+      %'set-chat'       [%o (merge-settings:orr base p.jon ~)]
+    ==
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   %^  write-then  eyre-id  pk
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+  =/  tries=@ud  10
+  |-
+  ;<  cur=json  bind:m  (read-json (rf 1 / name))
+  ?:  |(=(cur expected) =(0 tries))  (send-json eyre-id 200 (settings-view op cur))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-wait:io (add now ~s0..3333))
+  ;<  ~  bind:m  (take-wake:io ~)
+  $(tries (dec tries))
+::  +settings-file, +settings-view: the document an op writes, and how
+::  its GET shows it (the secrets masked)
+::
+++  settings-file
+  |=  op=@t
+  ^-  @ta
+  ?+  op  %'policy.json'
+    %'set-schema'     %'schema.json'
+    %'set-generator'  %'generator.json'
+    %'set-telegram'   %'telegram.json'
+    %'set-chat'       %'chat.json'
+  ==
+++  settings-view
+  |=  [op=@t doc=json]
+  ^-  json
+  ?+  op  doc
+    %'set-generator'  (en-config-masked:orr (de-config:orr doc))
+    %'set-telegram'   (en-tg-config-masked:orr (de-tg-config:orr doc))
+    %'set-chat'       (en-chat-config:orr (de-chat-config:orr doc))
+  ==
 ::  ==  sharing: where things are
 ::
 ::  +orrery-instance: the desk path a peer's orrery is assumed to sit
@@ -3196,25 +3239,79 @@
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / %'chat.json'))
   (send-json eyre-id 200 (en-chat-config:orr (de-chat-config:orr doc)))
-::  +serve-chat-list: what the groups desk holds, for the card to offer:
-::  the DM list or the channel list, through the same scries the reader
-::  uses. An absent groups desk or a refused road answers an empty list
-::  with a note, never an error, since the card renders either way.
+::  +serve-chat-dms, +serve-chat-channels: what the groups desk holds,
+::  for the card to offer, each item its id and a name a person would
+::  know it by: a DM's ship with the nickname the owner's contact book
+::  gives it (tlon-apps desk/lib/contacts/json-1.hoon: the book is a
+::  map from ship to [contact mod], a value {type, value}), a channel's
+::  nest with its group's title and its own (desk/lib/groups-json.hoon
+::  v9 +groups: a map from flag to a group with meta and channels, each
+::  channel with meta). An absent desk or a refused road answers an
+::  empty list with a note, never an error, since the card renders
+::  either way.
 ::
-++  serve-chat-list
-  |=  [eyre-id=@ta pax=path]
+++  serve-chat-dms
+  |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  live=(unit ?)  bind:m  groups-live
-  ?~  live  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+~] ['note' s+'the /sys/scry/ road is refused']]))
-  ?.  u.live  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+~] ['note' s+'groups desk not installed']]))
-  ;<  got=(unit json)  bind:m  (scry-json pax)
-  =/  items=(list @t)
-    ?~  got  ~
-    ?:  ?=([%a *] u.got)  (strings:orr p.u.got)
-    ?:  ?=([%o *] u.got)  (sort ~(tap in ~(key by p.u.got)) aor)
-    ~
-  (send-json eyre-id 200 (pairs:enjs:format ~[['items' a+(turn items |=(t=@t `json`s+t))] ['note' s+'']]))
+  ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
+  ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
+  ;<  dms=(unit json)  bind:m  (scry-json /gx/chat/dm/json)
+  ;<  has-book=(unit ?)  bind:m  (scry-loob /gu/contacts/$)
+  ;<  book=(unit json)  bind:m
+    ?.  (fall has-book |)  (pure:(fiber:fiber:nexus ,(unit json)) ~)
+    (scry-json /gx/contacts/v1/book/json)
+  =/  nick
+    |=  ship=@t
+    ^-  @t
+    =/  page=json  (gj:orr (fall book ~) ship)
+    ?.  ?=([%a * * ~] page)  ''
+    =/  mod=@t  (gs:orr (gj:orr i.t.p.page 'nickname') 'value')
+    ?:(!=('' mod) mod (gs:orr (gj:orr i.p.page 'nickname') 'value'))
+  =/  ships=(list @t)  (sort (strings:orr ?:(?=([~ %a *] dms) p.u.dms ~)) aor)
+  (send-list eyre-id (turn ships |=(s=@t [s (nick s)])) '')
+++  serve-chat-channels
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
+  ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
+  ;<  has-groups=(unit ?)  bind:m  (scry-loob /gu/groups/$)
+  ?.  (fall has-groups |)  (send-list eyre-id ~ 'groups desk not installed')
+  ;<  groups=(unit json)  bind:m  (scry-json /gx/groups/v2/light/groups/json)
+  =/  items=(list [id=@t name=@t])
+    ?.  ?=([~ %o *] groups)  ~
+    %-  zing
+    %+  turn  ~(tap by p.u.groups)
+    |=  [flag=@t g=json]
+    ^-  (list [id=@t name=@t])
+    =/  gt=@t  (gs:orr (gj:orr g 'meta') 'title')
+    =/  chans=json  (gj:orr g 'channels')
+    ?.  ?=([%o *] chans)  ~
+    %+  turn  ~(tap by p.chans)
+    |=  [nest=@t c=json]
+    ^-  [id=@t name=@t]
+    =/  ct=@t  (gs:orr (gj:orr c 'meta') 'title')
+    :-  nest
+    ?:  &(=('' gt) =('' ct))  ''
+    ?:  =('' gt)  ct
+    ?:  =('' ct)  gt
+    (rap 3 gt ': ' ct ~)
+  (send-list eyre-id (sort items |=([a=[@t name=@t] b=[@t name=@t]] (aor name.a name.b))) '')
+++  send-list
+  |=  [eyre-id=@ta items=(list [id=@t name=@t]) note=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  :-  'items'
+      :-  %a
+      %+  turn  items
+      |=([id=@t name=@t] (pairs:enjs:format ~[['id' s+id] ['name' s+name]]))
+      ['note' s+note]
+  ==
 ::  ==  the scries (version 39): a gall agent's answer through the
 ::  /sys/scry service, the way fiberio's +typed-scry asks, but soft: a
 ::  refused road answers ~ instead of failing the fiber, so the chat
@@ -3333,6 +3430,10 @@
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   =|  tally=chat-tally
+  =.  changed.tally  (lent rows)
+  =.  conversations.tally
+    =/  keys  |=(j=(unit json) ^-(@ud ?:(?=([~ %o *] j) ~(wyt by p.u.j) 0)))
+    (add (keys chat) (keys chans))
   =|  new=(list @t)
   =|  held-at=(unit @da)
   |-
@@ -3373,7 +3474,7 @@
   ==
 ::  +$  chat-tally: what one pass did
 ::
-+$  chat-tally  [read=@ud filed=@ud strangers=@ud held=@ud notes=(list @t)]
++$  chat-tally  [read=@ud filed=@ud strangers=@ud held=@ud changed=@ud conversations=@ud notes=(list @t)]
 ::  +people-of-ships: every person body with a ship, keyed by that ship
 ::  as the settings key one, so a person the owner named on the ship is
 ::  known to the reader without a row on the card
@@ -3418,6 +3519,8 @@
       ['filed' (numb:enjs:format filed.t)]
       ['strangers' (numb:enjs:format strangers.t)]
       ['held' (numb:enjs:format held.t)]
+      ['changed' (numb:enjs:format changed.t)]
+      ['conversations' (numb:enjs:format conversations.t)]
       ['notes' a+(turn said |=(n=@t `json`s+(end [3 300] n)))]
       ['day' s+day]
       ['read_today' (numb:enjs:format (add today read.t))]

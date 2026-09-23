@@ -3,6 +3,7 @@
 // a state view, a body view, the inbox and the settings. Run: node
 // scripts/page-test.js. Exits 1 on the first failed assertion.
 'use strict';
+process.env.TZ = 'UTC'; // the fixed stamps below are what a reader in UTC sees
 const assert = require('assert');
 const path = require('path');
 const render = require(path.join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'));
@@ -151,10 +152,11 @@ const tgLast = { at: '2026-09-20T13:00:00Z', update_id: 7, chat: '1001', from: '
 const tgSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast);
 const chat = { enabled: true, dms: ['~sampel-palnet'], channels: [], people: { '~sampel-palnet': 'person/sam' }, read_own: false, poll_minutes: 5, backfill_hours: 24, gate: 30, escalate: 60, max_daily_messages: 500, model: 'deepseek/deepseek-v4-flash' };
 const chatLast = { since: '2026-09-21T22:00:00Z', at: '2026-09-22T22:07:08Z', read: 2, filed: 3, strangers: 1, held: 0, read_today: 2, day: '2026-09-22', notes: ['groups desk not installed'], down: null };
-const chatSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, {}, chat, chatLast, { items: ['~sampel-palnet', '~zod'], note: '' }, { items: [], note: 'groups desk not installed' });
-ok('the chat card follows telegram with the picked DM in the field and the other one offered', chatSettings.indexOf('<h2>Telegram</h2>') < chatSettings.indexOf('<h2>Chat</h2>') && chatSettings.includes('name="dms" value="~sampel-palnet"') && chatSettings.includes('name="dms-more" value="~zod"') && !chatSettings.includes('name="dms-more" value="~sampel-palnet"'));
+const chatSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, {}, chat, chatLast, { items: [{ id: '~sampel-palnet', name: 'Sam' }, { id: '~zod', name: '' }], note: '' }, { items: [], note: 'groups desk not installed' });
+ok('the chat card follows telegram with the picked DM listed by its nickname and a picker for more', chatSettings.indexOf('<h2>Telegram</h2>') < chatSettings.indexOf('<h2>Chat</h2>') && chatSettings.includes('<ul class="picked" data-picked="dms"><li data-id="~sampel-palnet">Sam <small class="muted">~sampel-palnet</small>') && chatSettings.includes('name="dms-find"') && chatSettings.includes('data-picked="channels"><li class="muted" data-empty="1">none picked</li>') && chatSettings.includes('groups desk not installed'));
 ok('the chat card carries the people map, the switches and the buttons', chatSettings.includes('person/sam') && chatSettings.includes('name="read_own"') && chatSettings.includes('data-save-chat="1"') && chatSettings.includes('data-chat-wake="1"'));
 ok('the chat card shows the last pass and its note, and the channel note when there are none', chatSettings.includes('read 2, filed 3, strangers 1') && chatSettings.includes('groups desk not installed') && chatSettings.includes('Read today: 2'));
+ok('a stamp on the page is local time, the test running in UTC', chatSettings.includes('Last pass at 2026-09-22 22:07:08'));
 ok('a chat reader that never ran shows the card without a last line', !render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, {}, {}, {}, {}, {}).includes('strangers '));
 const chatDown = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, {}, chat, { at: '2026-09-22T22:07:08Z', since: '2026-09-22T21:00:00Z', down: { at: '2026-09-22T22:07:08Z', notes: ['model: 502'] } }, {}, {});
 ok('a model down on the chat card is said in red with its note', chatDown.includes('The model could not be read') && chatDown.includes('model: 502'));

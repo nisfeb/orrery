@@ -20,7 +20,15 @@
     if (typeof v === 'string') return esc(v);
     return esc(JSON.stringify(v));
   }
-  function fmtTime(t) { return t ? esc(String(t).replace('T', ' ').replace('Z', '')) : ''; }
+  // a stamp as the reader's own clock shows it, in local time; the ship
+  // speaks UTC and a stamp it cannot parse is shown as it came
+  function fmtTime(t) {
+    if (!t) return '';
+    var d = new Date(String(t));
+    if (isNaN(d.getTime())) return esc(String(t).replace('T', ' ').replace('Z', ''));
+    function two(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+  }
   function source(s) { s = s || {}; return '<code>' + esc(s.kind || '') + '</code> ' + esc(s.id || ''); }
   // an inline run of ids: linked by name when the state is at hand, the
   // id on hover
@@ -310,20 +318,39 @@
   }
   // the chat card: the Tlon reader's settings, the DMs and channels the
   // ship holds offered as boxes beside the lists, the people map, the last pass
+  var chatLists = { dms: [], channels: [] };
+  function labelOf(item) { return item.name ? esc(item.name) + ' <small class="muted">' + esc(item.id) + '</small>' : esc(item.id); }
+  function pickedList(kind, ids) {
+    var known = {};
+    chatLists[kind].forEach(function (x) { known[x.id] = x; });
+    if (!ids.length) return '<ul class="picked" data-picked="' + kind + '"><li class="muted" data-empty="1">none picked</li></ul>';
+    return '<ul class="picked" data-picked="' + kind + '">' + ids.map(function (id) {
+      return '<li data-id="' + esc(id) + '">' + labelOf(known[id] || { id: id }) + ' <button class="small" data-unpick="' + kind + '">remove</button></li>';
+    }).join('') + '</ul>';
+  }
+  // the picker: a search box and the matches under it, filtered as the
+  // owner types, by name or id; a click on one adds it to the list
+  function picker(kind, what) {
+    return '<p><label class="field wide">add a ' + what + ' <input name="' + kind + '-find" placeholder="type a name or id to filter" autocomplete="off"></label></p>' +
+      '<ul class="matches" data-matches="' + kind + '"></ul>';
+  }
+  function matchesHtml(kind, q) {
+    q = (q || '').trim().toLowerCase();
+    var picked = {};
+    Array.prototype.forEach.call(view.querySelectorAll('[data-picked="' + kind + '"] li[data-id]'), function (li) { picked[li.dataset.id] = true; });
+    var hits = chatLists[kind].filter(function (x) { return !picked[x.id] && (!q || (x.name || '').toLowerCase().indexOf(q) >= 0 || x.id.toLowerCase().indexOf(q) >= 0); });
+    if (!hits.length) return q ? '<li class="muted">nothing matches</li>' : '';
+    return hits.slice(0, 30).map(function (x) { return '<li><button class="small" data-pick="' + kind + '" data-id="' + esc(x.id) + '">add</button> ' + labelOf(x) + '</li>'; }).join('') +
+      (hits.length > 30 ? '<li class="muted">' + (hits.length - 30) + ' more; type to narrow</li>' : '');
+  }
   function chatCard(c, last, dms, channels) {
     c = c || {}; last = last || {}; dms = dms || {}; channels = channels || {};
+    chatLists = { dms: dms.items || [], channels: channels.items || [] };
     var people = c.people ? JSON.stringify(c.people, null, 2) : '{}';
-    function boxes(name, held, picked, note) {
-      var items = (held.items || []).filter(function (x) { return picked.indexOf(x) < 0; });
-      if (!items.length) return note ? '<p class="muted">' + esc(note) + '</p>' : '';
-      return '<p class="muted">also on this ship: ' + items.map(function (x) {
-        return '<label class="box"><input type="checkbox" name="' + name + '-more" value="' + esc(x) + '"> ' + esc(x) + '</label>';
-      }).join(' ') + '</p>';
-    }
     var out = '<div class="card"><h2>Chat</h2><div id="chat">' +
       '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the Tlon DMs and channels below every few minutes</label></p>' +
-      '<p><label class="field wide">DMs and group DMs (whom, comma separated) <input name="dms" value="' + esc((c.dms || []).join(',')) + '"></label></p>' + boxes('dms', dms, c.dms || [], dms.note) +
-      '<p><label class="field wide">channels (nests, comma separated) <input name="channels" value="' + esc((c.channels || []).join(',')) + '"></label></p>' + boxes('channels', channels, c.channels || [], channels.note) +
+      '<h3>DMs and group DMs</h3>' + pickedList('dms', c.dms || []) + (dms.note ? '<p class="muted">' + esc(dms.note) + '</p>' : picker('dms', 'DM')) +
+      '<h3>Channels</h3>' + pickedList('channels', c.channels || []) + (channels.note ? '<p class="muted">' + esc(channels.note) + '</p>' : picker('channels', 'channel')) +
       '<p><label class="field wide">people (ship to body id, JSON; a person body with a ship needs no row) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +
       '<p><label class="box"><input type="checkbox" name="read_own"' + (c.read_own ? ' checked' : '') + '> read my own messages too</label> ' +
       '<label class="field">every (minutes) <input name="poll_minutes" value="' + esc(c.poll_minutes != null ? c.poll_minutes : '') + '"></label> ' +
@@ -334,7 +361,7 @@
       '<label class="field">reader model <input name="model" value="' + esc(c.model || '') + '"></label></p>' +
       '<p><button data-save-chat="1">save chat</button><button data-chat-wake="1">read now</button></p></div>';
     if (last.at) {
-      out += '<p class="muted">Last pass at ' + fmtTime(last.at) + ', from ' + fmtTime(last.since) + ': read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + ', strangers ' + (last.strangers || 0) + ', held ' + (last.held || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
+      out += '<p class="muted">Last pass at ' + fmtTime(last.at) + ', from ' + fmtTime(last.since) + ': ' + (last.conversations || 0) + ' conversations changed, ' + (last.changed || 0) + ' messages; read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + ', strangers ' + (last.strangers || 0) + ', held ' + (last.held || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
     }
     if (last.down && last.down.at) {
@@ -581,6 +608,21 @@
         say('telegram saved');
         b.disabled = false;
       }).catch(function (e) { say(e.message, true); b.disabled = false; });
+    } else if (b.dataset.pick) {
+      var kind = b.dataset.pick, ul = view.querySelector('[data-picked="' + kind + '"]');
+      var empty = ul.querySelector('[data-empty]'); if (empty) empty.remove();
+      var item = chatLists[kind].filter(function (x) { return x.id === b.dataset.id; })[0] || { id: b.dataset.id };
+      var li = document.createElement('li'); li.dataset.id = item.id;
+      li.innerHTML = labelOf(item) + ' <button class="small" data-unpick="' + kind + '">remove</button>';
+      ul.appendChild(li); dirty = true;
+      var find = view.querySelector('#chat input[name="' + kind + '-find"]');
+      view.querySelector('[data-matches="' + kind + '"]').innerHTML = matchesHtml(kind, find ? find.value : '');
+    } else if (b.dataset.unpick) {
+      var k2 = b.dataset.unpick, ul2 = b.closest('ul');
+      b.closest('li').remove(); dirty = true;
+      if (!ul2.querySelector('li[data-id]')) ul2.innerHTML = '<li class="muted" data-empty="1">none picked</li>';
+      var find2 = view.querySelector('#chat input[name="' + k2 + '-find"]');
+      view.querySelector('[data-matches="' + k2 + '"]').innerHTML = matchesHtml(k2, find2 ? find2.value : '');
     } else if (b.dataset.saveChat) {
       var c = chatForm();
       if (!c) return;
@@ -650,9 +692,7 @@
   function chatForm() {
     var val = function (name) { return field('#chat', name); };
     function list(name) {
-      var typed = val(name).split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-      Array.prototype.forEach.call(view.querySelectorAll('#chat input[name="' + name + '-more"]:checked'), function (el) { if (typed.indexOf(el.value) < 0) typed.push(el.value); });
-      return typed;
+      return Array.prototype.map.call(view.querySelectorAll('#chat [data-picked="' + name + '"] li[data-id]'), function (li) { return li.dataset.id; });
     }
     var people;
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
@@ -676,6 +716,13 @@
     return { name: val('name'), by: val('by'),
       scope: { kinds: picked('kinds'), actions: picked('actions'), write: write, sensitive: write && picked('sensitive').length ? 'write' : 'none' } };
   }
+  view.addEventListener('input', function (e) {
+    var el = e.target;
+    if (!el || !el.name || el.name.slice(-5) !== '-find') return;
+    var kind = el.name.slice(0, -5);
+    var box = view.querySelector('[data-matches="' + kind + '"]');
+    if (box) box.innerHTML = matchesHtml(kind, el.value);
+  });
   window.addEventListener('hashchange', function () { dirty = false; refresh(true); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
 

@@ -66,3 +66,9 @@ code { font-size: .9em; background: var(--line); padding: 0 .25em; border-radius
   ul.actions { padding-left: 0; list-style: none; }
   .bodies { grid-template-columns: 1fr; }
 }
+
+/* the chat card's picked lists and the filtered matches under the search box */
+ul.picked, ul.matches { list-style: none; padding: 0; margin: 0 0 .5rem 0; }
+ul.picked li, ul.matches li { padding: .15rem 0; }
+ul.matches { max-height: 14rem; overflow-y: auto; }
+button.small { font-size: .85em; padding: .1rem .4rem; margin-left: .3rem; }

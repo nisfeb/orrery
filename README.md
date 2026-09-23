@@ -420,19 +420,19 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |
 | `GET /generator` | the generator's settings, the key masked as `api_key_set`; owner only |
-| `PUT /generator` | merge settings; an empty or absent `api_key` keeps the stored one; owner only |
+| `PUT /generator` | merge settings: a key given replaces its value, one left out keeps it, a JSON `null` clears it so the default stands; an empty or absent `api_key` keeps the stored one. Answers the settings as stored, in the shape `GET` gives, once the write has landed; owner only |
 | `GET /generator/last` | what the last pass did: filed, dropped, notes, usage, error, seconds |
 | `POST /generate` | run a pass now, whether or not anything changed; owner only. With `{"about": ["situation/..."]}`, from the owner or a key with `write`, an urgent pass: past the cooldown, the named situations first, counted against `max_urgent` |
 | `POST /apps/orrery/telegram` | Telegram's webhook, outside `/api`; the secret header is its whole credential, 403 on a wrong or missing one; 413 on a body over 64 KB, answered before the parse; a disabled reader, or an update whose id is not past the last one handled, answers 200 and drops |
-| `GET` and `PUT /telegram` | the reader's settings, the token and secret masked as `token_set` and `secret_set`; a blank field on PUT keeps the stored value, a JSON `null` clears it, a secret under 16 bytes is refused; owner only |
+| `GET` and `PUT /telegram` | the reader's settings, the token and secret masked as `token_set` and `secret_set`; a blank token or secret on PUT keeps the stored one, a JSON `null` clears any key, a secret under 16 bytes is refused; `PUT` answers the settings as stored once the write has landed; owner only |
 | `GET /telegram/last` | the last update handled: outcome, notes, messages read today |
 | `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; the owner or a key with `write` (version 38), so a client walking the owner through the setup can finish it |
 | `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; the owner or a key with `write` |
 | `POST /telegram/wake` | wake the reader: drain the inbox now, an update kept through a model outage included, or restart a reader that crashed; owner only |
-| `GET` and `PUT /chat` | the chat reader's settings (`enabled`, `dms`, `channels`, `people`, `read_own`, `poll_minutes`, `backfill_hours`, `gate`, `escalate`, `max_daily_messages`, `model`); a key given replaces its value whole, one left out keeps it; the owner or a key with `write` |
-| `GET /chat/last` | the last pass: `since`, `at`, `read`, `filed`, `strangers`, `held`, `notes`, `read_today`, `down`; owner only |
+| `GET` and `PUT /chat` | the chat reader's settings (`enabled`, `dms`, `channels`, `people`, `read_own`, `poll_minutes`, `backfill_hours`, `gate`, `escalate`, `max_daily_messages`, `model`); a key given replaces its value whole, one left out keeps it, a JSON `null` clears it so the default stands; `PUT` answers the settings as stored once the write has landed; the owner or a key with `write` |
+| `GET /chat/last` | the last pass: `since`, `at`, `conversations` and `changed` (what the scries answered), `read`, `filed`, `strangers`, `held`, `notes`, `read_today`, `down`; owner only |
 | `POST /chat/wake` | run a pass now, or restart a reader that crashed; owner only |
-| `GET /chat/dms`, `GET /chat/channels` | what the groups desk holds, for the card: `items` and a `note` when there are none; owner only |
+| `GET /chat/dms`, `GET /chat/channels` | what the groups desk holds, for a picker: `items`, each `{"id", "name"}`, the name a DM's nickname from the contact book or a channel's group and channel titles, empty when there is none; and a `note` when the list could not be read; owner only |
 | `GET /exec/last` | what the executor's last pass did: `claimed`, `sent`, `placed`, `failed` (id, title and note, newest first, twenty at most), todos `ticked`, `deleted` and `moved`, tasks `closed` from the calendar, todos `adopted`, the desks link could not find in `missing`, and `notes`; `at` is when it last looked, `acted_at` when those counts happened, since a pass that did nothing keeps the last one that did; owner only |
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
@@ -442,7 +442,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
 | `POST /actions/<id>/refine` | `{"text"}`: a note at approval revises a `proposed` action, owner or a key whose `actions` names the kind, with `write`; answers `{"ok", "action", "extras", "note"}`; 409 unless the action is `proposed` and a task, a calendar event or a message |
-| `GET` and `PUT /schema`, `/policy` | the whole document; owner only |
+| `GET` and `PUT /schema`, `/policy` | the whole document; `PUT` answers it as stored once the write has landed; owner only |
 | `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only. `/sync` prods the follower and answers 500 when that fiber refused the poke, as the telegram and executor wakes do |
 | `POST /clients`, `GET /clients`, `DELETE /clients/<id>` | keys; owner only |
 
