@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 53's owner steps
+
+None. A message by mail or chat finds the person's ship on the body's record too, not only in a `ship` attribute; 52 planned nothing for a person whose ship is on the record (which is where the page and the chat reader keep it).
+
 ### Version 52's owner steps
 
 The consent prompt is raised: the ask gains a peek of the auspex desk (`/apps/shell.shell/desks/auspex.desk/`, to read the mail) and the `/sys/gall/` line now also says it sends an approved message as a Tlon DM. Approve on `/apps/grubbery/permits`, then reload the instance. Then on the Mail card turn the reader on; the first pass looks back `backfill_hours`. The brief goes at seven on `person/me`'s timezone from the next morning; `POST /api/brief/wake` sends one now. A `message` via `chat` is sent by the ship only with `send_dms` on (the Chat card), and only once the kernel carries `gub/mar/clay/groups/chat/dm/action-2.hoon` (grubbery branch `dist/single-release`, commit "a typed marc for poking %chat with a DM"): a kernel without it crashes on the poke (`marc-not-found`) and the executor stands at that dart until the instance reloads, so leave the switch off until the kernel lands and keep the client sending chat. Switch the client's mail reader and brief off once the ship's are on. Auspex is changing its `%send` action from seven fields to five: every mail the executor or the brief sends is poked in both layouts, so exactly one lands on either auspex and the other shows as a `malformed action` reject in auspex's trail; drop the seven-field poke in `poke-auspex` once every ship's auspex takes five. (Version 52 also found that no executor mail had landed on feb since its auspex changed layout, while the action read `done`: auspex's refusal is silent to the poker.)

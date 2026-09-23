@@ -4992,7 +4992,14 @@
           note
       ==
     ?:  |(=('mail' via) =('chat' via))
-      =/  ship=@t  (attr-text all multi now who 'ship')
+      ::  the ship attribute, else the ship on the body's record (which
+      ::  is where the page and the chat reader keep it)
+      =/  ship=@t
+        =/  a=@t  (attr-text all multi now who 'ship')
+        ?.  =('' a)  a
+        =/  hit=(unit loaded)  (loaded-of all who)
+        ?~  hit  ''
+        ?~(ship.body.u.hit '' (scot %p u.ship.body.u.hit))
       =/  to=@t  ?:(|(=('' ship) =('~' (end [3 1] ship))) ship (cat 3 '~' ship))
       =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
       :-  ~
