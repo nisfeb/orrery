@@ -4961,17 +4961,25 @@
   ?.  =('' why)  (pure:m [| why])
   ?:  =(0 status.got)  (pure:m [| body.got])
   (pure:m [| (cat 3 'telegram answered ' (crip (a-co:co status.got)))])
-::  +poke-auspex: a send to auspex's writer. Its action type lays %send
-::  out as to, subject, body, body-mime ('' is text/plain), prev, files
-::  and bcc; the marc is a noun passthrough and the writer clams it, so
-::  the layout here must match auspex's. A refusal inside the writer is
-::  not seen here; the road's veto and a nack are.
+::  +poke-auspex: a send to auspex's writer. The marc is a noun
+::  passthrough and the writer clams the action, so the layout here
+::  must match auspex's, and one that does not is rejected INSIDE the
+::  writer as a malformed action, unseen here (only the road's veto
+::  and a nack are). Auspex is changing its %send from seven fields
+::  (to, subject, body, body-mime, prev, files, bcc) to five (to,
+::  subject, body, prev, refs); the ships run one or the other, so
+::  both are poked and the one the writer clams is the mail, the
+::  other a reject in auspex's trail. ponytail: drop the seven-field
+::  poke once every ship's auspex takes five.
 ::
 ++  poke-auspex
   |=  [base=path to=@p subject=@t body=@t]
   =/  m  (fiber:fiber:nexus ,(unit tang))
   ^-  form:m
-  =/  send=*  [%send (sy ~[to]) subject body '' ~ ~ ~]
+  ;<  old=(unit tang)  bind:m
+    (poke-soft:io [%& %& base %'main.sig'] [[/ %auspex-action] `*`[%send (sy ~[to]) subject body '' ~ ~ ~]])
+  ?^  old  (pure:m old)
+  =/  send=*  [%send (sy ~[to]) subject body ~ ~]
   (poke-soft:io [%& %& base %'main.sig'] [[/ %auspex-action] send])
 ::  +poke-calendar: one action to the calendar's store, which is the
 ::  fiber that takes its JSON pokes (add-event, edit-event, done-event,
