@@ -5346,7 +5346,8 @@
   ^-  json
   (obs-row id attr value at until conf (event-source ev) 'calendar')
 ::  +same-event: the body the ship keeps for an event, or ~. The uid
-::  is the event itself: a body carrying it as an alias is it. Failing
+::  is the event itself: a body with a calendar row from it is it (the
+::  source id is the uid, or the client's <calendar>/<uid>). Failing
 ::  that, a series takes an activity by the same title, and a one-off
 ::  an open situation by the same title that starts within a day of
 ::  this occurrence; a closed one is a past occasion.
@@ -5357,7 +5358,9 @@
   =/  by-uid=(unit loaded)
     %-  find-first-loaded
     :-  all
-    |=(l=loaded &(?=(?(%activity %situation) kind.body.l) (~(has in aliases.body.l) id.ev)))
+    |=  l=loaded
+    ?.  ?=(?(%activity %situation) kind.body.l)  |
+    (lien rows.l |=(r=row =(id.ev (uid-of-source source.obs.r))))
   ?^  by-uid  by-uid
   =/  title=@t  (normalize-title name.ev)
   ?:  =('' title)  ~
@@ -5375,6 +5378,15 @@
   =/  s=(unit @da)  (de-iso =/(t (winner-text w 'starts') ?:(=('' t) (winner-text w 'started') t)))
   ?~  s  |
   ?:((gth u.s start) (lth (sub u.s start) ~d1) (lth (sub start u.s) ~d1))
+::  +uid-of-source: the calendar uid a row's source names, '' when the
+::  row is not the calendar's
+::
+++  uid-of-source
+  |=  s=source
+  ^-  @t
+  ?.  =('calendar' kind.s)  ''
+  =/  cut=(unit @ud)  (find "/" (trip id.s))
+  ?~(cut id.s (rsh [3 +(u.cut)] id.s))
 ++  find-first-loaded
   |=  [all=(list loaded) f=$-(loaded ?)]
   ^-  (unit loaded)
@@ -5394,7 +5406,9 @@
 ::  behind as last; the next as next, dated at the end of the one
 ::  before it, standing until its own end. A situation the calendar no
 ::  longer holds whose start is ahead is cancelled once. Bodies the
-::  ship lacks are made, the uid and the tags as aliases.
+::  ship lacks are made, with no alias: the uid is on every row's
+::  source, and as an alias it would answer a resolve of the ship it
+::  ends with.
 ::
 +$  event-plan
   $:  ops=(list json)  seen=(map @t @t)
@@ -5440,12 +5454,7 @@
       =/  behind=?  (lte r.occ now)
       ?:  |(=('f' mark) &(=('s' mark) !behind))  $(todo t.todo)
       =?  bodies  ?=(~ hit)
-        %+  snoc  bodies
-        %-  pairs:enjs:format
-        :~  ['id' s+id]
-            ['name' s+name.ev]
-            ['aliases' a+(turn (dedupe [id.ev tags.ev]) |=(t=@t `json`s+t))]
-        ==
+        (snoc bodies (pairs:enjs:format ~[['id' s+id] ['name' s+name.ev]]))
       =?  made  ?=(~ hit)  +(made)
       =/  learned=@da  (min l.occ now)
       =/  fresh=(list json)
@@ -5473,7 +5482,9 @@
     =/  id=bid  ?^(hit id.u.hit (cat 3 'activity/' (slug name.ev)))
     =/  behind=(list [idx=@ud l=@da r=@da])  (skim occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
     =/  ahead=(list [idx=@ud l=@da r=@da])  (skip occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
-    =/  as-of=@da  ?~(behind start.ev l:(rear behind))
+    ::  the content is dated at the last occurrence behind, else now:
+    ::  a row dated at an anchor still ahead would not be live yet
+    =/  as-of=@da  ?~(behind now l:(rear behind))
     =/  schedule=@t
       =/  tag=@t  ?~(tags.ev '' i.tags.ev)
       ?:(=('' tag) kind.ev (rap 3 kind.ev ', ' tag ~))
@@ -5481,12 +5492,7 @@
       (scot %ux (mug [kind.ev schedule location.ev own.ev ids.people cal.ev]))
     =/  ckey=@t  (rap 3 'act/' cal.ev '/' id.ev '/' digest ~)
     =?  bodies  ?=(~ hit)
-      %+  snoc  bodies
-      %-  pairs:enjs:format
-      :~  ['id' s+id]
-          ['name' s+name.ev]
-          ['aliases' a+(turn (dedupe :(weld ~[id.ev name.ev (normalize-title name.ev)] tags.ev)) |=(t=@t `json`s+t))]
-      ==
+      (snoc bodies (pairs:enjs:format ~[['id' s+id] ['name' s+name.ev]]))
     =?  made  ?=(~ hit)  +(made)
     =/  content=(list json)
       ?:  (~(has by seen) ckey)  ~
@@ -5536,9 +5542,7 @@
       %+  murn  rows.l
       |=(r=row ?:(=('calendar' kind.source.obs.r) `source.obs.r ~))
     ?~  srcs  $(ls t.ls)
-    =/  uid=@t
-      =/  cut=(unit @ud)  (find "/" (trip id.i.srcs))
-      ?~(cut id.i.srcs (rsh [3 +(u.cut)] id.i.srcs))
+    =/  uid=@t  (uid-of-source i.srcs)
     ?:  (~(has in ids) uid)  $(ls t.ls)
     =/  gkey=@t  (cat 3 'gone/' uid)
     ?:  (~(has by seen) gkey)  $(ls t.ls)

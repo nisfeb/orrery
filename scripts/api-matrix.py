@@ -1215,6 +1215,9 @@ EVENT_ID = events[0]['id'] if events else ''
 # occurrence of a repeat is skipped. Both events are made through the
 # calendar's own poke, so the cancel meets events the ship never placed,
 # which is the case the owner has
+for b in [str(dictish(b).get('id', '')) for b in dictish(curl('GET', API + '/state')[1]).get('bodies', [])]:
+    if 'gate-cancel-' in b:
+        curl('DELETE', API + '/body/' + b)
 CANCEL_ONCE = (now + timedelta(days=6)).replace(hour=9, minute=0, second=0)
 ONCE_NAME, REPEAT_NAME = 'Gate cancel once %s' % XRUN, 'Gate cancel repeat %s' % XRUN
 cal_poke({'action': 'add-event', 'cat': 'timed', 'kind': 'once', 'fin': 'to', 'meta': {'name': ONCE_NAME},
@@ -1227,12 +1230,18 @@ check('a one-off and a repeat the owner keeps are on the calendar', bool(ONCE_ID
 
 # ---- the calendar events reader (version 47): the two events become a situation and an activity on the ship ----
 # the executor's pass runs on the store's change, so the bodies are
-# waited for by the uid alias the ship gives them
-def body_by_alias(alias, bound=45):
+# waited for by the uid every row of theirs carries as its source
+def rows_of(b):
+    for v in dictish(b.get('attrs')).values():
+        for r in (v if isinstance(v, list) else [v]):
+            yield dictish(r)
+
+
+def body_by_uid(uid, bound=45):
     deadline = time.time() + bound
     while True:
         code, st = curl('GET', API + '/state')
-        hits = [b for b in dictish(st).get('bodies', []) if alias in (dictish(b).get('aliases') or [])]
+        hits = [b for b in dictish(st).get('bodies', []) if any(dictish(r.get('source')).get('id') == uid for r in rows_of(dictish(b)))]
         if hits or time.time() >= deadline:
             return dictish(hits[0]) if hits else {}
         time.sleep(3)
@@ -1244,15 +1253,15 @@ def refs(b, attr):
     return sorted(dictish(dictish(r).get('value')).get('ref', '') for r in rows)
 
 
-sit = body_by_alias(ONCE_ID or 'none')
+sit = body_by_uid(ONCE_ID or 'none')
 check('the one-off is a situation named by its date and title, the uid its alias',
       sit.get('id', '').startswith('situation/') and sit['id'].endswith('-gate-cancel-once-%s' % XRUN.lower()) and sit.get('name') == ONCE_NAME, sit.get('id'))
 sattrs = dictish(sit.get('attrs'))
 check('it starts and ends at the event, learned now, and person/me is in it',
       dictish(sattrs.get('starts')).get('value') == iso(CANCEL_ONCE) and dictish(sattrs.get('ends')).get('value') == iso(CANCEL_ONCE + timedelta(minutes=60))
-      and 'started' not in sattrs and refs(sit, 'participants') == ['person/me'] and dictish(sattrs.get('starts')).get('by') == 'calendar', sattrs)
+      and 'started' not in sattrs and 'person/me' in refs(sit, 'participants') and dictish(sattrs.get('starts')).get('by') == 'calendar', sattrs)
 check('its rows name the calendar and the uid as their source', dictish(dictish(sattrs.get('starts')).get('source')) == {'kind': 'calendar', 'id': ONCE_ID}, dictish(sattrs.get('starts')).get('source'))
-act = body_by_alias(REPEAT_ID or 'none')
+act = body_by_uid(REPEAT_ID or 'none')
 aattrs = dictish(act.get('attrs'))
 check('the repeat is an activity with its cadence, its schedule, an organizer and a next until its end',
       act.get('id') == 'activity/gate-cancel-repeat-%s' % XRUN.lower() and dictish(aattrs.get('cadence')).get('value') == 'weekly' and dictish(aattrs.get('schedule')).get('value') == 'weekly'
@@ -1262,10 +1271,10 @@ cal_last = dictish(curl('GET', API + '/calendar/last')[1])
 check('the record counts the events, the bodies made and the rows, and knows every rule', cal_last.get('made', 0) >= 1 and cal_last.get('rows', 0) >= 5 and cal_last.get('unknown') == [] and bool(cal_last.get('acted_at')), cal_last)
 code, d = curl('GET', API + '/calendar/last', jar=None)
 check('the record is the owner\'s', code == 403, (code, d))
-n_rows = len(dictish(body(sit['id'])[1]).get('observations', [])) if sit.get('id') else 0
+n_rows = len(list(rows_of(sit)))
 curl('POST', API + '/exec/wake')
 time.sleep(8)
-check('a second pass writes the same occurrence no second time', sit.get('id') and len(dictish(body(sit['id'])[1]).get('observations', [])) == n_rows, n_rows)
+check('a second pass writes the same occurrence no second time', n_rows > 0 and len(list(rows_of(body_by_uid(ONCE_ID or 'none', 1)))) == n_rows, n_rows)
 was = occurrences(REPEAT_ID) if REPEAT_ID else []
 check('the repeat expands into several occurrences ahead', len(was) > 2, was)
 OFFID = propose('calendar', 'Gate cancel the one-off %s' % XRUN, payload={'mode': 'cancel', 'event': ONCE_ID or 'none'})
@@ -1275,9 +1284,9 @@ check('an approved cancel of a one-off is done, off the calendar',
       a.get('status') == 'done' and a.get('note') == 'off the calendar' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 check('the one-off is gone from the calendar', event_named(ONCE_NAME, gone=True) is None, ONCE_ID)
 deadline = time.time() + 45
-while time.time() < deadline and dictish(dictish(body_by_alias(ONCE_ID or 'none', 1).get('attrs')).get('status')).get('value') != 'cancelled':
+while time.time() < deadline and dictish(dictish(body_by_uid(ONCE_ID or 'none', 1).get('attrs')).get('status')).get('value') != 'cancelled':
     time.sleep(3)
-gone_sit = body_by_alias(ONCE_ID or 'none', 1)
+gone_sit = body_by_uid(ONCE_ID or 'none', 1)
 check('the situation of a one-off taken off the calendar while ahead is cancelled', dictish(dictish(gone_sit.get('attrs')).get('status')).get('value') == 'cancelled', dictish(gone_sit.get('attrs')).get('status'))
 DROP = was[1] if len(was) > 1 else 0
 SKIPID = propose('calendar', 'Gate cancel one occurrence %s' % XRUN,

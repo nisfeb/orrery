@@ -1365,6 +1365,16 @@
 ::  a sunday, the weekly's anchor
 ++  cal-now  ~2026.9.18..12.00.00
 ++  kind-of  |=(id=@t ^-(@tas ?:(=('activity/' (end [3 9] id)) %activity ?:(=('person/' (end [3 7] id)) %person %situation))))
+::  a writer row as the ship would load it back
+++  row-of
+  |=  r=json
+  ^-  row:orr
+  =/  src=json  (gj:orr r 'source')
+  :-  (rap 3 (gs:orr r 'subject') '/' (gs:orr r 'attr') ~)
+  :*  (gs:orr r 'subject')  (gs:orr r 'attr')  (gj:orr r 'value')
+      (need (de-iso:orr (gs:orr r 'at')))  (de-iso:orr (gs:orr r 'until'))  (fall (gn:orr r 'conf') 100)
+      [(gs:orr src 'kind') (gs:orr src 'id')]  (gs:orr r 'by')  cal-now  |  ''
+  ==
 ++  test-events-of
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
   =/  coffee=cal-event:orr  (snag 0 evs)
@@ -1432,11 +1442,18 @@
   =/  obs=(list json)  (ga:orr op 'observations')
   =/  of  |=([id=@t attr=@t] ^-((list json) (skim obs |=(r=json &(=(id (gs:orr r 'subject')) =(attr (gs:orr r 'attr')))))))
   =/  coffee=@t  'situation/2026-09-21-coffee-with-mira-quill'
-  ::  a second pass against what the first remembered says nothing new
+  ::  a second pass against what the first remembered and wrote says
+  ::  nothing new
   =/  again=event-plan:orr
     %-  plan-events:orr
     :*  evs
-        (weld all (turn bodies |=(b=json (mkb (gs:orr b 'id') (kind-of (gs:orr b 'id')) (gs:orr b 'name') (strings:orr (ga:orr b 'aliases')) ~ cal-now))))
+        %+  weld  all
+        %+  turn  bodies
+        |=  b=json
+        ^-  loaded:orr
+        =/  id=@t  (gs:orr b 'id')
+        :+  id  [(kind-of id) (gs:orr b 'name') ~ cal-now ~]
+        (turn (skim obs |=(r=json =(id (gs:orr r 'subject')))) row-of)
         (sy ~['participants' 'last'])
         cal-now
         seen.got
@@ -1447,7 +1464,7 @@
     ::  the coffee, the standup, felix himself and his birthday
     (expect-eq !>(`(list @t)`~[coffee 'activity/standup' 'person/felix' 'activity/felix-birthday']) !>((turn bodies |=(b=json (gs:orr b 'id')))))
     (expect-eq !>(3) !>(made.got))
-    (expect-eq !>(`(list @t)`~['u-coffee']) !>((strings:orr (ga:orr (snag 0 bodies) 'aliases'))))
+    (expect-eq !>(`(list @t)`~) !>((strings:orr (ga:orr (snag 0 bodies) 'aliases'))))
     ::  the coffee is ahead: starts and ends, learned now, at the zone's instant
     (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 (of coffee 'starts')) 'value')))
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 (of coffee 'starts')) 'at')))
@@ -1462,6 +1479,8 @@
     (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'value')))
     (expect-eq !>(`json`s+'weekly, work') !>((gj:orr (snag 0 (of 'activity/standup' 'schedule')) 'value')))
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'at')))
+    ::  the birthday has no occurrence behind: its content is dated now
+    (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'cadence')) 'at')))
     (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((turn (of 'activity/standup' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'last')) 'value')))
     (expect-eq !>(1) !>((lent (of 'activity/standup' 'last'))))
@@ -1486,7 +1505,7 @@
   =/  coffee=@t  'situation/2026-09-21-coffee-with-mira-quill'
   =/  all=(list loaded:orr)
     :~  (mkb 'person/me' %person 'me' ~ ~ cal-now)
-        :+  coffee  [%situation 'Coffee with Mira Quill' (sy ~['u-coffee']) cal-now ~]
+        :+  coffee  [%situation 'Coffee with Mira Quill' ~ cal-now ~]
         ~[[(cat 3 coffee '/starts') [coffee 'starts' s+'2026-09-22T00:00:00Z' cal-now ~ 100 ['calendar' 'home/u-coffee'] 'calendar' cal-now | '']]]
     ==
   =/  seen=(map @t @t)  (my ~[['occ/home/u-coffee/1790035200000' 's']])
