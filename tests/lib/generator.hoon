@@ -1523,6 +1523,9 @@
     ~[['activity/standup/cadence' ['activity/standup' 'cadence' s+'rrule' ~2026.9.17 ~ 100 ['calendar' 'work/u-standup'] 'calendar' cal-now | '']]]
   =/  fixed=event-plan:orr  (plan-events:orr evs cal-order held ~ cal-now seen.first 'America/New_York')
   =/  fcad=(list json)  (skim (ga:orr (snag 0 ops.fixed) 'observations') |=(r=json &(=('activity/standup' (gs:orr r 'subject')) =('cadence' (gs:orr r 'attr')))))
+  ::  and still when the series has no occurrence in the window
+  =/  later-fixed=event-plan:orr  (plan-events:orr evs cal-order held ~ ~2027.3.1 seen.first 'America/New_York')
+  =/  lcad=(list json)  (skim (ga:orr (snag 0 ops.later-fixed) 'observations') |=(r=json &(=('activity/standup' (gs:orr r 'subject')) =('cadence' (gs:orr r 'attr')))))
   ;:  weld
     (expect-eq !>(`(list @t)`~['started' 'ended']) !>((turn obs |=(r=json (gs:orr r 'attr')))))
     (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 obs) 'at')))
@@ -1534,5 +1537,7 @@
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 cad) 'at')))
     (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 fcad) 'value')))
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 fcad) 'at')))
+    (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 lcad) 'value')))
+    (expect-eq !>(`json`s+'2027-03-01T00:00:00Z') !>((gj:orr (snag 0 lcad) 'at')))
   ==
 --

@@ -5354,12 +5354,19 @@
     =/  ev=cal-event  i.todo
     ?:  =('' name.ev)  $(todo t.todo)
     =/  occs=(list [idx=@ud l=@da r=@da])  (occurrences id.ev order from to)
-    ::  nothing in the window says nothing, and a cancel below sees
-    ::  only a one-off the calendar has dropped altogether
-    ?~  occs  $(todo t.todo)
-    =/  repeats=?  |(!=('once' kind.ev) ?=(^ t.occs))
-    =/  start=@da  l.i.occs
+    =/  repeats=?  |(!=('once' kind.ev) ?=([* ^] occs))
+    =/  start=@da  ?~(occs now l.i.occs)
     =/  hit=(unit loaded)  (same-event ev repeats start all multi now)
+    ::  a body whose cadence stands at another word is corrected
+    ::  whatever the seen map says: the ship's state is what counts
+    =/  stale=?
+      ?~  hit  |
+      =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
+      &(!=('' cur) !=(cur kind.ev))
+    ::  nothing in the window says nothing (but a series held at the
+    ::  wrong cadence is still corrected), and a cancel below sees
+    ::  only a one-off the calendar has dropped altogether
+    ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
     =/  people  (cast ev known)
     =.  bodies  (weld bodies made.people)
     ::  a person made here is known to the next event of the pass
@@ -5368,7 +5375,7 @@
       |=([b=json acc=_known] (~(put by acc) (lower (gs b 'name')) (gs b 'id')))
     ?.  repeats
       ::  a one-off: one situation, one occurrence
-      =/  occ=[idx=@ud l=@da r=@da]  i.occs
+      =/  occ=[idx=@ud l=@da r=@da]  ?~(occs [0 now now] i.occs)
       =/  id=bid
         ?^  hit  id.u.hit
         (rap 3 'situation/' (end [3 10] (local-iso (en-iso l.occ) tz)) '-' (slug name.ev) ~)
@@ -5413,12 +5420,6 @@
     =/  said-before=?
       =/  pre=@t  (rap 3 'act/' cal.ev '/' id.ev '/' ~)
       (lien ~(tap by seen) |=([k=@t *] =(pre (end [3 (met 3 pre)] k))))
-    ::  a body whose cadence stands at another word is corrected
-    ::  whatever the seen map says: the ship's state is what counts
-    =/  stale=?
-      ?~  hit  |
-      =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
-      &(!=('' cur) !=(cur kind.ev))
     =/  as-of=@da  ?:(|(said-before stale) now ?~(behind now l:(rear behind)))
     =/  schedule=@t
       =/  tag=@t  ?~(tags.ev '' i.tags.ev)
