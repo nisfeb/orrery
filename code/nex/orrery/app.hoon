@@ -3767,9 +3767,18 @@
   ;<  tz=@t  bind:m  owner-tz
   ::  the owner's replies to the brief first: moves on the actions and
   ::  facts in the owner's words; then everyone else's mail
+  ::  a reply is the owner's answer to the ship's own brief: the
+  ::  message it answers is the brief the ship recorded, word for
+  ::  word (a client's brief for the same day carries other tags)
+  ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
+  =/  by-id=(map @t mail-msg:orr)  (~(gas by *(map @t mail-msg:orr)) (turn msgs |=(x=mail-msg:orr [id.x x])))
   =/  replies=(list mail-msg:orr)
     %+  skim  fresh
-    |=(x=mail-msg:orr &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of:orr subj.x)) !(~(has in seen) (cat 3 'mail:' id.x))))
+    |=  x=mail-msg:orr
+    ?.  &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of:orr subj.x)) !(~(has in seen) (cat 3 'mail:' id.x)))  |
+    =/  root=(unit mail-msg:orr)  (~(get by by-id) (scot %uv u.prev.x))
+    ?~  root  |
+    &(=(our from.u.root) =(body.u.root (gs:orr bl 'text')))
   ;<  [handled=(list @t) reply-notes=(list @t)]  bind:m  (brief-replies replies all schema now tz)
   ;<  ~  bind:m  (reader-remember %'mail-seen.json' seen-j handled)
   =/  people=(map @t @t)  (people-of-ships all)
@@ -3785,6 +3794,26 @@
     ^-  (unit tg-msg:orr)
     ?:  |(=(our from.x) =('' (trim-cord:orr body.x)))  ~
     `(mail-row:orr x)
+  ::  a ship that writes the owner mail and has no person body is made
+  ::  one, named by its ship (as the phone client's reader made them),
+  ::  so its mail is read rather than left as a stranger's
+  =/  newcomers=(list @t)
+    %-  dedupe:orr
+    %+  murn  rows
+    |=(r=tg-msg:orr ?:((~(has by people) from.r) ~ `from.r))
+  ;<  *  bind:m
+    ?~  newcomers  (pure:(fiber:fiber:nexus ,@ud) 0)
+    %+  file-ops-on
+      %+  observe-ops:orr
+        %+  turn  `(list @t)`newcomers
+        |=(s=@t (pairs:enjs:format ~[['id' s+(cat 3 'person/' (rsh [3 1] s))] ['name' s+s] ['ship' s+s]]))
+      ~
+    /mail
+  =.  people
+    %+  roll  newcomers
+    |=([s=@t acc=_people] (~(put by acc) s (cat 3 'person/' (rsh [3 1] s))))
+  ;<  all=(list loaded:orr)  bind:m
+    ?~(newcomers (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
   =.  changed.tally  (lent rows)
   =/  sifted
     =|  acc=[runs=(list [chat=@t items=(list [key=@t msg=tg-msg:orr who=@t])]) strangers=@ud held=@ud held-at=(unit @da) new=(list @t) taken=@ud]
@@ -3877,8 +3906,11 @@
     =/  c=(unit [=sang:tarball gain=? bang=(unit tang)])  (~(get by contents.u.fil.kid) %meta)
     ?~  c  |
     ?:  (is-boom:tarball sang.u.c)  |
-    =/  mm=(unit mail-meta:orr)  (mole |.(;;(mail-meta:orr (sang-noun:tarball sang.u.c))))
-    ?~(mm | archived.u.mm)
+    =/  n=*  (sang-noun:tarball sang.u.c)
+    =/  m2=(unit mail-meta:orr)  (mole |.(;;(mail-meta:orr n)))
+    ?^  m2  archived.u.m2
+    =/  m1=(unit mail-meta-1:orr)  (mole |.(;;(mail-meta-1:orr n)))
+    ?~(m1 | archived.u.m1)
   ?:  archived  $(threads t.threads)
   =/  sub=(unit ball:tarball)  (~(get by dir.kid) %msg)
   ?~  sub  $(threads t.threads)

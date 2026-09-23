@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 55's owner steps
+
+None. Three adjustments for auspex 14: a thread's meta is read in its `%2` shape (else `%1`), so archived threads are left alone again; a ship that writes the owner and has no person body is made one (`person/<ship>`, named by its ship, the ship on the record), so its mail is read instead of counted as a stranger's; and a reply to the brief counts only when the message it answers is the ship's own brief, word for word, so a reply to a client's brief for the same day never moves the ship's tags.
+
 ### Version 54's owner steps
 
 None. Auspex version 14 takes only the five-field `%send`, so the seven-field poke is gone; a ship whose auspex is older than 14 sends no mail from orrery until it is updated.
