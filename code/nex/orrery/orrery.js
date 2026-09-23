@@ -361,7 +361,7 @@
       '<label class="field">reader model <input name="model" value="' + esc(c.model || '') + '"></label></p>' +
       '<p><button data-save-chat="1">save chat</button><button data-chat-wake="1">read now</button></p></div>';
     if (last.at) {
-      out += '<p class="muted">Last pass at ' + fmtTime(last.at) + ', from ' + fmtTime(last.since) + ': ' + (last.conversations || 0) + ' conversations changed, ' + (last.changed || 0) + ' messages; read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + ', strangers ' + (last.strangers || 0) + ', held ' + (last.held || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
+      out += '<p class="muted">Last pass at ' + fmtTime(last.at) + ', from ' + fmtTime(last.since) + ': ' + (last.conversations || 0) + ' conversations changed' + (last.unpicked ? ' (' + last.unpicked + ' not picked)' : '') + ', ' + (last.changed || 0) + ' messages' + (last.own ? ' (' + last.own + ' of your own left unread)' : '') + '; read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + ', strangers ' + (last.strangers || 0) + ', held ' + (last.held || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
     }
     if (last.down && last.down.at) {

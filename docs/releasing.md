@@ -209,7 +209,7 @@ A release that raises the consent prompt leaves the new roads refused until the 
 
 ### Version 43's owner steps
 
-None. Version 43 makes a missing scry answer legible: the chat record's notes now say by name when the chat or channels agent gave no answer, an answer that is not JSON, or a JSON null, which is what an older groups desk answers for a scry it lacks; the two list routes say the same in their note. No new road.
+None. Version 43 makes a missing scry answer legible: the chat record's notes now say by name when the chat or channels agent gave no answer, an answer that is not JSON, or a JSON null, which is what an older groups desk answers for a scry it lacks; the two list routes say the same in their note. Version 44 adds two counts to the record and the card, `unpicked` and `own`, so a pass that read nothing says whether the conversations that changed were ones the owner did not pick, or the owner's own words left unread. No new road.
 
 ### Version 42's owner steps
 

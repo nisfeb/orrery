@@ -3446,9 +3446,24 @@
   =|  tally=chat-tally
   =.  changed.tally  (lent rows)
   =.  notes.tally  said
-  =.  conversations.tally
-    =/  keys  |=(j=(each json @t) ^-(@ud ?:(?=([%& %o *] j) ~(wyt by p.p.j) 0)))
-    (add (keys chat) (keys chans))
+  ::  what the scries answered and where it went: conversations changed,
+  ::  of them the ones the owner did not pick, and the owner's own
+  ::  messages left unread while read_own is off
+  =/  keys  |=(j=(each json @t) ^-((list @t) ?:(?=([%& %o *] j) ~(tap in ~(key by p.p.j)) ~)))
+  =/  named=(list @t)  (weld (keys chat) (keys chans))
+  =.  conversations.tally  (lent named)
+  =.  unpicked.tally
+    %-  lent
+    %+  skip  named
+    |=(k=@t |((~(has in dms.cfg) k) (~(has in channels.cfg) k)))
+  =.  own.tally
+    ?:  read-own.cfg  0
+    =/  with=@ud
+      %-  lent
+      %+  weld
+        (chat-rows:orr ?:(?=(%& -.chat) p.chat [%o ~]) cfg(read-own &) floor me)
+      (channel-rows:orr ?:(?=(%& -.chans) p.chans [%o ~]) cfg(read-own &) floor me)
+    (sub with (lent rows))
   =|  new=(list @t)
   =|  held-at=(unit @da)
   |-
@@ -3489,7 +3504,11 @@
   ==
 ::  +$  chat-tally: what one pass did
 ::
-+$  chat-tally  [read=@ud filed=@ud strangers=@ud held=@ud changed=@ud conversations=@ud notes=(list @t)]
++$  chat-tally
+  $:  read=@ud  filed=@ud  strangers=@ud  held=@ud
+      changed=@ud  conversations=@ud  unpicked=@ud  own=@ud
+      notes=(list @t)
+  ==
 ::  +people-of-ships: every person body with a ship, keyed by that ship
 ::  as the settings key one, so a person the owner named on the ship is
 ::  known to the reader without a row on the card
@@ -3536,6 +3555,8 @@
       ['held' (numb:enjs:format held.t)]
       ['changed' (numb:enjs:format changed.t)]
       ['conversations' (numb:enjs:format conversations.t)]
+      ['unpicked' (numb:enjs:format unpicked.t)]
+      ['own' (numb:enjs:format own.t)]
       ['notes' a+(turn said |=(n=@t `json`s+(end [3 300] n)))]
       ['day' s+day]
       ['read_today' (numb:enjs:format (add today read.t))]
