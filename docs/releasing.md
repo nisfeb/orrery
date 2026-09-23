@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 54's owner steps
+
+None. Auspex version 14 takes only the five-field `%send`, so the seven-field poke is gone; a ship whose auspex is older than 14 sends no mail from orrery until it is updated.
+
 ### Version 53's owner steps
 
 None. A message by mail or chat finds the person's ship on the body's record too, not only in a `ship` attribute; 52 planned nothing for a person whose ship is on the record (which is where the page and the chat reader keep it).
