@@ -267,6 +267,10 @@ Every change is an ordinary observation, retraction or deletion signed `reconcil
 
 The settings live under `reconcile` in `policy.json`: `min_occurrences` (3), `stale_days` (30) and `prune_days` (0, off). The Settings page shows what the last run did and runs one now. Version 25 moved retire on-ship, version 26 the rest, version 35 added the scheduled and the delivery rules.
 
+### The calendar's events
+
+Since version 47 the executor also reads the calendar's events into facts, the way a phone client's calendar pipe did, so that pipe can be switched off. A one-off event becomes a situation, `situation/<date>-<slug>` with the calendar's uid as an alias, carrying `starts` and `ends` while it is ahead (dated when the ship learned of it) and `started` and `ended` once it is behind (dated at the event), the participants (`person/me` and whoever the title or the note names, a person the title is sure of made when the ship lacks them) and the location. A repeating event becomes an activity, `activity/<slug>`, with `cadence` (the rule's kind), `schedule` (the kind and the first tag), participants, `organizer` and location, each occurrence behind as a `last` and the next ahead as a `next` anchored at the end of the one before it, until its own end. A one-off the calendar no longer holds whose start is still ahead is marked `status: cancelled`, once. Todos and the events the ship itself placed (`meta.orrery`, the `orrery` tag) are not read; a rule the ship does not know (anything but `once`, `daily`, `weekly`, `monthly`, `yearly`, `every`) is named in the record's `unknown`. Every row's source is `calendar` with the uid, and what was written is remembered in `calendar-seen.json` so each occurrence is said once. The pass runs whenever the store changes and at least hourly, on the executor's own calendar read; its record is `GET /calendar/last`.
+
 ### Where facts come from
 
 Every observation names its `source`, a kind and an opaque id such as the message it was read from, and its `by`, who asserted it. The text is never stored. Confidence (`conf`, 0 to 100) says how sure the asserter was.
@@ -275,7 +279,7 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 
 ### The page
 
-`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, keys with each key's scope, when it was made and last used, a revoke per key and a form that mints one and shows its token once, and settings with a Generator card (the model, the key written once and never shown, a run-now button and the last pass), a Reconcile card, an Executor card (what the last pass did, the failures with their notes, the desks it could not find, and a wake button) and a Telegram card above the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
+`/apps/orrery` on your ship, owner only: bodies grouped by kind with situations that are over folded under a past heading, one body with its attribute table, its situations, its open actions and its timeline with a retract button, the actions inbox with approve, dismiss, done and failed, keys with each key's scope, when it was made and last used, a revoke per key and a form that mints one and shows its token once, and settings with a Generator card (the model, the key written once and never shown, a run-now button and the last pass), a Reconcile card, an Executor card (what the last pass did, the failures with their notes, the desks it could not find, what the calendar's events gave, and a wake button) and a Telegram card above the schema and the policy as editable JSON. It refreshes itself whenever the ship's state changes.
 
 ### The vocabulary
 
@@ -359,8 +363,10 @@ Orrery is a desk in the grubbery shell, and everything it keeps is a grub: a fil
   telegram-inbox/<update_id>  an update the webhook took, until the reader has read it
   telegram-inbox/rev          the inbox's own beacon, which wakes the reader
   telegram.sig                the reader: drains the inbox in id order
-  exec.sig                    the executor: approved actions carried out, the todo list kept in step
+  exec.sig                    the executor: approved actions carried out, the todo list kept in step, the calendar's events read
   exec-last.json              what its last pass did
+  calendar-seen.json          the calendar occurrences the ship has written, so each is written once
+  calendar-events-last.json   what the calendar events reader last did
   refining/<aid>              the lock a refine request holds on its action
   tile.json  link.json  weir.json  icon.svg  orrery.html  orrery.css  orrery.js   the manifests and the page, laid fresh on every load
 ```
@@ -438,6 +444,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /chat/peek?since=<iso>` | what a pass since then would find, without reading it: per agent, whether it answered, the conversations changed, how many of them are picked, the messages the picked ones hold (the owner's own included), and the first twenty names; a day ago unless given; owner only |
 | `GET /exec/last` | what the executor's last pass did: `claimed`, `sent`, `placed`, `failed` (id, title and note, newest first, twenty at most), todos `ticked`, `deleted` and `moved`, tasks `closed` from the calendar, todos `adopted`, the desks link could not find in `missing`, and `notes`; `at` is when it last looked, `acted_at` when those counts happened, since a pass that did nothing keeps the last one that did; owner only |
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
+| `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took, rules in `unknown`; `at` is when it last looked, `acted_at` when those counts happened; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
 | `GET /reconcile/last` | what the last run did: time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |

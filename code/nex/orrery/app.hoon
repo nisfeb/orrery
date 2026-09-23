@@ -22,6 +22,8 @@
 ::    /telegram-inbox/<update_id>      an update the webhook took, until read
 ::    /exec.sig                        the executor: approved actions carried out, the todo list kept in step
 ::    /exec-last.json                  what its last pass did
+::    /calendar-seen.json              the calendar occurrences the ship has written
+::    /calendar-events-last.json       what the calendar events reader last did
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -116,6 +118,10 @@
           ::  todo list in step, and what its last pass did
           [%fall %& [/ %'exec.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'exec-last.json'] [[/ %json] [%o ~]]]
+          ::  the calendar events reader (version 47): what of the
+          ::  calendar the ship has already written, and its record
+          [%fall %& [/ %'calendar-seen.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'calendar-events-last.json'] [[/ %json] [%o ~]]]
           ::  the chat reader (version 39): its settings, its record, the
           ::  ids it has read, its window, and the fiber that polls
           [%fall %& [/ %'chat.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
@@ -768,6 +774,7 @@
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-dms eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-channels eyre-id))
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
+  ?:  &(=('GET' meth) ?=([%api %calendar %last ~] suffix))   (own (serve-doc eyre-id %'calendar-events-last.json'))
   ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))      (own (serve-prod eyre-id %'exec.sig' 'executor'))
   (send-err eyre-id 404 'no such route')
 ::  +serve-state: every body with its current attributes, the open
@@ -4081,17 +4088,19 @@
 ::  moved; the beacon moves on every fact the ship takes, and most of
 ::  those are neither the executor's nor the mirror's.
 ::
-+$  exec-seen  [acts=@uvH store=cass:clay todos=(list todo:orr)]
++$  exec-seen  [acts=@uvH store=cass:clay todos=(list todo:orr) events=@da]
 ::  the calendar as one pass sees it: where it is (~ when link does not
 ::  know it), its todos (~ when the store could not be read this time),
-::  what they were read against, and whether anything moved since the
-::  last pass, which is when the mirror has work
+::  what they were read against, whether anything moved since the last
+::  pass, which is when the mirror has work, and the store's JSON when
+::  it was turned this pass, which is when the events reader has work
 ::
 +$  exec-cal
   $:  base=(unit path)
       todos=(unit (list todo:orr))
       seen=(unit exec-seen)
       moved=?
+      store=(unit json)
   ==
 ::  +exec-run: one pass: the calendar read once, the approved actions,
 ::  the mirror, then the record; and whether the pass moved anything,
@@ -4104,6 +4113,7 @@
   ;<  cal=exec-cal  bind:m  (read-calendar seen)
   ;<  tally=exec-tally  bind:m  (exec-pass cal)
   ;<  tally=exec-tally  bind:m  (todo-pass cal tally)
+  ;<  ~  bind:m  (events-pass cal)
   ;<  ~  bind:m  (exec-record tally)
   (pure:m [seen.cal !(tally-idle tally)])
 ::  +tally-idle: a pass that moved nothing (a claim that was refused
@@ -4118,24 +4128,28 @@
   ==
 ::  +read-calendar: the todo list, through the store's JSON, unless
 ::  neither the actions nor the store moved since it was last read, in
-::  which case the todos read then still hold
+::  which case the todos read then still hold. The store is turned
+::  again an hour after the events reader last saw it even when
+::  nothing moved, since an occurrence crosses now on its own.
 ::
 ++  read-calendar
   |=  seen=(unit exec-seen)
   =/  m  (fiber:fiber:nexus ,exec-cal)
   ^-  form:m
   ;<  base=(unit path)  bind:m  (find-base %calendar)
-  ?~  base  (pure:m [~ ~ seen |])
+  ?~  base  (pure:m [~ ~ seen | ~])
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base %'calendar.calendar'] ~)
-  ?.  ?=([~ %file *] vw)  (pure:m [base ~ seen |])
+  ?.  ?=([~ %file *] vw)  (pure:m [base ~ seen | ~])
+  ;<  now=@da  bind:m  get-time:io
   =/  acts-hash=@uvH  (sham acts)
-  ?:  &(?=(^ seen) =(acts.u.seen acts-hash) =(store.u.seen cass.u.vw))
-    (pure:m [base `todos.u.seen seen |])
+  =/  moved=?  !&(?=(^ seen) =(acts.u.seen acts-hash) =(store.u.seen cass.u.vw))
+  ?:  &(!moved ?=(^ seen) (lth now (add events.u.seen ~h1)))
+    (pure:m [base `todos.u.seen seen | ~])
   ;<  store=(unit json)  bind:m  (calendar-json u.base (sang-noun:tarball sang.u.vw))
-  ?~  store  (pure:m [base ~ seen |])
+  ?~  store  (pure:m [base ~ seen | ~])
   =/  todos=(list todo:orr)  (todos-of:orr u.store)
-  (pure:m [base `todos `[acts-hash cass.u.vw todos] &])
+  (pure:m [base `todos `[acts-hash cass.u.vw todos now] moved store])
 ::  +keep-calendar: subscribe to the calendar's store on /cal, & when
 ::  the keep took. Its own taker, since +keep waits for ever on a veto
 ::  and +keep-soft leaves the veto in the queue for the next hard taker
@@ -4464,6 +4478,57 @@
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  ops=(list mirror-op:orr)  (plan-mirror:orr u.todos.cal acts now)
   (run-mirror-ops u.base.cal ops tally)
+::  +events-pass: the calendar events reader (version 47): the store's
+::  events as situations and activities, the way the phone client's
+::  calendar pipe wrote them, so that pipe can be switched off. The lib
+::  plans (+plan-events) against what the ship already wrote
+::  (calendar-seen.json); the ops go through the writer; the record is
+::  calendar-events-last.json. Nothing when the store was not turned
+::  this pass. The seen map only grows, a key per occurrence written;
+::  ponytail: a busy calendar adds a few thousand keys a year, prune by
+::  the ms in the key when it shows.
+::
+++  events-pass
+  |=  cal=exec-cal
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  store.cal  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  seen-json=json  bind:m  (read-json (rf 0 / %'calendar-seen.json'))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  tz=@t  (attr-text:orr all multi now 'person/me' 'timezone')
+  =/  seen=(map @t @t)
+    %-  ~(gas by *(map @t @t))
+    %+  murn  ?:(?=([%o *] seen-json) ~(tap by p.seen-json) ~)
+    |=([k=@t v=json] ?:(?=([%s *] v) `[k p.v] ~))
+  =/  events=(list cal-event:orr)  (events-of:orr u.store.cal)
+  =/  plan=event-plan:orr  (plan-events:orr events all multi now seen tz)
+  ;<  n=@ud  bind:m  (file-ops-on ops.plan /exec)
+  ;<  ~  bind:m
+    ?:  =(seen seen.plan)  (pure:(fiber:fiber:nexus ,~) ~)
+    (over:io (rf 0 / %'calendar-seen.json') [[/ %json] [%o (~(run by seen.plan) |=(v=@t `json`s+v))]])
+  ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
+  =/  active=?  |(!=(0 rows.plan) !=(0 made.plan))
+  =/  saw=(list [@t json])
+    :~  ['at' (en-time:orr now)]
+        ['events' (numb:enjs:format (lent events))]
+        ['unknown' a+(turn unknown.plan |=(x=@t `json`s+x))]
+    ==
+  ?:  &(!active ?=([%o *] last) !=(~ p.last))
+    (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] [%o (~(gas by p.last) saw)]])
+  %+  over:io  (rf 0 / %'calendar-events-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  %+  weld  saw
+  ^-  (list [@t json])
+  :~  ['acted_at' ?:(active (en-time:orr now) ~)]
+      ['made' (numb:enjs:format made.plan)]
+      ['rows' (numb:enjs:format rows.plan)]
+      ['cancelled' (numb:enjs:format cancelled.plan)]
+      ['ops' (numb:enjs:format n)]
+  ==
 ::  +calendar-json: the calendar's store as JSON. The store's noun is
 ::  the calendar's own type, which orrery cannot clam, and a peek with
 ::  a JSON blot converts in the PEEKING fiber's code namespace (the

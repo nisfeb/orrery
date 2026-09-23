@@ -1336,4 +1336,173 @@
   ^-  (unit action:orr)
   =/  got  (de-action:orr j now 'calendar')
   ?:(?=(%| -.got) ~ `p.got)
+::  ==  the calendar events reader (version 47)
+::
+::  a store with a one-off timed coffee tomorrow in New York, a weekly
+::  standup on mondays and wednesdays, a todo, orrery's own event, and
+::  a dated birthday; now is a friday at noon UTC
+::
+++  cal-store
+  %-  jo
+  %-  crip
+  %-  zing
+  :~  "\{\"events\": ["
+      "\{\"id\": \"u-coffee\", \"cal\": \"home\", \"cat\": \"timed\", \"kind\": \"once\", \"args\": \{}, "
+      "\"meta\": \{\"name\": \"Coffee with Mira Quill\", \"location\": \"Blue Bottle\", \"note\": \"\", \"tags\": []}, "
+      "\"start_ms\": 1790020800000, \"zone\": \"America/New_York\", \"fin\": \"dur\", \"dur_min\": 45, \"count\": 1, \"except\": []},"
+      "\{\"id\": \"u-standup\", \"cal\": \"work\", \"cat\": \"timed\", \"kind\": \"weekly\", \"args\": \{\"days\": [\"mon\", \"wed\"], \"at\": \"09:30\"}, "
+      "\"meta\": \{\"name\": \"Standup\", \"location\": \"\", \"note\": \"with Mira\", \"tags\": [\"work\"]}, "
+      "\"start_ms\": 1789300800000, \"zone\": \"America/New_York\", \"fin\": \"dur\", \"dur_min\": 15, \"count\": 0, \"except\": [1]},"
+      "\{\"id\": \"u-todo\", \"cal\": \"home\", \"cat\": \"todo\", \"meta\": \{\"name\": \"Buy milk\"}},"
+      "\{\"id\": \"orrery-1\", \"cal\": \"home\", \"cat\": \"timed\", \"kind\": \"once\", \"args\": \{}, "
+      "\"meta\": \{\"name\": \"Call the tow\", \"orrery\": \"a1\", \"tags\": [\"orrery\"]}, \"start_ms\": 1790020800000, \"zone\": \"none\", \"fin\": \"dur\", \"dur_min\": 60, \"count\": 1, \"except\": []},"
+      "\{\"id\": \"u-bday\", \"cal\": \"home\", \"cat\": \"date\", \"kind\": \"yearly\", \"args\": \{\"month\": 9, \"day\": 20}, "
+      "\"meta\": \{\"name\": \"Felix Birthday\", \"tags\": []}, \"start_ms\": 1600560000000, \"zone\": \"none\", \"span_days\": 1, \"count\": 0, \"except\": []}"
+      "]}"
+  ==
+::  1790020800000 ms is 2026-09-21T20:00:00 as a wall clock: 8 pm in
+::  New York, 2026-09-22T00:00Z; 1789300800000 is 2026-09-13T20:00:00,
+::  a sunday, the weekly's anchor
+++  cal-now  ~2026.9.18..12.00.00
+++  kind-of  |=(id=@t ^-(@tas ?:(=('activity/' (end [3 9] id)) %activity ?:(=('person/' (end [3 7] id)) %person %situation))))
+++  test-events-of
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  coffee=cal-event:orr  (snag 0 evs)
+  =/  standup=cal-event:orr  (snag 1 evs)
+  ;:  weld
+    (expect-eq !>(3) !>((lent evs)))
+    (expect-eq !>('Coffee with Mira Quill') !>(name.coffee))
+    (expect-eq !>(~2026.9.21..20.00.00) !>(start.coffee))
+    (expect-eq !>(~m45) !>(dur.coffee))
+    (expect-eq !>('America/New_York') !>(zone.coffee))
+    (expect-eq !>('u-bday') !>(id:(snag 2 evs)))
+    (expect-eq !>((sy ~[1])) !>(except.standup))
+    (expect-eq !>(%.n) !>(own.standup))
+  ==
+++  test-utc-of
+  ;:  weld
+    (expect-eq !>(~2026.9.22..00.00.00) !>((utc-of:orr ~2026.9.21..20.00.00 'America/New_York')))
+    (expect-eq !>(~2026.1.22..01.00.00) !>((utc-of:orr ~2026.1.21..20.00.00 'America/New_York')))
+    (expect-eq !>(~2026.9.21..20.00.00) !>((utc-of:orr ~2026.9.21..20.00.00 '')))
+    (expect-eq !>(~2026.9.21..20.00.00) !>((wall-of:orr (utc-of:orr ~2026.9.21..20.00.00 'America/Chicago') 'America/Chicago')))
+  ==
+++  test-occurrences
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  coffee=cal-event:orr  (snag 0 evs)
+  =/  standup=cal-event:orr  (snag 1 evs)
+  =/  bday=cal-event:orr  (snag 2 evs)
+  =/  c  (occurrences:orr coffee (sub cal-now ~d30) (add cal-now ~d90))
+  ::  the standup's window: two weeks from the anchor
+  =/  w  (occurrences:orr standup ~2026.9.13 ~2026.9.27)
+  =/  b  (occurrences:orr bday ~2026.9.1 ~2027.12.31)
+  ;:  weld
+    (expect-eq !>(`(list [@ud @da @da])`~[[0 ~2026.9.22..00.00.00 ~2026.9.22..00.45.00]]) !>(c))
+    ::  monday 14th, (wednesday 16th excepted), monday 21st, wednesday 23rd, at 13:30Z
+    %+  expect-eq
+      !>(`(list @da)`~[~2026.9.14..13.30.00 ~2026.9.21..13.30.00 ~2026.9.23..13.30.00])
+      !>((turn w |=([* l=@da *] l)))
+    (expect-eq !>(`(list @ud)`~[0 2 3]) !>((turn w |=([i=@ud *] i))))
+    (expect-eq !>(`(list @da)`~[~2026.9.20 ~2027.9.20]) !>((turn b |=([* l=@da *] l))))
+    (expect-eq !>(~2026.9.21) !>(r:(snag 0 b)))
+  ==
+++  test-tick-monthly-and-every
+  =/  mk
+    |=  [kind=@t args=@t start=@da]
+    ^-  cal-event:orr
+    ['u' 'c' 'timed' 'x' '' '' ~ | kind (jo args) start '' %dur ~h1 *@da 1 0 ~ 0 0]
+  ;:  weld
+    (expect-eq !>(`(unit @da)`[~ ~2026.11.30..09.00.00]) !>((tick:orr (mk 'monthly' '{"day": 30, "at": 540}' ~2026.9.30..09.00.00) 2)))
+    (expect-eq !>(`(unit @da)`~) !>((tick:orr (mk 'monthly' '{"day": 31, "at": 540}' ~2026.8.31) 1)))
+    (expect-eq !>(`(unit @da)`[~ ~2026.9.18..15.00.00]) !>((tick:orr (mk 'every' '{"period": 90}' ~2026.9.18..12.00.00) 2)))
+    (expect-eq !>(`(unit @da)`~) !>((tick:orr (mk 'every' '{"period": 0}' ~2026.9.18) 1)))
+    (expect-eq !>(`(unit @da)`~) !>((tick:orr (mk 'lunar' '{}' ~2026.9.18) 0)))
+    (expect-eq !>(4) !>((weekday-of:orr ~2026.9.18)))
+    (expect-eq !>(5) !>((weekday-of:orr ~2000.1.1)))
+    (expect-eq !>(6) !>((weekday-of:orr ~1999.12.26)))
+  ==
+++  test-plan-events
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~ ~[['timezone' s+'America/New_York']] cal-now)
+        (mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ cal-now)
+    ==
+  =/  got=event-plan:orr  (plan-events:orr evs all (sy ~['participants' 'last']) cal-now ~ 'America/New_York')
+  =/  op=json  (snag 0 ops.got)
+  =/  bodies=(list json)  (ga:orr op 'bodies')
+  =/  obs=(list json)  (ga:orr op 'observations')
+  =/  of  |=([id=@t attr=@t] ^-((list json) (skim obs |=(r=json &(=(id (gs:orr r 'subject')) =(attr (gs:orr r 'attr')))))))
+  =/  coffee=@t  'situation/2026-09-21-coffee-with-mira-quill'
+  ::  a second pass against what the first remembered says nothing new
+  =/  again=event-plan:orr
+    %-  plan-events:orr
+    :*  evs
+        (weld all (turn bodies |=(b=json (mkb (gs:orr b 'id') (kind-of (gs:orr b 'id')) (gs:orr b 'name') (strings:orr (ga:orr b 'aliases')) ~ cal-now))))
+        (sy ~['participants' 'last'])
+        cal-now
+        seen.got
+        'America/New_York'
+    ==
+  ;:  weld
+    (expect-eq !>(1) !>((lent ops.got)))
+    ::  the coffee, the standup, felix himself and his birthday
+    (expect-eq !>(`(list @t)`~[coffee 'activity/standup' 'person/felix' 'activity/felix-birthday']) !>((turn bodies |=(b=json (gs:orr b 'id')))))
+    (expect-eq !>(3) !>(made.got))
+    (expect-eq !>(`(list @t)`~['u-coffee']) !>((strings:orr (ga:orr (snag 0 bodies) 'aliases'))))
+    ::  the coffee is ahead: starts and ends, learned now, at the zone's instant
+    (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 (of coffee 'starts')) 'value')))
+    (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 (of coffee 'starts')) 'at')))
+    (expect-eq !>(`json`s+'2026-09-22T00:45:00Z') !>((gj:orr (snag 0 (of coffee 'ends')) 'value')))
+    (expect-eq !>(0) !>((lent (of coffee 'started'))))
+    (expect-eq !>(`json`s+'Blue Bottle') !>((gj:orr (snag 0 (of coffee 'location')) 'value')))
+    (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((turn (of coffee 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`json`(pairs:enjs:format ~[['kind' s+'calendar'] ['id' s+'home/u-coffee']])) !>((gj:orr (snag 0 (of coffee 'starts')) 'source')))
+    ::  the standup: its content at the last occurrence behind (monday
+    ::  the 14th), the one last, and the next (monday the 21st) anchored
+    ::  at the 14th's end, until its own end
+    (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'value')))
+    (expect-eq !>(`json`s+'weekly, work') !>((gj:orr (snag 0 (of 'activity/standup' 'schedule')) 'value')))
+    (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'at')))
+    (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((turn (of 'activity/standup' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'last')) 'value')))
+    (expect-eq !>(1) !>((lent (of 'activity/standup' 'last'))))
+    (expect-eq !>(`json`s+'2026-09-21T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'value')))
+    (expect-eq !>(`json`s+'2026-09-14T13:45:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'at')))
+    (expect-eq !>(`json`s+'2026-09-21T13:45:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'until')))
+    (expect-eq !>(0) !>((lent (of 'activity/standup' 'location'))))
+    ::  the birthday: a series, felix made and in it, its next the 20th
+    (expect-eq !>(`json`s+'2026-09-20T00:00:00Z') !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'next')) 'value')))
+    (expect-eq !>(`(list @t)`~['person/me' 'person/felix']) !>((turn (of 'activity/felix-birthday' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`json`s+'Felix') !>((gj:orr (snag 2 bodies) 'name')))
+    (expect-eq !>(0) !>(cancelled.got))
+    (expect-eq !>(`(list @t)`~) !>(unknown.got))
+    (expect-eq !>(`(list json)`~) !>(ops.again))
+    (expect-eq !>(seen.got) !>(seen.again))
+  ==
+::  once the coffee is behind, its situation gets the past tense at
+::  the event's time; once the calendar drops it while still ahead,
+::  the situation is cancelled, once
+++  test-plan-events-later
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  coffee=@t  'situation/2026-09-21-coffee-with-mira-quill'
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~ ~ cal-now)
+        :+  coffee  [%situation 'Coffee with Mira Quill' (sy ~['u-coffee']) cal-now ~]
+        ~[[(cat 3 coffee '/starts') [coffee 'starts' s+'2026-09-22T00:00:00Z' cal-now ~ 100 ['calendar' 'home/u-coffee'] 'calendar' cal-now | '']]]
+    ==
+  =/  seen=(map @t @t)  (my ~[['occ/home/u-coffee/1790035200000' 's']])
+  =/  later=@da  ~2026.9.23..12.00.00
+  =/  got=event-plan:orr  (plan-events:orr evs all ~ later seen 'America/New_York')
+  =/  obs=(list json)  (skim (ga:orr (snag 0 ops.got) 'observations') |=(r=json =(coffee (gs:orr r 'subject'))))
+  =/  gone=event-plan:orr  (plan-events:orr (skip evs |=(e=cal-event:orr =('u-coffee' id.e))) all ~ cal-now seen 'America/New_York')
+  =/  gobs=(list json)  (skim (ga:orr (snag 0 ops.gone) 'observations') |=(r=json =(coffee (gs:orr r 'subject'))))
+  =/  gone-again=event-plan:orr  (plan-events:orr (skip evs |=(e=cal-event:orr =('u-coffee' id.e))) all ~ cal-now seen.gone 'America/New_York')
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['started' 'ended']) !>((turn obs |=(r=json (gs:orr r 'attr')))))
+    (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 obs) 'at')))
+    (expect-eq !>(`(unit @t)`[~ 'f']) !>((~(get by seen.got) 'occ/home/u-coffee/1790035200000')))
+    (expect-eq !>(1) !>(cancelled.gone))
+    (expect-eq !>(`(list @t)`~['status']) !>((turn gobs |=(r=json (gs:orr r 'attr')))))
+    (expect-eq !>(`json`s+'cancelled') !>((gj:orr (snag 0 gobs) 'value')))
+    (expect-eq !>(0) !>(cancelled.gone-again))
+  ==
 --

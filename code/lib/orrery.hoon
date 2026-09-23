@@ -2771,23 +2771,8 @@
 ++  plan-participants
   |=  [all=(list loaded) multi=(set @t) now=@da]
   ^-  [ops=(list json) made=@ud rows=@ud]
-  =/  people=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
   =/  titled=(list loaded)  (skim all |=(l=loaded ?=(?(%activity %situation) kind.body.l)))
-  =/  words=(list [word=@t id=bid])
-    %-  zing
-    %+  turn  people
-    |=(l=loaded (turn [name.body.l ~(tap in aliases.body.l)] |=(w=@t [w id.l])))
-  =/  known=(map @t bid)
-    %+  roll  words
-    |=  [[word=@t id=bid] acc=(map @t bid)]
-    =/  k=(set @t)  (person-key word)
-    ?:  =(1 ~(wyt in k))
-      =/  w=@t  (snag 0 `(list @t)`~(tap in k))
-      ?:((~(has by acc) w) acc (~(put by acc) w id))
-    ?:  =(~ k)  acc
-    =/  firsts=(list @t)  (skip (tokens word) |=(w=@t (~(has in role-words) w)))
-    ?~  firsts  acc
-    ?:((~(has by acc) i.firsts) acc (~(put by acc) i.firsts id))
+  =/  known=(map @t bid)  (known-people all)
   =/  sure-names=(list @t)  (zing (turn titled |=(l=loaded sure:(names-in name.body.l))))
   =/  certain=(map @t @t)
     %+  roll  sure-names
@@ -2828,6 +2813,28 @@
         created.body.l  ~  85  ['reconcile' (cat 3 'title/' id.l)]  'reconcile'
     ==
   [(observe-ops creates rows) (lent creates) (lent rows)]
+::  +known-people: every person the ship knows, keyed by the words a
+::  title would name them with: a one-word key as it is, a longer name
+::  by its first name, role words dropped
+::
+++  known-people
+  |=  all=(list loaded)
+  ^-  (map @t bid)
+  =/  people=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
+  =/  words=(list [word=@t id=bid])
+    %-  zing
+    %+  turn  people
+    |=(l=loaded (turn [name.body.l ~(tap in aliases.body.l)] |=(w=@t [w id.l])))
+  %+  roll  words
+  |=  [[word=@t id=bid] acc=(map @t bid)]
+  =/  k=(set @t)  (person-key word)
+  ?:  =(1 ~(wyt in k))
+    =/  w=@t  (snag 0 `(list @t)`~(tap in k))
+    ?:((~(has by acc) w) acc (~(put by acc) w id))
+  ?:  =(~ k)  acc
+  =/  firsts=(list @t)  (skip (tokens word) |=(w=@t (~(has in role-words) w)))
+  ?~  firsts  acc
+  ?:((~(has by acc) i.firsts) acc (~(put by acc) i.firsts id))
 ::  +plan-people: merge proposals, (from, into, why), the surer body as
 ::  into: a person wins over an org, an older body over a newer one,
 ::  and person/me is never merged away
@@ -5094,4 +5101,464 @@
   ?.  live  ~
   ?:  =(due.t due.a)  ~
   [%calendar (edit-todo-op t orrery.t due.a)]~
+::  ==  the calendar events reader (version 47): the calendar's timed,
+::  all-day and dated events as situations and activities, the way the
+::  phone client's calendar pipe wrote them (its OrreryCalendar), so
+::  the pipe can be switched off. Pure: +events-of reads the store's
+::  JSON, +occurrences inflates the six built-in rules, +plan-events
+::  answers the writer ops and what to remember.
+::
+::  +$  cal-event: one event of the store (calendar's +event-json): its
+::  id (the uid a CalDAV client sees), its calendar, its cat (timed,
+::  allday, date; a todo is the mirror's), the meta the owner reads,
+::  whether it is orrery's own, and its clock: a rule kind with its
+::  args and anchor (the anchor and every moment are the zone's wall
+::  clock encoded as if it were UTC), the zone, how each tick ends, the
+::  count and the excepted indices.
+::
++$  cal-event
+  $:  id=@t  cal=@t  cat=@t  name=@t  note=@t  location=@t  tags=(list @t)
+      own=?  kind=@t  args=json  start=@da  zone=@t
+      fin=?(%dur %to)  dur=@dr  end=@da  days=@ud  count=@ud  except=(set @ud)
+      month=@ud  day=@ud
+  ==
+++  events-of
+  |=  cal=json
+  ^-  (list cal-event)
+  %+  murn  (ga cal 'events')
+  |=  e=json
+  ^-  (unit cal-event)
+  ::  a todo is the mirror's, and orrery's own events are its actions
+  =/  cat=@t  (gs e 'cat')
+  ?.  ?=(?(%timed %allday %date) cat)  ~
+  =/  meta=json  (gj e 'meta')
+  =/  tags=(list @t)  (strings (ga meta 'tags'))
+  =/  own=?
+    ?|  !=('' (gs meta 'orrery'))
+        =('orrery-' (end [3 7] (gs e 'id')))
+        (lien tags |=(t=@t =('orrery' (lower t))))
+    ==
+  ?:  own  ~
+  =/  zone=@t  =/(z (gs e 'zone') ?:(=('none' z) '' z))
+  =/  fin=?(%dur %to)  ?:(=('to' (gs e 'fin')) %to %dur)
+  :-  ~
+  :*  (gs e 'id')
+      (gs e 'cal')
+      cat
+      (trim-cord (gs meta 'name'))
+      (gs meta 'note')
+      (trim-cord (gs meta 'location'))
+      tags
+      own
+      =/(k (gs e 'kind') ?:(=('' k) ?:(=('date' cat) 'yearly' 'once') k))
+      (gj e 'args')
+      (da-of-ms (fall (gn e 'start_ms') 0))
+      zone
+      fin
+      (mul (fall (gn e 'dur_min') 60) ~m1)
+      (da-of-ms (fall (gn e 'end_ms') 0))
+      (max 1 (fall (gn e 'span_days') 1))
+      (fall (gn e 'count') 0)
+      (sy (murn (ga e 'except') |=(j=json ?:(?=([%n *] j) `(rash p.j dem) ~))))
+      (fall (gn e 'month') 0)
+      (fall (gn e 'day') 0)
+  ==
+::  +utc-of: a wall-clock moment of a zone as the UTC instant it names;
+::  the inverse of +wall-of, judged on the wall clock, which is a few
+::  minutes off across a DST switch and right the rest of the year
+::
+++  utc-of
+  |=  [wall=@da tz=@t]
+  ^-  @da
+  =/  z=(unit zone)  (~(get by zones) tz)
+  ?~  z  wall
+  =/  shift=@dr  (mul ?:((in-dst u.z wall) dst.u.z std.u.z) ~m1)
+  ?:(west.u.z (add wall shift) (sub wall shift))
+::  +tick: the naive moment of occurrence idx under the event's rule,
+::  as the calendar's own rule files compute it (lib/rules/*.hoon):
+::  once at the anchor; daily at a wall time; weekly on chosen
+::  weekdays; monthly on day N; yearly on a month and day; every N
+::  minutes from the anchor. ~ when the index has no moment (April 31,
+::  a non-leap February 29) or the kind is one the ship does not know.
+::
+++  tick
+  |=  [ev=cal-event idx=@ud]
+  ^-  (unit @da)
+  =/  a  ~(. rule-args args.ev)
+  =/  base=@da  (sub start.ev (mod start.ev ~d1))
+  ?:  =('once' kind.ev)  ?:(=(0 idx) `start.ev ~)
+  ?:  =('daily' kind.ev)  `(add (add base (mul idx ~d1)) (mins:a 'at'))
+  ?:  =('every' kind.ev)
+    =/  period=@dr  (mins:a 'period')
+    ?:(=(0 period) ~ `(add start.ev (mul idx period)))
+  ?:  =('weekly' kind.ev)
+    =/  wl=(list @ud)  (wkds:a 'days')
+    ?~  wl  ~
+    =/  today=@ud  (weekday-of base)
+    =/  shifts=(list @ud)  (sort (turn wl |=(w=@ud (mod (sub (add w 7) today) 7))) lth)
+    =/  n=@ud  (lent shifts)
+    =/  days=@ud  (add (mul 7 (div idx n)) (snag (mod idx n) shifts))
+    `(add (add base (mul days ~d1)) (mins:a 'at'))
+  ?:  =('monthly' kind.ev)
+    =/  d=date  (yore base)
+    =/  ym=[y=@ud m=@ud]  (month-add y.d m.d idx)
+    =/  day=(unit @da)  (on-date y.ym m.ym (num:a 'day'))
+    ?~(day ~ `(add u.day (mins:a 'at')))
+  ?:  =('yearly' kind.ev)
+    =/  y=@ud  (add y:(yore base) idx)
+    =/  mo=@ud  =/(m (num:a 'month') ?:(=(0 m) month.ev m))
+    =/  dy=@ud  =/(d (num:a 'day') ?:(=(0 d) day.ev d))
+    =/  day=(unit @da)  (on-date y mo dy)
+    ?~(day ~ `(add u.day (mins:a 'at')))
+  ~
+::  +rule-args: the rule's args read by key the way the calendar's
+::  +ja reads them: a time of day is minutes after midnight or "HH:MM",
+::  weekdays are their three-letter names, monday first
+::
+++  rule-args
+  |_  args=json
+  ++  num   |=(k=@t ^-(@ud (fall (gn args k) 0)))
+  ++  mins
+    |=  k=@t
+    ^-  @dr
+    =/  j=json  (gj args k)
+    ?:  ?=([%s *] j)
+      =/  hm=(unit [h=@ud m=@ud])  (rush p.j ;~(plug dem ;~(pfix col dem)))
+      ?~(hm ~s0 (add (mul h.u.hm ~h1) (mul m.u.hm ~m1)))
+    (mul (num k) ~m1)
+  ++  wkds
+    |=  k=@t
+    ^-  (list @ud)
+    %+  murn  (strings (ga args k))
+    |=  w=@t
+    ^-  (unit @ud)
+    ?+  (lower w)  ~
+      %mon  `0
+      %tue  `1
+      %wed  `2
+      %thu  `3
+      %fri  `4
+      %sat  `5
+      %sun  `6
+    ==
+  --
+::  +weekday-of: monday-zero weekday of a moment (2000-01-01 was a
+::  saturday); +month-add: a year and month n months on; +on-date: a
+::  calendar date as a moment, ~ when the month has no such day
+::
+++  weekday-of
+  |=  d=@da
+  ^-  @ud
+  =/  raw=@ud
+    %+  add  5
+    ?:  (gte d ~2000.1.1)  (mod (div (sub d ~2000.1.1) ~d1) 7)
+    (sub 7 (mod (div (sub ~2000.1.1 d) ~d1) 7))
+  (mod raw 7)
+++  month-add
+  |=  [y=@ud m=@ud n=@ud]
+  ^-  [y=@ud m=@ud]
+  =/  total=@ud  (add (dec m) n)
+  [(add y (div total 12)) +((mod total 12))]
+++  on-date
+  |=  [y=@ud m=@ud d=@ud]
+  ^-  (unit @da)
+  ?:  |(=(0 m) (gth m 12) =(0 d))  ~
+  =/  leap=?  &(=(0 (mod y 4)) |(!=(0 (mod y 100)) =(0 (mod y 400))))
+  =/  last=@ud
+    ?+  m  31
+      ?(%4 %6 %9 %11)  30
+      %2  ?:(leap 29 28)
+    ==
+  ?:  (gth d last)  ~
+  `(year [[%.y y] m d 0 0 0 ~])
+::  +occurrences: the event's occurrences between from and to as UTC
+::  spans with their indices, walked from the anchor the way the
+::  calendar walks its own (+walk-recur): the count and the excepted
+::  indices honoured, a dead index skipped, and at most four hundred
+::  ticks looked at so a rule that never lands stops. A timed tick is
+::  placed in its zone; an all-day or dated one is a calendar day,
+::  never zone-shifted.
+::
+++  occurrences
+  |=  [ev=cal-event from=@da to=@da]
+  ^-  (list [idx=@ud l=@da r=@da])
+  =/  idx=@ud  0
+  =/  dead=@ud  0
+  =/  fuel=@ud  400
+  =|  out=(list [idx=@ud l=@da r=@da])
+  |-
+  ?:  |(=(0 fuel) (gth dead 40))  (flop out)
+  ?:  &(!=(0 count.ev) (gte idx count.ev))  (flop out)
+  =/  moment=(unit @da)  (tick ev idx)
+  ?~  moment  $(idx +(idx), dead +(dead))
+  ?:  (gth u.moment to)  (flop out)
+  ?:  (~(has in except.ev) idx)  $(idx +(idx), dead 0, fuel (dec fuel))
+  =/  span=[l=@da r=@da]
+    ?:  =('timed' cat.ev)
+      =/  l=@da  (utc-of u.moment zone.ev)
+      [l ?:(?=(%to fin.ev) (utc-of end.ev zone.ev) (add l dur.ev))]
+    =/  l=@da  (sub u.moment (mod u.moment ~d1))
+    [l (add l (mul days.ev ~d1))]
+  ?:  (lth r.span from)  $(idx +(idx), dead 0, fuel (dec fuel))
+  $(idx +(idx), dead 0, fuel (dec fuel), out [[idx l.span r.span] out])
+::  +people-named: the people a text names, by the words the ship knows
+::  them by: a whole word, case aside
+::
+++  people-named
+  |=  [text=@t known=(map @t bid)]
+  ^-  (list bid)
+  =/  words=(set @t)  (sy (tokens text))
+  %-  dedupe
+  %+  murn  ~(tap by known)
+  |=([w=@t id=bid] ?:(&(!=('me' w) !=('i' w) (~(has in words) w)) `id ~))
+::  +cast: everyone the event names: the title's certain names, made
+::  as person bodies when the ship lacks them; its leading name only
+::  when the ship knows it; and whoever the ship knows named in the
+::  title or the note. Never person/me, who is in everything anyway.
+::
+++  cast
+  |=  [ev=cal-event known=(map @t bid)]
+  ^-  [ids=(list bid) made=(list json)]
+  =/  ni  (names-in name.ev)
+  =/  sure=[ids=(list bid) made=(list json)]
+    %+  roll  sure.ni
+    |=  [n=@t acc=[ids=(list bid) made=(list json)]]
+    =/  hit=(unit bid)  (~(get by known) (lower n))
+    ?^  hit  acc(ids (snoc ids.acc u.hit))
+    =/  pid=bid  (cat 3 'person/' (slug n))
+    acc(ids (snoc ids.acc pid), made (snoc made.acc (pairs:enjs:format ~[['id' s+pid] ['name' s+n]])))
+  =/  lead=(list bid)
+    ?.  &(?=(~ sure.ni) ?=(^ lead.ni))  ~
+    (drop (~(get by known) (lower u.lead.ni)))
+  =/  named=(list bid)  (weld (people-named name.ev known) (people-named note.ev known))
+  =/  ids=(list bid)  (skip (dedupe :(weld ids.sure lead named)) |=(b=bid =('person/me' b)))
+  [ids made.sure]
+::  +event-source: the source id every calendar row carries, the
+::  phone client's <calendar>/<uid>, or the uid alone when the store's
+::  JSON does not say which calendar (it does not, today)
+::
+++  event-source
+  |=  ev=cal-event
+  ^-  source
+  ['calendar' ?:(=('' cal.ev) id.ev (rap 3 cal.ev '/' id.ev ~))]
+++  event-row
+  |=  [ev=cal-event id=bid attr=@t value=json at=@da until=(unit @da) conf=@ud]
+  ^-  json
+  (obs-row id attr value at until conf (event-source ev) 'calendar')
+::  +same-event: the body the ship keeps for an event, or ~. The uid
+::  is the event itself: a body carrying it as an alias is it. Failing
+::  that, a series takes an activity by the same title, and a one-off
+::  an open situation by the same title that starts within a day of
+::  this occurrence; a closed one is a past occasion.
+::
+++  same-event
+  |=  [ev=cal-event repeats=? start=@da all=(list loaded) multi=(set @t) now=@da]
+  ^-  (unit loaded)
+  =/  by-uid=(unit loaded)
+    %-  find-first-loaded
+    :-  all
+    |=(l=loaded &(?=(?(%activity %situation) kind.body.l) (~(has in aliases.body.l) id.ev)))
+  ?^  by-uid  by-uid
+  =/  title=@t  (normalize-title name.ev)
+  ?:  =('' title)  ~
+  ?:  repeats
+    %-  find-first-loaded
+    :-  all
+    |=(l=loaded &(=(%activity kind.body.l) =(title (normalize-title name.body.l))))
+  %-  find-first-loaded
+  :-  all
+  |=  l=loaded
+  ?.  &(=(%situation kind.body.l) =(title (normalize-title name.body.l)))  |
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  st=@t  (winner-text w 'status')
+  ?:  |(=('closed' st) =('cancelled' st))  |
+  =/  s=(unit @da)  (de-iso =/(t (winner-text w 'starts') ?:(=('' t) (winner-text w 'started') t)))
+  ?~  s  |
+  ?:((gth u.s start) (lth (sub u.s start) ~d1) (lth (sub start u.s) ~d1))
+++  find-first-loaded
+  |=  [all=(list loaded) f=$-(loaded ?)]
+  ^-  (unit loaded)
+  ?~  all  ~
+  ?:((f i.all) `i.all $(all t.all))
+::  +plan-events: what the store's events say, as the writer's ops and
+::  what to remember. seen maps a key to a mark: occ/<cal>/<uid>/<start
+::  ms> is an occurrence written, 's' while only its schedule was said
+::  and 'f' once the past tense was; act/<cal>/<uid>/<digest> says an
+::  activity's content stands as written; next/<cal>/<uid>/<ms> that
+::  its next was said; gone/<uid> that a vanished one-off was
+::  cancelled. A one-off (kind once, one occurrence) is a situation:
+::  starts and ends while ahead, dated now; started and ended once
+::  behind, dated at the event. A series is an activity: cadence,
+::  schedule, location, participants and (on the ship's own calendar)
+::  organizer, dated at the last occurrence behind; every occurrence
+::  behind as last; the next as next, dated at the end of the one
+::  before it, standing until its own end. A situation the calendar no
+::  longer holds whose start is ahead is cancelled once. Bodies the
+::  ship lacks are made, the uid and the tags as aliases.
+::
++$  event-plan
+  $:  ops=(list json)  seen=(map @t @t)
+      made=@ud  rows=@ud  cancelled=@ud  unknown=(list @t)
+  ==
+++  plan-events
+  |=  [events=(list cal-event) all=(list loaded) multi=(set @t) now=@da seen=(map @t @t) tz=@t]
+  ^-  event-plan
+  =/  known=(map @t bid)  (known-people all)
+  =/  from=@da  (sub now ~d30)
+  =/  to=@da  (add now ~d90)
+  =|  bodies=(list json)
+  =|  rows=(list json)
+  =|  made=@ud
+  =|  unknown=(list @t)
+  =/  ids=(set @t)  (sy (turn events |=(ev=cal-event id.ev)))
+  =/  todo=(list cal-event)  events
+  |-
+  ?^  todo
+    =/  ev=cal-event  i.todo
+    ?:  =('' name.ev)  $(todo t.todo)
+    =/  occs=(list [idx=@ud l=@da r=@da])  (occurrences ev from to)
+    =/  supported=?  ?=(?(%once %daily %weekly %monthly %yearly %every) kind.ev)
+    =?  unknown  !supported  (snoc unknown (rap 3 name.ev ': rule ' kind.ev ~))
+    =/  repeats=?  |(!=('once' kind.ev) (gth (lent occs) 1))
+    ?:  &(?=(~ occs) !repeats)  $(todo t.todo)
+    =/  start=@da  ?~(occs start.ev l.i.occs)
+    =/  hit=(unit loaded)  (same-event ev repeats start all multi now)
+    =/  people  (cast ev known)
+    =.  bodies  (weld bodies made.people)
+    ::  a person made here is known to the next event of the pass
+    =.  known
+      %+  roll  made.people
+      |=([b=json acc=_known] (~(put by acc) (lower (gs b 'name')) (gs b 'id')))
+    ?.  repeats
+      ::  a one-off: one situation, one occurrence
+      =/  occ=[idx=@ud l=@da r=@da]  ?~(occs [0 start.ev start.ev] i.occs)
+      =/  id=bid
+        ?^  hit  id.u.hit
+        (rap 3 'situation/' (end [3 10] (local-iso (en-iso l.occ) tz)) '-' (slug name.ev) ~)
+      =/  key=@t  (rap 3 'occ/' cal.ev '/' id.ev '/' (crip (a-co:co (ms-of l.occ))) ~)
+      =/  mark=@t  (fall (~(get by seen) key) '')
+      =/  behind=?  (lte r.occ now)
+      ?:  |(=('f' mark) &(=('s' mark) !behind))  $(todo t.todo)
+      =?  bodies  ?=(~ hit)
+        %+  snoc  bodies
+        %-  pairs:enjs:format
+        :~  ['id' s+id]
+            ['name' s+name.ev]
+            ['aliases' a+(turn (dedupe [id.ev tags.ev]) |=(t=@t `json`s+t))]
+        ==
+      =?  made  ?=(~ hit)  +(made)
+      =/  learned=@da  (min l.occ now)
+      =/  fresh=(list json)
+        %-  zing
+        :~  ?:  (gth l.occ now)
+              ~[(event-row ev id 'starts' s+(en-iso l.occ) now ~ 100)]
+            ~[(event-row ev id 'started' s+(en-iso l.occ) l.occ ~ 100)]
+            ?:  (gth r.occ now)
+              ~[(event-row ev id 'ends' s+(en-iso r.occ) now ~ 100)]
+            ~[(event-row ev id 'ended' s+(en-iso r.occ) r.occ ~ 100)]
+            ?:  =('s' mark)  ~
+            %-  zing
+            :~  ~[(event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) learned ~ 100)]
+                (turn ids.people |=(p=bid (event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+p]]) learned ~ 85)))
+                ?:(=('' location.ev) ~ ~[(event-row ev id 'location' s+location.ev learned ~ 100)])
+            ==
+        ==
+      %=  $
+        todo  t.todo
+        rows  (weld rows fresh)
+        seen  (~(put by seen) key ?:(behind 'f' 's'))
+      ==
+    ::  a series: one activity, its content once, each occurrence
+    ::  behind as last, the next as next
+    =/  id=bid  ?^(hit id.u.hit (cat 3 'activity/' (slug name.ev)))
+    =/  behind=(list [idx=@ud l=@da r=@da])  (skim occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
+    =/  ahead=(list [idx=@ud l=@da r=@da])  (skip occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
+    =/  as-of=@da  ?~(behind start.ev l:(rear behind))
+    =/  schedule=@t
+      =/  tag=@t  ?~(tags.ev '' i.tags.ev)
+      ?:(=('' tag) kind.ev (rap 3 kind.ev ', ' tag ~))
+    =/  digest=@t
+      (scot %ux (mug [kind.ev schedule location.ev own.ev ids.people cal.ev]))
+    =/  ckey=@t  (rap 3 'act/' cal.ev '/' id.ev '/' digest ~)
+    =?  bodies  ?=(~ hit)
+      %+  snoc  bodies
+      %-  pairs:enjs:format
+      :~  ['id' s+id]
+          ['name' s+name.ev]
+          ['aliases' a+(turn (dedupe :(weld ~[id.ev name.ev (normalize-title name.ev)] tags.ev)) |=(t=@t `json`s+t))]
+      ==
+    =?  made  ?=(~ hit)  +(made)
+    =/  content=(list json)
+      ?:  (~(has by seen) ckey)  ~
+      %-  zing
+      :~  ~[(event-row ev id 'cadence' s+kind.ev as-of ~ 100)]
+          ~[(event-row ev id 'schedule' s+schedule as-of ~ 100)]
+          ~[(event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) as-of ~ 100)]
+          (turn ids.people |=(p=bid (event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+p]]) as-of ~ 85)))
+          ~[(event-row ev id 'organizer' (pairs:enjs:format ~[['ref' s+'person/me']]) as-of ~ 100)]
+          ?:(=('' location.ev) ~ ~[(event-row ev id 'location' s+location.ev as-of ~ 100)])
+      ==
+    =/  lasts=[rows=(list json) seen=(map @t @t)]
+      =/  bs=_behind  behind
+      =|  out=(list json)
+      |-  ^-  [rows=(list json) seen=(map @t @t)]
+      ?~  bs  [(flop out) seen]
+      =/  key=@t  (rap 3 'occ/' cal.ev '/' id.ev '/' (crip (a-co:co (ms-of l.i.bs))) ~)
+      ?:  (~(has by seen) key)  $(bs t.bs)
+      %=  $
+        bs    t.bs
+        out   [(event-row ev id 'last' s+(en-iso l.i.bs) l.i.bs ~ 100) out]
+        seen  (~(put by seen) key 'f')
+      ==
+    =/  nexts=[rows=(list json) seen=(map @t @t)]
+      ?~  ahead  [~ seen.lasts]
+      =/  n=[idx=@ud l=@da r=@da]  i.ahead
+      =/  key=@t  (rap 3 'next/' cal.ev '/' id.ev '/' (crip (a-co:co (ms-of l.n))) ~)
+      ?:  (~(has by seen.lasts) key)  [~ seen.lasts]
+      =/  anchor=@da  ?~(behind (sub now (mod now ~d1)) r:(rear behind))
+      :-  ~[(event-row ev id 'next' s+(en-iso l.n) anchor `r.n 100)]
+      (~(put by seen.lasts) key 'x')
+    %=  $
+      todo  t.todo
+      rows  :(weld rows content rows.lasts rows.nexts)
+      seen  ?:(?=(~ content) seen.nexts (~(put by seen.nexts) ckey 'x'))
+    ==
+  ::  a one-off the calendar no longer holds, still ahead: cancelled once
+  =/  gone=[rows=(list json) seen=(map @t @t) n=@ud]
+    =/  ls=_all  all
+    =|  out=(list json)
+    =|  n=@ud
+    |-  ^-  [rows=(list json) seen=(map @t @t) n=@ud]
+    ?~  ls  [(flop out) seen n]
+    =/  l=loaded  i.ls
+    ?.  =(%situation kind.body.l)  $(ls t.ls)
+    =/  srcs=(list source)
+      %+  murn  rows.l
+      |=(r=row ?:(=('calendar' kind.source.obs.r) `source.obs.r ~))
+    ?~  srcs  $(ls t.ls)
+    =/  uid=@t
+      =/  cut=(unit @ud)  (find "/" (trip id.i.srcs))
+      ?~(cut id.i.srcs (rsh [3 +(u.cut)] id.i.srcs))
+    ?:  (~(has in ids) uid)  $(ls t.ls)
+    =/  gkey=@t  (cat 3 'gone/' uid)
+    ?:  (~(has by seen) gkey)  $(ls t.ls)
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    =/  st=@t  (winner-text w 'status')
+    ?:  |(=('closed' st) =('cancelled' st))  $(ls t.ls)
+    =/  s=(unit @da)  (de-iso (winner-text w 'starts'))
+    ?.  &(?=(^ s) (gth u.s now))  $(ls t.ls)
+    %=  $
+      ls    t.ls
+      out   [(obs-row id.l 'status' s+'cancelled' now ~ 100 i.srcs 'calendar') out]
+      seen  (~(put by seen) gkey 'x')
+      n     +(n)
+    ==
+  =/  every=(list json)  (weld rows rows.gone)
+  :*  (observe-ops bodies every)
+      seen.gone
+      made
+      (lent every)
+      n.gone
+      unknown
+  ==
 --

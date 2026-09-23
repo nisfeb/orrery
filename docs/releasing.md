@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 47's owner steps
+
+None. Version 47 reads the calendar's events into situations and activities on the ship, inside the executor's pass, the way a phone client's calendar pipe did: switch that pipe off in the client once the version is installed, or every event is written twice. Bodies the client already wrote are found by the uid alias and the title, so nothing is migrated. The record is `GET /api/calendar/last` and the Executor card. No new road: the executor already reads the calendar's store.
+
 ### Version 46's owner steps
 
 None. Version 46 reads a chat's new messages as one run: the Telegram drain sifts every waiting update first and hands the analyst one run per chat, and the chat reader does the same per conversation per pass, so a message further down that settles an earlier one is seen before anything is proposed, and a run's facts land in one write. The record's `read_today` counts messages, not runs. No new road.
