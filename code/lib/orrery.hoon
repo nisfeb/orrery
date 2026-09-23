@@ -5407,8 +5407,13 @@
     =/  behind=(list [idx=@ud l=@da r=@da])  (skim all-occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
     =/  ahead=(list [idx=@ud l=@da r=@da])  (skip all-occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
     ::  the content is dated at the last occurrence behind, else now:
-    ::  a row dated at an anchor still ahead would not be live yet
-    =/  as-of=@da  ?~(behind now l:(rear behind))
+    ::  a row dated at an anchor still ahead would not be live yet.
+    ::  Content said again (its digest moved) is dated now, or the
+    ::  earlier saying, dated later, would keep the fold
+    =/  said-before=?
+      =/  pre=@t  (rap 3 'act/' cal.ev '/' id.ev '/' ~)
+      (lien ~(tap by seen) |=([k=@t *] =(pre (end [3 (met 3 pre)] k))))
+    =/  as-of=@da  ?:(said-before now ?~(behind now l:(rear behind)))
     =/  schedule=@t
       =/  tag=@t  ?~(tags.ev '' i.tags.ev)
       ?:(=('' tag) kind.ev (rap 3 kind.ev ', ' tag ~))

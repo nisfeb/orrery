@@ -1510,6 +1510,10 @@
   =/  gone=event-plan:orr  (plan-events:orr (skip evs |=(e=cal-event:orr =('u-coffee' id.e))) cal-order all ~ cal-now seen 'America/New_York')
   =/  gobs=(list json)  (skim (ga:orr (snag 0 ops.gone) 'observations') |=(r=json =(coffee (gs:orr r 'subject'))))
   =/  gone-again=event-plan:orr  (plan-events:orr (skip evs |=(e=cal-event:orr =('u-coffee' id.e))) cal-order all ~ cal-now seen.gone 'America/New_York')
+  ::  the standup's content said before under another digest is said
+  ::  again dated now, not at its last occurrence
+  =/  resaid=event-plan:orr  (plan-events:orr evs cal-order all ~ cal-now (my ~[['act/work/u-standup/0x0' 'x']]) 'America/New_York')
+  =/  cad=(list json)  (skim (ga:orr (snag 0 ops.resaid) 'observations') |=(r=json &(=('activity/standup' (gs:orr r 'subject')) =('cadence' (gs:orr r 'attr')))))
   ;:  weld
     (expect-eq !>(`(list @t)`~['started' 'ended']) !>((turn obs |=(r=json (gs:orr r 'attr')))))
     (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 obs) 'at')))
@@ -1518,5 +1522,6 @@
     (expect-eq !>(`(list @t)`~['status']) !>((turn gobs |=(r=json (gs:orr r 'attr')))))
     (expect-eq !>(`json`s+'cancelled') !>((gj:orr (snag 0 gobs) 'value')))
     (expect-eq !>(0) !>(cancelled.gone-again))
+    (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 cad) 'at')))
   ==
 --
