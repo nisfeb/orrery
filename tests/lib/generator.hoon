@@ -1514,6 +1514,15 @@
   ::  again dated now, not at its last occurrence
   =/  resaid=event-plan:orr  (plan-events:orr evs cal-order all ~ cal-now (my ~[['act/work/u-standup/0x0' 'x']]) 'America/New_York')
   =/  cad=(list json)  (skim (ga:orr (snag 0 ops.resaid) 'observations') |=(r=json &(=('activity/standup' (gs:orr r 'subject')) =('cadence' (gs:orr r 'attr')))))
+  ::  a standup the ship holds at cadence rrule is corrected, dated now,
+  ::  whatever the seen map remembers of it
+  =/  first=event-plan:orr  (plan-events:orr evs cal-order all ~ cal-now ~ 'America/New_York')
+  =/  held=(list loaded:orr)
+    :_  all
+    :+  'activity/standup'  [%activity 'Standup' ~ cal-now ~]
+    ~[['activity/standup/cadence' ['activity/standup' 'cadence' s+'rrule' ~2026.9.17 ~ 100 ['calendar' 'work/u-standup'] 'calendar' cal-now | '']]]
+  =/  fixed=event-plan:orr  (plan-events:orr evs cal-order held ~ cal-now seen.first 'America/New_York')
+  =/  fcad=(list json)  (skim (ga:orr (snag 0 ops.fixed) 'observations') |=(r=json &(=('activity/standup' (gs:orr r 'subject')) =('cadence' (gs:orr r 'attr')))))
   ;:  weld
     (expect-eq !>(`(list @t)`~['started' 'ended']) !>((turn obs |=(r=json (gs:orr r 'attr')))))
     (expect-eq !>(`json`s+'2026-09-22T00:00:00Z') !>((gj:orr (snag 0 obs) 'at')))
@@ -1523,5 +1532,7 @@
     (expect-eq !>(`json`s+'cancelled') !>((gj:orr (snag 0 gobs) 'value')))
     (expect-eq !>(0) !>(cancelled.gone-again))
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 cad) 'at')))
+    (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 fcad) 'value')))
+    (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 fcad) 'at')))
   ==
 --

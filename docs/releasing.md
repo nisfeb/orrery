@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 51's owner steps
+
+None. An activity whose cadence the ship holds at another word than the calendar's rule gives is corrected on the next pass, dated now, whatever the seen map remembers; 50 only dated a re-saying now and the twenty-four `rrule` cadences 47 wrote had no re-saying due. No new road.
+
 ### Version 50's owner steps
 
 None. A series whose content is said again (its cadence, schedule, people or place moved) is dated now, so the new saying wins the fold; 49's corrected cadences were dated at the last occurrence and lost to 47's rows. No new road.

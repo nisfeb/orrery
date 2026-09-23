@@ -5413,7 +5413,13 @@
     =/  said-before=?
       =/  pre=@t  (rap 3 'act/' cal.ev '/' id.ev '/' ~)
       (lien ~(tap by seen) |=([k=@t *] =(pre (end [3 (met 3 pre)] k))))
-    =/  as-of=@da  ?:(said-before now ?~(behind now l:(rear behind)))
+    ::  a body whose cadence stands at another word is corrected
+    ::  whatever the seen map says: the ship's state is what counts
+    =/  stale=?
+      ?~  hit  |
+      =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
+      &(!=('' cur) !=(cur kind.ev))
+    =/  as-of=@da  ?:(|(said-before stale) now ?~(behind now l:(rear behind)))
     =/  schedule=@t
       =/  tag=@t  ?~(tags.ev '' i.tags.ev)
       ?:(=('' tag) kind.ev (rap 3 kind.ev ', ' tag ~))
@@ -5424,7 +5430,7 @@
       (snoc bodies (pairs:enjs:format ~[['id' s+id] ['name' s+name.ev]]))
     =?  made  ?=(~ hit)  +(made)
     =/  content=(list json)
-      ?:  (~(has by seen) ckey)  ~
+      ?:  &((~(has by seen) ckey) !stale)  ~
       %-  zing
       :~  ~[(event-row ev id 'cadence' s+kind.ev as-of ~ 100)]
           ~[(event-row ev id 'schedule' s+schedule as-of ~ 100)]
