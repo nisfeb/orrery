@@ -1171,12 +1171,14 @@ check('approved, the executor sends it by mail to the person\'s ship', a.get('st
 curl('PUT', API + '/generator', {'api_key': None})
 before = exec_last()
 approve(SHIPID)
+# a DM goes from the ship only with send_dms on (version 52); off, the
+# message is left for the client and the record says so
 time.sleep(8)
 a = action(SHIPID)
 after = exec_last()
-check('approved, it is left for the client that sends chat and the claimed count does not move',
-      a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed'),
-      (a.get('status'), steps(a), before.get('claimed'), after.get('claimed')))
+check('approved with DMs off, it is left for the client that sends chat, noted, and the claimed count does not move',
+      a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)) and after.get('claimed') == before.get('claimed') and any('DMs are off' in n for n in after.get('notes', [])),
+      (a.get('status'), steps(a), before.get('claimed'), after.get('claimed'), after.get('notes')))
 code, d = refine(SHIPID, 'include dana in this')
 check('an approved action is not refined, with the reason as error and as note', code == 409 and dictish(d).get('error') == 'only a proposed action can be refined' and dictish(d).get('note') == 'only a proposed action can be refined', (code, d))
 curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'})
@@ -1205,12 +1207,12 @@ check('a message via mail is sent by mail to the person\'s ship', a.get('status'
 code, box = curl('GET', HOST + '/apps/auspex/api/inbox')
 threads = [t for t in dictish(box).get('threads', []) if dictish(t).get('subject') == 'Gate mail %s' % XRUN]
 check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == OUR and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
-# a message via chat is Talon's: the ship never claims it
+# a message via chat with DMs off is the client's: the ship never claims it
 CHATID = propose('message', 'Gate chat %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-ship', 'text': 'a DM the ship does not send'})
 approve(CHATID)
 time.sleep(8)
 a = action(CHATID)
-check('a message via chat is left approved for the client that sends chat', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
+check('a message via chat is left approved for the client while DMs are off', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
 curl('POST', API + f'/actions/{CHATID}', {'status': 'dismissed', 'note': 'gate'})
 # a calendar action: an event on the calendar, timed, carrying the action id
 EV_START = (now + timedelta(days=3)).replace(hour=14, minute=0, second=0)

@@ -716,6 +716,7 @@
     (expect-eq !>((sy ~['chat/~host/general'])) !>(channels.full))
     (expect-eq !>(`(unit @t)``'person/sam') !>((~(get by people.full) '~sampel-palnet')))
     (expect-eq !>(&) !>(read-own.full))
+    (expect-eq !>(|) !>(send-dms.full))
     (expect-eq !>(2) !>(poll.full))
     (expect-eq !>(50) !>(gate.full))
     (expect-eq !>(70) !>(escalate.full))

@@ -357,6 +357,7 @@
       '<h3>Channels</h3>' + pickedList('channels', c.channels || []) + (channels.note ? '<p class="muted">' + esc(channels.note) + '</p>' : picker('channels', 'channel')) +
       '<p><label class="field wide">people (ship to body id, JSON; a person body with a ship needs no row) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +
       '<p><label class="box"><input type="checkbox" name="read_own"' + (c.read_own ? ' checked' : '') + '> read my own messages too</label> ' +
+      '<label class="box"><input type="checkbox" name="send_dms"' + (c.send_dms ? ' checked' : '') + '> send approved chat messages as DMs (needs the kernel\'s DM marc; off, the client sends them)</label> ' +
       '<label class="field">every (minutes) <input name="poll_minutes" value="' + esc(c.poll_minutes != null ? c.poll_minutes : '') + '"></label> ' +
       '<label class="field">first look back (hours) <input name="backfill_hours" value="' + esc(c.backfill_hours != null ? c.backfill_hours : '') + '"></label></p>' +
       '<p><label class="field">gate (hundredths) <input name="gate" value="' + esc(c.gate != null ? c.gate : '') + '"></label> ' +
@@ -744,7 +745,7 @@
     var people;
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
     var c = { enabled: !!view.querySelector('#chat input[name="enabled"]:checked'), dms: list('dms'), channels: list('channels'), people: people,
-      read_own: !!view.querySelector('#chat input[name="read_own"]:checked'), model: val('model') };
+      read_own: !!view.querySelector('#chat input[name="read_own"]:checked'), send_dms: !!view.querySelector('#chat input[name="send_dms"]:checked'), model: val('model') };
     // a number left blank is sent as null, which clears the stored one
     // so the ship's default stands, never a zero that would hold every message
     ['poll_minutes', 'backfill_hours', 'gate', 'escalate', 'max_daily_messages'].forEach(function (k) {

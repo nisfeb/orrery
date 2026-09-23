@@ -277,7 +277,7 @@ Since version 52 the ship reads the mail auspex holds, the way a phone client's 
 
 At seven on your clock the ship mails you the day, from you to you through auspex: the calendar's day (what orrery expects that the calendar does not show included, then the todos), every proposed action under a tag (`[A1] …`), and the analyst's few lines through the generator's model (`Nothing to add.` without a key). Reply with `approve A1`, `dismiss A2`, `A3 done` or `A1 due friday`: the mail reader reads your reply once, the quoted brief stripped, and moves the actions (a status walks proposed, approved, done; a new due or subject dismisses the action and proposes it again as changed), and anything else you wrote is a fact in your words. The last brief is `GET /brief/last` (its day, its tags, its text), and `POST /brief/wake` sends one now.
 
-An approved `message` whose `via` is `chat` is sent by the ship as a Tlon DM to the person's `ship`, through the kernel's gall road, once the kernel carries the typed marc for `chat-dm-action-2` (grubbery `gub/mar/clay/groups/chat/dm/action-2.hoon`); until then the send fails with the kernel's reason and the action reads `failed`.
+An approved `message` whose `via` is `chat` is sent by the ship as a Tlon DM to the person's `ship`, through the kernel's gall road, when `send_dms` is on in the chat reader's settings (the Chat card). It needs the kernel to carry the typed marc for `chat-dm-action-2` (grubbery `gub/mar/clay/groups/chat/dm/action-2.hoon`): a kernel without it crashes on the poke and the executor stands at it until the instance reloads, so the switch is off by default and the message is left approved for the client that sends chat, noted in the executor's record.
 
 ### Where facts come from
 

@@ -4743,6 +4743,8 @@
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
   =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now)
+  ;<  chat-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
+  =/  chat=chat-config:orr  (de-chat-config:orr chat-j)
   ::  the desks the plans need, found and their roads proved, once, and
   ::  only for a plan that will poke this pass: a calendar event, a
   ::  todo not yet placed (and not the calendar's own), a mail with an
@@ -4780,6 +4782,11 @@
     $(plans t.plans, tally (note-once tally (cat 3 'a message waits: ' note.p)))
   ?:  &(=(%telegram target.p) =('' token.tg))
     $(plans t.plans, tally (note-once tally 'a message waits: no bot token'))
+  ::  a DM goes only when the owner switched it on, since a kernel
+  ::  without the typed marc for chat-dm-action-2 crashes on the poke
+  ::  and the fiber stands at it until the instance reloads
+  ?:  &(=(%chat target.p) !send-dms.chat)
+    $(plans t.plans, tally (note-once tally 'a message via chat waits for the client: DMs are off on the Chat card'))
   ::  the desk the plan needs, or why it is left approved. An uncalendar
   ::  plan needs the calendar, the same road a calendar action needs.
   =/  desk=(each path exec-tally)

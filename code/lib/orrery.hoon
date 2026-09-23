@@ -3285,6 +3285,7 @@
       escalate=@ud
       max-daily=@ud
       model=@t
+      send-dms=?
   ==
 ::  +ship-key: a ship as the people map keys it: lower case, one sig
 ::
@@ -3325,6 +3326,7 @@
       (hundredths (gj j 'escalate') 60)
       (fall (gn j 'max_daily_messages') 500)
       =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
+      =/(r (gj j 'send_dms') ?:(?=([%b *] r) p.r |))
   ==
 ++  en-chat-config
   |=  c=chat-config
@@ -3336,6 +3338,7 @@
       ['channels' (names channels.c)]
       ['people' [%o (~(run by people.c) |=(v=@t `json`s+v))]]
       ['read_own' b+read-own.c]
+      ['send_dms' b+send-dms.c]
       ['poll_minutes' (numb:enjs:format poll.c)]
       ['backfill_hours' (numb:enjs:format backfill.c)]
       ['gate' (numb:enjs:format gate.c)]
