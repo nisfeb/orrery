@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 52's owner steps
+
+The consent prompt is raised: the ask gains a peek of the auspex desk (`/apps/shell.shell/desks/auspex.desk/`, to read the mail) and the `/sys/gall/` line now also says it sends an approved message as a Tlon DM. Approve on `/apps/grubbery/permits`, then reload the instance. Then on the Mail card turn the reader on; the first pass looks back `backfill_hours`. The brief goes at seven on `person/me`'s timezone from the next morning; `POST /api/brief/wake` sends one now. A `message` via `chat` is sent by the ship only once the kernel carries `gub/mar/clay/groups/chat/dm/action-2.hoon` (grubbery branch `dist/single-release`, commit "a typed marc for poking %chat with a DM"); before that kernel lands, keep the client sending chat, or the action fails with `marc-not-found`. Switch the client's mail reader and brief off once the ship's are on.
+
 ### Version 51's owner steps
 
 None. An activity whose cadence the ship holds at another word than the calendar's rule gives is corrected on the next pass, dated now, whatever the seen map remembers; 50 only dated a re-saying now and the twenty-four `rrule` cadences 47 wrote had no re-saying due. No new road.

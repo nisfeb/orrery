@@ -182,6 +182,12 @@ const calSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgL
 ok('the executor card says what the calendar events reader did',
   calSettings.includes('Calendar events read 2026-09-23 14:10:35: 12 on the calendar. Last written 2026-09-23 14:10:35: 1 bodies made, 5 facts, 0 cancelled.')
   && !execSettings.includes('Calendar events read'));
+const mailSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, execLast, {}, {}, {}, {}, calLast, { enabled: true, poll_minutes: 10, model: 'x/y' },
+  { at: '2026-09-23T14:10:35Z', since: '2026-09-23T13:10:35Z', conversations: 2, changed: 3, read: 2, filed: 4, strangers: 1, held: 0, read_today: 2, notes: ['A1: approved'] },
+  { day: '2026-09-23', at: '2026-09-23T11:00:05Z', sent: true, tags: { A1: 'x', A2: 'y' }, notes: [] });
+ok('the mail card carries the reader\'s settings and its last pass, and the brief card the last brief sent',
+  mailSettings.includes('<h2>Mail</h2>') && mailSettings.includes('name="enabled" checked') && mailSettings.includes('value="x/y"') && mailSettings.includes('2 threads, 3 messages; read 2, filed 4, strangers 1, held 0. Read today: 2.')
+  && mailSettings.includes('A1: approved') && mailSettings.includes('data-mail-wake="1"') && mailSettings.includes('<h2>Daily brief</h2>') && mailSettings.includes('Last brief for 2026-09-23 at 2026-09-23 11:00:05, sent; 2 actions tagged.') && mailSettings.includes('data-brief-wake="1"'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")

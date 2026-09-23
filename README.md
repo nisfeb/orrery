@@ -271,6 +271,14 @@ The settings live under `reconcile` in `policy.json`: `min_occurrences` (3), `st
 
 Since version 47 the executor also reads the calendar's events into facts, the way a phone client's calendar pipe did, so that pipe can be switched off. A one-off event becomes a situation, `situation/<date>-<slug>` with the calendar's uid as an alias, carrying `starts` and `ends` while it is ahead (dated when the ship learned of it) and `started` and `ended` once it is behind (dated at the event), the participants (`person/me` and whoever the title or the note names, a person the title is sure of made when the ship lacks them) and the location. A repeating event becomes an activity, `activity/<slug>`, with `cadence` (the rule's kind, or an imported RRULE's frequency), `schedule` (the cadence and the first tag), participants, `organizer` and location, each occurrence behind as a `last` and the next ahead as a `next` anchored at the end of the one before it, until its own end. A one-off the calendar no longer holds whose start is still ahead is marked `status: cancelled`, once. Todos and the events the ship itself placed (`meta.orrery`, the `orrery` tag) are not read. When each event happens comes from the calendar's own order index (its cache grub, read like its store), so every rule kind the calendar knows, imported RRULEs included, is expanded by the calendar's own code. Every row's source is `calendar` with the uid, and what was written is remembered in `calendar-seen.json` so each occurrence is said once. The pass runs whenever the store changes and at least hourly, on the executor's own calendar read; its record is `GET /calendar/last`.
 
+### Mail, and the daily brief
+
+Since version 52 the ship reads the mail auspex holds, the way a phone client's mail reader did: every few minutes (the Mail card, `GET`/`PUT /mail`, off until you turn it on) it walks auspex's mail tree, and every message from someone else sent since the last pass goes through the reader's pipeline, one run per thread, the subject heading the text; a thread archived in auspex, a forged copy, a blank body and a stranger's message are left alone, and each message read gives its sender a `last-contact` for that day. The record is `GET /mail/last`, the wake `POST /mail/wake`.
+
+At seven on your clock the ship mails you the day, from you to you through auspex: the calendar's day (what orrery expects that the calendar does not show included, then the todos), every proposed action under a tag (`[A1] …`), and the analyst's few lines through the generator's model (`Nothing to add.` without a key). Reply with `approve A1`, `dismiss A2`, `A3 done` or `A1 due friday`: the mail reader reads your reply once, the quoted brief stripped, and moves the actions (a status walks proposed, approved, done; a new due or subject dismisses the action and proposes it again as changed), and anything else you wrote is a fact in your words. The last brief is `GET /brief/last` (its day, its tags, its text), and `POST /brief/wake` sends one now.
+
+An approved `message` whose `via` is `chat` is sent by the ship as a Tlon DM to the person's `ship`, through the kernel's gall road, once the kernel carries the typed marc for `chat-dm-action-2` (grubbery `gub/mar/clay/groups/chat/dm/action-2.hoon`); until then the send fails with the kernel's reason and the action reads `failed`.
+
 ### Where facts come from
 
 Every observation names its `source`, a kind and an opaque id such as the message it was read from, and its `by`, who asserted it. The text is never stored. Confidence (`conf`, 0 to 100) says how sure the asserter was.
@@ -367,6 +375,9 @@ Orrery is a desk in the grubbery shell, and everything it keeps is a grub: a fil
   exec-last.json              what its last pass did
   calendar-seen.json          the calendar occurrences the ship has written, so each is written once
   calendar-events-last.json   what the calendar events reader last did
+  mail.json                   the mail reader's settings
+  mail-last.json  mail-seen.json  mail-recent.json  mail.sig   its record, the ids read, its window, and the fiber that polls
+  brief-last.json  brief.sig   the last daily brief sent (its day, tags and text) and the fiber that sends at seven
   refining/<aid>              the lock a refine request holds on its action
   tile.json  link.json  weir.json  icon.svg  orrery.html  orrery.css  orrery.js   the manifests and the page, laid fresh on every load
 ```
@@ -444,6 +455,11 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /chat/peek?since=<iso>` | what a pass since then would find, without reading it: per agent, whether it answered, the conversations changed, how many of them are picked, the messages the picked ones hold (the owner's own included), and the first twenty names; a day ago unless given; owner only |
 | `GET /exec/last` | what the executor's last pass did: `claimed`, `sent`, `placed`, `failed` (id, title and note, newest first, twenty at most), todos `ticked`, `deleted` and `moved`, tasks `closed` from the calendar, todos `adopted`, the desks link could not find in `missing`, and `notes`; `at` is when it last looked, `acted_at` when those counts happened, since a pass that did nothing keeps the last one that did; owner only |
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
+| `GET`, `PUT /mail` | the mail reader's settings: `enabled`, `poll_minutes` (1 to 1440), `backfill_hours` (up to 720), `gate`, `escalate`, `max_daily_messages`, `model`; a `PUT` answers the settings as stored; owner or a key with `write` |
+| `GET /mail/last` | the mail reader's last pass: the chat reader's record shape (`since`, `at`, `read`, `filed`, `strangers`, `held`, `changed`, `conversations` are threads, `notes`, `read_today`, `down`); owner only |
+| `POST /mail/wake` | run a mail pass now; owner only |
+| `GET /brief/last` | the last daily brief: `day`, `at`, `sent`, `tags` (tag to action id), `text`, `said`, `notes`; owner only |
+| `POST /brief/wake` | send a brief now, whatever the hour; owner only |
 | `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took; `at` is when it last looked, `acted_at` when those counts happened; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
 | `GET /reconcile/last` | what the last run did: time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |

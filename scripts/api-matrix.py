@@ -900,6 +900,28 @@ check('the DM list answers items and a note', code == 200 and isinstance(dictish
 code, d = curl('PUT', API + '/chat', {'enabled': False})
 check('the reader is switched off again', code == 200, (code, d))
 
+# ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
+code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
+check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))
+code, mk = curl('POST', API + '/clients', {'name': 'gate mail reader', 'by': 'gate-mail', 'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
+code, d = curl('GET', API + '/mail', jar=None, token=dictish(mk).get('token'))
+check('a key with write reads the mail settings', code == 200 and dictish(d).get('model') == 'stub/mail', (code, d))
+code, d = curl('PUT', API + '/mail', {'enabled': False, 'poll_minutes': None, 'backfill_hours': None, 'model': None})
+check('nulls clear the mail settings', code == 200 and dictish(d).get('enabled') is False and dictish(d).get('poll_minutes') == 10, (code, d))
+code, d = curl('POST', API + '/mail/wake')
+check('the mail reader wakes', code == 200, (code, d))
+mail_last = wait('the mail record lands', lambda: dictish(curl('GET', API + '/mail/last')[1]).get('at') and dictish(curl('GET', API + '/mail/last')[1]), 30)
+code, d = curl('GET', API + '/mail/last', jar=None)
+check('the mail record is the owner\'s', code == 403, (code, d))
+code, d = curl('POST', API + '/brief/wake')
+check('the brief sends on a wake', code == 200, (code, d))
+brief = wait('the brief record lands', lambda: dictish(curl('GET', API + '/brief/last')[1]).get('day') and dictish(curl('GET', API + '/brief/last')[1]), 60)
+today_local = brief.get('day')
+check('the brief record names the day, its tags and its text', bool(today_local) and isinstance(brief.get('tags'), dict) and 'Waiting on you' in (brief.get('text') or '') and brief.get('sent') is True, {k: brief.get(k) for k in ('day', 'sent', 'notes')})
+inbox = wait('the brief is in auspex\'s inbox', lambda: [t for t in dictish(curl('GET', HOST + '/apps/auspex/api/inbox?view=all&limit=20')[1]).get('threads', []) if dictish(t).get('subject') == 'Daily brief %s' % today_local] or None, 30)
+check('auspex holds the brief, from the owner to the owner', bool(inbox), inbox)
+
+
 # ---- the executor (version 34): approved actions carried out on the ship, the todo list kept in step ----
 # the stub stands in for Telegram again (the telegram section shut it
 # down); the calendar and auspex are the real desks on wex, installed

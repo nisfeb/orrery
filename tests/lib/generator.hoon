@@ -986,7 +986,7 @@
   =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
-    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm5' 'c1' 'c2' 'c3' 'c4' 'c5' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
+    (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm4' 'm5' 'c1' 'c2' 'c3' 'c4' 'c5' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
     (expect-eq !>(%telegram) !>(target:(~(got by by-id) 'm1')))
     (expect-eq !>('545179154') !>(to:(~(got by by-id) 'm1')))
     (expect-eq !>('Dana could not call back') !>((gs:orr body:(~(got by by-id) 'm1') 'text')))
@@ -1539,5 +1539,90 @@
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 fcad) 'at')))
     (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 lcad) 'value')))
     (expect-eq !>(`json`s+'2027-03-01T00:00:00Z') !>((gj:orr (snag 0 lcad) 'at')))
+  ==
+::  ==  the mail reader and the daily brief (version 52)
+::
+++  test-mail-config-and-row
+  =/  c=mail-config:orr  (de-mail-config:orr (jo '{"enabled": true, "poll_minutes": 0, "backfill_hours": 9999, "model": ""}'))
+  =/  msg=mail-msg:orr  ['0v1.tid' '0v2.mid' ~sampel-palnet 'Lunch?' 'Friday at noon' ~2026.9.23..12.00.00 ~ |]
+  =/  row=tg-msg:orr  (mail-row:orr msg)
+  ;:  weld
+    (expect-eq !>(&) !>(enabled.c))
+    (expect-eq !>(1) !>(poll.c))
+    (expect-eq !>(720) !>(backfill.c))
+    (expect-eq !>('deepseek/deepseek-v4-flash') !>(model.c))
+    (expect-eq !>('mail:0v1.tid') !>(chat.row))
+    (expect-eq !>('~sampel-palnet') !>(from.row))
+    (expect-eq !>('Lunch?\0a\0aFriday at noon') !>(text.row))
+    (expect-eq !>('0v2.mid') !>(mid.row))
+    (expect-eq !>('2026-09-23') !>((brief-day-of:orr 'Re: Daily brief 2026-09-23')))
+    (expect-eq !>('') !>((brief-day-of:orr 'Daily brief 2026-13-40')))
+    (expect-eq !>('') !>((brief-day-of:orr 'Lunch?')))
+  ==
+++  test-brief-render
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' [%message 'Tell Mira the tow is booked' (jo '{"why": "she asked twice"}') (sy ~['person/mira-quill']) `~2026.9.24..22.00.00 'reader' cal-now %proposed '' ~]]
+        ['a2' [%task 'Buy the helmet' (jo '{}') ~ ~ 'reader' cal-now %approved '' ~]]
+        ['a3' [%task 'Book the tow' (jo '{}') ~ ~ 'reader' cal-now %proposed '' ~]]
+    ==
+  =/  all=(list loaded:orr)  ~[(mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ cal-now)]
+  =/  w  (brief-waiting:orr acts all 'America/New_York')
+  =/  text=@t  (brief-render:orr '2026-09-23' ~['09:30  Standup'] lines.w 'Nothing to add.')
+  ;:  weld
+    (expect-eq !>(`(list [@t @ta])`~[['A1' 'a1'] ['A2' 'a3']]) !>(tags.w))
+    (expect-eq !>('[A1] Tell Mira the tow is booked') !>((snag 0 lines.w)))
+    (expect-eq !>('     message, about Mira Quill, due Thu 24 Sep 18:00') !>((snag 1 lines.w)))
+    (expect-eq !>('     Why: she asked twice') !>((snag 2 lines.w)))
+    (expect-eq !>('[A2] Book the tow') !>((snag 3 lines.w)))
+    %+  expect-eq
+      !>  %-  join-lines:orr
+          ^-  (list @t)
+          :~  'Today, Wednesday 23 September'  ''  '09:30  Standup'  ''  'Waiting on you'
+              '[A1] Tell Mira the tow is booked'  '     message, about Mira Quill, due Thu 24 Sep 18:00'  '     Why: she asked twice'
+              '[A2] Book the tow'  '     task'  ''
+              'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday".'  ''
+              'Suggestions'  'Nothing to add.'  ''  'Anything else you write back is recorded as a fact, in your words.'
+          ==
+      !>  text
+    (expect-eq !>('Daily brief 2026-09-23') !>((brief-subject:orr '2026-09-23')))
+  ==
+++  test-brief-today
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  todos=(list todo:orr)
+    :~  ['t1' 'Buy milk' '' | `~2026.9.20 '' ~]
+        ['t2' 'Call the shop' '' | `~2026.9.21..15.00.00 '' ~]
+        ['t3' 'Done thing' '' & ~ '' ~]
+        ['t4' 'Someday' '' | ~ '' ~]
+    ==
+  =/  all=(list loaded:orr)
+    :~  (mkb 'situation/2026-09-21-dentist' %situation 'Dentist' ~ ~[['starts' s+'2026-09-21T18:00:00Z']] cal-now)
+        (mkb 'activity/standup' %activity 'Standup' ~ ~[['next' s+'2026-09-21T13:30:00Z']] cal-now)
+    ==
+  =/  [from=@da to=@da]  (day-bounds:orr '2026-09-21' 'America/New_York')
+  =/  got=(list @t)  (brief-today:orr evs cal-order todos all ~ from to 'America/New_York')
+  ;:  weld
+    (expect-eq !>(~2026.9.21..04.00.00) !>(from))
+    ::  the standup is on the calendar (its title), the dentist is not;
+    ::  the coffee is at 20:00 local; the milk is overdue, someday undated
+    %+  expect-eq
+      !>(`(list @t)`~['09:30  Standup' '14:00  Dentist' '20:00  Coffee with Mira Quill, Blue Bottle' 'To do  Buy milk (overdue)' 'To do  Call the shop' 'To do  Someday'])
+      !>(got)
+  ==
+++  test-own-words-and-moves
+  =/  brief=@t  'Today, Wednesday\0a\0a[A1] Tell Mira\0a     message\0a\0aSuggestions\0aNothing to add.'
+  =/  reply=@t  'approve A1, and we got the car back\0a\0aSuggestions\0a> Today, Wednesday\0aOn Wed, Sep 23, orrery wrote:\0a> [A1] Tell Mira'
+  =/  tags=(list [tag=@t id=@ta])  ~[['A1' 'a1'] ['A2' 'a2']]
+  =/  answer=json
+    (jo '{"moves": [{"tag": "[a1]", "status": "approved", "reason": "yes"}, {"tag": "A2", "due": "2026-09-26T13:00:00Z", "about": ["person/me", "org/nope"]}, {"tag": "A2", "status": "done"}, {"tag": "A9", "status": "done"}, {"tag": "A2", "reason": "later"}]}')
+  =/  moves=(list move:orr)  (moves-of:orr answer tags (sy ~['person/me']))
+  ;:  weld
+    (expect-eq !>('approve A1, and we got the car back') !>((own-words:orr reply brief)))
+    (expect-eq !>(2) !>((lent moves)))
+    (expect-eq !>(`move:orr`['A1' 'a1' 'approved' ~ ~ 'yes']) !>((snag 0 moves)))
+    (expect-eq !>(`move:orr`['A2' 'a2' 'done' `~2026.9.26..13.00.00 ~ '']) !>((snag 1 moves)))
+    (expect-eq !>(`(list @t)`~['approved' 'done']) !>((brief-steps:orr 'proposed' 'done')))
+    (expect-eq !>(`(list @t)`~) !>((brief-steps:orr 'claimed' 'approved')))
+    (expect-eq !>(`(list @t)`~) !>((brief-steps:orr 'done' 'dismissed')))
+    (expect-eq !>(`(list @t)`~['dismissed']) !>((brief-steps:orr 'approved' 'dismissed')))
   ==
 --

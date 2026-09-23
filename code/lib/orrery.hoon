@@ -3089,6 +3089,72 @@
 +$  reader-kind  [channel=@t by=@t prefix=@t recent=@ta last=@ta]
 ++  telegram-kind  ^-(reader-kind ['telegram' 'telegram' 'telegram/' %'telegram-recent.json' %'telegram-last.json'])
 ++  chat-kind      ^-(reader-kind ['chat' 'chat' 'chat/' %'chat-recent.json' %'chat-last.json'])
+++  mail-kind      ^-(reader-kind ['mail' 'mail' 'mail/' %'mail-recent.json' %'mail-last.json'])
+::  ==  the mail reader (version 52): auspex's mail as facts, the way
+::  the phone client's mail reader read it. The nexus walks auspex's
+::  mail tree; these clam what it finds (auspex-chain's frozen
+::  unsigned, its stored-msg and meta) and shape the reader's rows.
+::
++$  mail-unsigned
+  $:  from=@p  life=@ud  to=(set @p)  subj=@t  body=@t  body-mime=@t
+      sent=@da  prev=(unit @uv)  attachments=(list [name=@t size=@ud mime=@t hash=@uv])
+  ==
++$  mail-stored  [%2 msg=[u=mail-unsigned sig=@ux] verdict=?(%verified %unverified %forged)]
++$  mail-meta    [%1 read=(set @uv) archived=? labels=(set @tas) direct=? bcc=(map @uv (set @p))]
+::  one message as the reader sees it: its thread, its id (the sham of
+::  the unsigned, as auspex names it), who, what, when, what it answers
+::
++$  mail-msg  [tid=@t id=@t from=@p subj=@t body=@t sent=@da prev=(unit @uv) forged=?]
+++  mail-msg-of
+  |=  [tid=@t st=mail-stored]
+  ^-  mail-msg
+  =/  u=mail-unsigned  u.msg.st
+  [tid (scot %uv (sham u)) from.u subj.u body.u sent.u prev.u =(%forged verdict.st)]
+::  +mail-row: a message as the reader's row: the thread is the chat,
+::  the subject heads the text
+::
+++  mail-row
+  |=  m=mail-msg
+  ^-  tg-msg
+  =/  text=@t  ?:(=('' (trim-cord subj.m)) body.m (rap 3 subj.m nl nl body.m ~))
+  [(cat 3 'mail:' tid.m) (scot %p from.m) text sent.m id.m '']
++$  mail-config
+  $:  enabled=?  poll=@ud  backfill=@ud  gate=@ud  escalate=@ud  max-daily=@ud  model=@t
+  ==
+++  de-mail-config
+  |=  j=json
+  ^-  mail-config
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+      (max 1 (min 1.440 (fall (gn j 'poll_minutes') 10)))
+      (min 720 (fall (gn j 'backfill_hours') 720))
+      (hundredths (gj j 'gate') 30)
+      (hundredths (gj j 'escalate') 60)
+      (fall (gn j 'max_daily_messages') 200)
+      =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
+  ==
+++  en-mail-config
+  |=  c=mail-config
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.c]
+      ['poll_minutes' (numb:enjs:format poll.c)]
+      ['backfill_hours' (numb:enjs:format backfill.c)]
+      ['gate' (numb:enjs:format gate.c)]
+      ['escalate' (numb:enjs:format escalate.c)]
+      ['max_daily_messages' (numb:enjs:format max-daily.c)]
+      ['model' s+model.c]
+  ==
+++  mail-as-tg
+  |=  c=mail-config
+  ^-  tg-config
+  %*  .  *tg-config
+    enabled     enabled.c
+    model       model.c
+    max-tokens  4.000
+    gate        gate.c
+    escalate    escalate.c
+    max-daily   max-daily.c
+  ==
 ::  +de-tg-config: the stored telegram.json as the reader's settings. A
 ::  chat id arrives as a number or a string and is kept as text either
 ::  way, since a chat id is a name, not a quantity.
@@ -3511,6 +3577,13 @@
 ++  reader-prompt
   |=  [rows=(list window-row) ctx=reader-ctx tz=@t kind=reader-kind]
   ^-  @t
+  (reader-prompt-with rows ctx tz kind ~)
+::  +reader-prompt-with: the reader's prompt with lines of the caller's
+::  between the bodies and the messages (the brief's tagged actions)
+::
+++  reader-prompt-with
+  |=  [rows=(list window-row) ctx=reader-ctx tz=@t kind=reader-kind extra=(list @t)]
+  ^-  @t
   =/  head=(list @t)
     :~  (cat 3 'Channel: ' channel.kind)
         (cat 3 'The owner is ' (cat 3 me.ctx '.'))
@@ -3553,7 +3626,7 @@
         `(list @t)`~['---' 'Answer with the JSON object.']
     ==
   %+  join-cords  nl
-  ;:  weld  head  attr-lines  note-lines  shapes  `(list @t)`~['']  msg-lines  ==
+  ;:  weld  head  attr-lines  note-lines  shapes  extra  `(list @t)`~['']  msg-lines  ==
 ::  ==  the reader's validation: the model's answer as facts the ship
 ::  will take, with notes on what was dropped (analyze.validate)
 ::
@@ -4784,7 +4857,7 @@
 +$  exec-plan
   $:  id=@ta
       kind=@tas
-      target=?(%telegram %mail %calendar %todo %uncalendar)
+      target=?(%telegram %mail %chat %calendar %todo %uncalendar)
       to=@t
       body=json
       note=@t
@@ -4915,12 +4988,12 @@
           (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text]])
           note
       ==
-    ?:  =('mail' via)
+    ?:  |(=('mail' via) =('chat' via))
       =/  ship=@t  (attr-text all multi now who 'ship')
       =/  to=@t  ?:(|(=('' ship) =('~' (end [3 1] ship))) ship (cat 3 '~' ship))
       =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
       :-  ~
-      :*  id  kind.a  %mail  to
+      :*  id  kind.a  ?:(=('mail' via) %mail %chat)  to
           (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text]])
           note
       ==
@@ -5500,4 +5573,383 @@
       (lent every)
       n.gone
   ==
+::  ==  the daily brief (version 52): one mail each morning from the
+::  owner to the owner, the way the phone client's brief was, and the
+::  owner's reply read back once. Pure: +brief-render writes the mail,
+::  +brief-user the analyst's prompt for its suggestions, +own-words
+::  strips a reply to what the owner typed, +moves-of reads the
+::  model's moves on the tagged actions, +brief-steps the statuses a
+::  move walks. The fiber in the nexus sends, reads and files.
+::
+++  brief-prefix  'Daily brief '
+++  brief-subject  |=(day=@t ^-(@t (cat 3 brief-prefix day)))
+::  +brief-day-of: the day a brief's subject names, through any "Re:",
+::  '' when it is not a brief
+::
+++  brief-day-of
+  |=  subject=@t
+  ^-  @t
+  =/  t=tape  (trip subject)
+  =/  at=(unit @ud)  (find (trip brief-prefix) t)
+  ?~  at  ''
+  =/  day=@t  (crip (scag 10 (slag (add u.at (lent (trip brief-prefix))) t)))
+  ?:  ?=(^ (de-iso (cat 3 day 'T00:00:00Z')))  day  ''
+::  +utc-of: a wall-clock moment of a zone as the UTC instant it names,
+::  the inverse of +wall-of; +local-day: the owner's date of a moment;
+::  +day-bounds: a local day as UTC instants, midnight to midnight
+::
+++  utc-of
+  |=  [wall=@da tz=@t]
+  ^-  @da
+  =/  z=(unit zone)  (~(get by zones) tz)
+  ?~  z  wall
+  =/  shift=@dr  (mul ?:((in-dst u.z wall) dst.u.z std.u.z) ~m1)
+  ?:(west.u.z (add wall shift) (sub wall shift))
+++  local-day  |=([now=@da tz=@t] ^-(@t (end [3 10] (local-iso (en-iso now) tz))))
+++  day-bounds
+  |=  [day=@t tz=@t]
+  ^-  [from=@da to=@da]
+  =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
+  [(utc-of wall tz) (utc-of (add wall ~d1) tz)]
+++  hhmm  |=([at=@da tz=@t] ^-(@t (cut 3 [11 5] (local-iso (en-iso at) tz))))
+++  weekday-names  `(list @t)`~['Sunday' 'Monday' 'Tuesday' 'Wednesday' 'Thursday' 'Friday' 'Saturday']
+++  month-names
+  ^-  (list @t)
+  ~['January' 'February' 'March' 'April' 'May' 'June' 'July' 'August' 'September' 'October' 'November' 'December']
+::  +brief-day-line: "Today, Wednesday 23 September"; +short-when: an
+::  instant as "Thu 24 Sep 22:00" on the owner's clock
+::
+++  brief-day-line
+  |=  day=@t
+  ^-  @t
+  =/  d=(unit @da)  (de-iso (cat 3 day 'T00:00:00Z'))
+  ?~  d  (cat 3 'Today, ' day)
+  =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore u.d)
+  (rap 3 'Today, ' (snag (dow y mo dd) weekday-names) ' ' (crip (a-co:co dd)) ' ' (snag (dec mo) month-names) ~)
+++  short-when
+  |=  [at=@da tz=@t]
+  ^-  @t
+  =/  local=@t  (local-iso (en-iso at) tz)
+  =/  d=(unit @da)  (de-iso (cat 3 (end [3 19] local) 'Z'))
+  ?~  d  (en-iso at)
+  =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore u.d)
+  =/  wd=@t  (end [3 3] (snag (dow y mo dd) weekday-names))
+  =/  mn=@t  (end [3 3] (snag (dec mo) month-names))
+  (rap 3 wd ' ' (crip (a-co:co dd)) ' ' mn ' ' (cut 3 [11 5] local) ~)
+::  +brief-today: the day's lines: the calendar's rows (all-day first,
+::  then by start), what orrery expects that the calendar does not
+::  show (a situation starting today, an activity's next today, by a
+::  title the calendar lacks), then the todos due by tonight and the
+::  first ten undated ones
+::
+++  brief-today
+  |=  $:  events=(list cal-event)  order=cal-order  todos=(list todo)
+          all=(list loaded)  multi=(set @t)  from=@da  to=@da  tz=@t
+      ==
+  ^-  (list @t)
+  =/  rows=(list [all=? at=@da text=@t])
+    %-  zing
+    %+  turn  events
+    |=  ev=cal-event
+    ^-  (list [all=? at=@da text=@t])
+    =/  text=@t  ?:(=('' location.ev) name.ev (rap 3 name.ev ', ' location.ev ~))
+    %+  murn  (occurrences id.ev order (sub from ~d1) to)
+    |=  [idx=@ud l=@da r=@da]
+    ^-  (unit [all=? at=@da text=@t])
+    ?:  |((lte r from) (gte l to))  ~
+    `[|(!=('timed' cat.ev) &((lte l from) (gte r to))) l text]
+  =/  titled=(set @t)  (sy (turn events |=(ev=cal-event (normalize-title name.ev))))
+  =/  expected=(list [all=? at=@da text=@t])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [all=? at=@da text=@t])
+    ?:  (~(has in titled) (normalize-title name.body.l))  ~
+    =/  w=(map @t (list row))  (fold rows.l multi to)
+    =/  at=(unit @da)
+      ?:  =(%situation kind.body.l)
+        =/  st=@t  (winner-text w 'status')
+        ?:  |(=('closed' st) =('cancelled' st))  ~
+        (de-iso-any (winner-text w 'starts'))
+      ?.  =(%activity kind.body.l)  ~
+      =/  next=(unit @da)  (de-iso-any (winner-text w 'next'))
+      ?~  next  ~
+      =/  skipped=(list @t)
+        (turn (fall (~(get by w) 'skipped') ~) |=(r=row (ref-or-text value.obs.r)))
+      ?:((lien skipped |=(t=@t =((de-iso-any t) next))) ~ next)
+    ?~  at  ~
+    ?.  &((gte u.at from) (lth u.at to))  ~
+    `[| u.at name.body.l]
+  =/  slots=(list [all=? at=@da text=@t])
+    %+  sort  (weld rows expected)
+    |=  [a=[all=? at=@da text=@t] b=[all=? at=@da text=@t]]
+    ?:  &(all.a !all.b)  &
+    ?:  &(!all.a all.b)  |
+    (lth at.a at.b)
+  =/  slot-lines=(list @t)
+    (turn slots |=([all=? at=@da text=@t] (rap 3 ?:(all 'All day' (hhmm at tz)) '  ' text ~)))
+  =/  open=(list todo)  (skim todos |=(t=todo &(!done.t !=('' (trim-cord name.t)))))
+  =/  dated=(list todo)
+    %+  sort  (skim open |=(t=todo &(?=(^ due.t) (lth u.due.t to))))
+    |=([a=todo b=todo] (lth (fall due.a *@da) (fall due.b *@da)))
+  =/  undated=(list todo)  (skim open |=(t=todo ?=(~ due.t)))
+  =/  todo-lines=(list @t)
+    %+  weld
+      %+  turn  dated
+      |=(t=todo (rap 3 'To do  ' name.t ?:((lth (fall due.t to) from) ' (overdue)' '') ~))
+    %+  weld  (turn (scag 10 undated) |=(t=todo (cat 3 'To do  ' name.t)))
+    ?:  (lte (lent undated) 10)  ~
+    ~[(rap 3 'and ' (crip (a-co:co (sub (lent undated) 10))) ' more to do' ~)]
+  (weld slot-lines todo-lines)
+::  +brief-waiting: every proposed action under a tag, A1 on: its
+::  title, then its kind, whom it is about and its due, then why
+::
+++  brief-waiting
+  |=  [acts=(list [id=@ta a=action]) all=(list loaded) tz=@t]
+  ^-  [lines=(list @t) tags=(list [tag=@t id=@ta])]
+  =/  names=(map @t @t)  (~(gas by *(map @t @t)) (turn all |=(l=loaded [id.l name.body.l])))
+  =/  proposed=(list [id=@ta a=action])  (skim acts |=([* a=action] =(%proposed status.a)))
+  =/  n=@ud  1
+  =|  lines=(list @t)
+  =|  tags=(list [tag=@t id=@ta])
+  |-
+  ?~  proposed  [(flop lines) (flop tags)]
+  =/  tag=@t  (cat 3 'A' (crip (a-co:co n)))
+  =/  a=action  a.i.proposed
+  =/  about=@t
+    (join-cords ', ' (turn ~(tap in about.a) |=(b=bid (fall (~(get by names) b) b))))
+  =/  parts=(list @t)
+    %-  zing
+    :~  ~[kind.a]
+        ?:(=('' about) ~ ~[(cat 3 'about ' about)])
+        ?~(due.a ~ ~[(cat 3 'due ' (short-when u.due.a tz))])
+    ==
+  =/  why=@t  (trim-cord (gs payload.a 'why'))
+  %=  $
+    proposed  t.proposed
+    n  +(n)
+    tags  [[tag id.i.proposed] tags]
+    lines
+      %+  weld
+        ?:(=('' why) ~ ~[(cat 3 '     Why: ' why)])
+      [(rap 3 '     ' (join-cords ', ' parts) ~) (rap 3 '[' tag '] ' title.a ~) lines]
+  ==
+::  +brief-render: the mail's text
+::
+++  brief-render
+  |=  [day=@t today=(list @t) waiting=(list @t) suggestions=@t]
+  ^-  @t
+  %-  join-lines
+  %-  zing
+  :~  ~[(brief-day-line day) '']
+      ?~(today ~['Nothing on the calendar.'] today)
+      ~['' 'Waiting on you']
+      ?~(waiting ~['Nothing.'] waiting)
+      ?~(waiting ~ ~['' 'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday".'])
+      ~['' 'Suggestions' (trim-cord suggestions) '' 'Anything else you write back is recorded as a fact, in your words.']
+  ==
+::  +brief-prompt: orrery-utils/common/brief-prompt.md, word for word;
+::  scripts/prompt-drift.py holds it there. Edit the file, not this.
+::
+++  brief-prompt
+  ^-  @t
+  '''
+  You are the analyst for orrery, a model of one person's world kept on their own ship. Each morning you write the owner a few lines to read on their phone before the day starts.
+
+  You are given the state (every body with its current attributes, with situations that start more than two days out left out), today's schedule and todos, what is ahead in the coming week as titles and starts only, the actions waiting for the owner's answer, the recent decisions, what yesterday's brief said, and the time now.
+
+  The brief is about today. Tomorrow and the day after earn a line only when something must happen today to be ready for them: a first occurrence, travel, something to bring or book. Anything later than that gets a line only when today is the last day to act on it. Nothing from the week ahead is worth a line for being on the calendar.
+
+  Point out what the owner would want to know and might not see: two things today that overlap or leave no time between them, a fact that looks stale or wrong, something open with nothing being done about it, a decision waiting on them that matters today.
+
+  Do not list the schedule or the waiting actions again; the mail already does. Do not propose actions; another pass does that. Do not repeat a line yesterday's brief already said unless what it said has changed.
+
+  Respect what the facts say about time: an occurrence in the past is over, and a situation that is upcoming has not happened.
+
+  Do not invent facts, people, places or events. Do not moralise.
+
+  Plain text, no markdown. One to three short lines, one thing each; up to six only on a day that earns them. Fewer lines beat filler. When there is nothing worth saying, answer exactly: Nothing to add.
+  '''
+::  +brief-user: what the analyst reads before writing the brief: the
+::  state (situations closed, over or more than two days out left out),
+::  the recent decisions, today's lines, the waiting lines, the week
+::  ahead as titles and starts, yesterday's brief, the clock
+::
+++  brief-user
+  |=  $:  all=(list loaded)  multi=(set @t)  decided=(list [id=@ta a=action])
+          today=(list @t)  waiting=(list @t)  said=@t  now=@da  tz=@t
+      ==
+  ^-  @t
+  =/  near=@da  (add now ~d2)
+  =/  week=@da  (add now ~d7)
+  =/  shown=(list loaded)  (scag prompt-bodies all)
+  =/  starts-of
+    |=  l=loaded
+    ^-  (unit @da)
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    ?:  =(%situation kind.body.l)
+      =/  ph=@t  (phase w now)
+      ?:  |(=('closed' ph) =('cancelled' ph) =('over' ph))  ~
+      (de-iso-any =/(s (winner-text w 'started') ?:(=('' s) (winner-text w 'starts') s)))
+    ?.  =(%activity kind.body.l)  ~
+    (de-iso-any (winner-text w 'next'))
+  =/  hidden=(set @t)
+    %-  sy
+    %+  murn  shown
+    |=  l=loaded
+    ^-  (unit @t)
+    ?.  =(%situation kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    =/  ph=@t  (phase w now)
+    ?:  |(=('closed' ph) =('cancelled' ph) =('over' ph))  `id.l
+    =/  s=(unit @da)  (starts-of l)
+    ?:(&(?=(^ s) (gth u.s near)) `id.l ~)
+  =/  section
+    |=  kinds=(list @tas)
+    ^-  (list @t)
+    %-  zing
+    %+  turn  kinds
+    |=  k=@tas
+    ^-  (list @t)
+    =/  rows=(list loaded)
+      (skim shown |=(l=loaded &(=(k kind.body.l) !(~(has in hidden) id.l))))
+    ?~  rows  ~
+    :-  (cat 3 ?:(=(%activity k) 'activities' (cat 3 k 's')) ':')
+    (turn rows |=(l=loaded (cat 3 '  ' (line l multi now))))
+  =/  ahead=(list @t)
+    %+  turn
+      %+  sort
+        %+  murn  all
+        |=  l=loaded
+        ^-  (unit [at=@da name=@t])
+        ?.  ?=(?(%situation %activity) kind.body.l)  ~
+        =/  s=(unit @da)  (starts-of l)
+        ?~  s  ~
+        ?.  &((gth u.s near) (lte u.s week))  ~
+        `[u.s name.body.l]
+      |=([a=[at=@da *] b=[at=@da *]] (lth at.a at.b))
+    |=([at=@da name=@t] (rap 3 '  ' name ' | ' (en-iso at) ~))
+  %+  join-cords  nl
+  %-  zing
+  :~  ~['The owner is person/me.']
+      (section ~[%thing %place %org %note %person %activity %situation])
+      ~['Recent decisions:']
+      %+  turn  (slag (sub (lent decided) (min 60 (lent decided))) decided)
+      |=([* a=action] (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~))
+      ~['Today\'s schedule and todos:']
+      ?~(today ~['  nothing'] (turn today |=(t=@t (cat 3 '  ' t))))
+      ~['Waiting on the owner:']
+      ?~(waiting ~['  nothing'] (turn waiting |=(t=@t (cat 3 '  ' t))))
+      ?:(=(~ ahead) `(list @t)`~ ['Ahead this week:' (scag 10 `(list @t)`ahead)])
+      ?:(=('' (trim-cord said)) `(list @t)`~ ['Yesterday\'s brief said:' (turn (split-lines said) |=(t=@t (cat 3 '  ' t)))])
+      ~[(rap 3 'Now: ' (en-iso now) ', timezone ' ?:(=('' tz) 'unknown' tz) '. Write the brief.' ~)]
+  ==
+++  split-lines  |=(t=@t ^-((list @t) (turn (split-char 10 (trip t)) crip)))
+::  +join-lines: lines joined with newlines, blank ones kept (which
+::  +join-cords drops)
+::
+++  join-lines  |=(ls=(list @t) ^-(@t (rap 3 (join nl ls))))
+::  +own-words: what the owner typed in a reply: the quoted brief
+::  ("On ... wrote:", "-----Original Message", "> " lines) and any
+::  line the brief itself said are dropped
+::
+++  own-words
+  |=  [reply=@t brief=@t]
+  ^-  @t
+  =/  said=(set @t)  (sy (skip (turn (split-lines brief) trim-cord) |=(t=@t =('' t))))
+  =|  out=(list @t)
+  =/  ls=(list @t)  (split-lines reply)
+  |-
+  ?~  ls  (trim-cord (join-cords nl (flop out)))
+  =/  t=@t  (trim-cord i.ls)
+  =/  n=@ud  (met 3 t)
+  ?:  ?|  &((gte n 10) =('On ' (end [3 3] t)) =('wrote:' (rsh [3 (sub n 6)] t)))
+          =('-----Original Message' (end [3 22] t))
+      ==
+    $(ls ~)
+  ?:  |(=('>' (end [3 1] t)) (~(has in said) t))  $(ls t.ls)
+  $(ls t.ls, out [i.ls out])
+::  +reply-rules: what a reply to the brief adds to the analyst's
+::  prompt (Talon's REPLY_RULES, word for word)
+::
+++  reply-rules
+  ^-  @t
+  '''
+  This message is the owner's reply to their daily brief. It is the owner speaking about their own world, so a plain statement in it is conf 100.
+  The brief listed actions waiting for the owner's answer, each under a tag such as A1; they are given below with what each one is. A sentence about a tagged action is a move on it, not a fact: answer it under "moves", one per action, with only what the owner changed: {"tag": "A1", "status": "dismissed", "due": "...", "about": ["kind/slug"], "reason": "..."}. The status is "approved" (approve, yes, go ahead), "dismissed" (dismiss, no, skip) or "done" (done, did it). A new due is ISO 8601 UTC, read in the owner's timezone from the time now. A new subject names existing bodies by id. When the owner says why ("dismiss A3, it's just the event"), put their own words under "reason"; when they give no reason, give none, and never make one up. Write no fact from a sentence that only moves an action.
+  Everything else in the reply is facts, by the rules above. Something the owner asks to have done is an action.
+  Answer with one JSON object and nothing else:
+  {"moves": [...], "bodies": [...], "observations": [...], "actions": [...]}
+  '''
+::  +tag-lines: the brief's actions by tag, for the reply's prompt
+::
+++  tag-lines
+  |=  [tags=(list [tag=@t id=@ta]) acts=(list [id=@ta a=action])]
+  ^-  (list @t)
+  :-  'Actions in the brief, by tag (tag | kind | title | about | due | status):'
+  %+  murn  tags
+  |=  [tag=@t id=@ta]
+  ^-  (unit @t)
+  =/  a=(unit action)  (act-by acts id)
+  ?~  a  ~
+  =/  about=@t  (join-cords ', ' ~(tap in about.u.a))
+  =/  due=@t  ?~(due.u.a '' (en-iso u.due.u.a))
+  `(rap 3 '  ' tag ' | ' kind.u.a ' | ' title.u.a ' | ' about ' | ' due ' | ' status.u.a ~)
+++  act-by
+  |=  [acts=(list [id=@ta a=action]) id=@ta]
+  ^-  (unit action)
+  ?~  acts  ~
+  ?:(=(id id.i.acts) `a.i.acts $(acts t.acts))
+::  a move the reply makes on a tagged action
+::
++$  move  [tag=@t id=@ta status=@t due=(unit @da) about=(list @t) reason=@t]
+::  +moves-of: the model's moves checked: a known tag, a status of
+::  approved, dismissed or done, a due that parses, an about of known
+::  bodies; one with none of the three is dropped; the reason is cut
+::  to 500 bytes; two moves on one tag are one
+::
+++  moves-of
+  |=  [answer=json tags=(list [tag=@t id=@ta]) known=(set @t)]
+  ^-  (list move)
+  =/  by-tag=(map @t @ta)  (~(gas by *(map @t @ta)) tags)
+  =/  raw=(list move)
+    %+  murn  (ga answer 'moves')
+    |=  j=json
+    ^-  (unit move)
+    =/  tag=@t
+      =/  t=@t  (crip (cuss (trip (trim-cord (gs j 'tag')))))
+      =/  n=@ud  (met 3 t)
+      ?:  &((gte n 2) =('[' (end [3 1] t)) =(']' (rsh [3 (dec n)] t)))  (cut 3 [1 (sub n 2)] t)
+      t
+    =/  id=(unit @ta)  (~(get by by-tag) tag)
+    ?~  id  ~
+    =/  status=@t  =/(st (lower (gs j 'status')) ?:(?=(?(%approved %dismissed %done) st) st ''))
+    =/  due=(unit @da)  (de-iso-any (gs j 'due'))
+    =/  about=(list @t)  (strings (ga j 'about'))
+    =?  about  !(levy about |=(b=@t (~(has in known) b)))  ~
+    ?:  &(=('' status) ?=(~ due) ?=(~ about))  ~
+    `[tag u.id status due about (end [3 500] (gs j 'reason'))]
+  %+  roll  raw
+  |=  [m=move acc=(list move)]
+  ?:  (lien acc |=(x=move =(tag.x tag.m)))
+    %+  turn  acc
+    |=  x=move
+    ?.  =(tag.x tag.m)  x
+    %=  x
+      status  ?:(=('' status.m) status.x status.m)
+      due     ?~(due.m due.x due.m)
+      about   ?~(about.m about.x about.m)
+      reason  ?:(=('' reason.m) reason.x reason.m)
+    ==
+  (snoc acc m)
+::  +brief-steps: the statuses a move walks an action through: none
+::  when it is settled or already there; proposed to done goes by way
+::  of approved; a claimed one is left to its executor
+::
+++  brief-steps
+  |=  [cur=@t want=@t]
+  ^-  (list @t)
+  ?:  |(=('' want) ?=(?(%done %dismissed %failed) cur) =(cur want))  ~
+  ?:  &(=('proposed' cur) =('done' want))  ~['approved' 'done']
+  ?:  &(=('claimed' cur) =('approved' want))  ~
+  ~[want]
 --
