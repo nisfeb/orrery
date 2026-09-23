@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 48's owner steps
+
+None. Version 48 fixes two things: the calendar events reader takes when each event happens from the calendar's own order cache (peeked under the same desk, no new road), so imported RRULEs and every other rule kind the calendar knows are read, where 47 knew six and wrote a bare `rrule` cadence for the rest; and grounding keeps the facts about a body the same batch creates when a distinctive word of its name is in the message, keeps a ref to the message's author, and no longer holds a time value to being quoted (nisfeb/orrery#1). The reader's record loses its `unknown` list. Activities 47 wrote with cadence `rrule` are corrected by the next pass, since their content is re-said when it changes.
+
 ### Version 47's owner steps
 
 None. Version 47 reads the calendar's events into situations and activities on the ship, inside the executor's pass, the way a phone client's calendar pipe did: switch that pipe off in the client once the version is installed, or every event is written twice. Bodies the client already wrote are found by the uid on their rows' source and by the title, so nothing is migrated. The record is `GET /api/calendar/last` and the Executor card. No new road: the executor already reads the calendar's store, and the order index it now reads too is under the same desk.
