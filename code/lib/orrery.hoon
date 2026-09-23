@@ -5190,8 +5190,22 @@
       (gs meta 'note')
       (trim-cord (gs meta 'location'))
       tags
-      =/(k (gs e 'kind') ?:(=('' k) ?:(=('date' cat) 'yearly' 'once') k))
+      (cadence-of (gs e 'kind') cat (gj e 'args'))
   ==
+::  +cadence-of: the word a rule's kind gives an activity's cadence:
+::  the kind itself, a dated event's yearly, an imported RRULE's FREQ
+::  (weekly for "FREQ=WEEKLY;BYDAY=TU"), rrule when it has none
+::
+++  cadence-of
+  |=  [kind=@t cat=@t args=json]
+  ^-  @t
+  ?:  =('' kind)  ?:(=('date' cat) 'yearly' 'once')
+  ?.  =('rrule' kind)  kind
+  =/  parts=(list @t)  (turn (split-char ';' (trip (gs args 'rrule'))) crip)
+  =/  freq=(list @t)  (skim parts |=(p=@t =('freq=' (end [3 5] (lower p)))))
+  ?~  freq  'rrule'
+  =/  f=@t  (lower (rsh [3 5] i.freq))
+  ?:(=('' f) 'rrule' f)
 ::  +occurrences: an event's spans starting between from and to, from
 ::  the calendar's order, oldest first, one per index
 ::

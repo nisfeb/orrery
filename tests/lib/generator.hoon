@@ -1413,6 +1413,9 @@
     (expect-eq !>(`(list @t)`~['u-coffee' 'u-standup' 'u-bday']) !>((turn evs |=(e=cal-event:orr id.e))))
     (expect-eq !>(`(list @t)`~['once' 'weekly' 'yearly']) !>((turn evs |=(e=cal-event:orr kind.e))))
     (expect-eq !>('Blue Bottle') !>(location:(snag 0 evs)))
+    (expect-eq !>('weekly') !>((cadence-of:orr 'rrule' 'timed' (jo '{"rrule": "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261201T000000Z"}'))))
+    (expect-eq !>('rrule') !>((cadence-of:orr 'rrule' 'timed' (jo '{"rrule": "BYDAY=TU"}'))))
+    (expect-eq !>('cron') !>((cadence-of:orr 'cron' 'timed' (jo '{}'))))
   ==
 ++  test-occurrences
   =/  b  (occurrences:orr 'u-bday' cal-order ~2026.9.1 ~2027.12.31)
