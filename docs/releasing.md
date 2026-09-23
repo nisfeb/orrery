@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 46's owner steps
+
+None. Version 46 reads a chat's new messages as one run: the Telegram drain sifts every waiting update first and hands the analyst one run per chat, and the chat reader does the same per conversation per pass, so a message further down that settles an earlier one is seen before anything is proposed, and a run's facts land in one write. The record's `read_today` counts messages, not runs. No new road.
+
 ### Version 45's owner steps
 
 None. Version 45 adds `GET /api/chat/peek?since=<iso>`, the owner's way to ask what the reader's scries hold for any window without reading it, so a quiet day can be told from a reader that sees nothing. No new road.

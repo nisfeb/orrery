@@ -3509,41 +3509,67 @@
         (chat-rows:orr ?:(?=(%& -.chat) p.chat [%o ~]) cfg(read-own &) floor me)
       (channel-rows:orr ?:(?=(%& -.chans) p.chans [%o ~]) cfg(read-own &) floor me)
     (sub with (lent rows))
-  =|  new=(list @t)
-  =|  held-at=(unit @da)
+  ::  the rows sifted (already read, a stranger, no text, the cap) and
+  ::  gathered into runs, one per conversation in the order the first
+  ::  of each arrived, so a conversation's new messages are read
+  ::  together and a message further down that settles an earlier one
+  ::  is seen before anything is proposed from the earlier one alone
+  =/  sifted
+    =|  acc=[runs=(list [chat=@t items=(list [key=@t msg=tg-msg:orr who=@t])]) strangers=@ud held=@ud held-at=(unit @da) new=(list @t) taken=@ud]
+    |-  ^+  acc
+    ?~  rows  acc(runs (flop (turn runs.acc |=(r=[chat=@t items=(list [key=@t msg=tg-msg:orr who=@t])] r(items (flop items.r))))))
+    =/  msg=tg-msg:orr  i.rows
+    =/  key=@t  (rap 3 chat.msg '/' mid.msg ~)
+    ?:  (~(has in seen) key)  $(rows t.rows)
+    =/  who=(unit @t)  (~(get by people) from.msg)
+    ?~  who  $(rows t.rows, strangers.acc +(strangers.acc), new.acc [key new.acc])
+    ?:  =('' text.msg)  $(rows t.rows, new.acc [key new.acc])
+    ?:  (gte (add today taken.acc) max-daily.cfg)
+      $(rows t.rows, held.acc +(held.acc), held-at.acc ?^(held-at.acc held-at.acc `at.msg))
+    =/  item  [key msg u.who]
+    =/  hit=?  (lien runs.acc |=(r=[chat=@t *] =(chat.r chat.msg)))
+    %=  $
+      rows  t.rows
+      taken.acc  +(taken.acc)
+      runs.acc
+        ?.  hit  [[chat.msg ~[item]] runs.acc]
+        %+  turn  runs.acc
+        |=  r=[chat=@t items=(list [key=@t msg=tg-msg:orr who=@t])]
+        ?:(=(chat.r chat.msg) r(items [item items.r]) r)
+    ==
+  =.  strangers.tally  strangers.sifted
+  =.  held.tally  held.sifted
+  =/  new=(list @t)  new.sifted
+  =/  runs  runs.sifted
   |-
-  ?~  rows
+  ?~  runs
     ;<  ~  bind:m  (chat-remember seen-j new)
     ::  a message the cap held is neither read nor remembered, so the
     ::  next pass starts at the first one held and finds it again,
     ::  without asking for what came before it a second time
-    ;<  ~  bind:m  (chat-record last now (fall held-at now) tally ~ ~)
+    ;<  ~  bind:m  (chat-record last now (fall held-at.sifted now) tally ~ ~)
     (pure:m poll.cfg)
-  =/  msg=tg-msg:orr  i.rows
-  =/  key=@t  (rap 3 chat.msg '/' mid.msg ~)
-  ?:  (~(has in seen) key)  $(rows t.rows)
-  =/  who=(unit @t)  (~(get by people) from.msg)
-  ?~  who  $(rows t.rows, strangers.tally +(strangers.tally), new [key new])
-  ?:  =('' text.msg)  $(rows t.rows, new [key new])
-  ?:  (gte (add today read.tally) max-daily.cfg)
-    $(rows t.rows, held.tally +(held.tally), held-at ?^(held-at held-at `at.msg))
-  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg msg u.who now chat-kind:orr schema all)
+  =/  run  i.runs
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m
+    (tg-read tg (turn items.run |=([* msg=tg-msg:orr who=@t] [msg who])) now chat-kind:orr schema all)
   ?:  down
     ;<  ~  bind:m  (chat-remember seen-j new)
     ;<  ~  bind:m  (chat-record last now since tally ~ `notes.facts)
     (pure:m poll.cfg)
-  ;<  ~  bind:m  (tg-file facts u.who now chat-kind:orr)
+  ;<  ~  bind:m  (tg-file facts now chat-kind:orr)
   ;<  recent=json  bind:m  (read-json (rf 0 / %'chat-recent.json'))
-  ;<  ~  bind:m
-    (over:io (rf 0 / %'chat-recent.json') [[/ %json] (tg-remember:orr recent msg u.who now chat-kind:orr)])
+  =/  window=json
+    %+  roll  items.run
+    |=([[* msg=tg-msg:orr who=@t] acc=_recent] (tg-remember:orr acc msg who now chat-kind:orr))
+  ;<  ~  bind:m  (over:io (rf 0 / %'chat-recent.json') [[/ %json] window])
   =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
-  ::  the bodies are read again only when this message changed them
+  ::  the bodies are read again only when this run changed them
   ;<  all=(list loaded:orr)  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
   %=  $
-    rows  t.rows
+    runs  t.runs
     all   all
-    new   [key new]
-    read.tally   ?:(read +(read.tally) read.tally)
+    new   (weld (turn items.run |=([key=@t *] key)) new)
+    read.tally   ?:(read (add read.tally (lent items.run)) read.tally)
     filed.tally  (add filed.tally n)
     notes.tally  (weld notes.tally notes.facts)
   ==
@@ -3632,8 +3658,11 @@
   ;<  culled=?  bind:m  (tg-drain-each names)
   ::  a file the cull left is not read again until the next wake
   ?.(culled (pure:m ~) tg-drain)
-::  +tg-drain-each: the named updates in turn; whether every one was
-::  culled. One the model was down for sets the retry timer (a pending
+::  +tg-drain-each: the named updates, sifted first, then read as one
+::  run per chat in arrival order, so a chat's new messages reach the
+::  analyst together and a message further down that settles an earlier
+::  one is seen before anything is proposed. Whether every update was
+::  culled. A run the model was down for sets the retry timer (a pending
 ::  one cancelled first, so wakes do not stack) and ends the drain.
 ::
 ++  tg-drain-each
@@ -3642,19 +3671,122 @@
   ^-  form:m
   ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  cfg=tg-config:orr  (de-tg-config:orr cfg-j)
-  =/  culled=?  &
+  ;<  [runs=(list tg-run) culled=?]  bind:m  (tg-sift cfg names)
   |-
-  ?~  names  (pure:m culled)
-  ;<  update=json  bind:m  (read-json (rf 0 /telegram-inbox i.names))
-  ;<  down=?  bind:m  (tg-handle cfg update)
+  ?~  runs  (pure:m culled)
+  ;<  down=?  bind:m  (tg-run-read cfg i.runs)
   ?:  down
     ;<  now=@da  bind:m  get-time:io
     ;<  ~  bind:m  (cancel-timer:io /retry)
     ;<  ~  bind:m  (set-timer:io /retry (add now ~m5))
     (pure:m |)
   ;<  ~  bind:m  tg-yield
+  ;<  c=?  bind:m  (tg-cull (turn items.i.runs |=([name=@ta *] name)))
+  $(runs t.runs, culled &(culled c))
+::  +$  tg-run: one chat's updates that passed the filters, oldest first
+::
++$  tg-item  [name=@ta uid=@ud msg=tg-msg:orr who=@t]
++$  tg-run   [chat=@t items=(list tg-item)]
+::  +tg-sift: the filters on each update: not a message, a chat not in
+::  chats, a sender not in people, a business connection of a stranger,
+::  no text. Each of those is recorded as ignored and culled now; the
+::  rest are gathered into runs, one per chat, in arrival order.
+::
+++  tg-sift
+  |=  [cfg=tg-config:orr names=(list @ta)]
+  =/  m  (fiber:fiber:nexus ,[runs=(list tg-run) culled=?])
+  ^-  form:m
+  =|  runs=(list tg-run)
+  =/  culled=?  &
+  |-
+  ?~  names  (pure:m [(flop (turn runs |=(r=tg-run r(items (flop items.r))))) culled])
+  ;<  update=json  bind:m  (read-json (rf 0 /telegram-inbox i.names))
+  ;<  now=@da  bind:m  get-time:io
+  =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
+  =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
+  ;<  why=(unit [chat=@t from=@t note=@t])  bind:m
+    =/  n  (fiber:fiber:nexus ,(unit [chat=@t from=@t note=@t]))
+    ?~  mu  (pure:n `['' '' 'not a message'])
+    =/  msg=tg-msg:orr  u.mu
+    ?.  (~(has in chats.cfg) chat.msg)  (pure:n `[chat.msg from.msg (rap 3 'chat ' chat.msg ' is not in chats' ~)])
+    ?.  (~(has by people.cfg) from.msg)  (pure:n `[chat.msg from.msg (rap 3 'sender ' from.msg ' is not in people' ~)])
+    ;<  stranger=?  bind:n  (tg-stranger cfg business.msg)
+    ?:  stranger  (pure:n `[chat.msg from.msg 'business connection of an account not in people'])
+    ?:  =('' text.msg)  (pure:n `[chat.msg from.msg 'no text'])
+    (pure:n ~)
+  ?^  why
+    ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
+    ;<  ~  bind:m  (tg-record last now uid chat.u.why from.u.why 'ignored' ~[note.u.why] 0)
+    ;<  ~  bind:m  tg-yield
+    ;<  c=?  bind:m  (tg-cull ~[i.names])
+    $(names t.names, culled &(culled c))
+  =/  msg=tg-msg:orr  (need mu)
+  =/  who=@t  (fall (~(get by people.cfg) from.msg) '')
+  =/  item=tg-item  [i.names uid msg who]
+  =/  hit=(unit tg-run)  (find-run runs chat.msg)
+  =.  runs
+    ?~  hit  [[chat.msg ~[item]] runs]
+    (turn runs |=(r=tg-run ?:(=(chat.r chat.msg) r(items [item items.r]) r)))
+  $(names t.names)
+++  find-run
+  |=  [runs=(list tg-run) chat=@t]
+  ^-  (unit tg-run)
+  ?~  runs  ~
+  ?:(=(chat.i.runs chat) `i.runs $(runs t.runs))
+::  +tg-cull: the named inbox files, culled; whether every cull took
+::
+++  tg-cull
+  |=  names=(list @ta)
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  ok=?  &
+  |-
+  ?~  names  (pure:m ok)
   ;<  err=(unit tang)  bind:m  (cull-soft:io (rf 0 /telegram-inbox i.names))
-  $(names t.names, culled &(culled ?=(~ err)))
+  $(names t.names, ok &(ok ?=(~ err)))
+::  +tg-run-read: one chat's run through the model, the filing, the
+::  window and the record. The daily cap holds the whole run as one:
+::  held messages are recorded and dropped, as the bot dropped them.
+::  Yields whether the run is kept for a retry: the model was down, so
+::  nothing was filed and nothing recorded.
+::
+++  tg-run-read
+  |=  [cfg=tg-config:orr run=tg-run]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ?~  items.run  (pure:m |)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
+  =/  tail=tg-item  (rear items.run)
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  ?:  (gte today max-daily.cfg)
+    ;<  ~  bind:m  (tg-record last now uid.tail chat.run from.msg.tail 'held' ~['today\'s messages are spent'] 0)
+    (pure:m |)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m
+    (tg-read cfg (turn `(list tg-item)`items.run |=(i=tg-item [msg.i who.i])) now telegram-kind:orr schema all)
+  ::  kept for the retry, and said so: the record's update_id stays, a
+  ::  down key names the update, the moment and the model's answer, so
+  ::  a model the ship cannot reach reads off the card instead of
+  ::  looking like a reader that never ran (ricsul, 2026-09-21)
+  ?:  down
+    ;<  ~  bind:m  (tg-record-down now uid.tail notes.facts)
+    (pure:m &)
+  ;<  ~  bind:m  (tg-file facts now telegram-kind:orr)
+  ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  ::  a chat taken out of the settings loses its window
+  =/  window=json
+    =/  r=json
+      %+  roll  `(list tg-item)`items.run
+      |=([i=tg-item acc=_recent] (tg-remember:orr acc msg.i who.i now telegram-kind:orr))
+    ?.  ?=([%o *] r)  r
+    [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
+  ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
+  =/  outcome=@t  ?:(&(=(~ obs.facts) =(~ bodies.facts) =(~ acts.facts)) 'nothing' 'facts')
+  ;<  ~  bind:m  (tg-record last now uid.tail chat.run from.msg.tail outcome notes.facts ?:(read (lent `(list tg-item)`items.run) 0))
+  (pure:m |)
 ::  +tg-yield: the next event. The webhook's request fiber is answered
 ::  after its rev write is acked, and a cull in the event of that write
 ::  held the ack until another event came along (wex, 2026-09-20: an
@@ -3671,62 +3803,6 @@
   ;<  in=gen-in  bind:m  (take-gen-in /tg)
   ?:  ?=([%wake [%yield ~]] in)  (pure:m ~)
   $
-::  +tg-handle: one update: the filters, then the model, then the filing,
-::  the window and the record. A held message is not
-::  read and not context; the window is written after a reading whatever
-::  it yielded, so a question rides along as the next message's context.
-::  Yields whether the update is kept for a retry: the model was down,
-::  so nothing was filed and nothing recorded.
-::
-++  tg-handle
-  |=  [cfg=tg-config:orr update=json]
-  =/  m  (fiber:fiber:nexus ,?)
-  ^-  form:m
-  ;<  now=@da  bind:m  get-time:io
-  ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
-  =/  uid=@ud  (fall (gn:orr update 'update_id') 0)
-  ::  a recorded update is done with
-  =/  done
-    |=  [chat=@t from=@t outcome=@t notes=(list @t) read=?]
-    ^-  form:m
-    ;<  ~  bind:m  (tg-record last now uid chat from outcome notes read)
-    (pure:m |)
-  =/  mu=(unit tg-msg:orr)  (tg-message:orr update)
-  ?~  mu  (done '' '' 'ignored' ~['not a message'] |)
-  =/  msg=tg-msg:orr  u.mu
-  ?.  (~(has in chats.cfg) chat.msg)
-    (done chat.msg from.msg 'ignored' ~[(rap 3 'chat ' chat.msg ' is not in chats' ~)] |)
-  =/  who=(unit @t)  (~(get by people.cfg) from.msg)
-  ?~  who
-    (done chat.msg from.msg 'ignored' ~[(rap 3 'sender ' from.msg ' is not in people' ~)] |)
-  ;<  stranger=?  bind:m  (tg-stranger cfg business.msg)
-  ?:  stranger
-    (done chat.msg from.msg 'ignored' ~['business connection of an account not in people'] |)
-  ?:  =('' text.msg)  (done chat.msg from.msg 'ignored' ~['no text'] |)
-  =/  day=@t  (end [3 10] (en-iso:orr now))
-  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
-  ?:  (gte today max-daily.cfg)
-    (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
-  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now telegram-kind:orr schema all)
-  ::  kept for the retry, and said so: the record's update_id stays, a
-  ::  down key names the update, the moment and the model's answer, so
-  ::  a model the ship cannot reach reads off the card instead of
-  ::  looking like a reader that never ran (ricsul, 2026-09-21)
-  ?:  down
-    ;<  ~  bind:m  (tg-record-down now uid notes.facts)
-    (pure:m &)
-  ;<  ~  bind:m  (tg-file facts u.who now telegram-kind:orr)
-  ;<  recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
-  ::  a chat taken out of the settings loses its window
-  =/  window=json
-    =/  r=json  (tg-remember:orr recent msg u.who now telegram-kind:orr)
-    ?.  ?=([%o *] r)  r
-    [%o (~(gas by *(map @t json)) (skim ~(tap by p.r) |=([k=@t *] (~(has in chats.cfg) k))))]
-  ;<  ~  bind:m  (over:io (rf 0 / %'telegram-recent.json') [[/ %json] window])
-  =/  outcome=@t  ?:(&(=(~ obs.facts) =(~ bodies.facts) =(~ acts.facts)) 'nothing' 'facts')
-  (done chat.msg from.msg outcome notes.facts read)
 ::  +tg-read: the gate, the analyst, validation, grounding, the status
 ::  check and the escalate question, with the window as context. A
 ::  decider that cannot answer reads the message, escalates nothing and
@@ -3738,11 +3814,18 @@
 ::  worth asking about again.
 ::
 ++  tg-read
-  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
+  |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
-  =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
-  ?:  q  (pure:m [| | ~ ~ ~ ~['a question states nothing'] ~])
+  ::  a question states nothing and is left out of the run; a run of
+  ::  nothing else is not read. The run is one conversation's new
+  ::  messages, oldest first, read together so a message further down
+  ::  that resolves an earlier one is seen before anything is proposed
+  ::  from the earlier one alone.
+  =/  fresh=(list [msg=tg-msg:orr who=@t])
+    %+  skip  run
+    |=([msg=tg-msg:orr who=@t] |(=('' text.msg) =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))))
+  ?~  fresh  (pure:m [| | ~ ~ ~ ~['a question states nothing'] ~])
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)
@@ -3750,10 +3833,10 @@
   ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
   =/  rows=(list window-row:orr)
-    %+  snoc
-      (turn (tg-window:orr recent chat.msg) |=([id=@t at=@t w=@t t=@t] ^-(window-row:orr [id at w t &])))
-    ^-  window-row:orr
-    [id:(tg-source:orr msg kind) (en-iso:orr at.msg) who text.msg |]
+    %+  weld
+      (turn (tg-window:orr recent chat.msg.i.fresh) |=([id=@t at=@t w=@t t=@t] ^-(window-row:orr [id at w t &])))
+    %+  turn  fresh
+    |=([msg=tg-msg:orr who=@t] ^-(window-row:orr [id:(tg-source:orr msg kind) (en-iso:orr at.msg) who text.msg |]))
   ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
   =/  p=@ud  ?~(gate 100 (noul-of:orr u.gate 'worth_reading'))
   =/  gate-note=@t
@@ -3831,7 +3914,7 @@
 ::  poke serve-generate sends, force with the ids to look at first
 ::
 ++  tg-file
-  |=  [facts=tg-facts:orr who=@t now=@da kind=reader-kind:orr]
+  |=  [facts=tg-facts:orr now=@da kind=reader-kind:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind)))
@@ -3905,7 +3988,7 @@
     ==
   (over:io (rf 0 / %'telegram-last.json') [[/ %json] (set-key:orr last 'down' down)])
 ++  tg-record
-  |=  [last=json now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=?]
+  |=  [last=json now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=@ud]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  day=@t  (end [3 10] (en-iso:orr now))
@@ -3920,7 +4003,7 @@
       ['outcome' s+outcome]
       ['notes' a+(turn (scag 20 notes) |=(n=@t `json`s+(end [3 300] n)))]
       ['day' s+day]
-      ['read_today' (numb:enjs:format ?:(read +(today) today))]
+      ['read_today' (numb:enjs:format (add today read))]
   ==
 ::  +do-add-client: one minted key, refused when the id is taken or the
 ::  table is full. The row arrives hashed; the writer never sees a
