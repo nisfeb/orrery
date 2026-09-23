@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 45's owner steps
+
+None. Version 45 adds `GET /api/chat/peek?since=<iso>`, the owner's way to ask what the reader's scries hold for any window without reading it, so a quiet day can be told from a reader that sees nothing. No new road.
+
 ### Version 43's owner steps
 
 None. Version 43 makes a missing scry answer legible: the chat record's notes now say by name when the chat or channels agent gave no answer, an answer that is not JSON, or a JSON null, which is what an older groups desk answers for a scry it lacks; the two list routes say the same in their note. Version 44 adds two counts to the record and the card, `unpicked` and `own`, so a pass that read nothing says whether the conversations that changed were ones the owner did not pick, or the owner's own words left unread. No new road.

@@ -764,6 +764,7 @@
   ?:  &(=('PUT' meth) ?=([%api %chat ~] suffix))             (writes (serve-set-doc eyre-id 'set-chat' jon))
   ?:  &(=('GET' meth) ?=([%api %chat %last ~] suffix))       (own (serve-doc eyre-id %'chat-last.json'))
   ?:  &(=('POST' meth) ?=([%api %chat %wake ~] suffix))      (own (serve-prod eyre-id %'chat.sig' 'chat'))
+  ?:  &(=('GET' meth) ?=([%api %chat %peek ~] suffix))       (own (serve-chat-peek eyre-id args))
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-dms eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-channels eyre-id))
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))       (own (serve-doc eyre-id %'exec-last.json'))
@@ -3302,6 +3303,50 @@
     ?:  =('' ct)  gt
     (rap 3 gt ': ' ct ~)
   (send-list eyre-id (sort items |=([a=[@t name=@t] b=[@t name=@t]] (aor name.a name.b))) '')
+::  +serve-chat-peek: what a pass since ?since (an ISO time; a day ago
+::  unless given) would find, without reading any of it: per agent,
+::  whether it answered, how many conversations changed, how many of
+::  those are picked, and how many messages the picked ones hold,
+::  the owner's own included. For the owner to tell a quiet day from
+::  a reader that sees nothing.
+::
+++  serve-chat-peek
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  given=(unit @t)  (get-key:kv:html-utils 'since' args)
+  =/  since=@da
+    ?~  given  (sub now ~d1)
+    (fall (de-iso:orr u.given) (sub now ~d1))
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'chat.json'))
+  =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (send-err eyre-id 502 'the /sys/scry/ road is refused')
+  ?.  u.live  (send-err eyre-id 502 'groups desk not installed')
+  ;<  our=@p  bind:m  get-our:io
+  =/  me=@t  (scot %p our)
+  ;<  chat=(each json @t)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
+  ;<  chans=(each json @t)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
+  =/  side
+    |=  [got=(each json @t) picked=(set @t) rows=(list tg-msg:orr)]
+    ^-  json
+    ?:  ?=(%| -.got)  (pairs:enjs:format ~[['answered' b+|] ['note' s+p.got]])
+    =/  names=(list @t)  ?:(?=([%o *] p.got) ~(tap in ~(key by p.p.got)) ~)
+    %-  pairs:enjs:format
+    :~  ['answered' b+&]
+        ['conversations' (numb:enjs:format (lent names))]
+        ['picked' (numb:enjs:format (lent (skim names |=(k=@t (~(has in picked) k)))))]
+        ['messages' (numb:enjs:format (lent rows))]
+        ['changed' a+(turn (scag 20 (sort names aor)) |=(k=@t `json`s+k))]
+    ==
+  =/  all=chat-config:orr  cfg(read-own &)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['since' s+(en-iso:orr since)]
+      ['chat' (side chat dms.cfg (chat-rows:orr ?:(?=(%& -.chat) p.chat [%o ~]) all *@da me))]
+      ['channels' (side chans channels.cfg (channel-rows:orr ?:(?=(%& -.chans) p.chans [%o ~]) all *@da me))]
+  ==
 ++  send-list
   |=  [eyre-id=@ta items=(list [id=@t name=@t]) note=@t]
   =/  m  (fiber:fiber:nexus ,~)
