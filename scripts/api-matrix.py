@@ -1226,8 +1226,8 @@ cal_poke({'action': 'add-event', 'cat': 'timed', 'kind': 'weekly', 'fin': 'dur',
           'meta': {'name': REPEAT_NAME}, 'start_ms': int((now + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp() * 1000)})
 ONCE_ID, REPEAT_ID = event_named(ONCE_NAME), event_named(REPEAT_NAME)
 check('a one-off and a repeat the owner keeps are on the calendar', bool(ONCE_ID) and bool(REPEAT_ID), (ONCE_ID, REPEAT_ID))
-
-
+was = occurrences(REPEAT_ID) if REPEAT_ID else []
+check('the repeat expands into several occurrences ahead', len(was) > 2, was)
 # ---- the calendar events reader (version 47): the two events become a situation and an activity on the ship ----
 # the executor's pass runs on the store's change, so the bodies are
 # waited for by the uid every row of theirs carries as its source
@@ -1254,7 +1254,7 @@ def refs(b, attr):
 
 
 sit = body_by_uid(ONCE_ID or 'none')
-check('the one-off is a situation named by its date and title, the uid its alias',
+check('the one-off is a situation named by its date and title, found by the uid its rows carry',
       sit.get('id', '').startswith('situation/') and sit['id'].endswith('-gate-cancel-once-%s' % XRUN.lower()) and sit.get('name') == ONCE_NAME, sit.get('id'))
 sattrs = dictish(sit.get('attrs'))
 check('it starts and ends at the event, learned now, and person/me is in it',
@@ -1275,8 +1275,7 @@ n_rows = len(list(rows_of(sit)))
 curl('POST', API + '/exec/wake')
 time.sleep(8)
 check('a second pass writes the same occurrence no second time', n_rows > 0 and len(list(rows_of(body_by_uid(ONCE_ID or 'none', 1)))) == n_rows, n_rows)
-was = occurrences(REPEAT_ID) if REPEAT_ID else []
-check('the repeat expands into several occurrences ahead', len(was) > 2, was)
+
 OFFID = propose('calendar', 'Gate cancel the one-off %s' % XRUN, payload={'mode': 'cancel', 'event': ONCE_ID or 'none'})
 approve(OFFID)
 a = settled(OFFID)
