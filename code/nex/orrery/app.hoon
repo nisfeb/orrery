@@ -3221,6 +3221,10 @@
 ::  reader stays alive with a note. The path is what gall sees after
 ::  our ship and the desk, with the mark it should answer in last.
 ::
+::  A scry that bails inside the service (an agent whose peek crashes,
+::  a path a desk version lacks) answers nothing, so the wait ends on
+::  a timer too, as no answer, rather than holding the fiber for ever.
+::
 ++  scry-soft
   |=  [mark=@tas pax=path]
   =/  m  (fiber:fiber:nexus ,(unit vase))
@@ -3228,15 +3232,24 @@
   ;<  err=(unit tang)  bind:m
     (poke-soft:io [%& %& /sys/scry %'main.sig'] [[/ %scry-request] [mark pax]])
   ?^  err  (pure:m ~)
-  |=  input:fiber:nexus
-  :+  ~  q.state
-  ?+  in  [%skip ~]
-      ~  [%wait ~]
-      [~ %veto *]  [%done ~]
-      [~ %poke * *]
-    ?.  =([/ mark] p.sage.u.in)  [%skip ~]
-    [%done `q.sage.u.in]
-  ==
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /scry (add now ~s30))
+  ;<  got=(unit vase)  bind:m
+    =/  n  (fiber:fiber:nexus ,(unit vase))
+    ^-  form:n
+    |=  input:fiber:nexus
+    :+  ~  q.state
+    ?+  in  [%skip ~]
+        ~  [%wait ~]
+        [~ %veto *]  [%done ~]
+        [~ %poke * *]
+      ?:  =([/ mark] p.sage.u.in)  [%done `q.sage.u.in]
+      ?.  =([/ %timer-wake] p.sage.u.in)  [%skip ~]
+      ?.  =(/scry (fall (mole |.(!<(path q.sage.u.in))) /))  [%skip ~]
+      [%done ~]
+    ==
+  ;<  ~  bind:m  (cancel-timer:io /scry)
+  (pure:m got)
 ++  scry-json
   |=  pax=path
   =/  m  (fiber:fiber:nexus ,(unit json))
@@ -3285,7 +3298,8 @@
   ::  before that; a later pass takes whatever the scry says changed,
   ::  however old its sent, since a writ delivered late shows up once
   =/  first=(unit @da)  (de-iso:orr (gs:orr last 'since'))
-  =/  since=@da  ?^(first u.first (sub now (mul backfill.cfg ~h1)))
+  =/  span=@dr  (mul backfill.cfg ~h1)
+  =/  since=@da  ?^(first u.first ?:((lth now span) ~1970.1.1 (sub now span)))
   =/  floor=@da  ?^(first *@da since)
   =/  record
     |=  [notes=(list @t)]
@@ -3297,15 +3311,21 @@
   ?.  u.live  (record ~['groups desk not installed'])
   ;<  chat=(unit json)  bind:m  (scry-json /gx/chat/v4/changes/(scot %da since)/json)
   ;<  chans=(unit json)  bind:m  (scry-json /gx/channels/v6/changes/(scot %da since)/json)
-  ?:  |(?=(~ chat) ?=(~ chans))
-    (record ~['the /sys/scry/ road is refused: approve it on the permits page'])
+  ::  neither answering is the road; one short is that agent's, and
+  ::  the other's rows are read all the same
+  ?:  &(?=(~ chat) ?=(~ chans))
+    (record ~['the /sys/scry/ road is refused, or the groups desk did not answer'])
   ;<  our=@p  bind:m  get-our:io
   =/  me=@t  (scot %p our)
   =/  rows=(list tg-msg:orr)
-    %+  sort  (weld (chat-rows:orr u.chat cfg floor me) (channel-rows:orr u.chans cfg floor me))
+    %+  sort
+      %+  weld
+        (chat-rows:orr (fall chat [%o ~]) cfg floor me)
+      (channel-rows:orr (fall chans [%o ~]) cfg floor me)
     |=([a=tg-msg:orr b=tg-msg:orr] (lth at.a at.b))
   ;<  seen-j=json  bind:m  (read-json (rf 0 / %'chat-seen.json'))
   =/  seen=(set @t)  (sy (strings:orr ?:(?=([%a *] seen-j) p.seen-j ~)))
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  people=(map @t @t)  (~(uni by (people-of-ships all)) people.cfg)
   =?  people  !(~(has by people) me)  (~(put by people) me 'person/me')
@@ -3314,12 +3334,14 @@
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   =|  tally=chat-tally
   =|  new=(list @t)
+  =|  held-at=(unit @da)
   |-
   ?~  rows
     ;<  ~  bind:m  (chat-remember seen-j new)
-    ::  a message the cap held is neither read nor remembered, so since
-    ::  stays where it was and tomorrow's pass finds it again
-    ;<  ~  bind:m  (chat-record last now ?:(=(0 held.tally) now since) tally ~ ~)
+    ::  a message the cap held is neither read nor remembered, so the
+    ::  next pass starts at the first one held and finds it again,
+    ::  without asking for what came before it a second time
+    ;<  ~  bind:m  (chat-record last now (fall held-at now) tally ~ ~)
     (pure:m poll.cfg)
   =/  msg=tg-msg:orr  i.rows
   =/  key=@t  (rap 3 chat.msg '/' mid.msg ~)
@@ -3327,8 +3349,9 @@
   =/  who=(unit @t)  (~(get by people) from.msg)
   ?~  who  $(rows t.rows, strangers.tally +(strangers.tally), new [key new])
   ?:  =('' text.msg)  $(rows t.rows, new [key new])
-  ?:  (gte (add today read.tally) max-daily.cfg)  $(rows t.rows, held.tally +(held.tally))
-  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg msg u.who now chat-kind:orr)
+  ?:  (gte (add today read.tally) max-daily.cfg)
+    $(rows t.rows, held.tally +(held.tally), held-at ?^(held-at held-at `at.msg))
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg msg u.who now chat-kind:orr schema all)
   ?:  down
     ;<  ~  bind:m  (chat-remember seen-j new)
     ;<  ~  bind:m  (chat-record last now since tally ~ `notes.facts)
@@ -3338,8 +3361,11 @@
   ;<  ~  bind:m
     (over:io (rf 0 / %'chat-recent.json') [[/ %json] (tg-remember:orr recent msg u.who now chat-kind:orr)])
   =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
+  ::  the bodies are read again only when this message changed them
+  ;<  all=(list loaded:orr)  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
   %=  $
     rows  t.rows
+    all   all
     new   [key new]
     read.tally   ?:(read +(read.tally) read.tally)
     filed.tally  (add filed.tally n)
@@ -3497,7 +3523,9 @@
   =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
   ?:  (gte today max-daily.cfg)
     (done chat.msg from.msg 'held' ~['today\'s messages are spent'] |)
-  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now telegram-kind:orr)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read cfg msg u.who now telegram-kind:orr schema all)
   ::  kept for the retry, and said so: the record's update_id stays, a
   ::  down key names the update, the moment and the model's answer, so
   ::  a model the ship cannot reach reads off the card instead of
@@ -3526,7 +3554,7 @@
 ::  worth asking about again.
 ::
 ++  tg-read
-  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da kind=reader-kind:orr]
+  |=  [cfg=tg-config:orr msg=tg-msg:orr who=@t now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
   =/  q=?  =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))
@@ -3535,8 +3563,6 @@
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)
     (pure:m [| | ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
-  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
   =/  rows=(list window-row:orr)

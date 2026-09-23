@@ -524,7 +524,10 @@ while time.time() < deadline:
 # so the two filed are read from whichever record stands
 notes = ' '.join(dictish(last).get('notes', []))
 filed_two = dictish(last).get('filed') == 2 and dictish(last).get('dropped') == 2 or (dictish(last).get('filed') == 0 and dictish(last).get('dropped') == 4 and all('dropped as already open or decided: ' + t in notes for t in (FRESH, FRESH2)))
-check('the pass wrote its record, two filed', isinstance(last, dict) and filed_two and 'stub note' in notes and not last.get('error') and last.get('calls_today') >= 1, last)
+# the follow-up pass the filing wakes can rewrite the record before a poll
+# lands on the forced pass's own, so a skipped record with a fresh at is
+# the same proof: the two filed are checked on the action list just below
+check('the pass wrote its record, two filed', isinstance(last, dict) and last.get('at') != before_at and ((filed_two and 'stub note' in notes) or last.get('skipped') is True) and not last.get('error') and last.get('calls_today') >= 1, last)
 _, hdrs, body = seen[0] if seen else ('', {}, {})
 check('the stub saw the prompt with cache marks and no temperature', body.get('model') == 'moonshotai/kimi-k3' and 'temperature' in body and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
@@ -843,7 +846,7 @@ code, d = curl('PUT', API + '/telegram', {'secret': 'short'})
 check('a short secret is refused', code == 400, (code, d))
 
 # ---- the chat reader (version 39): its settings, the key rule, a pass and its record ----
-code, d = curl('PUT', API + '/chat', {'enabled': False, 'dms': [], 'channels': [], 'people': {}})
+code, d = curl('PUT', API + '/chat', {'enabled': False, 'dms': [], 'channels': [], 'people': {}, 'poll_minutes': None, 'backfill_hours': None, 'gate': None, 'read_own': None})
 code, d = curl('PUT', API + '/chat', {'enabled': True, 'dms': ['~sampel-palnet', ' 0v4.club '], 'channels': ['chat/~host/general'], 'people': {'SAMPEL-PALNET': 'person/me'}, 'poll_minutes': 2, 'gate': 0.4})
 time.sleep(0.5)
 code, d = curl('GET', API + '/chat')
@@ -868,13 +871,14 @@ before_at = dictish(curl('GET', API + '/chat/last')[1]).get('at')
 time.sleep(1.1)
 code, d = curl('POST', API + '/chat/wake')
 check('the reader takes a wake', code == 200 and dictish(d).get('ok') is True, (code, d))
-deadline = time.time() + 30
-while time.time() < deadline:
-    code, last = curl('GET', API + '/chat/last')
-    if dictish(last).get('at') and dictish(last).get('at') != before_at:
-        break
-    time.sleep(2)
-check('the woken pass wrote a new record: since and at set, nothing read on a ship with no messages', code == 200 and bool(dictish(last).get('since')) and dictish(last).get('at') != before_at and dictish(last).get('read') == 0 and isinstance(dictish(last).get('notes'), list), (code, last, before_at))
+last = dictish(gate.wait('the woken pass wrote a new record', lambda: (lambda l: l if l.get('at') and l.get('at') != before_at else None)(dictish(curl('GET', API + '/chat/last')[1])), 30))
+check('since and at are set, nothing read on a ship with no messages', bool(last.get('since')) and last.get('read') == 0 and isinstance(last.get('notes'), list), last)
+code, d = curl('PUT', API + '/chat', {'gate': 90})
+code, d = curl('PUT', API + '/chat', {'gate': None, 'backfill_hours': 100000000})
+time.sleep(0.5)
+code, d = curl('GET', API + '/chat')
+check('a null puts the default back and a wild number is clamped', dictish(d).get('gate') == 30 and dictish(d).get('backfill_hours') == 720, (code, d))
+curl('PUT', API + '/chat', {'backfill_hours': None, 'poll_minutes': None})
 code, d = curl('GET', API + '/chat/dms')
 check('the DM list answers items and a note', code == 200 and isinstance(dictish(d).get('items'), list) and 'note' in dictish(d), (code, d))
 code, d = curl('PUT', API + '/chat', {'enabled': False})

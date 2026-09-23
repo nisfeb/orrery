@@ -658,11 +658,11 @@
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
     var c = { enabled: !!view.querySelector('#chat input[name="enabled"]:checked'), dms: list('dms'), channels: list('channels'), people: people,
       read_own: !!view.querySelector('#chat input[name="read_own"]:checked'), model: val('model') };
-    // a number left blank is left out, so the ship's default stands
-    // rather than a zero that would hold every message
+    // a number left blank is sent as null, which clears the stored one
+    // so the ship's default stands, never a zero that would hold every message
     ['poll_minutes', 'backfill_hours', 'gate', 'escalate', 'max_daily_messages'].forEach(function (k) {
       var n = parseInt(val(k), 10);
-      if (!isNaN(n)) c[k] = n;
+      c[k] = isNaN(n) ? null : n;
     });
     return c;
   }

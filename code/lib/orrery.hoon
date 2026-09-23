@@ -3040,16 +3040,16 @@
       max-daily=@ud
   ==
 ::  +merge-settings: a settings document merged over the stored one. A
-::  secret left blank keeps the stored value, a JSON null clears it.
+::  JSON null clears a key, so the reader's default stands again; a
+::  secret left blank keeps the stored value.
 ::
 ++  merge-settings
   |=  [base=(map @t json) doc=(map @t json) secrets=(set @t)]
   ^-  (map @t json)
   %+  roll  ~(tap by doc)
   |=  [[k=@t v=json] acc=_base]
-  ?.  (~(has in secrets) k)  (~(put by acc) k v)
   ?:  ?=(~ v)  (~(del by acc) k)
-  ?:  &(?=([%s *] v) =('' p.v))  acc
+  ?:  &((~(has in secrets) k) ?=([%s *] v) =('' p.v))  acc
   (~(put by acc) k v)
 ::  +short-secret: a webhook secret under 16 bytes, which is refused;
 ::  a blank one is not a secret at all and keeps the stored one
@@ -3246,8 +3246,8 @@
       (names 'channels' |=(t=@t (lower (trim-cord t))))
       people
       =/(r (gj j 'read_own') ?:(?=([%b *] r) p.r |))
-      (fall (gn j 'poll_minutes') 5)
-      (fall (gn j 'backfill_hours') 24)
+      (max 1 (min 1.440 (fall (gn j 'poll_minutes') 5)))
+      (min 720 (fall (gn j 'backfill_hours') 24))
       (hundredths (gj j 'gate') 30)
       (hundredths (gj j 'escalate') 60)
       (fall (gn j 'max_daily_messages') 500)

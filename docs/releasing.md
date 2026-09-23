@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 41's owner steps
+
+None. Version 41 is the third review round on the chat reader: a scry the groups desk never answers ends on a thirty-second timer instead of holding the reader, a hold by the daily cap resumes at the first held message, a wild poll or backfill number is clamped, one agent short does not read as the road refused, a null on any settings key puts the default back (the card sends one for a blank number), and the bodies are loaded once per pass rather than once per message. No new road.
+
 ### Version 40's owner steps
 
 None. Version 40 fixes the chat reader's first release from the review of version 39: a message the daily cap held is found again the next day, a writ delivered late is read, a DM typed with a capital or without its sig is matched, a blank number on the Chat card leaves the ship's default in place, and the record of a Telegram token reset survives a model outage. No new road.

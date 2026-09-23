@@ -720,6 +720,9 @@
     (expect-eq !>(50) !>(gate.full))
     (expect-eq !>(70) !>(escalate.full))
     (expect-eq !>(full) !>(back))
+    (expect-eq !>([1 720]) !>([poll backfill]:(de-chat-config:orr (jo '{"poll_minutes": 0, "backfill_hours": 100000000}'))))
+    (expect-eq !>((my ~[['a' s+'x']])) !>((merge-settings:orr (my ~[['a' s+'x'] ['gate' (numb:enjs:format 90)]]) (my ~[['gate' ~]]) ~)))
+    (expect-eq !>((my ~[['token' s+'t'] ['x' s+'y']])) !>((merge-settings:orr (my ~[['token' s+'t']]) (my ~[['token' s+''] ['x' s+'y']]) (sy ~['token']))))
     (expect-eq !>(50) !>(gate:(chat-as-tg:orr full)))
   ==
 ++  test-story-text
