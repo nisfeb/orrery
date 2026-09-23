@@ -177,11 +177,11 @@ ok('the last pass is summarised with its counts, its failures with their notes, 
   && execSettings.includes('The auspex desk is not installed') && execSettings.includes('the calendar road is refused: veto'));
 ok('an executor that never ran shows the card without a last line, and one that only looked says nothing was done', !render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, {}).includes('Last looked')
   && render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, { at: '2026-09-21T06:31:59Z', acted_at: null, missing: [], notes: [] }).includes('Last looked 2026-09-21 06:31:59. Nothing done yet.'));
-const calLast = { at: '2026-09-23T14:10:35Z', acted_at: '2026-09-23T14:10:35Z', events: 12, made: 1, rows: 5, cancelled: 0, unknown: ['Moon walk: rule lunar'] };
+const calLast = { at: '2026-09-23T14:10:35Z', acted_at: '2026-09-23T14:10:35Z', events: 12, made: 1, rows: 5, cancelled: 0 };
 const calSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, execLast, {}, {}, {}, {}, calLast);
-ok('the executor card says what the calendar events reader did and names the rules it could not read',
+ok('the executor card says what the calendar events reader did',
   calSettings.includes('Calendar events read 2026-09-23 14:10:35: 12 on the calendar. Last written 2026-09-23 14:10:35: 1 bodies made, 5 facts, 0 cancelled.')
-  && calSettings.includes('not read: Moon walk: rule lunar') && !execSettings.includes('Calendar events read'));
+  && !execSettings.includes('Calendar events read'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")

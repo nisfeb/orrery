@@ -1268,7 +1268,7 @@ check('the repeat is an activity with its cadence, its schedule, an organizer an
       and refs(act, 'organizer') == ['person/me'] and dictish(aattrs.get('next')).get('value') == iso(datetime.fromtimestamp(was[0] / 1000, timezone.utc))
       and dictish(aattrs.get('next')).get('until') == iso(datetime.fromtimestamp(was[0] / 1000, timezone.utc) + timedelta(minutes=60)), aattrs)
 cal_last = dictish(curl('GET', API + '/calendar/last')[1])
-check('the record counts the events, the bodies made and the rows, and knows every rule', cal_last.get('made', 0) >= 1 and cal_last.get('rows', 0) >= 5 and cal_last.get('unknown') == [] and bool(cal_last.get('acted_at')), cal_last)
+check('the record counts the events, the bodies made and the rows', cal_last.get('made', 0) >= 1 and cal_last.get('rows', 0) >= 5 and bool(cal_last.get('acted_at')), cal_last)
 code, d = curl('GET', API + '/calendar/last', jar=None)
 check('the record is the owner\'s', code == 403, (code, d))
 n_rows = len(list(rows_of(sit)))

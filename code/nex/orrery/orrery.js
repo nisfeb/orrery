@@ -288,7 +288,6 @@
     if (cal.at) {
       out += '<p class="muted">Calendar events read ' + fmtTime(cal.at) + ': ' + (cal.events || 0) + ' on the calendar.' + (cal.acted_at ? ' Last written ' + fmtTime(cal.acted_at) + ': ' +
         (cal.made || 0) + ' bodies made, ' + (cal.rows || 0) + ' facts, ' + (cal.cancelled || 0) + ' cancelled.' : ' Nothing written yet.') + '</p>';
-      (cal.unknown || []).forEach(function (n) { out += '<p class="bad">not read: ' + esc(n) + '</p>'; });
     }
     return out + '</div>';
   }

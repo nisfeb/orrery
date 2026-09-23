@@ -4480,19 +4480,28 @@
   (run-mirror-ops u.base.cal ops tally)
 ::  +events-pass: the calendar events reader (version 47): the store's
 ::  events as situations and activities, the way the phone client's
-::  calendar pipe wrote them, so that pipe can be switched off. The lib
-::  plans (+plan-events) against what the ship already wrote
+::  calendar pipe wrote them, so that pipe can be switched off. When
+::  each happens is read from the calendar's own order index (its
+::  cache grub, clammed here by shape), so every rule kind the
+::  calendar knows is covered by its own code. The lib plans
+::  (+plan-events) against what the ship already wrote
 ::  (calendar-seen.json); the ops go through the writer; the record is
 ::  calendar-events-last.json. Nothing when the store was not turned
-::  this pass. The seen map only grows, a key per occurrence written;
-::  ponytail: a busy calendar adds a few thousand keys a year, prune by
-::  the ms in the key when it shows.
+::  this pass, or the index cannot be read. The seen map only grows, a
+::  key per occurrence written; ponytail: a busy calendar adds a few
+::  thousand keys a year, prune by the ms in the key when it shows.
 ::
 ++  events-pass
   |=  cal=exec-cal
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?~  store.cal  (pure:m ~)
+  ?~  base.cal  (pure:m ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base.cal %'order.calendar-cache'] ~)
+  =/  cache=(unit cal-cache:orr)
+    ?.  ?=([~ %file *] vw)  ~
+    (mole |.(;;(cal-cache:orr (sang-noun:tarball sang.u.vw))))
+  ?~  cache  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
@@ -4504,7 +4513,7 @@
     %+  murn  ?:(?=([%o *] seen-json) ~(tap by p.seen-json) ~)
     |=([k=@t v=json] ?:(?=([%s *] v) `[k p.v] ~))
   =/  events=(list cal-event:orr)  (events-of:orr u.store.cal)
-  =/  plan=event-plan:orr  (plan-events:orr events all multi now seen tz)
+  =/  plan=event-plan:orr  (plan-events:orr events order.u.cache all multi now seen tz)
   ;<  n=@ud  bind:m  (file-ops-on ops.plan /exec)
   ;<  ~  bind:m
     ?:  =(seen seen.plan)  (pure:(fiber:fiber:nexus ,~) ~)
@@ -4514,7 +4523,6 @@
   =/  saw=(list [@t json])
     :~  ['at' (en-time:orr now)]
         ['events' (numb:enjs:format (lent events))]
-        ['unknown' a+(turn unknown.plan |=(x=@t `json`s+x))]
     ==
   ?:  &(!active ?=([%o *] last) !=(~ p.last))
     (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] [%o (~(gas by p.last) saw)]])

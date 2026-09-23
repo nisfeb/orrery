@@ -209,7 +209,7 @@ A release that raises the consent prompt leaves the new roads refused until the 
 
 ### Version 47's owner steps
 
-None. Version 47 reads the calendar's events into situations and activities on the ship, inside the executor's pass, the way a phone client's calendar pipe did: switch that pipe off in the client once the version is installed, or every event is written twice. Bodies the client already wrote are found by the uid alias and the title, so nothing is migrated. The record is `GET /api/calendar/last` and the Executor card. No new road: the executor already reads the calendar's store.
+None. Version 47 reads the calendar's events into situations and activities on the ship, inside the executor's pass, the way a phone client's calendar pipe did: switch that pipe off in the client once the version is installed, or every event is written twice. Bodies the client already wrote are found by the uid on their rows' source and by the title, so nothing is migrated. The record is `GET /api/calendar/last` and the Executor card. No new road: the executor already reads the calendar's store, and the order index it now reads too is under the same desk.
 
 ### Version 46's owner steps
 
