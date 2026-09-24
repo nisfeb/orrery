@@ -3100,8 +3100,10 @@
       sent=@da  prev=(unit @uv)  attachments=(list [name=@t size=@ud mime=@t hash=@uv])
   ==
 +$  mail-stored  [%2 msg=[u=mail-unsigned sig=@ux] verdict=?(%verified %unverified %forged)]
-+$  mail-meta    [%2 read=(set @uv) archived=? labels=(set @tas) direct=?]
-+$  mail-meta-1  [%1 read=(set @uv) archived=? labels=(set @tas) direct=? bcc=(map @uv (set @p))]
+::  a thread's meta, whatever its version: every shape auspex has had
+::  (%0 to %3) opens with the version, the read set and archived, and
+::  archived is all the reader asks
++$  mail-meta    [ver=@ read=* archived=? rest=*]
 ::  one message as the reader sees it: its thread, its id (the sham of
 ::  the unsigned, as auspex names it), who, what, when, what it answers
 ::

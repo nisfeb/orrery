@@ -3891,7 +3891,9 @@
 ::  per message id, archived threads left out. A thread's directory is
 ::  its id; its meta file says whether it is archived; its msg subtree
 ::  holds the copies, files under directories that are the reply
-::  ancestry (auspex's +collect-node).
+::  ancestry (auspex's +collect-node). The meta is clammed by its
+::  first three fields only, so a version auspex adds does not turn
+::  archived threads back on.
 ::
 ++  mail-messages
   |=  b=ball:tarball
@@ -3906,11 +3908,8 @@
     =/  c=(unit [=sang:tarball gain=? bang=(unit tang)])  (~(get by contents.u.fil.kid) %meta)
     ?~  c  |
     ?:  (is-boom:tarball sang.u.c)  |
-    =/  n=*  (sang-noun:tarball sang.u.c)
-    =/  m2=(unit mail-meta:orr)  (mole |.(;;(mail-meta:orr n)))
-    ?^  m2  archived.u.m2
-    =/  m1=(unit mail-meta-1:orr)  (mole |.(;;(mail-meta-1:orr n)))
-    ?~(m1 | archived.u.m1)
+    =/  mm=(unit mail-meta:orr)  (mole |.(;;(mail-meta:orr (sang-noun:tarball sang.u.c))))
+    ?~(mm | archived.u.mm)
   ?:  archived  $(threads t.threads)
   =/  sub=(unit ball:tarball)  (~(get by dir.kid) %msg)
   ?~  sub  $(threads t.threads)
