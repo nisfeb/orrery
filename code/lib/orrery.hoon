@@ -1772,7 +1772,7 @@
 ++  de-config
   |=  j=json
   ^-  config
-  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e &))
       =/(u (gs j 'url') ?:(=('' u) 'https://openrouter.ai/api/v1' u))
       =/(m (gs j 'model') ?:(=('' m) 'moonshotai/kimi-k3' m))
       (gs j 'api_key')
@@ -3128,7 +3128,7 @@
 ++  de-mail-config
   |=  j=json
   ^-  mail-config
-  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e &))
       (max 1 (min 1.440 (fall (gn j 'poll_minutes') 10)))
       (min 720 (fall (gn j 'backfill_hours') 720))
       (hundredths (gj j 'gate') 30)
@@ -3176,7 +3176,7 @@
     |=  [k=@t v=json]
     ^-  (unit [@t @t])
     ?.(?=([%s *] v) ~ `[k p.v])
-  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e &))
       (gs j 'token')
       (gs j 'secret')
       =/(u (gs j 'api_url') ?:(=('' u) 'https://api.telegram.org' u))
@@ -3319,7 +3319,7 @@
     |=  [k=@t v=json]
     ^-  (unit [@t @t])
     ?.(?=([%s *] v) ~ `[(ship-key k) p.v])
-  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e |))
+  :*  =/(e (gj j 'enabled') ?:(?=([%b *] e) p.e &))
       (names 'dms' whom-key)
       (names 'channels' |=(t=@t (lower (trim-cord t))))
       people
@@ -3330,7 +3330,7 @@
       (hundredths (gj j 'escalate') 60)
       (fall (gn j 'max_daily_messages') 500)
       =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
-      =/(r (gj j 'send_dms') ?:(?=([%b *] r) p.r |))
+      =/(r (gj j 'send_dms') ?:(?=([%b *] r) p.r &))
   ==
 ++  en-chat-config
   |=  c=chat-config
@@ -3431,20 +3431,22 @@
 ++  chat-rows
   |=  [changes=json cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
-  (conv-rows changes dms.cfg cfg floor our)
+  (conv-rows changes dms.cfg & cfg floor our)
 ++  channel-rows
   |=  [changes=json cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
-  (conv-rows changes channels.cfg cfg floor our)
+  (conv-rows changes channels.cfg | cfg floor our)
 ++  conv-rows
-  |=  [changes=json picked=(set @t) cfg=chat-config floor=@da our=@t]
+  |=  [changes=json picked=(set @t) any=? cfg=chat-config floor=@da our=@t]
   ^-  (list tg-msg)
   ?.  ?=([%o *] changes)  ~
   %-  zing
   %+  turn  ~(tap by p.changes)
   |=  [whom=@t bag=json]
   ^-  (list tg-msg)
-  ?.  (~(has in picked) whom)  ~
+  ::  no DM picked means every DM (any); a channel is read only when
+  ::  picked, since a group's channels are not the owner's own talk
+  ?.  |(&(any =(~ picked)) (~(has in picked) whom))  ~
   ?.  ?=([%o *] bag)  ~
   %-  zing
   %+  turn  ~(tap by p.bag)

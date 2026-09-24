@@ -97,7 +97,7 @@
           [%fall %& [/ %'clients.json'] [[/ %json] [%o ~]]]
           ::  the on-ship generator: its settings (the key lives here and
           ::  is never served) and what its last pass did
-          [%fall %& [/ %'generator.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'generator.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'generator-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'gen.sig'] [[/ %sig] ~]]
           ::  reconcile: the passes of orrery-utils' reconcile.py on the
@@ -108,7 +108,7 @@
           ::  and webhook secret, never served; the context window, the
           ::  last update handled, the business connections checked, and
           ::  the inbox the webhook writes into
-          [%fall %& [/ %'telegram.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'telegram.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'telegram-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'telegram-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'telegram-connections.json'] [[/ %json] [%o ~]]]
@@ -126,13 +126,13 @@
           [%fall %& [/ %'calendar-events-last.json'] [[/ %json] [%o ~]]]
           ::  the chat reader (version 39): its settings, its record, the
           ::  ids it has read, its window, and the fiber that polls
-          [%fall %& [/ %'chat.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'chat.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat.sig'] [[/ %sig] ~]]
           ::  the mail reader and the daily brief (version 52)
-          [%fall %& [/ %'mail.json'] [[/ %json] [%o (my ~[['enabled' b+|]])]]]
+          [%fall %& [/ %'mail.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'mail-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'mail-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'mail-recent.json'] [[/ %json] [%o ~]]]
@@ -3624,7 +3624,7 @@
   =.  unpicked.tally
     %-  lent
     %+  skip  named
-    |=(k=@t |((~(has in dms.cfg) k) (~(has in channels.cfg) k)))
+    |=(k=@t |(=(~ dms.cfg) (~(has in dms.cfg) k) (~(has in channels.cfg) k)))
   =.  own.tally
     ?:  read-own.cfg  0
     =/  with=@ud

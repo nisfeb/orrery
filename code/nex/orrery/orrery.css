@@ -72,3 +72,17 @@ ul.picked, ul.matches { list-style: none; padding: 0; margin: 0 0 .5rem 0; }
 ul.picked li, ul.matches li { padding: .15rem 0; }
 ul.matches { max-height: 14rem; overflow-y: auto; }
 button.small { font-size: .85em; padding: .1rem .4rem; margin-left: .3rem; }
+
+.graph-bar { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: .5rem; font-size: .9em; }
+.graph-bar input[type=text], .graph-bar input:not([type]) { padding: .3rem .5rem; border: 1px solid var(--line); border-radius: 6px; min-width: 14rem; }
+.graph { display: grid; grid-template-columns: 1fr 22rem; gap: 1rem; min-height: 70vh; }
+.graph canvas { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 8px; background: var(--card); touch-action: none; cursor: grab; }
+#graph-pane { margin: 0; overflow: auto; max-height: 70vh; }
+#graph-pane h2 { margin-top: 0; }
+#graph-pane h3 { font-size: .9rem; color: var(--muted); margin: 1rem 0 .3rem; }
+#graph-pane th { width: 38%; font-weight: 600; }
+ul.links, ul.legend { list-style: none; padding: 0; margin: 0; }
+ul.links li { padding: .2rem 0; border-bottom: 1px solid var(--line); }
+ul.legend { display: flex; flex-wrap: wrap; gap: .5rem .9rem; margin-top: 1rem; font-size: .85em; color: var(--muted); }
+ul.legend i { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .3em; }
+@media (max-width: 800px) { .graph { grid-template-columns: 1fr; } .graph canvas { height: 55vh; } }

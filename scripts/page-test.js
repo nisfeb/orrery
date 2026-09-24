@@ -46,20 +46,21 @@ let n = 0;
 function ok(label, cond) { n += 1; assert.ok(cond, label); console.log('  ok   ' + label); }
 
 const bodies = render.bodies(state);
-ok('bodies are grouped by kind', bodies.indexOf('<h2>person</h2>') >= 0 && bodies.indexOf('<h2>person</h2>') < bodies.indexOf('<h2>situation</h2>') && bodies.includes('<h2>thing</h2>'));
-ok('every body links to its view', bodies.includes('href="#body/person/me"') && bodies.includes('href="#body/thing/subaru"'));
-ok('names are escaped', !bodies.includes('<b>Subaru</b>') && bodies.includes('&lt;b&gt;Subaru&lt;/b&gt;'));
-ok('open situations are listed', bodies.includes('situation/2026-09-16-breakdown'));
-ok('open situations show their names with the id as subtext', bodies.includes('>Dinner at eight') && bodies.indexOf('<h2>Open situations</h2>') < bodies.indexOf('Dinner at eight') && bodies.indexOf('Dinner at eight') < bodies.indexOf('<span class="id">situation/2026-09-20-dinner</span>'));
-ok('open situations come soonest first, undated last', bodies.indexOf('>Dinner at eight') < bodies.indexOf('>breakdown') && bodies.indexOf('>breakdown') < bodies.indexOf('<h2>person</h2>'));
+ok('the bodies view is a graph with a pane and a finder', bodies.includes('<canvas id="graph"') && bodies.includes('id="graph-pane"') && bodies.includes('id="graph-find"') && bodies.includes('id="graph-past"'));
+const g = render.graphOf(state, false), gp = render.graphOf(state, true);
+const tiny = render.graphOf({ bodies: [{ id: 'thing/x', kind: 'thing', name: 'x', attrs: { location: { value: { ref: 'place/y' } }, owners: [{ value: { ref: 'person/me' } }, { value: { ref: 'place/y' } }] }, involved: [] }, { id: 'place/y', kind: 'place', name: 'y', attrs: { things: [{ value: { ref: 'thing/x' } }] }, involved: [] }, { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] }] }, false);
+ok('every body is a node, each ref attribute an edge, an involvement an edge, and a pair with one attribute one edge',
+  g.nodes.some(function (n) { return n.id === 'person/me'; }) && g.edges.some(function (e) { return e.attr === 'involved' && e.from === 'person/me' && e.to === 'situation/2026-09-16-breakdown'; })
+  && tiny.edges.length === 4 && tiny.byId['thing/x'].degree === 4 && tiny.edges.filter(function (e) { return e.attr === 'location'; }).length === 1);
+ok('a closed situation is off the graph until past is asked for', !g.byId['situation/2026-09-01-preop'] && !!gp.byId['situation/2026-09-01-preop']);
+const me = g.byId['person/me'];
+ok('the pane names a body, its attributes and its connections, escaped', me && render.nodePane(me, g).includes('href="#body/person/me"') && render.nodePane(g.byId['thing/subaru'], g).includes('&lt;b&gt;Subaru&lt;/b&gt;') && !render.nodePane(g.byId['thing/subaru'], g).includes('<b>Subaru</b>'));
+ok('an edge pane names both ends and the attribute', g.edges.length > 0 && render.edgePane(g.edges[0], g).includes('data-pick="' + g.edges[0].from + '"') && render.edgePane(g.edges[0], g).includes(g.edges[0].attr));
 ok('a situation phase comes from its times, not a stored guess', render.phase({ attrs: { status: { value: 'under way' }, starts: { value: '2026-12-05T19:00:00Z' }, ends: { value: '2026-12-05T20:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'upcoming'
   && render.phase({ attrs: { starts: { value: '2026-09-18T11:00:00Z' }, ends: { value: '2026-09-18T13:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'under way'
   && render.phase({ attrs: { starts: { value: '2026-09-18T11:00:00Z' }, ends: { value: '2026-09-18T11:30:00Z' } } }, '2026-09-18T12:00:00Z') === 'over'
   && render.phase({ attrs: { status: { value: 'closed' }, ends: { value: '2099-01-01T00:00:00Z' } } }, '2026-09-18T12:00:00Z') === 'closed'
   && render.phase({ attrs: {} }, '2026-09-18T12:00:00Z') === 'open');
-ok('the open situations list shows the phase', bodies.includes('>Dinner at eight <span class="muted">upcoming, '));
-ok('a closed situation folds under past', bodies.includes('<summary>past situations (1)</summary>') && bodies.indexOf('situation/2026-09-01-preop') > bodies.indexOf('<details class="past">'));
-ok('an open situation is not under past', bodies.indexOf('situation/2026-09-16-breakdown') < bodies.indexOf('<details class="past">'));
 
 const body = render.body(view);
 ok('the body view names the body', body.includes('the Subaru') && body.includes('thing/subaru'));

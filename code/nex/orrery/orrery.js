@@ -98,41 +98,79 @@
     return out + '</div>';
   }
 
-  function bodies(state) {
-    var byKind = Object.create(null);
-    (state.bodies || []).forEach(function (b) { (byKind[b.kind] = byKind[b.kind] || []).push(b); });
-    var kinds = Object.keys(byKind).sort();
-    var out = '<h1>Bodies</h1>';
-    if (state.situations && state.situations.length) {
-      out += '<div class="card"><h2>Open situations</h2>' + situationCards(state.situations, state) + '</div>';
-    }
-    function card(b) {
-      var n = Object.keys(b.attrs || {}).length;
-      return '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) +
-        (b.ship ? ' <span class="muted">' + esc(b.ship) + '</span>' : '') +
-        '<span class="id">' + esc(b.id) + (n ? ' &middot; ' + n + ' attr' + (n === 1 ? '' : 's') : '') + '</span></a>';
-    }
-    function closed(b) {
-      var st = b.attrs && b.attrs.status;
-      return !!(st && !Array.isArray(st) && st.value === 'closed');
-    }
-    kinds.forEach(function (k) {
-      var all = byKind[k].sort(function (a, b) { return a.id < b.id ? -1 : 1; });
-      // a situation that is over stays on the ship with its timeline, but it
-      // is not something to look at every day: it folds under "past"
-      var past = k === 'situation' ? all.filter(closed) : [];
-      var live = k === 'situation' ? all.filter(function (b) { return !closed(b); }) : all;
-      out += '<h2>' + esc(k) + '</h2><div class="bodies">';
-      live.forEach(function (b) { out += card(b); });
-      out += '</div>';
-      if (past.length) {
-        out += '<details class="past"><summary>past situations (' + past.length + ')</summary><div class="bodies">';
-        past.forEach(function (b) { out += card(b); });
-        out += '</div></details>';
-      }
+  // the bodies view (version 58): every body a node, every ref
+  // attribute an edge, laid out in three dimensions and drawn on a
+  // canvas; a click picks a node or an edge and the pane beside it
+  // says what the ship knows. The list a hundred bodies made was not
+  // something to read; the shape of the connections is.
+  var KIND_COLORS = { person: '#f9a804', place: '#3b82f6', thing: '#10b981', org: '#8b5cf6', situation: '#ef4444', activity: '#f97316', note: '#6b7280' };
+  function graphOf(state, showPast) {
+    var nodes = [], byId = Object.create(null), edges = [], seen = Object.create(null);
+    (state.bodies || []).forEach(function (b) {
+      var st = b.attrs && b.attrs.status, closed = !!(st && !Array.isArray(st) && (st.value === 'closed' || st.value === 'cancelled'));
+      if (b.kind === 'situation' && closed && !showPast) return;
+      var n = { id: b.id, kind: b.kind, name: b.name || b.id, body: b, closed: closed, degree: 0 };
+      nodes.push(n); byId[b.id] = n;
     });
-    if (!kinds.length) out += '<p class="muted">Nothing observed yet.</p>';
+    function edge(from, to, attr, at) {
+      if (!byId[from] || !byId[to] || from === to) return;
+      var key = from < to ? from + '|' + to + '|' + attr : to + '|' + from + '|' + attr;
+      if (seen[key]) return;
+      seen[key] = true;
+      edges.push({ from: from, to: to, attr: attr, at: at });
+      byId[from].degree += 1; byId[to].degree += 1;
+    }
+    nodes.forEach(function (n) {
+      Object.keys(n.body.attrs || {}).forEach(function (a) {
+        var rows = n.body.attrs[a];
+        (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
+          if (r && r.value && typeof r.value === 'object' && r.value.ref) edge(n.id, r.value.ref, a, r.at);
+        });
+      });
+      (n.body.involved || []).forEach(function (sid) { edge(n.id, sid, 'involved', ''); });
+    });
+    return { nodes: nodes, edges: edges, byId: byId };
+  }
+  function bodies(state) {
+    var n = (state.bodies || []).length;
+    var out = '<h1>Bodies <span class="muted">' + n + '</span></h1>' +
+      '<div class="graph-bar"><input id="graph-find" placeholder="find a body by name" aria-label="find a body">' +
+      '<label class="box"><input type="checkbox" id="graph-past"> past situations</label>' +
+      '<span class="muted">drag to turn, wheel to zoom, click a body or a line</span></div>' +
+      '<div class="graph"><canvas id="graph" aria-label="the bodies and their connections"></canvas>' +
+      '<aside id="graph-pane" class="card"><p class="muted">Nothing picked. Click a body or a line between two.</p>' +
+      '<ul class="legend">' + Object.keys(KIND_COLORS).map(function (k) { return '<li><i style="background:' + KIND_COLORS[k] + '"></i>' + esc(k) + '</li>'; }).join('') + '</ul></aside></div>';
+    if (!n) out += '<p class="muted">Nothing observed yet.</p>';
     return out;
+  }
+  // what the pane says of a node: the body's current attributes and its
+  // connections, each a link that picks the other end
+  function nodePane(n, g) {
+    var out = '<h2>' + esc(n.kind) + '</h2><p><strong>' + esc(n.name) + '</strong> <a class="muted" href="#body/' + esc(n.id) + '">' + esc(n.id) + ' &rarr;</a></p>';
+    var attrs = Object.keys(n.body.attrs || {}).sort();
+    if (attrs.length) {
+      out += '<table><tbody>';
+      attrs.forEach(function (a) {
+        var rows = n.body.attrs[a];
+        (Array.isArray(rows) ? rows : [rows]).forEach(function (r) { if (r) out += '<tr><th>' + esc(a) + '</th><td>' + fmtValue(r.value) + '</td></tr>'; });
+      });
+      out += '</tbody></table>';
+    }
+    var links = g.edges.filter(function (e) { return e.from === n.id || e.to === n.id; });
+    if (links.length) {
+      out += '<h3>Connections</h3><ul class="links">';
+      links.forEach(function (e) {
+        var other = e.from === n.id ? e.to : e.from, o = g.byId[other];
+        out += '<li><span class="muted">' + esc(e.attr) + '</span> <a href="#" data-pick="' + esc(other) + '">' + esc(o ? o.name : other) + '</a></li>';
+      });
+      out += '</ul>';
+    }
+    return out;
+  }
+  function edgePane(e, g) {
+    var a = g.byId[e.from], b = g.byId[e.to];
+    return '<h2>connection</h2><p><a href="#" data-pick="' + esc(e.from) + '">' + esc(a ? a.name : e.from) + '</a> <span class="muted">' + esc(e.attr) + '</span> <a href="#" data-pick="' + esc(e.to) + '">' + esc(b ? b.name : e.to) + '</a></p>' +
+      (e.at ? '<p class="muted">since ' + fmtTime(e.at) + '</p>' : '');
   }
 
   // the state rides along for the names, phases and open-action counts of
@@ -353,7 +391,7 @@
     var people = c.people ? JSON.stringify(c.people, null, 2) : '{}';
     var out = '<div class="card"><h2>Chat</h2><div id="chat">' +
       '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the Tlon DMs and channels below every few minutes</label></p>' +
-      '<h3>DMs and group DMs</h3>' + pickedList('dms', c.dms || []) + (dms.note ? '<p class="muted">' + esc(dms.note) + '</p>' : picker('dms', 'DM')) +
+      '<h3>DMs and group DMs <span class="muted">(none picked: every DM)</span></h3>' + pickedList('dms', c.dms || []) + (dms.note ? '<p class="muted">' + esc(dms.note) + '</p>' : picker('dms', 'DM')) +
       '<h3>Channels</h3>' + pickedList('channels', c.channels || []) + (channels.note ? '<p class="muted">' + esc(channels.note) + '</p>' : picker('channels', 'channel')) +
       '<p><label class="field wide">people (ship to body id, JSON; a person body with a ship needs no row) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +
       '<p><label class="box"><input type="checkbox" name="read_own"' + (c.read_own ? ' checked' : '') + '> read my own messages too</label> ' +
@@ -492,12 +530,161 @@
   var render = {
     phase: phase,
     bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, esc: esc, fmtValue: fmtValue,
-    seg: seg, route: route, sseEvent: sseEvent,
+    seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
   if (typeof document === 'undefined') { return; }
 
   // ---- the app ----
+
+  // ---- the graph: a force layout in three dimensions, drawn on a
+  // canvas, turned by dragging. Positions live across refreshes so the
+  // beacon's redraw does not scatter what the owner was looking at.
+  // ponytail: the repulsion is every pair, fine to a thousand bodies;
+  // a grid when it shows.
+  var graphPos = Object.create(null), graphView = { rx: -0.35, ry: 0.6, zoom: 1, picked: null, past: false, spin: true }, graphTimer = null, graphState = null;
+  function mountGraph(state) {
+    graphState = state;
+    var canvas = document.getElementById('graph');
+    if (!canvas) return;
+    var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past');
+    pastBox.checked = graphView.past;
+    var g = graphOf(state, graphView.past), ctx = canvas.getContext('2d');
+    var ids = Object.create(null);
+    g.nodes.forEach(function (n, i) {
+      ids[n.id] = true;
+      if (!graphPos[n.id]) {
+        var t = i * 2.399, r = 120 + 60 * Math.sqrt(i);
+        graphPos[n.id] = { x: r * Math.cos(t), y: (i % 7 - 3) * 40, z: r * Math.sin(t), vx: 0, vy: 0, vz: 0 };
+      }
+      n.p = graphPos[n.id];
+    });
+    Object.keys(graphPos).forEach(function (id) { if (!ids[id]) delete graphPos[id]; });
+    var steps = 0, hot = 160, drag = null, moved = false, proj = [];
+    function step() {
+      if (steps >= hot) return;
+      steps += 1;
+      var k = 0.02 * (1 - steps / hot) + 0.002;
+      for (var i = 0; i < g.nodes.length; i++) {
+        var a = g.nodes[i].p;
+        for (var j = i + 1; j < g.nodes.length; j++) {
+          var b = g.nodes[j].p, dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z, d2 = dx * dx + dy * dy + dz * dz + 1, f = 9000 / d2;
+          if (f > 40) f = 40;
+          var d = Math.sqrt(d2);
+          dx = dx / d * f; dy = dy / d * f; dz = dz / d * f;
+          a.vx += dx; a.vy += dy; a.vz += dz; b.vx -= dx; b.vy -= dy; b.vz -= dz;
+        }
+        a.vx -= a.x * 0.01; a.vy -= a.y * 0.01; a.vz -= a.z * 0.01;
+      }
+      g.edges.forEach(function (e) {
+        var a = g.byId[e.from].p, b = g.byId[e.to].p, dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01, f = (d - 90) * 0.02;
+        dx = dx / d * f; dy = dy / d * f; dz = dz / d * f;
+        a.vx += dx; a.vy += dy; a.vz += dz; b.vx -= dx; b.vy -= dy; b.vz -= dz;
+      });
+      g.nodes.forEach(function (n) {
+        var p = n.p;
+        p.x += p.vx * k * 10; p.y += p.vy * k * 10; p.z += p.vz * k * 10;
+        p.vx *= 0.6; p.vy *= 0.6; p.vz *= 0.6;
+      });
+    }
+    function size() {
+      var w = canvas.clientWidth || 600, h = canvas.clientHeight || 480, dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+      return { w: w, h: h, dpr: dpr };
+    }
+    function project(p, s) {
+      var cy = Math.cos(graphView.ry), sy = Math.sin(graphView.ry), cx = Math.cos(graphView.rx), sx = Math.sin(graphView.rx);
+      var x = p.x * cy + p.z * sy, z = -p.x * sy + p.z * cy, y = p.y * cx - z * sx; z = p.y * sx + z * cx;
+      var f = 700 / (700 + z), scale = graphView.zoom * Math.min(s.w, s.h) / 700;
+      return { x: s.w / 2 + x * f * scale, y: s.h / 2 + y * f * scale, f: f, z: z };
+    }
+    function draw() {
+      var s = size();
+      ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+      ctx.clearRect(0, 0, s.w, s.h);
+      proj = g.nodes.map(function (n) { return project(n.p, s); });
+      var pickedId = graphView.picked && graphView.picked.id, pickedEdge = graphView.picked && graphView.picked.attr ? graphView.picked : null;
+      var near = Object.create(null);
+      if (pickedId) g.edges.forEach(function (e) { if (e.from === pickedId) near[e.to] = true; if (e.to === pickedId) near[e.from] = true; });
+      g.edges.forEach(function (e) {
+        var a = proj[g.nodes.indexOf(g.byId[e.from])], b = proj[g.nodes.indexOf(g.byId[e.to])];
+        var lit = pickedEdge === e || e.from === pickedId || e.to === pickedId;
+        ctx.strokeStyle = lit ? '#101541' : 'rgba(16,21,65,' + (0.12 + 0.25 * Math.min(a.f, b.f)) + ')';
+        ctx.lineWidth = lit ? 2 : 1;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        if (lit) { ctx.fillStyle = '#6b6f80'; ctx.font = '11px system-ui'; ctx.fillText(e.attr, (a.x + b.x) / 2 + 4, (a.y + b.y) / 2 - 4); }
+      });
+      var order = g.nodes.map(function (n, i) { return i; }).sort(function (i, j) { return proj[j].z - proj[i].z; });
+      order.forEach(function (i) {
+        var n = g.nodes[i], p = proj[i], r = (4 + Math.min(n.degree, 12) * 0.9) * p.f * graphView.zoom;
+        var dim = pickedId && n.id !== pickedId && !near[n.id];
+        ctx.globalAlpha = dim ? 0.35 : 1;
+        ctx.fillStyle = KIND_COLORS[n.kind] || '#6b7280';
+        if (n.closed) ctx.fillStyle = '#c9cbd4';
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+        if (n.id === pickedId) { ctx.lineWidth = 3; ctx.strokeStyle = '#101541'; ctx.stroke(); }
+        if (n.id === pickedId || near[n.id] || (!pickedId && n.degree >= 4) || g.nodes.length <= 30) {
+          ctx.fillStyle = '#101541'; ctx.font = (n.id === pickedId ? 'bold ' : '') + '12px system-ui';
+          ctx.fillText(n.name.length > 28 ? n.name.slice(0, 27) + '…' : n.name, p.x + r + 3, p.y + 4);
+        }
+        ctx.globalAlpha = 1;
+      });
+    }
+    function loop() {
+      step();
+      if (graphView.spin && !drag) graphView.ry += 0.002;
+      draw();
+      graphTimer = requestAnimationFrame(loop);
+    }
+    function hit(x, y) {
+      var best = null, bd = 12;
+      g.nodes.forEach(function (n, i) { var p = proj[i], d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = n; } });
+      if (best) return best;
+      var be = null, ed = 8;
+      g.edges.forEach(function (e) {
+        var a = proj[g.nodes.indexOf(g.byId[e.from])], b = proj[g.nodes.indexOf(g.byId[e.to])];
+        var l2 = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y); if (!l2) return;
+        var t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / l2));
+        var d = Math.hypot(a.x + t * (b.x - a.x) - x, a.y + t * (b.y - a.y) - y);
+        if (d < ed) { ed = d; be = e; }
+      });
+      return be;
+    }
+    function pick(what) {
+      graphView.picked = what;
+      graphView.spin = !what;
+      if (!what) pane.innerHTML = '<p class="muted">Nothing picked. Click a body or a line between two.</p>';
+      else pane.innerHTML = what.attr ? edgePane(what, g) : nodePane(what, g);
+    }
+    function pos(ev) { var r = canvas.getBoundingClientRect(), t = ev.touches ? ev.touches[0] : ev; return { x: t.clientX - r.left, y: t.clientY - r.top }; }
+    canvas.onmousedown = canvas.ontouchstart = function (ev) { drag = pos(ev); moved = false; };
+    window.onmousemove = window.ontouchmove = function (ev) {
+      if (!drag) return;
+      var p = pos(ev), dx = p.x - drag.x, dy = p.y - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      graphView.ry += dx * 0.008; graphView.rx += dy * 0.008; drag = p;
+    };
+    window.onmouseup = window.ontouchend = function (ev) {
+      if (!drag) return;
+      if (!moved) { var p = drag; pick(hit(p.x, p.y)); }
+      drag = null;
+    };
+    canvas.onwheel = function (ev) { ev.preventDefault(); graphView.zoom = Math.max(0.3, Math.min(4, graphView.zoom * (ev.deltaY > 0 ? 0.9 : 1.1))); };
+    pane.onclick = function (ev) {
+      var a = ev.target.closest('[data-pick]'); if (!a) return;
+      ev.preventDefault(); var n = g.byId[a.dataset.pick]; if (n) pick(n);
+    };
+    find.oninput = function () {
+      var q = find.value.trim().toLowerCase(); if (!q) return;
+      var n = g.nodes.filter(function (n) { return n.name.toLowerCase().indexOf(q) >= 0 || n.id.indexOf(q) >= 0; })[0];
+      if (n) pick(n);
+    };
+    pastBox.onchange = function () { graphView.past = pastBox.checked; unmountGraph(); mountGraph(graphState); };
+    if (graphView.picked) { var again = g.byId[graphView.picked.id]; pick(again || null); }
+    unmountGraph();
+    graphTimer = requestAnimationFrame(loop);
+  }
+  function unmountGraph() { if (graphTimer) cancelAnimationFrame(graphTimer); graphTimer = null; }
   var view = document.getElementById('view');
   var statusEl = document.getElementById('status');
   var countEl = document.getElementById('inbox-count');
@@ -537,11 +724,12 @@
         return s;
       });
     }
+    if (r.name !== 'bodies') unmountGraph();
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
     else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last')]).then(function (d) { var lists = d[10] || {}; view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
-    else p = state().then(function (s) { view.innerHTML = bodies(s); });
+    else p = state().then(function (s) { view.innerHTML = bodies(s); mountGraph(s); });
     // the state view carries every open action, so a view that read it
     // has the count already; only settings and keys ask for it
     p = p.then(function () { return proposed === null ? api('/actions?status=proposed').then(function (a) { return a.length; }) : proposed; }).then(function (n) {
