@@ -30,9 +30,12 @@ def curl(method, url, body=None, jar=None, token=None, timeout=60, headers=()):
     return int(code or 0), data
 
 
+T0 = time.time()
+
+
 def check(label, cond, detail=''):
     count[0] += 1
-    print(('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
+    print('%5.0fs ' % (time.time() - T0) + ('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
     if not cond:
         fails.append(label)
 

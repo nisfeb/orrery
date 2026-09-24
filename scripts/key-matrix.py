@@ -307,7 +307,7 @@ check('involved is empty for a key that cannot see the situation',
 
 print('== actions by kind')
 code, d = todo('POST', '/act', {'kind': 'task', 'title': 'key gate: call the shop', 'about': ['thing/subaru']})
-check('an about outside the kinds reads as no such body', code == 400, d)
+check('an about outside the kinds reads as no such body', code == 400 and str(dictish(d).get('error', '')).startswith('about: no such body'), d)
 code, d = todo('POST', '/act', {'kind': 'task', 'title': 'key gate: call the shop', 'by': 'liar'})
 check('the todo key proposes a task', code == 200 and dictish(d).get('status') == 'approved', d)
 task_id = str(dictish(d).get('id', ''))
@@ -375,13 +375,14 @@ for label, fn in (('clients', lambda: triage('GET', '/clients')),
     check('a key may not reach ' + label, code == 403 and dictish(d).get('error') == 'owner only', (code, d))
 
 print('== the telegram webhook: a key with write, never a read-only one')
-# The dev ship has no bot token, so the route refuses at 400 for the
-# owner and a writing key alike; what is held is that a writing key
-# gets past the gate and a read-only one does not.
+# What is held is that a writing key gets past the key gate and a
+# read-only one does not; Telegram itself may still answer anything
+# (the dev ship's token points at a stub that is usually down).
+GATE_ERRORS = ('forbidden', 'owner only', 'read only key')
 code, d = triage('POST', '/telegram/webhook')
-check('a key with write may register the webhook', code != 403, (code, d))
+check('a key with write gets past the gate to register the webhook', dictish(d).get('error') not in GATE_ERRORS, (code, d))
 code, d = triage('GET', '/telegram/webhook')
-check('a key with write may read what telegram holds', code != 403, (code, d))
+check('a key with write gets past the gate to read what telegram holds', dictish(d).get('error') not in GATE_ERRORS, (code, d))
 code, d = reader('POST', '/telegram/webhook')
 check('a read-only key may not register the webhook', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
 code, d = reader('GET', '/telegram/webhook')

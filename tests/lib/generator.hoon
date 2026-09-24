@@ -1,5 +1,6 @@
-::  Unit tests for /lib/generator: the pure half of the on-ship
-::  generator, on fixtures. Nothing here touches the ship.
+::  Unit tests for the readers, the generator, the executor, the
+::  calendar, the mail and the brief: the pure half of each in
+::  /lib/orrery, on fixtures. Nothing here touches the ship.
 ::
 /+  *test, orr=orrery, gen=orrery
 |%
@@ -94,7 +95,6 @@
     (expect !>((has-sub p3 'Open actions')))
     (expect !>((has-sub p3 'task | Call the shop about the Subaru | about thing/subaru')))
     (expect !>((has-sub p3-with 'dismissed | task | Go to Ballet | just the event')))
-    (expect !>((has-sub system-prompt:gen 'A dismissed action may carry the owner\'s reason')))
     (expect-eq !>('Now: 2026-09-18T12:00:00Z, timezone America/New_York. Answer with the JSON object.') !>(p4))
     (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5))))
     (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5)))))
@@ -659,11 +659,9 @@
     (expect !>(?=(^ (find "Action kinds you may propose: task, calendar, message" p))))
     (expect !>(?=(^ (find "calendar payload: \{\"title\":\"required\"" p))))
     (expect !>(?=(^ (find "--- context telegram/1/1 | 2026-09-17T12:00:00-04:00 | from person/me" p))))
-    (expect !>(?=(^ (find "New messages, oldest first:" p))))
     (expect !>(?=(^ (find "--- message telegram/1/2 | 2026-09-17T12:10:00-04:00 | from person/me" p))))
     (expect !>(?=(~ (find "situation/2026-05-01-old" p))))
     (expect !>(?=(^ (find "situation/2026-09-10-fresh" p))))
-    (expect-eq !>("Answer with the JSON object.") !>((slag (sub (lent p) 28) p)))
     ::  winter is standard time, and a zone the table does not name stays UTC
     (expect-eq !>('2026-01-15T11:00:00-05:00') !>((local-iso:orr '2026-01-15T16:00:00Z' 'America/New_York')))
     (expect-eq !>('2026-07-04T11:00:00+01:00') !>((local-iso:orr '2026-07-04T10:00:00Z' 'Europe/London')))

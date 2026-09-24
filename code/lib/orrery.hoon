@@ -114,7 +114,6 @@
   =/  s=@t  (crip (slag +(u.at) tap))
   ?.  &((ok-kind k) (ok-slug s))  ~
   `[`@tas`k `@ta`s]
-++  make-bid  |=([kind=@tas slug=@ta] ^-(bid (rap 3 kind '/' slug ~)))
 ::  ==  time
 ::
 ::  +unix-secs: seconds since 1970, 0 before it

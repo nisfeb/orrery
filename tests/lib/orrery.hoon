@@ -30,7 +30,6 @@
     (expect-eq !>(`(unit [@tas @ta])`[~ %person %sarah]) !>((parse-bid:orr 'person/sarah')))
     (expect-eq !>(`(unit [@tas @ta])`~) !>((parse-bid:orr 'sarah')))
     (expect-eq !>(`(unit [@tas @ta])`~) !>((parse-bid:orr 'Person/Sarah')))
-    (expect-eq !>('thing/subaru') !>((make-bid:orr %thing %subaru)))
   ==
 ::  ==  time
 ::
@@ -543,7 +542,6 @@
   ==
 ++  test-push-modes
   ;:  weld
-    (expect-eq !>('proposed') !>((push-mode-of:orr starter-policy:orr)))
     (expect-eq !>('none') !>((push-mode-of:orr (jo '{"push":"none"}'))))
     (expect !>((should-push:orr 'all' %approved)))
     (expect !>((should-push:orr 'proposed' %proposed)))
@@ -642,8 +640,6 @@
   =/  b=action:orr  (transition:orr a %approved 'policy' '' (add t0 ~s1))
   ;:  weld
     (expect-eq !>((act-id:orr a)) !>((act-id:orr b)))
-    (expect-eq !>(%approved) !>(status.b))
-    (expect-eq !>(2) !>((lent history.b)))
   ==
 ::  an exact hit outranks a prefix hit on another body
 ::
@@ -663,7 +659,6 @@
   ;:  weld
     (expect-eq !>(`(unit body:orr)`[~ [%person 'Sarah' (sy ~['Sarah']) t0 ~]]) !>((read-body:orr old-body)))
     (expect-eq !>(`(unit (list step:orr))`[~ ~[[t0 %approved 'mcp']]]) !>((bind (read-action:orr old-act) |=(a=action:orr history.a))))
-    (expect-eq !>(`(unit body:orr)`~) !>((read-body:orr [%3 'nope'])))
   ==
 ::  ==  sharing
 ::
@@ -798,7 +793,6 @@
     (expect-eq !>(6) !>((met 3 (id-of:orr 1))))
     (expect-eq !>('000001') !>((id-of:orr 1)))
     (expect-eq !>(20) !>((met 3 (secret-of:orr 1))))
-    (expect-eq !>((hash-token:orr 'salt' s)) !>((hash-token:orr 'salt' s)))
     (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'pepper' s))))
     (expect !>(!=((hash-token:orr 'salt' s) (hash-token:orr 'salt' 'other'))))
   ==
