@@ -161,7 +161,7 @@
     (expect-eq !>(`json`~) !>((gj:orr shown 'api_key')))
     (expect-eq !>(`json`b+&) !>((gj:orr shown 'api_key_set')))
     (expect-eq !>('moonshotai/kimi-k3') !>((gs:orr shown 'model')))
-    (expect-eq !>(|) !>(enabled.bare))
+    (expect-eq !>(&) !>(enabled.bare))
     (expect-eq !>(8.000) !>(max-tokens.bare))
     (expect-eq !>(60) !>(cooldown.bare))
     (expect-eq !>(24) !>(max-daily.bare))
@@ -577,7 +577,7 @@
     '{"enabled": true, "token": "123:abc", "secret": "s", "chats": [1001, "-42"], "people": {"1001": "person/me"}, "gate": 0.3, "escalate": 0.6, "max_daily_messages": 20, "model": "x/y", "public_url": "https://ship.example"}'
   =/  shown=json  (en-tg-config-masked:orr full)
   ;:  weld
-    (expect-eq !>(|) !>(enabled.bare))
+    (expect-eq !>(&) !>(enabled.bare))
     (expect-eq !>('https://api.telegram.org') !>(api-url.bare))
     (expect-eq !>(500) !>(max-daily.bare))
     (expect-eq !>(30) !>(gate.bare))
@@ -704,7 +704,7 @@
     '{"enabled": true, "dms": [" ~sampel-palnet ", "0v4.abcde", ""], "channels": ["chat/~host/general"], "people": {"SAMPEL-PALNET": "person/sam", "~host": "person/me"}, "read_own": true, "poll_minutes": 2, "backfill_hours": 6, "gate": 0.5, "escalate": 70, "max_daily_messages": 9, "model": "x/y"}'
   =/  back=chat-config:orr  (de-chat-config:orr (en-chat-config:orr full))
   ;:  weld
-    (expect-eq !>(|) !>(enabled.c))
+    (expect-eq !>(&) !>(enabled.c))
     (expect-eq !>(5) !>(poll.c))
     (expect-eq !>(24) !>(backfill.c))
     (expect-eq !>(30) !>(gate.c))
@@ -716,7 +716,7 @@
     (expect-eq !>((sy ~['chat/~host/general'])) !>(channels.full))
     (expect-eq !>(`(unit @t)``'person/sam') !>((~(get by people.full) '~sampel-palnet')))
     (expect-eq !>(&) !>(read-own.full))
-    (expect-eq !>(|) !>(send-dms.full))
+    (expect-eq !>(&) !>(send-dms.full))
     (expect-eq !>(2) !>(poll.full))
     (expect-eq !>(50) !>(gate.full))
     (expect-eq !>(70) !>(escalate.full))
