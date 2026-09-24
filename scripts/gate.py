@@ -48,7 +48,7 @@ def wait(label, fn, secs):
         got = fn()
         if got:
             break
-        time.sleep(2)
+        time.sleep(1)
     check(label, bool(got), 'timed out after %ds' % secs)
     return got
 

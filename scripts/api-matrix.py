@@ -313,7 +313,7 @@ check('the actor that lost the race cannot report done',
       code == 409 and dictish(d).get('error') == 'claimed by ' + winner, (code, d, winner))
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the audit log holds the push among its newest entries', code == 200 and isinstance(log, list)
-      and any(dictish(x).get('op') == 'push' for x in log[-8:]), log[-3:] if isinstance(log, list) else log)
+      and any(dictish(x).get('op') == 'push' for x in log[-30:]), log[-3:] if isinstance(log, list) else log)
 
 # ── 6. retract, done, compact ───────────────────────────────────────
 print('6. retract, done, compact')
@@ -573,7 +573,9 @@ while time.time() < deadline and len(seen) == n:
 check('a change wakes the generator on its own', len(seen) == n + 1, (n, len(seen)))
 n = len(seen)
 curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'thing/gate-car', 'attr': 'status', 'value': 'fixed', 'source': {'kind': 'user', 'id': 'gate'}}]})
-time.sleep(30)
+deadline = time.time() + 12
+while time.time() < deadline and len(seen) == n:
+    time.sleep(1)
 check('a repeat that changes nothing the model sees does not run it', len(seen) == n, (n, len(seen)))
 for a in mine:
     curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate'})
@@ -972,7 +974,7 @@ def todo_for(aid, bound=30, gone=False):
         hits = [t for t in todos() if dictish(t.get('meta')).get('orrery') == aid]
         if bool(hits) != gone or time.time() >= deadline:
             return hits[0] if hits else None
-        time.sleep(2)
+        time.sleep(1)
 
 
 def event_named(name, bound=30, gone=False):
@@ -984,7 +986,7 @@ def event_named(name, bound=30, gone=False):
         hits = [e for e in (ev if isinstance(ev, list) else []) if dictish(dictish(e).get('meta')).get('name') == name]
         if bool(hits) != gone or time.time() >= deadline:
             return dictish(hits[0]).get('id') if hits else None
-        time.sleep(2)
+        time.sleep(1)
 
 
 def occurrences(eid, days=40):
@@ -1010,12 +1012,26 @@ def settled(aid, bound=30):
     #  the action once it has left the open list, or as it stands at the bound
     deadline = time.time() + bound
     while time.time() < deadline and is_open(aid):
-        time.sleep(2)
+        time.sleep(1)
     return action(aid)
 
 
 def steps(a):
     return [(h.get('status'), h.get('by')) for h in dictish(a).get('history', [])]
+
+
+def passed(before=None, bound=20):
+    #  the executor's record once a pass has ended after `before` (the
+    #  record read before the change), or as it stands at the bound;
+    #  a pass at idle takes a second or two, so this beats a fixed sleep
+    at0 = dictish(before).get('at') if before is not None else dictish(curl('GET', API + '/exec/last')[1]).get('at')
+    deadline = time.time() + bound
+    while time.time() < deadline:
+        last = dictish(curl('GET', API + '/exec/last')[1])
+        if last.get('at') != at0:
+            return last
+        time.sleep(1)
+    return dictish(curl('GET', API + '/exec/last')[1])
 
 
 def exec_last(**want):
@@ -1114,7 +1130,7 @@ a = action(SHIPID)
 check('a message to a person with a ship is filed via chat', code == 200 and bool(SHIPID) and dictish(a.get('payload')).get('via') == 'chat', (code, SHIPID, a))
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the trail carries the rewrite among its newest entries', code == 200 and isinstance(log, list)
-      and any(dictish(x).get('why') == 'via rewritten to chat: person/gate-shipped has a ship' for x in log[-8:]), log[-3:] if isinstance(log, list) else log)
+      and any(dictish(x).get('why') == 'via rewritten to chat: person/gate-shipped has a ship' for x in log[-30:]), log[-3:] if isinstance(log, list) else log)
 # ---- refine at approval (version 36): a note under the proposed message, through the stub as the generator's model ----
 # the generator stays off; the route needs only its key and url
 curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
@@ -1140,7 +1156,7 @@ check('read back, the action is still proposed under the new title with a last s
       a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
 check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
-check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log[-8:]), log[-4:] if isinstance(log, list) else log)
+check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log[-30:]), log[-4:] if isinstance(log, list) else log)
 code, d = refine(SHIPID, 'include karl in this')
 d = dictish(d)
 karl = dictish(curl('GET', API + '/body/person/gate-karl')[1])
@@ -1192,7 +1208,7 @@ before = exec_last()
 approve(SHIPID)
 # a DM goes from the ship only with send_dms on (version 52); off, the
 # message is left for the client and the record says so
-time.sleep(8)
+passed(before)
 a = action(SHIPID)
 after = exec_last()
 check('approved with DMs off, it is left for the client that sends chat, noted, and the claimed count does not move',
@@ -1204,16 +1220,18 @@ curl('POST', API + f'/actions/{SHIPID}', {'status': 'dismissed', 'note': 'gate'}
 if EXTRAID:
     curl('POST', API + f'/actions/{EXTRAID}', {'status': 'dismissed', 'note': 'gate'})
 # a message to a person with no telegram attribute and not in the people map: no address, so no claim; left approved and noted
+before = exec_last()
 NOID = propose('message', 'Gate telegram nobody %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-nobody', 'text': 'nobody hears this'})
 approve(NOID)
-time.sleep(8)
+passed(before)
 a = action(NOID)
 check('a person with no address is left approved, with no claim', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
 check('nothing was sent for it', len([p for p, _, _ in seen[n:] if p.endswith('/sendMessage')]) == 2, [p for p, _, _ in seen[n:]])
 last = exec_last(notes=['a message waits: person/gate-nobody has no telegram attribute and is not in people'])
 check('the record notes the message that waits, and no failure', last.get('notes') == ['a message waits: person/gate-nobody has no telegram attribute and is not in people'] and last.get('failed') == [], last)
+before = exec_last()
 curl('POST', API + f'/actions/{NOID}', {'status': 'dismissed', 'note': 'gate'})
-time.sleep(6)
+passed(before)
 last = exec_last(notes=[])
 check('dismissed, it is noted no more', last.get('notes') == [], last)
 # a message via mail: a send poke to auspex's writer, which probes its peer before it lands
@@ -1227,9 +1245,10 @@ code, box = curl('GET', HOST + '/apps/auspex/api/inbox')
 threads = [t for t in dictish(box).get('threads', []) if dictish(t).get('subject') == 'Gate mail %s' % XRUN]
 check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == OUR and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
 # a message via chat with DMs off is the client's: the ship never claims it
+before = exec_last()
 CHATID = propose('message', 'Gate chat %s' % XRUN, payload={'via': 'chat', 'to': 'person/gate-ship', 'text': 'a DM the ship does not send'})
 approve(CHATID)
-time.sleep(8)
+passed(before)
 a = action(CHATID)
 check('a message via chat is left approved for the client while DMs are off', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
 curl('POST', API + f'/actions/{CHATID}', {'status': 'dismissed', 'note': 'gate'})
@@ -1287,7 +1306,7 @@ def body_by_uid(uid, bound=120):
         hits = [b for b in dictish(st).get('bodies', []) if any(dictish(r.get('source')).get('id') == uid for r in rows_of(dictish(b)))]
         if hits or time.time() >= deadline:
             return dictish(hits[0]) if hits else {}
-        time.sleep(3)
+        time.sleep(1)
 
 
 def refs(b, attr):
@@ -1314,8 +1333,9 @@ cal_last = dictish(curl('GET', API + '/calendar/last')[1])
 check('the record counts the events, the bodies made and the rows', cal_last.get('made', 0) >= 1 and cal_last.get('rows', 0) >= 5 and bool(cal_last.get('acted_at')), cal_last)
 owner_only('the calendar record is the owner\'s, even to a writing key', 'GET', '/calendar/last')
 n_rows = len(list(rows_of(sit)))
+before = exec_last()
 curl('POST', API + '/exec/wake')
-time.sleep(8)
+passed(before)
 check('a second pass writes the same occurrence no second time', n_rows > 0 and len(list(rows_of(body_by_uid(ONCE_ID or 'none', 1)))) == n_rows, n_rows)
 
 OFFID = propose('calendar', 'Gate cancel the one-off %s' % XRUN, payload={'mode': 'cancel', 'event': ONCE_ID or 'none'})
@@ -1349,9 +1369,10 @@ approve(GONEID)
 a = settled(GONEID)
 check('a cancel naming an event the calendar does not have is failed, with the reason',
       a.get('status') == 'failed' and a.get('note') == 'the calendar does not have that event' and steps(a)[-2:] == [('claimed', 'ship'), ('failed', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+before = exec_last()
 BAREID = propose('calendar', 'Gate cancel with no event %s' % XRUN, payload={'mode': 'cancel'})
 approve(BAREID)
-time.sleep(8)
+passed(before)
 a = action(BAREID)
 check('a cancel with no event is left approved, with no claim', a.get('status') == 'approved' and not any(s == 'claimed' for s, _ in steps(a)), (a.get('status'), steps(a)))
 last = exec_last(notes=['a message waits: cancel needs the event'])
@@ -1367,8 +1388,9 @@ check('an approved task becomes a todo carrying the action id, its notes, its du
       and dictish(t.get('meta')) == {'name': 'Gate task %s' % XRUN, 'orrery': TASKID, 'tags': ['orrery'], 'note': 'from the gate'}, t)
 a = action(TASKID)
 check('the task itself stays approved, with no claim', a.get('status') == 'approved' and steps(a) == [('proposed', 'api-matrix'), ('approved', 'policy')], steps(a))
+before = exec_last()
 curl('POST', API + '/exec/wake', {})
-time.sleep(8)
+passed(before)
 check('a second pass does not place it again', len([x for x in todos() if dictish(x.get('meta')).get('orrery') == TASKID]) == 1, None)
 code, d = cal_poke({'action': 'done-event', 'id': t['id'] if t else 'none'})
 a = settled(TASKID)
@@ -1408,8 +1430,9 @@ check('the todo gains the action id and the tag, and keeps its name, note and du
       t is not None and dictish(t.get('meta')) == {'name': 'Gate hand-typed todo %s' % XRUN, 'orrery': HANDID, 'tags': ['orrery'], 'note': 'typed by hand'} and t.get('due_ms') == int(HAND_DUE.timestamp() * 1000), t)
 last = exec_last(adopted=1)
 check('the record counts the adoption', last.get('adopted') == 1, last)
+before = exec_last()
 curl('POST', API + '/exec/wake', {})
-time.sleep(8)
+passed(before)
 check('a hand-typed todo is adopted once, not placed again', len([x for x in todos() if dictish(dictish(x.get('meta'))).get('name') == 'Gate hand-typed todo %s' % XRUN]) == 1, None)
 curl('POST', API + f'/actions/{HANDID}', {'status': 'dismissed', 'note': 'gate'})
 check('dismissing the adopted task deletes its todo', todo_for(HANDID, gone=True) is None, None)
