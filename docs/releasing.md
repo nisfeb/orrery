@@ -209,7 +209,7 @@ A release that raises the consent prompt leaves the new roads refused until the 
 
 ### Version 59's owner steps
 
-None. `POST /api/read` takes text a client hands the ship to read (the browser extension's page, a note), open to a key with `write`, and the read fiber runs it through the reader's pipeline like a message, the page as every fact's source; settings on the Read card (`/api/read/settings`, on by default, the mail reader's shape), record at `/api/read/last`. No new road.
+None. A task adopted from a todo the owner typed by hand is no longer pushed as "Orrery filed" (it read as the ship proposing the owner's own words). `POST /api/read` takes text a client hands the ship to read (the browser extension's page, a note), open to a key with `write`, and the read fiber runs it through the reader's pipeline like a message, the page as every fact's source; settings on the Read card (`/api/read/settings`, on by default, the mail reader's shape), record at `/api/read/last`. No new road.
 
 ### Version 58's owner steps
 

@@ -35,7 +35,7 @@ T0 = time.time()
 
 def check(label, cond, detail=''):
     count[0] += 1
-    print('%5.0fs ' % (time.time() - T0) + ('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:300]))
+    print('%5.0fs ' % (time.time() - T0) + ('  ok   ' if cond else '  FAIL ') + label + ('' if cond else '   ' + str(detail)[:900]))
     if not cond:
         fails.append(label)
 

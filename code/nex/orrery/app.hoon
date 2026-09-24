@@ -1279,7 +1279,10 @@
   ?:  ex  (note-then-no 'act' 'an action with this id exists')
   ;<  *  bind:m
     (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%2 a]] ~])
+  ::  a task adopted from a todo the owner typed is the owner's own
+  ::  words; telling them of it reads as a proposal they just made
   ;<  ~  bind:m
+    ?:  =('calendar' by.a)  (pure:(fiber:fiber:nexus ,~) ~)
     ?.  (should-push:orr (push-mode-of:orr policy) status.a)  (pure:(fiber:fiber:nexus ,~) ~)
     (push-soft a id)
   ;<  ~  bind:m  (note-by 'act' & '' by.a)
@@ -4116,7 +4119,10 @@
     ==
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
     (tg-read tg ~[[msg (gs:orr item 'who')]] now read-kind:orr schema all)
-  ?:  down
+  ::  a text not read for want of a model (down, or no key set) waits;
+  ::  one the gate judged not worth reading is done with
+  =/  keyless=?  (lien notes.facts |=(n=@t =('no api_key' (end [3 10] n))))
+  ?:  |(down &(!read keyless))
     ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~ `notes.facts)
     (pure:m &)
   ;<  ~  bind:m  (tg-file facts now read-kind:orr)
