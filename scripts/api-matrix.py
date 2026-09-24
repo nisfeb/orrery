@@ -1268,7 +1268,7 @@ def rows_of(b):
             yield dictish(r)
 
 
-def body_by_uid(uid, bound=45):
+def body_by_uid(uid, bound=120):
     deadline = time.time() + bound
     while True:
         code, st = curl('GET', API + '/state')

@@ -5103,10 +5103,10 @@
   ?^  err  (pure:m err)
   ::  the writer's word (version 57): its trail's last entry, once it
   ::  is this send's, says whether the mail went; a reject is a
-  ::  failure with the writer's reason. Five looks a second apart,
-  ::  then the send is taken as gone.
+  ::  failure with the writer's reason. Four looks half a second
+  ::  apart, then the send is taken as gone.
   =/  since=@ud  (ms-of:orr now)
-  =/  tries=@ud  5
+  =/  tries=@ud  4
   |-
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base /tr) %last] ~)
   =/  last=json
@@ -5119,7 +5119,7 @@
     (pure:m ~)
   ?:  =(0 tries)  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
-  ;<  ~  bind:m  (send-wait:io (add now ~s1))
+  ;<  ~  bind:m  (send-wait:io (add now ~s0..8000))
   ;<  ~  bind:m  (take-wake:io ~)
   $(tries (dec tries))
 ::  +poke-calendar: one action to the calendar's store, which is the
