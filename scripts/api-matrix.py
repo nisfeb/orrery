@@ -100,6 +100,9 @@ print('0. clean slate')
 #  telegram and chat sections turn theirs on themselves)
 for r in ('/telegram', '/chat', '/mail', '/generator'):
     curl('PUT', API + r, {'enabled': False})
+#  a DM from the ship needs the kernel's marc, which the dev ship's kernel
+#  lacks; a poke without it wedges the executor, so DMs stay off here
+curl('PUT', API + '/chat', {'send_dms': False})
 #  SIT is keyed on today's date, so a run on the other side of midnight
 #  UTC would leave an earlier day's breakdown open for ever
 code, st0 = curl('GET', API + '/state')
