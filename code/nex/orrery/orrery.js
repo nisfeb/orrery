@@ -436,6 +436,26 @@
     }
     return out + '</div>';
   }
+  function readCard(c, last) {
+    c = c || {}; last = last || {};
+    var out = '<div class="card"><h2>Read</h2><div id="read"><p class="muted">What a client hands the ship to read (a page from the browser extension, a note) goes through the reader like a message: ' +
+      'facts with the page as their source, proposals to approve. A key with write posts it to /api/read.</p>' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on</label> ' +
+      '<label class="field">gate (hundredths) <input name="gate" value="' + esc(c.gate != null ? c.gate : '') + '"></label> ' +
+      '<label class="field">escalate (hundredths) <input name="escalate" value="' + esc(c.escalate != null ? c.escalate : '') + '"></label> ' +
+      '<label class="field">texts per day at most <input name="max_daily_messages" value="' + esc(c.max_daily_messages != null ? c.max_daily_messages : '') + '"></label> ' +
+      '<label class="field">reader model <input name="model" value="' + esc(c.model || '') + '"></label></p>' +
+      '<p><button data-save-read="1">save read</button><button data-read-wake="1">read now</button></p></div>';
+    if (last.at) {
+      out += '<p class="muted">Last read at ' + fmtTime(last.at) + ': read ' + (last.read || 0) + ', filed ' + (last.filed || 0) + '. Read today: ' + (last.read_today || 0) + '.</p>';
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    if (last.down && last.down.at) {
+      out += '<p class="bad">The model could not be read at ' + fmtTime(last.down.at) + '; the text waits and is tried again in five minutes.</p>';
+      (last.down.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
   function briefCard(last) {
     last = last || {};
     var out = '<div class="card"><h2>Daily brief</h2><p class="muted">At seven on your clock the ship mails you the day: the calendar, the actions waiting on you under tags, and the analyst\'s few lines. ' +
@@ -447,8 +467,8 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast, calLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + briefCard(briefLast) +
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast) {
+    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast, calLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -727,7 +747,7 @@
     if (r.name !== 'bodies') unmountGraph();
     if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
     else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last')]).then(function (d) { var lists = d[10] || {}; view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14]); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last'), api('/read/settings'), api('/read/last')]).then(function (d) { var lists = d[10] || {}; view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14], d[15], d[16]); });
     else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
     else p = state().then(function (s) { view.innerHTML = bodies(s); mountGraph(s); });
     // the state view carries every open action, so a view that read it
@@ -862,6 +882,13 @@
       ['poll_minutes', 'backfill_hours', 'gate', 'escalate', 'max_daily_messages'].forEach(function (k) { var n = parseInt(field('#mail', k), 10); mc[k] = isNaN(n) ? null : n; });
       say('saving mail settings');
       post('/mail', mc, 'PUT').then(function () { dirty = false; say('mail saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.saveRead) {
+      var rc = { enabled: !!view.querySelector('#read input[name="enabled"]:checked'), model: field('#read', 'model') };
+      ['gate', 'escalate', 'max_daily_messages'].forEach(function (k) { var n = parseInt(field('#read', k), 10); rc[k] = isNaN(n) ? null : n; });
+      say('saving read settings');
+      post('/read/settings', rc, 'PUT').then(function () { dirty = false; say('read saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.readWake) {
+      post('/read/wake', {}).then(function () { say('reader woken'); setTimeout(function () { refresh(true); }, 8000); }).catch(oops);
     } else if (b.dataset.mailWake) {
       post('/mail/wake', {}).then(function () { say('mail reader woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.briefWake) {

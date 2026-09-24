@@ -3090,6 +3090,10 @@
 ++  telegram-kind  ^-(reader-kind ['telegram' 'telegram' 'telegram/' %'telegram-recent.json' %'telegram-last.json'])
 ++  chat-kind      ^-(reader-kind ['chat' 'chat' 'chat/' %'chat-recent.json' %'chat-last.json'])
 ++  mail-kind      ^-(reader-kind ['mail' 'mail' 'mail/' %'mail-recent.json' %'mail-last.json'])
+::  the read channel (version 59): text a client hands the ship to
+::  read, a web page or a note, through POST /read; its settings are a
+::  mail-config (poll and backfill unused), its source the page itself
+++  read-kind      ^-(reader-kind ['web' 'web' 'web/' %'read-recent.json' %'read-last.json'])
 ::  ==  the mail reader (version 52): auspex's mail as facts, the way
 ::  the phone client's mail reader read it. The nexus walks auspex's
 ::  mail tree; these clam what it finds (auspex-chain's frozen
@@ -3232,6 +3236,8 @@
 ++  tg-source
   |=  [m=tg-msg kind=reader-kind]
   ^-  source
+  ::  a page read is its own source: the url, or what the client named
+  ?:  =('web' channel.kind)  ['web' chat.m]
   ['chat' (rap 3 prefix.kind chat.m '/' mid.m ~)]
 ::  +tg-window: a chat's last free-text messages, oldest first, as the
 ::  analyst's context rows
@@ -5235,7 +5241,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  58
+++  version  59
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so

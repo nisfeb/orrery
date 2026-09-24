@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 59's owner steps
+
+None. `POST /api/read` takes text a client hands the ship to read (the browser extension's page, a note), open to a key with `write`, and the read fiber runs it through the reader's pipeline like a message, the page as every fact's source; settings on the Read card (`/api/read/settings`, on by default, the mail reader's shape), record at `/api/read/last`. No new road.
+
 ### Version 58's owner steps
 
 None on a ship that has set its cards; a fresh ship is on by default now. The generator, the Telegram reader, the chat reader (every DM until some are picked; channels only when picked), the mail reader and DMs from the ship all read on unless the owner turns them off, so orrery is as useful as the ship's desks and keys allow from the first hour (a reader without its key or desk notes so and waits). The Bodies view is a connection graph in three dimensions with a pane beside it: drag to turn, wheel to zoom, click a body or a line between two, find by name, and past situations on request.

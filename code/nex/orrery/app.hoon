@@ -26,6 +26,7 @@
 ::    /calendar-events-last.json       what the calendar events reader last did
 ::    /mail.json  /mail-last.json  /mail-seen.json  /mail-recent.json  /mail.sig   the mail reader (version 52)
 ::    /brief-last.json  /brief.sig       the daily brief (version 52): the last one sent, its tags and text
+::    /read.json  /read-last.json  /read-recent.json  /read-inbox/<id>  /read.sig   the read channel (version 59): text a client hands the ship
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -139,6 +140,14 @@
           [%fall %& [/ %'mail.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'brief-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'brief.sig'] [[/ %sig] ~]]
+          ::  the read channel (version 59): what clients hand the ship
+          ::  to read, until read; its settings, record and window
+          [%fall %& [/ %'read.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'read-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'read-recent.json'] [[/ %json] [%o ~]]]
+          [%fall %| /read-inbox empty-dir:loader]
+          [%fall %& [/read-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
+          [%fall %& [/ %'read.sig'] [[/ %sig] ~]]
           ::  refine (version 36): one lock grub per action being refined
           [%fall %| /refining empty-dir:loader]
       ==
@@ -295,6 +304,20 @@
         ;<  ~  bind:m  (set-timer:io /mail-poll (add now (mul (max 1 poll) ~m1)))
         ;<  *  bind:m  (take-gen-in /mail)
         $
+          ::  the read channel (version 59): wakes on its inbox, reads
+          ::  each text a client handed in through the reader's pipeline,
+          ::  and files the facts; a text the model could not read waits
+          ::  five minutes and is tried again
+          [~ %'read.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%orrery read: failed")
+        ;<  *  bind:m  (keep:io /rd (rf 0 /read-inbox %rev) ~)
+        |-
+        ;<  again=?  bind:m  read-drain
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (cancel-timer:io /read-retry)
+        ;<  ~  bind:m  ?.(again (pure:(fiber:fiber:nexus ,~) ~) (set-timer:io /read-retry (add now ~m5)))
+        ;<  *  bind:m  (take-gen-in /rd)
+        $
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
           ::  owner's wake sends one now
@@ -420,6 +443,7 @@
   ?:  =('set-telegram' op)  (do-set-telegram jon)
   ?:  =('set-chat' op)  (do-set-chat jon)
   ?:  =('set-mail' op)  (do-set-mail jon)
+  ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -822,6 +846,11 @@
   ?:  &(=('GET' meth) ?=([%api %chat %lists ~] suffix))      (own (serve-chat-lists eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-dms eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-channels eyre-id))
+  ?:  &(=('POST' meth) ?=([%api %read ~] suffix))            (writes (serve-read eyre-id jon act))
+  ?:  &(=('GET' meth) ?=([%api %read %settings ~] suffix))   (writes (serve-read-settings eyre-id))
+  ?:  &(=('PUT' meth) ?=([%api %read %settings ~] suffix))   (writes (serve-set-doc eyre-id 'set-read' jon))
+  ?:  &(=('GET' meth) ?=([%api %read %last ~] suffix))       (own (serve-doc eyre-id %'read-last.json'))
+  ?:  &(=('POST' meth) ?=([%api %read %wake ~] suffix))      (own (serve-prod eyre-id %'read.sig' 'read'))
   ?:  &(=('GET' meth) ?=([%api %mail ~] suffix))             (writes (serve-mail eyre-id))
   ?:  &(=('PUT' meth) ?=([%api %mail ~] suffix))             (writes (serve-set-doc eyre-id 'set-mail' jon))
   ?:  &(=('GET' meth) ?=([%api %mail %last ~] suffix))       (own (serve-doc eyre-id %'mail-last.json'))
@@ -2204,6 +2233,7 @@
       %'set-telegram'   [%o (merge-settings:orr base p.jon (sy ~['token' 'secret']))]
       %'set-chat'       [%o (merge-settings:orr base p.jon ~)]
       %'set-mail'       [%o (merge-settings:orr base p.jon ~)]
+      %'set-read'       [%o (merge-settings:orr base p.jon ~)]
     ==
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   %^  write-then  eyre-id  pk
@@ -2227,6 +2257,7 @@
     %'set-telegram'   %'telegram.json'
     %'set-chat'       %'chat.json'
     %'set-mail'       %'mail.json'
+    %'set-read'       %'read.json'
   ==
 ++  settings-view
   |=  [op=@t doc=json]
@@ -2236,6 +2267,7 @@
     %'set-telegram'   (en-tg-config-masked:orr (de-tg-config:orr doc))
     %'set-chat'       (en-chat-config:orr (de-chat-config:orr doc))
     %'set-mail'       (en-mail-config:orr (de-mail-config:orr doc))
+    %'set-read'       (en-mail-config:orr (de-mail-config:orr doc))
   ==
 ::  ==  sharing: where things are
 ::
@@ -3297,19 +3329,69 @@
     (over:io (rf 0 / %'chat.json') [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
   ;<  ~  bind:m  (note 'set-chat' & '')
   (pure:m |)
-::  +do-set-mail: the mail reader's settings, merged like the chat's
+::  +do-set-mail, +do-set-doc: a settings document merged over the
+::  stored one, like the chat's
 ::
 ++  do-set-mail
   |=  jon=json
+  (do-set-merged jon %'mail.json' 'set-mail')
+++  do-set-merged
+  |=  [jon=json file=@ta op=@t]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
-  ?.  ?=([%o *] doc)  (refuse 'set-mail' 'doc: expected an object')
-  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'mail.json'))
+  ?.  ?=([%o *] doc)  (refuse op 'doc: expected an object')
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / file))
   ;<  ~  bind:m
-    (over:io (rf 0 / %'mail.json') [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
-  ;<  ~  bind:m  (note 'set-mail' & '')
+    (over:io (rf 0 / file) [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
+  ;<  ~  bind:m  (note op & '')
   (pure:m |)
+::  +serve-read: text a client hands the ship to read (version 59): a
+::  web page, a note, anything the owner wants read the way a message
+::  is. It is kept in the read inbox as its own grub and the request
+::  answers at once with the item's id; the read fiber reads it. The
+::  text is what is read; the title heads it; the source is the page
+::  (its url) or what the client names; who is the body the text is
+::  spoken by (the owner unless said, since the owner chose to hand it
+::  in); at is when the text was written, else now.
+::
+++  serve-read
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
+  ?:  =('' text)  (send-err eyre-id 400 'text: required')
+  ?:  (gth (met 3 text) 65.536)  (send-err eyre-id 413 'text: over 64 KB')
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'read.json'))
+  ?.  enabled:(de-mail-config:orr cfg-j)
+    (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'the read channel is off']]))
+  ;<  now=@da  bind:m  get-time:io
+  =/  src=json  (gj:orr jon 'source')
+  =/  kind=@t  =/(k (gs:orr src 'kind') ?:(=('' k) 'web' k))
+  =/  sid=@t  (gs:orr src 'id')
+  =/  who=@t  =/(w (gs:orr jon 'who') ?:(=('' w) 'person/me' w))
+  =/  at=@da  (fall (de-iso:orr (gs:orr jon 'at')) now)
+  =/  id=@t  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (scot %ux (end [3 4] (sham text now))) ~)
+  =/  item=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['text' s+text]
+        ['title' s+(trim-cord:orr (gs:orr jon 'title'))]
+        ['source' (pairs:enjs:format ~[['kind' s+kind] ['id' s+?:(=('' sid) id sid)]])]
+        ['who' s+who]
+        ['at' s+(en-iso:orr at)]
+        ['by' s+by.act]
+    ==
+  ;<  *  bind:m  (make-soft:io (rf 1 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
+  ;<  ~  bind:m  (over:io (rf 1 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id]]))
+++  serve-read-settings
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'read.json'))
+  (send-json eyre-id 200 (en-mail-config:orr (de-mail-config:orr doc)))
 ++  serve-mail
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
@@ -3993,6 +4075,63 @@
   ?.  =('' mine)  (pure:m mine)
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   (pure:m timezone:(de-config:orr gen-j))
+::  ==  the read channel (version 59)
+::
+::  +read-drain: every item in the read inbox, oldest first, each read
+::  through the reader's pipeline as one run of one message spoken by
+::  its who, filed, remembered in the window and the record, then
+::  culled. A model that could not be read stops the drain and answers
+::  yes, so the fiber tries again in five minutes; the item stays.
+::
+++  read-drain
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'read.json'))
+  =/  cfg=mail-config:orr  (de-mail-config:orr cfg-j)
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /read-inbox) ~)
+  ?.  ?=([%ball *] vw)  (pure:m |)
+  ?~  fil.ball.vw  (pure:m |)
+  =/  names=(list @ta)
+    %+  sort  (skip (turn ~(tap by contents.u.fil.ball.vw) head) |=(n=@ta =(%rev n)))
+    aor
+  ?~  names  (pure:m |)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  tg=tg-config:orr  (mail-as-tg:orr cfg)
+  =/  todo=(list @ta)  names
+  |-
+  ?~  todo  (pure:m |)
+  ;<  item=json  bind:m  (read-json (rf 0 /read-inbox i.todo))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'read-last.json'))
+  =/  title=@t  (gs:orr item 'title')
+  =/  text=@t  (gs:orr item 'text')
+  =/  msg=tg-msg:orr
+    :*  (gs:orr (gj:orr item 'source') 'id')
+        (gs:orr item 'who')
+        ?:(=('' title) text (rap 3 title nl:orr nl:orr text ~))
+        (fall (de-iso:orr (gs:orr item 'at')) now)
+        (gs:orr item 'id')
+        ''
+    ==
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m
+    (tg-read tg ~[[msg (gs:orr item 'who')]] now read-kind:orr schema all)
+  ?:  down
+    ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~ `notes.facts)
+    (pure:m &)
+  ;<  ~  bind:m  (tg-file facts now read-kind:orr)
+  ;<  recent=json  bind:m  (read-json (rf 0 / %'read-recent.json'))
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'read-recent.json') [[/ %json] (tg-remember:orr recent msg (gs:orr item 'who') now read-kind:orr)])
+  =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
+  =/  tally=chat-tally
+    :*  ?:(read 1 0)  n  0  0  1  1  0  0
+        [(rap 3 (gs:orr item 'id') ': ' ?:(=('' title) (end [3 60] text) title) ~) notes.facts]
+    ==
+  ;<  ~  bind:m  (reader-record %'read-last.json' last now now tally ~ ~)
+  ;<  *  bind:m  (cull-soft:io (rf 0 /read-inbox i.todo))
+  ;<  all=(list loaded:orr)  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
+  $(todo t.todo, all all)
 ::  ==  the daily brief (version 52)
 ::
 ::  +brief-send: today's brief, unless one went today already (forced

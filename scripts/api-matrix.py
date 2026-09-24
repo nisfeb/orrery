@@ -98,7 +98,7 @@ print('0. clean slate')
 #  facts or a pass moving the beacon mid-gate would change what the
 #  generator sections count, so they are off for the gate (the
 #  telegram and chat sections turn theirs on themselves)
-for r in ('/telegram', '/chat', '/mail', '/generator'):
+for r in ('/telegram', '/chat', '/mail', '/generator', '/read/settings'):
     curl('PUT', API + r, {'enabled': False})
 #  a key with write, for the checks that an owner-only route refuses
 #  even a writing key (no credentials at all is refused earlier, by
@@ -922,6 +922,24 @@ code, d = curl('GET', API + '/version', jar=None, token=dictish(curl('POST', API
 check('any key reads the version, the desk\'s', code == 200 and dictish(d).get('version') == json.load(open('code/version.json'))['version'], (code, d))
 code, d = curl('GET', API + '/chat/lists')
 check('the chat lists come as one document, each with items and a note', code == 200 and isinstance(dictish(dictish(d).get('dms')).get('items'), list) and 'note' in dictish(dictish(d).get('channels')), (code, d))
+
+
+# ---- the read channel (version 59): text a key hands in becomes facts through the stub model ----
+code, d = curl('PUT', API + '/read/settings', {'enabled': True, 'gate': 0, 'model': 'stub/read'})
+check('the read settings answer as stored', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('model') == 'stub/read', (code, d))
+code, d = curl('POST', API + '/read', {'text': 'car died on route 9, stranded waiting for a tow', 'title': 'A page about the car', 'source': {'kind': 'web', 'id': 'https://example.test/car-%s' % XRUN}}, jar=None, token=dictish(k).get('token'))
+READID = dictish(d).get('id', '')
+check('a key with write hands text in and gets an id at once', code == 200 and dictish(d).get('ok') is True and bool(READID), (code, d))
+code, d = curl('POST', API + '/read', {'text': 'x'}, jar=None, token=dictish(ro).get('token'))
+check('a read-only key may not hand text in', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
+code, d = curl('POST', API + '/read', {'title': 'nothing'})
+check('text is required', code == 400 and dictish(d).get('error') == 'text: required', (code, d))
+read_last = gate.wait('the text was read and recorded', lambda: (lambda l: l if any(READID in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/read/last')[1])), 60)
+check('the record names the text by its id and title', any(READID + ': A page about the car' in n for n in read_last.get('notes', [])), read_last)
+st = dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('status'))
+check('the facts carry the page as their source and are signed by the web channel', st.get('by') == 'web' and dictish(st.get('source')) == {'kind': 'web', 'id': 'https://example.test/car-%s' % XRUN}, st)
+owner_only('the read record is the owner\'s, even to a writing key', 'GET', '/read/last')
+curl('PUT', API + '/read/settings', {'enabled': False})
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
