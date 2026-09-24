@@ -94,6 +94,12 @@ def retract_matrix(bid):
 
 # ── 0. a clean slate ────────────────────────────────────────────────
 print('0. clean slate')
+#  the readers run on by default since version 58; a reader filing
+#  facts or a pass moving the beacon mid-gate would change what the
+#  generator sections count, so they are off for the gate (the
+#  telegram and chat sections turn theirs on themselves)
+for r in ('/telegram', '/chat', '/mail'):
+    curl('PUT', API + r, {'enabled': False})
 #  SIT is keyed on today's date, so a run on the other side of midnight
 #  UTC would leave an earlier day's breakdown open for ever
 code, st0 = curl('GET', API + '/state')
@@ -406,7 +412,9 @@ check('a merge from person/me is 400',
 code, d = curl('POST', API + '/merge', {'from': 'org/nobody', 'into': 'person/sarah'})
 check('a merge of an unknown body is 404',
       code == 404 and dictish(d).get('error') == 'no such body org/nobody', (code, d))
-code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+#  the newest entries, since the calendar reader may have filed since
+last = ([e for e in (log if isinstance(log, list) else [])[-6:] if dictish(e).get('op') == 'merge'] or [{}])[-1]
 check('the writer noted the merge last',
       code == 200 and dictish(last).get('op') == 'merge' and dictish(last).get('ok') is True, last)
 
