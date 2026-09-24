@@ -818,6 +818,8 @@
   ?:  &(=('GET' meth) ?=([%api %chat %last ~] suffix))       (own (serve-doc eyre-id %'chat-last.json'))
   ?:  &(=('POST' meth) ?=([%api %chat %wake ~] suffix))      (own (serve-prod eyre-id %'chat.sig' 'chat'))
   ?:  &(=('GET' meth) ?=([%api %chat %peek ~] suffix))       (own (serve-chat-peek eyre-id args))
+  ?:  &(=('GET' meth) ?=([%api %version ~] suffix))          (send-json eyre-id 200 (pairs:enjs:format ~[['version' (numb:enjs:format version:orr)]]))
+  ?:  &(=('GET' meth) ?=([%api %chat %lists ~] suffix))      (own (serve-chat-lists eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))        (own (serve-chat-dms eyre-id))
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))   (own (serve-chat-channels eyre-id))
   ?:  &(=('GET' meth) ?=([%api %mail ~] suffix))             (writes (serve-mail eyre-id))
@@ -3340,12 +3342,56 @@
   ;<  live=(unit ?)  bind:m  groups-live
   ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
   ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
-  ;<  dms=(each json @t)  bind:m  (scry-json /gx/chat/dm/json)
-  ?:  ?=(%| -.dms)  (send-list eyre-id ~ (cat 3 'the DM list: ' p.dms))
+  ;<  got=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
+  (send-list eyre-id items.got note.got)
+++  serve-chat-channels
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
+  ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
+  ;<  got=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
+  (send-list eyre-id items.got note.got)
+::  +serve-chat-lists: both lists in one pass (version 57), for the
+::  page: the groups desk found once, each list under its own key
+::
+++  serve-chat-lists
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  both
+    |=  [d=[items=(list [id=@t name=@t]) note=@t] c=[items=(list [id=@t name=@t]) note=@t]]
+    ^-  form:m
+    %^  send-json  eyre-id  200
+    (pairs:enjs:format ~[['dms' (list-json d)] ['channels' (list-json c)]])
+  ;<  live=(unit ?)  bind:m  groups-live
+  ?~  live  (both [~ 'the /sys/scry/ road is refused'] [~ 'the /sys/scry/ road is refused'])
+  ?.  u.live  (both [~ 'groups desk not installed'] [~ 'groups desk not installed'])
+  ;<  d=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
+  ;<  c=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
+  (both d c)
+++  list-json
+  |=  [items=(list [id=@t name=@t]) note=@t]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['items' a+(turn items |=([id=@t name=@t] (pairs:enjs:format ~[['id' s+id] ['name' s+name]])))]
+      ['note' s+note]
+  ==
+::  +contacts-book: the owner's Tlon contact book as JSON, or why not
+::
+++  contacts-book
+  =/  m  (fiber:fiber:nexus ,(each json @t))
+  ^-  form:m
   ;<  has-book=(unit ?)  bind:m  (scry-loob /gu/contacts/$)
-  ;<  book=(each json @t)  bind:m
-    ?.  (fall has-book |)  (pure:(fiber:fiber:nexus ,(each json @t)) [%| 'no contacts agent'])
-    (scry-json /gx/contacts/v1/book/json)
+  ?.  (fall has-book |)  (pure:m [%| 'no contacts agent'])
+  (scry-json /gx/contacts/v1/book/json)
+++  dm-list
+  =/  m  (fiber:fiber:nexus ,[items=(list [id=@t name=@t]) note=@t])
+  ^-  form:m
+  ;<  dms=(each json @t)  bind:m  (scry-json /gx/chat/dm/json)
+  ?:  ?=(%| -.dms)  (pure:m [~ (cat 3 'the DM list: ' p.dms)])
+  ;<  book=(each json @t)  bind:m  contacts-book
   =/  nick
     |=  ship=@t
     ^-  @t
@@ -3354,18 +3400,14 @@
     =/  mod=@t  (gs:orr (gj:orr i.t.p.page 'nickname') 'value')
     ?:(!=('' mod) mod (gs:orr (gj:orr i.p.page 'nickname') 'value'))
   =/  ships=(list @t)  (sort (strings:orr ?:(?=([%a *] p.dms) p.p.dms ~)) aor)
-  (send-list eyre-id (turn ships |=(s=@t [s (nick s)])) '')
-++  serve-chat-channels
-  |=  eyre-id=@ta
-  =/  m  (fiber:fiber:nexus ,~)
+  (pure:m [(turn ships |=(s=@t [s (nick s)])) ''])
+++  channel-list
+  =/  m  (fiber:fiber:nexus ,[items=(list [id=@t name=@t]) note=@t])
   ^-  form:m
-  ;<  live=(unit ?)  bind:m  groups-live
-  ?~  live  (send-list eyre-id ~ 'the /sys/scry/ road is refused')
-  ?.  u.live  (send-list eyre-id ~ 'groups desk not installed')
   ;<  has-groups=(unit ?)  bind:m  (scry-loob /gu/groups/$)
-  ?.  (fall has-groups |)  (send-list eyre-id ~ 'groups desk not installed')
+  ?.  (fall has-groups |)  (pure:m [~ 'groups desk not installed'])
   ;<  groups=(each json @t)  bind:m  (scry-json /gx/groups/v2/light/groups/json)
-  ?:  ?=(%| -.groups)  (send-list eyre-id ~ (cat 3 'the group list: ' p.groups))
+  ?:  ?=(%| -.groups)  (pure:m [~ (cat 3 'the group list: ' p.groups)])
   =/  items=(list [id=@t name=@t])
     ?.  ?=([%o *] p.groups)  ~
     %-  zing
@@ -3384,7 +3426,7 @@
     ?:  =('' gt)  ct
     ?:  =('' ct)  gt
     (rap 3 gt ': ' ct ~)
-  (send-list eyre-id (sort items |=([a=[@t name=@t] b=[@t name=@t]] (aor name.a name.b))) '')
+  (pure:m [(sort items |=([a=[@t name=@t] b=[@t name=@t]] (aor name.a name.b))) ''])
 ::  +serve-chat-peek: what a pass since ?since (an ISO time; a day ago
 ::  unless given) would find, without reading any of it: per agent,
 ::  whether it answered, how many conversations changed, how many of
@@ -3794,13 +3836,18 @@
     ^-  (unit tg-msg:orr)
     ?:  |(=(our from.x) =('' (trim-cord:orr body.x)))  ~
     `(mail-row:orr x)
-  ::  a ship that writes the owner mail and has no person body is made
-  ::  one, named by its ship (as the phone client's reader made them),
-  ::  so its mail is read rather than left as a stranger's
+  ::  a ship in the owner's contact book that writes mail and has no
+  ::  person body is made one, named by its ship (as the phone client's
+  ::  reader made them for the book's ships and nobody else), so its
+  ::  mail is read; a ship the owner never added stays a stranger
+  ;<  book=(each json @t)  bind:m  contacts-book
+  =/  known-ships=(set @t)
+    ?.  ?=([%& %o *] book)  ~
+    (sy (turn ~(tap by p.p.book) |=([k=@t *] (ship-key:orr k))))
   =/  newcomers=(list @t)
     %-  dedupe:orr
     %+  murn  rows
-    |=(r=tg-msg:orr ?:((~(has by people) from.r) ~ `from.r))
+    |=(r=tg-msg:orr ?:(|((~(has by people) from.r) !(~(has in known-ships) from.r)) ~ `from.r))
   ;<  *  bind:m
     ?~  newcomers  (pure:(fiber:fiber:nexus ,@ud) 0)
     %+  file-ops-on
@@ -4156,16 +4203,51 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  our=@p  bind:m  get-our:io
+  =/  action=*  [to [[our now] [%add (essay-of text our now) ~]]]
+  (gall-poke-wait our %chat %chat-dm-action-2 action)
+::  +send-post: a post in a group channel, the nest chat/~host/name,
+::  through the %channels agent (channel-action-2, a-channels: the
+::  nest, then a post's add of an essay); the kernel's typed marc for
+::  it is beside the DM's
+::
+++  send-post
+  |=  [nest=@t text=@t]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  =/  parts=(list @t)  (turn (split-char:orr '/' (trip nest)) crip)
+  ?.  ?=([@ @ @ ~] parts)  (pure:m `(cat 3 'not a channel: ' nest))
+  =/  kind=@tas  (fall ((soft @tas) i.parts) %chat)
+  =/  host=(unit @p)  (slaw %p i.t.parts)
+  =/  name=(unit @tas)  ((soft @tas) i.t.t.parts)
+  ?:  |(?=(~ host) ?=(~ name) !?=(?(%chat %diary %heap) kind))  (pure:m `(cat 3 'not a channel: ' nest))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  =/  action=*  [%channel [kind u.host u.name] [%post [%add (essay-of text our now)]]]
+  (gall-poke-wait our %channels %channel-action-2 action)
+::  +essay-of: a Tlon essay of one text: a story of one inline verse
+::  per line, the author, the moment, the /chat kind, no meta or blob
+::
+++  essay-of
+  |=  [text=@t our=@p now=@da]
+  ^-  *
   =/  story=*
     %+  turn  (split-char:orr 10 (trip text))
     |=(l=tape [%inline ~[(crip l)]])
-  =/  essay=*  [[story our now] /chat ~ ~]
-  =/  action=*  [to [[our now] [%add essay ~]]]
+  [[story our now] /chat ~ ~]
+::  +gall-poke-wait: a poke at a local agent through the kernel's gall
+::  road, waited for: ~ on the agent's ack; the reason on a veto, a
+::  nack, or thirty seconds of silence
+::
+++  gall-poke-wait
+  |=  [our=@p agent=@tas mark=@tas noun=*]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
   ;<  w=wire  bind:m  (nonce:io /dm)
   ;<  tw=wire  bind:m  (nonce:io /dm-timer)
   ;<  ~  bind:m
     %-  send-dart:io
-    [%node w &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[our %chat] chat-dm-action-2+action]]]
+    [%node w &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[our agent] [mark noun]]]]
   ;<  ~  bind:m  (set-timer:io tw (add now ~s30))
   ;<  err=(unit @t)  bind:m
     |=  input:fiber:nexus
@@ -4179,7 +4261,7 @@
       ?~(err.u.in [%wait ~] [%done `(tang-head u.err.u.in)])
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done `'the chat agent did not answer'])
+        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done `(cat 3 'no answer from the agent %' agent)])
       ?.  =([/ %poke-ack] p.sage.u.in)  [%skip ~]
       =/  [aw=wire e=(unit tang)]  !<([wire (unit tang)] q.sage.u.in)
       ?.  =(w aw)  [%skip ~]
@@ -4911,6 +4993,11 @@
     (pure:m [& (cat 3 'sent by mail to ' to.p)])
   ::
       %chat
+    =/  nest=@t  (gs:orr body.p 'channel')
+    ?.  =('' nest)
+      ;<  err=(unit @t)  bind:m  (send-post nest (clean-text:orr (gs:orr body.p 'text')))
+      ?^  err  (pure:m [| u.err])
+      (pure:m [& (cat 3 'posted in ' nest)])
     =/  who=(unit @p)  (slaw %p to.p)
     ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name')])
     ;<  err=(unit @t)  bind:m  (send-dm u.who (clean-text:orr (gs:orr body.p 'text')))
@@ -5010,8 +5097,31 @@
   |=  [base=path to=@p subject=@t body=@t]
   =/  m  (fiber:fiber:nexus ,(unit tang))
   ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
   =/  send=*  [%send (sy ~[to]) subject body ~ ~]
-  (poke-soft:io [%& %& base %'main.sig'] [[/ %auspex-action] send])
+  ;<  err=(unit tang)  bind:m  (poke-soft:io [%& %& base %'main.sig'] [[/ %auspex-action] send])
+  ?^  err  (pure:m err)
+  ::  the writer's word (version 57): its trail's last entry, once it
+  ::  is this send's, says whether the mail went; a reject is a
+  ::  failure with the writer's reason. Five looks a second apart,
+  ::  then the send is taken as gone.
+  =/  since=@ud  (ms-of:orr now)
+  =/  tries=@ud  5
+  |-
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base /tr) %last] ~)
+  =/  last=json
+    ?.  ?=([~ %file *] vw)  ~
+    (fall (mole |.(!<(json (need-vase:tarball sang.u.vw)))) ~)
+  =/  at=@ud  (fall (gn:orr last 'at') 0)
+  ?:  (gte at since)
+    =/  ok=json  (gj:orr last 'ok')
+    ?:  =([%b |] ok)  (pure:m `~[leaf+(trip (cat 3 'auspex: ' (gs:orr last 'why')))])
+    (pure:m ~)
+  ?:  =(0 tries)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-wait:io (add now ~s1))
+  ;<  ~  bind:m  (take-wake:io ~)
+  $(tries (dec tries))
 ::  +poke-calendar: one action to the calendar's store, which is the
 ::  fiber that takes its JSON pokes (add-event, edit-event, done-event,
 ::  del-event). A bad body is dropped inside the calendar, not refused.
@@ -5077,7 +5187,7 @@
   ;<  n=@ud  bind:m  (file-ops-on ops.plan /exec)
   ;<  ~  bind:m
     ?:  =(seen seen.plan)  (pure:(fiber:fiber:nexus ,~) ~)
-    (over:io (rf 0 / %'calendar-seen.json') [[/ %json] [%o (~(run by seen.plan) |=(v=@t `json`s+v))]])
+    (over:io (rf 0 / %'calendar-seen.json') [[/ %json] [%o (~(run by (prune-seen:orr seen.plan now)) |=(v=@t `json`s+v))]])
   ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
   =/  active=?  |(!=(0 rows.plan) !=(0 made.plan))
   =/  saw=(list [@t json])

@@ -1408,6 +1408,22 @@
       (need (de-iso:orr (gs:orr r 'at')))  (de-iso:orr (gs:orr r 'until'))  (fall (gn:orr r 'conf') 100)
       [(gs:orr src 'kind') (gs:orr src 'id')]  (gs:orr r 'by')  cal-now  |  ''
   ==
+++  test-prune-seen
+  =/  seen=(map @t @t)
+    %-  my
+    :~  ['occ/home/u-1/1780000000000' 'f']
+        ['occ/home/u-1/1790035200000' 's']
+        ['next/work/u-2/1780000000000' 'x']
+        ['act/work/u-2/0x1' 'x']
+        ['gone/u-3' 'x']
+    ==
+  =/  kept=(map @t @t)  (prune-seen:orr seen ~2026.9.18..12.00.00)
+  ;:  weld
+    (expect-eq !>(3) !>(~(wyt by kept)))
+    (expect !>((~(has by kept) 'occ/home/u-1/1790035200000')))
+    (expect !>((~(has by kept) 'act/work/u-2/0x1')))
+    (expect !>((~(has by kept) 'gone/u-3')))
+  ==
 ++  test-events-of
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
   ;:  weld

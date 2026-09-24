@@ -189,6 +189,10 @@ ok('the mail card carries the reader\'s settings and its last pass, and the brie
   mailSettings.includes('<h2>Mail</h2>') && mailSettings.includes('name="enabled" checked') && mailSettings.includes('value="x/y"') && mailSettings.includes('2 threads, 3 messages; read 2, filed 4, strangers 1, held 0. Read today: 2.')
   && mailSettings.includes('A1: approved') && mailSettings.includes('data-mail-wake="1"') && mailSettings.includes('<h2>Daily brief</h2>') && mailSettings.includes('Last brief for 2026-09-23 at 2026-09-23 11:00:05, sent; 2 actions tagged.') && mailSettings.includes('data-brief-wake="1"'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
+const libVersion = parseInt((require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'lib', 'orrery.hoon'), 'utf8').match(/\n\+\+  version  (\d+)\n/) || [])[1], 10);
+const jsonVersion = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'version.json'), 'utf8')).version;
+ok('the lib\'s version is the desk\'s', libVersion === jsonVersion, [libVersion, jsonVersion]);
+ok('the settings view reads both chat lists in one route', src.includes("api('/chat/lists')") && !src.includes("api('/chat/dms')"));
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes("view.addEventListener('input'") && src.includes('if (dirty) return true;')

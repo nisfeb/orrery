@@ -1062,6 +1062,7 @@
           %-  shape
           :~  ['via' 'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none']
               ['to' 'required: the body id of the person, e.g. person/alice']
+              ['channel' 'optional: for via chat, a group channel to post in instead of a DM, e.g. chat/~host/general']
               ['text' 'required: the message, short, in the owner\'s own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.']
           ==
           :-  'home'
@@ -5004,10 +5005,14 @@
         ?~  hit  ''
         ?~(ship.body.u.hit '' (scot %p u.ship.body.u.hit))
       =/  to=@t  ?:(|(=('' ship) =('~' (end [3 1] ship))) ship (cat 3 '~' ship))
+      ::  a chat message with a channel is a post there, not a DM, and
+      ::  needs no ship
+      =/  nest=@t  ?:(=('chat' via) (trim-cord (gs payload.a 'channel')) '')
+      =?  to  !=('' nest)  nest
       =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
       :-  ~
       :*  id  kind.a  ?:(=('mail' via) %mail %chat)  to
-          (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text]])
+          (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text] ['channel' s+nest]])
           note
       ==
     ~
@@ -5226,6 +5231,10 @@
   ?.  live  ~
   ?:  =(due.t due.a)  ~
   [%calendar (edit-todo-op t orrery.t due.a)]~
+::  +version: what the desk's code/version.json says, for GET /version;
+::  scripts/page-test.js holds the two together
+::
+++  version  57
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so
@@ -5402,6 +5411,21 @@
   ^-  (unit loaded)
   ?~  all  ~
   ?:((f i.all) `i.all $(all t.all))
+::  +prune-seen: the seen map without occurrences and nexts older than
+::  sixty days (their keys end in the epoch ms), so it stops growing
+::
+++  prune-seen
+  |=  [seen=(map @t @t) now=@da]
+  ^-  (map @t @t)
+  =/  floor=@ud  (ms-of (sub now ~d60))
+  %-  ~(gas by *(map @t @t))
+  %+  skip  ~(tap by seen)
+  |=  [k=@t v=@t]
+  ?.  |(=('occ/' (end [3 4] k)) =('next/' (end [3 5] k)))  |
+  =/  segs=(list @t)  (turn (split-char '/' (trip k)) crip)
+  ?~  segs  |
+  =/  ms=(unit @ud)  (rush (rear segs) dem)
+  ?~(ms | (lth u.ms floor))
 ::  +plan-events: what the store's events say, as the writer's ops and
 ::  what to remember. seen maps a key to a mark: occ/<cal>/<uid>/<start
 ::  ms> is an occurrence written, 's' while only its schedule was said

@@ -900,6 +900,13 @@ check('the DM list answers items and a note', code == 200 and isinstance(dictish
 code, d = curl('PUT', API + '/chat', {'enabled': False})
 check('the reader is switched off again', code == 200, (code, d))
 
+# ---- version 57: the version route, both chat lists in one pass ----
+code, d = curl('GET', API + '/version', jar=None, token=dictish(curl('POST', API + '/clients', {'name': 'gate version', 'by': 'gate-v', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})[1]).get('token'))
+check('any key reads the version, the desk\'s', code == 200 and dictish(d).get('version') == json.load(open('code/version.json'))['version'], (code, d))
+code, d = curl('GET', API + '/chat/lists')
+check('the chat lists come as one document, each with items and a note', code == 200 and isinstance(dictish(dictish(d).get('dms')).get('items'), list) and 'note' in dictish(dictish(d).get('channels')), (code, d))
+
+
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
 code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
 check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))

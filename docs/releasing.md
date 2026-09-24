@@ -207,6 +207,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 57's owner steps
+
+A second kernel marc: a `message` via `chat` whose payload names a `channel` (a nest such as `chat/~host/general`) is posted there through `%channels`, and the kernel checks the noun with `gub/mar/clay/groups/channel/action-2.hoon` (grubbery branch `dist/single-release`); a kernel without it crashes on the poke the way the DM one did, so keep `send_dms` off until it lands, or post to no channel. Also: a sender not in the owner's Tlon contact book stays a stranger to the mail reader instead of becoming a person body; a mail auspex rejects (its trail's last entry) fails the action with auspex's reason instead of reading done; `GET /version` answers the desk's version to any key; `GET /chat/lists` gives the page both chat lists in one pass; the calendar seen map drops occurrences older than sixty days.
+
 ### Version 56's owner steps
 
 None. A thread's meta is read by its first three fields (version, read, archived), whatever version auspex writes, so auspex's coming `%3` meta (a `folded` set) lands in either order with this.
