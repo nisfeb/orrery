@@ -98,7 +98,7 @@ print('0. clean slate')
 #  facts or a pass moving the beacon mid-gate would change what the
 #  generator sections count, so they are off for the gate (the
 #  telegram and chat sections turn theirs on themselves)
-for r in ('/telegram', '/chat', '/mail'):
+for r in ('/telegram', '/chat', '/mail', '/generator'):
     curl('PUT', API + r, {'enabled': False})
 #  SIT is keyed on today's date, so a run on the other side of midnight
 #  UTC would leave an earlier day's breakdown open for ever
@@ -234,8 +234,10 @@ check('the history shows proposed then approved by policy', bool(mine)
       and [(h.get('status'), h.get('by')) for h in mine[0].get('history', [])] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
 code, a2 = curl('POST', API + '/act', prop)
 check('a second identical proposal answers the same id', code == 200 and a2['id'] == AID and a2['existing'], a2)
-code, last = curl('GET', INSTANCE + '/tr/last?raw=1')
-check('the writer noted the act', code == 200 and isinstance(last, dict) and last.get('op') == 'act' and last.get('ok') is True, last)
+code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+#  among the newest entries, since the calendar reader may have filed since
+last = ([e for e in (log if isinstance(log, list) else [])[-6:] if dictish(e).get('op') == 'act'] or [{}])[-1]
+check('the writer noted the act', code == 200 and last.get('op') == 'act' and last.get('ok') is True, last)
 code, bs = body('thing/subaru')
 check('the subaru view lists the open task', code == 200 and isinstance(bs, dict)
       and any(dictish(x).get('id') == AID for x in bs.get('actions', [])), bs.get('actions') if code == 200 else bs)
