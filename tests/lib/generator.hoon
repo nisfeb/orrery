@@ -107,6 +107,68 @@
     (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5))))
     (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5)))))
   ==
+::  the last +recent decisions with their notes, then the older
+::  dismissals that carry a reason, the last +reasons-kept of them
+++  test-decision-lines
+  =/  act
+    |=  [n=@ud status=@tas note=@t]
+    ^-  [@ta action:orr]
+    :-  (crip "a{(a-co:co n)}")
+    :*  %task  (crip "Task {(a-co:co n)}")  [%o ~]  ~  ~
+        'generator'  now  status  note  ~
+    ==
+  ::  of the older, a dismissal with no reason and a done with a note
+  ::  are left out
+  =/  older=(list [@ta action:orr])
+    %+  turn  (gulf 1 45)
+    |=  n=@ud
+    ?:  =(44 n)  (act n %dismissed '')
+    ?:  =(43 n)  (act n %done 'bought it')
+    (act n %dismissed 'not ours')
+  =/  window=(list [@ta action:orr])
+    (turn (gulf 46 105) |=(n=@ud (act n %done '')))
+  =/  lines=(list @t)  (decision-lines:orr 'Head:' (weld older window))
+  =/  short=(list @t)  (decision-lines:orr 'Head:' (slag 40 window))
+  ;:  weld
+    (expect-eq !>('Head:') !>((snag 0 lines)))
+    (expect-eq !>('  done | task | Task 46') !>((snag 1 lines)))
+    (expect-eq !>('Earlier dismissals, with the owner\'s reasons:') !>((snag 61 lines)))
+    (expect-eq !>('  dismissed | task | Task 4 | not ours') !>((snag 62 lines)))
+    (expect-eq !>('  dismissed | task | Task 45 | not ours') !>((rear lines)))
+    (expect-eq !>(102) !>((lent lines)))
+    (expect-eq !>(21) !>((lent short)))
+  ==
+::  the owner's style and preferences, squeezed and capped, and every
+::  prompt that reads them
+++  test-owner-lines
+  =/  schema=json
+    %-  jo
+    '{"style": "  No em dashes.\\n  Short sentences. ", "preferences": ["no todos  for attending", "", 7, "routine chores are mine"]}'
+  =/  pref=(list @t)
+    :~  'The owner\'s standing preferences:'
+        '  - no todos for attending'
+        '  - routine chores are mine'
+    ==
+  =/  f  fixture
+  =/  p0=@t  (snag 0 (build-parts:gen all.f acts.f ~ schema now 'America/New_York' 5))
+  =/  ctx=reader-ctx:orr  (reader-context:orr all.f schema now)
+  =/  rows=(list window-row:orr)  ~[['m1' '2026-09-18T12:00:00Z' 'person/sarah' 'hi' |]]
+  =/  brief=@t  (brief-user:orr all.f schema ~ ~ ~ '' now 'America/New_York')
+  ;:  weld
+    (expect-eq !>(`(list @t)`~) !>((owner-lines:orr (jo '{}') &)))
+    (expect-eq !>(pref) !>((owner-lines:orr schema |)))
+    (expect-eq !>(['The owner\'s style for text in their voice: No em dashes. Short sentences.' pref]) !>((owner-lines:orr schema &)))
+    ::  the style's thousand bytes after its prefix; thirty preferences
+    ::  under their header
+    (expect-eq !>((add 1.000 (met 3 'The owner\'s style for text in their voice: '))) !>((met 3 (snag 0 (owner-lines:orr (pairs:enjs:format ~[['style' s+(crip (reap 1.200 'x'))]]) &)))))
+    (expect-eq !>(31) !>((lent (owner-lines:orr (pairs:enjs:format ~[['preferences' a+(reap 40 `json`s+'x')]]) |))))
+    (expect !>((has-sub p0 'Short sentences.')))
+    (expect !>((has-sub p0 '  - routine chores are mine')))
+    (expect !>((has-sub (reader-prompt:orr rows ctx 'America/New_York' chat-kind:orr) (rap 3 'The owner is person/me.' nl:orr 'The owner\'s style' ~))))
+    (expect !>((has-sub (refine-user:orr refine-act 'a1' ctx 'shorter' now 'America/New_York') '  - no todos for attending')))
+    (expect !>((has-sub brief '  - no todos for attending')))
+    (expect !>(!(has-sub brief 'style')))
+  ==
 ::  ==  the request and the answer
 ::
 ++  cfg
@@ -386,6 +448,15 @@
     (expect !>((same-person:orr 'dana' 'Dana Quill')))
     (expect !>(!(same-person:orr 'dana' 'daniel quill')))
     (expect !>(!(same-person:orr 'wife' 'dana')))
+    (expect !>(!(same-person:orr 'jackson wife' 'jackson')))
+    (expect !>(!(same-person:orr 'Dana\'s mom' 'dana')))
+    (expect !>((same-person:orr 'Dr Dana Quill' 'dana')))
+    (expect-eq !>(~) !>((person-key:orr 'jackson wife')))
+    %+  expect-eq  !>((my ~[['jackson' 'person/me'] ['andrea' 'person/andrea']]))
+    !>  %-  known-people:orr
+        :~  (mkb 'person/andrea' %person 'Andrea' ~['jackson wife' 'jackson'] ~ now)
+            (mkb 'person/me' %person 'Jackson' ~ ~ now)
+        ==
     (expect !>((same-person:orr 'Dana Quill' 'Quill, Dana')))
     (expect !>((person-named:orr [%org 'Dana Quill' ~ now ~])))
     (expect !>(!(person-named:orr [%org 'Quill Bank' ~ now ~])))
@@ -704,6 +775,7 @@
       :~  ['calendar' (jo '{"title": "required", "starts": "required: ISO 8601 UTC", "ends": "optional: ISO 8601 UTC", "location": "optional"}')]
           ['message' (jo '{"via": "required: one of telegram, mail, chat", "to": "required: the body id of the person", "text": "required"}')]
       ==
+      ~
   ==
 ++  tg-rows
   ^-  (list window-row:orr)
@@ -1546,7 +1618,7 @@
     (expect-eq !>(`json`s+'2026-09-22T00:45:00Z') !>((gj:orr (snag 0 (of coffee 'ends')) 'value')))
     (expect-eq !>(0) !>((lent (of coffee 'started'))))
     (expect-eq !>(`json`s+'Blue Bottle') !>((gj:orr (snag 0 (of coffee 'location')) 'value')))
-    (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((turn (of coffee 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`(list @t)`~['person/mira-quill']) !>((turn (of coffee 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
     (expect-eq !>(`json`(pairs:enjs:format ~[['kind' s+'calendar'] ['id' s+'home/u-coffee']])) !>((gj:orr (snag 0 (of coffee 'starts')) 'source')))
     ::  the standup: its content at the last occurrence behind (monday
     ::  the 14th), the one last, and the next (monday the 21st) anchored
@@ -1556,7 +1628,7 @@
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'at')))
     ::  the birthday has no occurrence behind: its content is dated now
     (expect-eq !>(`json`s+(en-iso:orr cal-now)) !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'cadence')) 'at')))
-    (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((turn (of 'activity/standup' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`(list @t)`~['person/mira-quill']) !>((turn (of 'activity/standup' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'last')) 'value')))
     (expect-eq !>(1) !>((lent (of 'activity/standup' 'last'))))
     (expect-eq !>(`json`s+'2026-09-21T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'value')))
@@ -1565,11 +1637,68 @@
     (expect-eq !>(0) !>((lent (of 'activity/standup' 'location'))))
     ::  the birthday: a series, felix made and in it, its next the 20th
     (expect-eq !>(`json`s+'2026-09-20T00:00:00Z') !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'next')) 'value')))
-    (expect-eq !>(`(list @t)`~['person/me' 'person/felix']) !>((turn (of 'activity/felix-birthday' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
+    (expect-eq !>(`(list @t)`~['person/felix']) !>((turn (of 'activity/felix-birthday' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
     (expect-eq !>(`json`s+'Felix') !>((gj:orr (snag 2 bodies) 'name')))
     (expect-eq !>(0) !>(cancelled.got))
     (expect-eq !>(`(list json)`~) !>(ops.again))
     (expect-eq !>(seen.got) !>(seen.again))
+  ==
+::  the owner is in an event that names them or names nobody else; a
+::  calendar row from before that says they are in one naming only
+::  others is retracted, and a retracted one is left alone
+++  test-plan-events-owner
+  =/  store=json
+    %-  jo
+    '''
+    {"events": [
+      {"id": "u-coffee", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "Coffee with Mira Quill", "location": "", "note": "", "tags": []}},
+      {"id": "u-dentist", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "Dentist", "location": "", "note": "", "tags": []}},
+      {"id": "u-lunch", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "Lunch", "location": "", "note": "Jackson and Mira", "tags": []}}]}
+    '''
+  =/  order=cal-order:orr
+    %+  gas:on-cal-order:orr  *cal-order:orr
+    ^-  (list [@da (set cal-ref:orr)])
+    :~  [~2026.9.22..00.00.00 (sy ~[`cal-ref:orr`['u-coffee' 0 ~2026.9.22..00.00.00 ~2026.9.22..00.45.00]])]
+        [~2026.9.23..15.00.00 (sy ~[`cal-ref:orr`['u-dentist' 0 ~2026.9.23..15.00.00 ~2026.9.23..16.00.00]])]
+        [~2026.9.24..17.00.00 (sy ~[`cal-ref:orr`['u-lunch' 0 ~2026.9.24..17.00.00 ~2026.9.24..18.00.00]])]
+    ==
+  =/  coffee=@t  'situation/2026-09-21-coffee-with-mira-quill'
+  =/  old=row:orr
+    :-  'old-me'
+    :*  coffee  'participants'  (pairs:enjs:format ~[['ref' s+'person/me']])
+        cal-now  ~  100  ['calendar' 'home/u-coffee']  'calendar'  cal-now  |  ''
+    ==
+  =/  plan
+    |=  held=row:orr
+    ^-  event-plan:orr
+    %:  plan-events:orr
+      (events-of:orr store)
+      order
+      :~  (mkb 'person/me' %person 'Jackson' ~ ~ cal-now)
+          (mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ cal-now)
+          [coffee [%situation 'Coffee with Mira Quill' ~ cal-now ~] ~[held]]
+          :+  'situation/2026-09-24-lunch'  [%situation 'Lunch' ~ cal-now ~]
+          ~[held(id 'lunch-me', subject.obs 'situation/2026-09-24-lunch', id.source.obs 'home/u-lunch')]
+      ==
+      (sy ~['participants'])
+      cal-now
+      ~
+      'America/New_York'
+    ==
+  =/  got=event-plan:orr  (plan old)
+  =/  obs=(list json)  (ga:orr (snag 0 ops.got) 'observations')
+  =/  who
+    |=  id=@t
+    ^-  (list @t)
+    %+  turn  (skim obs |=(r=json &(=(id (gs:orr r 'subject')) =('participants' (gs:orr r 'attr')))))
+    |=(r=json (gs:orr (gj:orr r 'value') 'ref'))
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['person/mira-quill']) !>((who coffee)))
+    (expect-eq !>(`(list @t)`~['person/me']) !>((who 'situation/2026-09-23-dentist')))
+    (expect-eq !>(`(list @t)`~['person/me' 'person/mira-quill']) !>((who 'situation/2026-09-24-lunch')))
+    (expect-eq !>(2) !>((lent ops.got)))
+    (expect-eq !>((retract-op:orr 'old-me' 'calendar: the event does not name the owner' 'calendar')) !>((rear ops.got)))
+    (expect-eq !>(1) !>((lent ops:(plan old(retracted.obs &)))))
   ==
 ::  once the coffee is behind, its situation gets the past tense at
 ::  the event's time; once the calendar drops it while still ahead,

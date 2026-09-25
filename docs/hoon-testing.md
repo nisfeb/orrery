@@ -194,3 +194,25 @@ first. Eleven reloads of `~feb`'s instance with writes in flight never
 tripped it on the old code, so the test did not bite here; the forced
 crash test ran again with the fix and backed off 1, 2 and 4 minutes as
 before.
+
+## The prompt review (version 60)
+
+The prompt review's code changes brought new arms and changed old ones:
+`decision-lines`, `owner-lines`, `relation-words` with `person-key`,
+the owner's claim in `known-people` and `people-of-ships`, and the owner's
+place in `cast` and `plan-events`. The first run used all six ops on the
+small arms, and `wide` and `equal` on `plan-events`: 86 mutants.
+
+- `decision-lines`: the older dismissals kept had no done action with a
+  note and no dismissal without a reason within the last forty. Both are
+  now in `test-decision-lines`, and the recheck killed both mutants.
+- `person-key`: dropping "a name besides the relation" changed nothing.
+  A relation word alone leaves no name either way, so the conjunct went.
+- `plan-events`: the retraction's guard without `with-me` survived.
+  `test-plan-events-owner` now holds an old row on an event that names
+  the owner, and the recheck killed it.
+
+Left as they were: ten `wide` survivors in `plan-events`' older guards
+(repeats, stale cadence, the seen marks, the cancel of a vanished
+one-off) and one in `cast`'s lead name. That code predates this change,
+and none of those guards is tested alone yet.

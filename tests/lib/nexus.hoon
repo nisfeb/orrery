@@ -597,14 +597,18 @@
   ==
 ++  test-people-and-briefs
   =/  all=(list loaded:orr)
-    :~  ['person/me' [%person 'me' ~ now `~zod] ~]
-        ['person/dana' [%person 'Dana' ~ now ~] ~]
-        ['org/acme' [%org 'Acme' ~ now `~nec] ~]
+    :~  ['person/me' [%person 'me' (sy ~['~Bus' 'me']) now `~zod] ~]
+        ['person/dana' [%person 'Dana' (sy ~['~bus' '~wet']) now ~] ~]
+        ['person/lee' [%person 'Lee' ~ now `~wet] ~]
+        ['org/acme' [%org 'Acme' (sy ~['~dev']) now `~nec] ~]
     ==
   =/  bl=json
     (jo '{"text": "second", "tags": {"A1": "a2"}, "today": [{"text": "first", "tags": {"A1": "a1"}}]}')
   ;:  weld
-    (expect-eq !>((my ~[['~zod' 'person/me']])) !>((people-of-ships:orr all)))
+    ::  an alias keys its person, a body's own ship wins over an alias,
+    ::  and the owner over anyone
+    %+  expect-eq  !>((my ~[['~zod' 'person/me'] ['~bus' 'person/me'] ['~wet' 'person/lee']]))
+    !>((people-of-ships:orr all))
     (expect-eq !>(`(list @t)`~['second' 'first']) !>((brief-texts:orr bl)))
     (expect-eq !>(`(list [@t @ta])`~[['A1' 'a1']]) !>((brief-tags:orr bl 'first')))
     (expect-eq !>(`(list [@t @ta])`~[['A1' 'a2']]) !>((brief-tags:orr bl 'second')))

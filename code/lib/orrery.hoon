@@ -1083,6 +1083,8 @@
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar'] |=(t=@t `json`s+t))]
+      ['style' s+'']
+      ['preferences' a+~]
       :-  'payloads'
       =/  shape
         |=  keys=(list [@t @t])
@@ -1096,7 +1098,7 @@
           :~  ['via' 'required: one of chat, telegram, mail; chat when the person has a ship, telegram only when they have none']
               ['to' 'required: the body id of the person, e.g. person/alice']
               ['channel' 'optional: for via chat, a group channel to post in instead of a DM, e.g. chat/~host/general']
-              ['text' 'required: the message, short, in the owner\'s own voice. No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.']
+              ['text' 'required: the message, short, in the owner\'s own voice']
           ==
           :-  'home'
           %-  shape
@@ -1677,6 +1679,49 @@
 ::  the pieces of the user prompt and the count of decided actions shown
 ++  recent      60
 ++  prompt-bodies  300
+::  +reasons-kept: the dismissals before the window whose reasons are
+::  still shown
+++  reasons-kept  40
+::  +decision-lines: the last +recent decisions, each with the owner's
+::  note, then the dismissals before them that carry a reason, the last
+::  +reasons-kept of them. A reason is the owner's taste, and it
+::  outlasts the window.
+::
+++  decision-lines
+  |=  [head=@t decided=(list [id=@ta a=action])]
+  ^-  (list @t)
+  =/  cut=@ud  (sub (lent decided) (min recent (lent decided)))
+  =/  one
+    |=  [id=@ta a=action]
+    ^-  @t
+    =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
+    ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
+  =/  older=(list [id=@ta a=action])
+    (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a))))
+  =/  kept=(list @t)
+    (turn (slag (sub (lent older) (min reasons-kept (lent older))) older) one)
+  %+  weld  `(list @t)`[head (turn (slag cut decided) one)]
+  ?~  kept  ~
+  ['Earlier dismissals, with the owner\'s reasons:' kept]
+::  +owner-lines: the owner's own words from the schema, for every
+::  prompt: the style for text written in their voice, when the prompt
+::  writes any, and their standing preferences
+::
+++  owner-lines
+  |=  [schema=json style=?]
+  ^-  (list @t)
+  =/  said=@t  (end [3 1.000] (trim-cord (squeeze (gs schema 'style'))))
+  =/  prefs=(list @t)
+    %+  scag  30
+    %+  skip  (turn (strings (ga schema 'preferences')) |=(p=@t (end [3 300] (trim-cord (squeeze p)))))
+    |=(p=@t =('' p))
+  %+  weld
+    ^-  (list @t)
+    ?:  |(!style =('' said))  ~
+    ~[(cat 3 'The owner\'s style for text in their voice: ' said)]
+  ?~  prefs  ~
+  :-  'The owner\'s standing preferences:'
+  (turn prefs |=(p=@t (cat 3 '  - ' p)))
 ::  +ref-or-text: a value as one token: a ref's id, a string, or its JSON
 ::
 ++  ref-or-text
@@ -1731,7 +1776,7 @@
 ::  +build-parts: the five pieces, the least changing first and the
 ::  clock last, so the first four are the same text from one pass to the
 ::  next while nothing changed. decided are the done, dismissed and
-::  failed actions, oldest first; the last +recent are shown.
+::  failed actions, oldest first, shown as +decision-lines has them.
 ::
 ++  build-parts
   |=  $:  all=(list loaded)
@@ -1780,7 +1825,7 @@
     :-  'Payload shapes:'
     %+  turn  ~(tap by p.payloads)
     |=([k=@t v=json] (rap 3 '  ' k ': ' (en:json:html v) ~))
-  =/  p0=@t  (join-cords nl (weld head (section ~[%thing %place %org %note])))
+  =/  p0=@t  (join-cords nl ;:(weld head (owner-lines schema &) (section ~[%thing %place %org %note])))
   =/  p1=@t  (join-cords nl (section ~[%person %activity]))
   =/  p2=@t  (join-cords nl (section ~[%situation]))
   =/  open=(list @t)
@@ -1790,12 +1835,7 @@
     ^-  (unit @t)
     ?.  (is-open a)  ~
     `(rap 3 '  ' kind.a ' | ' title.a ' | about ' (join-cords ', ' ~(tap in about.a)) ~)
-  =/  done=(list @t)
-    :-  'Recent decisions (do not propose these again):'
-    %+  turn  (slag (sub (lent decided) (min recent (lent decided))) decided)
-    |=  [id=@ta a=action]
-    =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
-    ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
+  =/  done=(list @t)  (decision-lines 'Recent decisions (do not propose these again):' decided)
   =/  p3=@t  (join-cords nl (weld open done))
   =/  p4=@t
     (rap 3 'Now: ' (en-iso now) ', timezone ' ?:(=('' tz) 'unknown' tz) '. Answer with the JSON object.' ~)
@@ -2054,24 +2094,25 @@
 
   What you are given.
   The state: every body with its current attributes (people with status, location and relationships; things; places; orgs; situations with their times and participants; activities with their schedule, last and next occurrence), the open situations, the open actions, and the schema with its notes and the payload shapes for each action kind.
-  The recent decisions: actions done, dismissed or failed lately, with their titles. Do not propose these again, or a rewording of them. A dismissal is the owner saying no.
+  The recent decisions: actions done, dismissed or failed lately, with their titles. Do not propose these again, or a rewording of them. A dismissal is the owner saying no. Older dismissals that carry the owner's reason follow them.
+  The owner's style and standing preferences, when they have written any.
   The time now, and the owner's timezone.
 
   What to propose.
-  Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a follow-up on something that stalled. An open situation with nothing being done about it, a person whose status calls for a reply, a delivery that never arrived.
-  An event on the calendar is already known: never propose a task for attending it, and never restate it as a todo. Propose what an event needs beyond showing up, and only when the state gives a reason: a birthday with no gift task, an appointment with a form to bring, a rehearsal with no ride. A first occurrence is not a fifth: an activity with no last, or a situation of a kind the state has not seen, may call for something the owner does not yet have, equipment, paperwork, a plan, where a routine one calls for nothing; when a first sailing session or rehearsal plausibly needs such things, one task with the likely list under payload "notes" is worth more than a reminder to attend. When two events are close together or overlap, propose one task to sort out the overlap, naming both. A situation that is over or closed needs nothing.
+  Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a follow-up on something that stalled. An open situation with nothing being done about it, a person who asked the owner something and is still waiting, a delivery that never arrived. Someone telling the owner about their own day, trip or trouble is sharing news, not asking for anything, and needs no reply unless the state shows they asked or are waiting.
+  An event on the calendar is already known: never propose a task for attending it, and never restate it as a todo. Propose what an event needs beyond showing up, and only when the state gives a reason: a birthday with no gift task, an appointment with a form to bring, a rehearsal with no ride. A first occurrence is not a fifth: something the state or a message says is new, a first lesson, a new team, a first visit, may call for something the owner does not yet have, equipment, paperwork, a plan, where a routine one calls for nothing; then one task with the likely list under payload "notes" is worth more than a reminder to attend. An activity with no last is new to the ship, not to the owner, who may have done it for years, and that alone makes nothing a first. Two events that overlap or leave no time between them matter only when one person must be in two places: the same participant at both, or the one person who can take both. There is no conflict when the events are at one place, when one is a call, when one is optional or tentative, or when another adult can take one. When there is one, propose one task to sort it out, naming both. A situation that is over or closed needs nothing.
   Few and good. Zero is a fine answer. Never propose more than the limit given.
-  An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short. The text keeps the owner's prose rules: no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, and a sentence with more than one parenthetical thought split in two. A home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
+  An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short and plain, in the owner's style when one is given. A home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
   "about" names the bodies the action concerns, by id, at most a few. "due" is ISO 8601 UTC, only when the timing matters.
   Respect what the facts say about time: an occurrence in the past is over; a situation that is upcoming has not happened; "last" is the most recent occurrence and "next" the nearest one ahead.
   Do not invent facts, people, places or events. Do not propose things the owner cannot act on. Do not moralise.
   Common sense, always: no todo for attending an event or a routine activity; no message telling someone what they just said; nothing the owner is already doing; nothing a decision already covered; no reminder for what happens on its own.
-  A dismissed action may carry the owner's reason after its title. Those reasons are the owner's taste, and they generalise: one "just the event" means every todo for attending is unwanted, one "I always do this" means routine chores are unwanted. Read them before proposing.
+  A dismissed action may carry the owner's reason after its title. Those reasons are the owner's taste, and they generalise: one "just the event" means every todo for attending is unwanted, one "I always do this" means routine chores are unwanted. Read them before proposing. The owner's standing preferences are the same taste written down once, and they hold over any single decision.
 
   Answer with one JSON object and nothing else:
   {"actions": [{"kind": "task", "title": "...", "about": ["kind/slug"], "due": "...", "payload": {...}, "why": "one sentence"}],
-   "notes": ["anything you noticed that is not an action: a fact that looks wrong, a duplicate, a missing piece"]}
-  "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional and short.
+   "notes": ["what makes the state wrong or incomplete"]}
+  "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional, short and few: only what makes the state wrong or incomplete in a way that matters, such as two bodies that are one thing, a person an event plainly involves who is missing, or a situation still open well after it ended. Never a detail one body lacks, and never that something in the past is over.
   '''
 ::  +attend-words: what a title adds when it only says to go to an event
 ::
@@ -2520,10 +2561,25 @@
       'store'  'shop'  'market'  'office'  'dept'  'department'  'associates'  'partners'
       'clinic'  'center'  'centre'
   ==
+::  +relation-words: the role words that name someone by who they are
+::  to another
+::
+++  relation-words
+  ^-  (set @t)
+  %-  sy
+  ^-  (list @t)
+  :~  'wife'  'husband'  'mom'  'mum'  'dad'  'mother'  'father'  'son'
+      'daughter'  'brother'  'sister'  'boss'  'friend'  'partner'
+  ==
+::  +person-key: the words a name is matched by. A relation beside a
+::  name names someone else: "jackson wife" is Jackson's wife, not
+::  Jackson, so it is matched by nothing.
+::
 ++  person-key
   |=  n=@t
   ^-  (set @t)
   =/  ks=(set @t)  (sy (tokens n))
+  ?:  !=(~ (~(int in ks) relation-words))  ~
   (~(dif in ks) role-words)
 ::  +same-person: every word of the shorter name is in the longer one,
 ::  and a one-word name is a first name, not a role: "dana" and "dana
@@ -2915,7 +2971,11 @@
 ++  known-people
   |=  all=(list loaded)
   ^-  (map @t bid)
-  =/  people=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
+  ::  the first to claim a word keeps it, and the owner claims first
+  =/  people=(list loaded)
+    =/  me  |=(l=loaded =('person/me' id.l))
+    =/  ps=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
+    (weld (skim ps me) (skip ps me))
   =/  words=(list [word=@t id=bid])
     %-  zing
     %+  turn  people
@@ -3100,7 +3160,7 @@
   Three shapes exist.
   A body is something that exists: a person, place, thing, org, situation, activity or note. Its id is kind/slug, lowercase letters, digits and hyphens, for example person/sarah, place/johns-machine-shop, thing/subaru, situation/2026-09-16-breakdown.
   An observation is one claim about one body: subject.attr = value, with when it became true. Values are a short string, a number, true or false, null (which clears the attribute), or {"ref": "kind/slug"} pointing at another body.
-  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both, and when it does not, write neither. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short, in the owner's own voice. The text keeps the owner's prose rules: no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, and a sentence with more than one parenthetical thought split in two. Never a message telling someone what they just said, and never one the owner already sent. When a message cancels something that is on the calendar and you were given the calendar's own id for that event, propose a calendar action with mode "cancel", event that id and, for a repeating event, starts the occurrence being dropped, keeping title and starts as an ordinary calendar action has them; the owner approves it, and the cancellation is written as a fact either way. Propose only the action kinds listed for you, with the payload shape given.
+  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both, and when it does not, write neither. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short and plain, in the owner's own voice and in their style when one is given. Someone telling the owner about their own day, trip or trouble is not asking anything: propose a message only when they asked the owner something or are waiting on them, and never about a problem a later message says is solved. Never a message telling someone what they just said, and never one the owner already sent. When a message cancels something that is on the calendar and you were given the calendar's own id for that event, propose a calendar action with mode "cancel", event that id and, for a repeating event, starts the occurrence being dropped, keeping title and starts as an ordinary calendar action has them; the owner approves it, and the cancellation is written as a fact either way. Propose only the action kinds listed for you, with the payload shape given. A bill is a task only while the owner still has to pay it: an invoice, or a request with an amount due and no sign it is paid. A receipt, a charge already made, an autopay notice, a refund or a reimbursement is no task. The owner's standing preferences, when given, say what they want proposed and what not.
   Rules.
   Only state what the messages say or clearly imply. Never invent. When unsure, leave it out or lower the confidence.
   Use the existing bodies by id whenever a message refers to one of them, by name or alias. When a message calls an existing body by a name the list does not have ("next door" for place/neighbors, "the Hendersons"), repeat that body in "bodies" with the new name under "aliases", so the ship learns the word. Create a new body only for a named person, place, thing or org, or for a situation (an event with participants) the messages describe.
@@ -3628,6 +3688,7 @@
       me=@t
       kinds=(list @t)
       payloads=(map @t json)
+      owner=(list @t)
   ==
 ::  one message in the prompt's window; context marks an earlier one,
 ::  shown for sense but not to be written from
@@ -3679,7 +3740,7 @@
     ?.  ?=([%o *] p)  ~
     %-  ~(gas by *(map @t json))
     (skim ~(tap by p.p) |=([k=@t v=json] &(?=([%o *] v) (lien kinds |=(x=@t =(x k))))))
-  [bodies attrs notes 'person/me' kinds payloads]
+  [bodies attrs notes 'person/me' kinds payloads (owner-lines schema &)]
 ::  +closed-before: a situation closed, with its end before the cutoff.
 ::  A new message does not refer to something long over.
 ::
@@ -3746,7 +3807,7 @@
         `(list @t)`~['---' 'Answer with the JSON object.']
     ==
   %+  join-cords  nl
-  ;:  weld  head  attr-lines  note-lines  shapes  extra  `(list @t)`~['']  msg-lines  ==
+  ;:  weld  head  owner.ctx  attr-lines  note-lines  shapes  extra  `(list @t)`~['']  msg-lines  ==
 ::  ==  the reader's validation: the model's answer as facts the ship
 ::  will take, with notes on what was dropped (analyze.validate)
 ::
@@ -4615,13 +4676,13 @@
   '''
   You refine one proposed action for orrery, a model of one person's world, from a note the owner typed while approving it.
 
-  You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, and the note. Answer with one JSON object and nothing else: {"bodies": [...], "action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
+  You are given the action as JSON, the shapes the schema allows for each action kind, the bodies the ship knows (id, name, aliases), the owner's clock, their style and standing preferences when they have written any, and the note. Answer with one JSON object and nothing else: {"bodies": [...], "action": {"title": ..., "payload": {...}, "about": [...], "due": ... or null}, "extras": [...], "refused": ""}.
 
   The action keeps its kind and its purpose; the note changes what it says. "Include Dana in this" adds a person the ship knows to a message's recipients or an event's participants and names them in the text or title; "make it 3pm" moves the time on the owner's clock; "shorter" or "friendlier" rewrites the text in the owner's own voice. "Send this as mail" sets via to mail, "as a DM" to chat, "over telegram" to telegram; the owner's word on the channel is final. Keep the action's about and due as they are unless the note changes them. Every body you name is an id from the list when the list has it, by name or alias. A person the note names whom the list does not have is new: put them in "bodies" as {"id": "person/<slug of the name>", "kind": "person", "name": "<the name as written>", "aliases": []} and use that id; the same for a place, a thing or an org the note names. The owner does not add every person they meet by hand. A time is ISO 8601 UTC; a bare clock time in the note is on the owner's clock.
 
   What the note asks for beyond this action goes in extras, each a complete new action with kind, title, payload in the schema's shape, about and due: "also add a todo the day before to go shopping" is a task due one day before the event's start. Never repeat the action itself as an extra.
 
-  The owner's prose rules hold for every text and title you write: No em dashes. No semicolons or colons joining independent clauses. Simple, direct sentences, their lengths varied naturally. A sentence with more than one parenthetical thought is split in two.
+  Every text and title you write is short and plain, and follows the owner's style when one is given.
 
   When the note asks for something no action kind can carry, answer {"refused": "<one plain sentence saying why>"} and change nothing.
   '''
@@ -4635,6 +4696,7 @@
   %+  join-cords  nl
   ;:  weld
     `(list @t)`~[(rap 3 'The owner\'s clock reads ' (local-iso (en-iso now) tz) '.' ~)]
+    owner.ctx
     (ctx-lines ctx 'Action kinds an extra may have: ' 'Bodies the ship knows (id | name | aliases):')
     `(list @t)`~[(cat 3 'The action: ' (en:json:html (en-action id a)))]
     `(list @t)`~[(cat 3 'The note: ' text)]
@@ -5535,11 +5597,12 @@
 ::  +cast: everyone the event names: the title's certain names, made
 ::  as person bodies when the ship lacks them; its leading name only
 ::  when the ship knows it; and whoever the ship knows named in the
-::  title or the note. Never person/me, who is in everything anyway.
+::  title or the note. person/me is never in ids; me says whether the
+::  event names the owner.
 ::
 ++  cast
   |=  [ev=cal-event known=(map @t bid)]
-  ^-  [ids=(list bid) made=(list json)]
+  ^-  [ids=(list bid) made=(list json) me=?]
   =/  ni  (names-in name.ev)
   =/  sure=[ids=(list bid) made=(list json)]
     %+  roll  sure.ni
@@ -5552,8 +5615,10 @@
     ?.  &(?=(~ sure.ni) ?=(^ lead.ni))  ~
     (drop (~(get by known) (lower u.lead.ni)))
   =/  named=(list bid)  (weld (people-named name.ev known) (people-named note.ev known))
-  =/  ids=(list bid)  (skip (dedupe :(weld ids.sure lead named)) |=(b=bid =('person/me' b)))
-  [ids made.sure]
+  =/  every=(list bid)  (dedupe :(weld ids.sure lead named))
+  :+  (skip every |=(b=bid =('person/me' b)))
+    made.sure
+  (lien every |=(b=bid =('person/me' b)))
 ::  +event-source: the source id every calendar row carries, the
 ::  phone client's <calendar>/<uid>, or the uid alone when the store's
 ::  JSON does not say which calendar (it does not, today)
@@ -5667,6 +5732,7 @@
   =|  bodies=(list json)
   =|  rows=(list json)
   =|  made=@ud
+  =|  drops=(list json)
   =/  ids=(set @t)  (sy (turn events |=(ev=cal-event id.ev)))
   =/  todo=(list cal-event)  events
   |-
@@ -5688,6 +5754,23 @@
     ::  only a one-off the calendar has dropped altogether
     ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
     =/  people  (cast ev known)
+    ::  the owner's calendar is the owner's to organize, but they are
+    ::  at an event only when it names them or names nobody else
+    =/  with-me=?  |(me.people ?=(~ ids.people))
+    ::  before version 60 the owner stood in every event; a row that
+    ::  says so of an event that names others is retracted
+    =/  unsaid=(list json)
+      ?:  |(with-me ?=(~ hit))  ~
+      %+  murn  rows.u.hit
+      |=  r=row
+      ^-  (unit json)
+      ?.  ?&  =('participants' attr.obs.r)  !retracted.obs.r
+              =('calendar' kind.source.obs.r)  ?=([%o *] value.obs.r)
+              =('person/me' (ref-or-text value.obs.r))
+          ==
+        ~
+      `(retract-op id.r 'calendar: the event does not name the owner' 'calendar')
+    =.  drops  (weld drops unsaid)
     =.  bodies  (weld bodies made.people)
     ::  a person made here is known to the next event of the pass
     =.  known
@@ -5721,7 +5804,8 @@
             ~[(event-row ev id 'ended' s+(en-iso r.occ) r.occ ~ 100)]
             ?:  =('s' mark)  ~
             %-  zing
-            :~  ~[(event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) learned ~ 100)]
+            :~  ?.  with-me  ~
+                ~[(event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) learned ~ 100)]
                 (turn ids.people |=(p=bid (event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+p]]) learned ~ 85)))
                 ?:(=('' location.ev) ~ ~[(event-row ev id 'location' s+location.ev learned ~ 100)])
             ==
@@ -5759,6 +5843,7 @@
       %-  zing
       :~  ~[(event-row ev id 'cadence' s+kind.ev as-of ~ 100)]
           ~[(event-row ev id 'schedule' s+schedule as-of ~ 100)]
+          ?.  with-me  ~
           ~[(event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) as-of ~ 100)]
           (turn ids.people |=(p=bid (event-row ev id 'participants' (pairs:enjs:format ~[['ref' s+p]]) as-of ~ 85)))
           ~[(event-row ev id 'organizer' (pairs:enjs:format ~[['ref' s+'person/me']]) as-of ~ 100)]
@@ -5820,10 +5905,11 @@
       n     +(n)
     ==
   =/  every=(list json)  (weld rows rows.gone)
-  :*  (observe-ops bodies every)
+  =/  undo=(list json)  (dedupe-json drops)
+  :*  (weld (observe-ops bodies every) undo)
       seen.gone
       made
-      (lent every)
+      (add (lent every) (lent undo))
       n.gone
   ==
 ::  ==  the daily brief (version 52): one mail each morning from the
@@ -6040,11 +6126,11 @@
   '''
   You are the analyst for orrery, a model of one person's world kept on their own ship. Each morning you write the owner a few lines to read on their phone before the day starts.
 
-  You are given the state (every body with its current attributes, with situations that start more than two days out left out), today's schedule and todos, what is ahead in the coming week as titles and starts only, the actions waiting for the owner's answer, the recent decisions, what yesterday's brief said, and the time now.
+  You are given the owner's standing preferences when they have written any, the state (every body with its current attributes, with situations that start more than two days out left out), today's schedule and todos, what is ahead in the coming week as titles and starts only, the actions waiting for the owner's answer, the recent decisions with the owner's reasons for dismissals, what yesterday's brief said, and the time now. The preferences and the reasons are the owner's taste: say nothing they rule out.
 
-  The brief is about today. Tomorrow and the day after earn a line only when something must happen today to be ready for them: a first occurrence, travel, something to bring or book. Anything later than that gets a line only when today is the last day to act on it. Nothing from the week ahead is worth a line for being on the calendar.
+  The brief is about today. Tomorrow and the day after earn a line only when something must happen today to be ready for them: a first occurrence the state says is new, travel, something to bring or book. Anything later than that gets a line only when today is the last day to act on it. Nothing from the week ahead is worth a line for being on the calendar.
 
-  Point out what the owner would want to know and might not see: two things today that overlap or leave no time between them, a fact that looks stale or wrong, something open with nothing being done about it, a decision waiting on them that matters today.
+  Point out what the owner would want to know and might not see: two things today that need one person in two places at once, a fact that looks stale or wrong, something open with nothing being done about it, a decision waiting on them that matters today.
 
   Do not list the schedule or the waiting actions again; the mail already does. Do not propose actions; another pass does that. Do not repeat a line yesterday's brief already said unless what it said has changed.
 
@@ -6055,15 +6141,17 @@
   Plain text, no markdown. One to three short lines, one thing each; up to six only on a day that earns them. Fewer lines beat filler. When there is nothing worth saying, answer exactly: Nothing to add.
   '''
 ::  +brief-user: what the analyst reads before writing the brief: the
-::  state (situations closed, over or more than two days out left out),
-::  the recent decisions, today's lines, the waiting lines, the week
+::  owner's preferences, the state (situations closed, over or more
+::  than two days out left out), the decisions with their reasons,
+::  today's lines, the waiting lines, the week
 ::  ahead as titles and starts, yesterday's brief, the clock
 ::
 ++  brief-user
-  |=  $:  all=(list loaded)  multi=(set @t)  decided=(list [id=@ta a=action])
+  |=  $:  all=(list loaded)  schema=json  decided=(list [id=@ta a=action])
           today=(list @t)  waiting=(list @t)  said=@t  now=@da  tz=@t
       ==
   ^-  @t
+  =/  multi=(set @t)  (multi-of schema)
   =/  near=@da  (add now ~d2)
   =/  week=@da  (add now ~d7)
   =/  shown=(list loaded)  (scag prompt-bodies all)
@@ -6116,10 +6204,9 @@
   %+  join-cords  nl
   %-  zing
   :~  ~['The owner is person/me.']
+      (owner-lines schema |)
       (section ~[%thing %place %org %note %person %activity %situation])
-      ~['Recent decisions:']
-      %+  turn  (slag (sub (lent decided) (min 60 (lent decided))) decided)
-      |=([* a=action] (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~))
+      (decision-lines 'Recent decisions:' decided)
       ~['Today\'s schedule and todos:']
       ?~(today ~['  nothing'] (turn today |=(t=@t (cat 3 '  ' t))))
       ~['Waiting on the owner:']
@@ -6304,18 +6391,26 @@
   ==
 ::  +people-of-ships: every person body with a ship, keyed by that ship
 ::  as the settings key one, so a person the owner named on the ship is
-::  known to the reader without a row on the card
+::  known to the reader without a row on the card. A ship alias (the
+::  owner's old moon) keys its person too; a body's own ship wins over
+::  an alias, and the owner over anyone.
 ::
 ++  people-of-ships
   |=  all=(list loaded)
   ^-  (map @t @t)
-  %-  ~(gas by *(map @t @t))
-  %+  murn  all
-  |=  l=loaded
-  ^-  (unit [@t @t])
-  ?.  =(%person kind.body.l)  ~
-  ?~  ship.body.l  ~
-  `[(ship-key (scot %p u.ship.body.l)) id.l]
+  =/  people=(list loaded)  (skim all |=(l=loaded =(%person kind.body.l)))
+  =/  aliased=(list [@t @t])
+    %-  zing
+    %+  turn  people
+    |=  l=loaded
+    ^-  (list [@t @t])
+    %+  murn  ~(tap in aliases.body.l)
+    |=(a=@t ?.(=('~' (end [3 1] (trim-cord a))) ~ `[(ship-key a) `@t`id.l]))
+  =/  own=(list [@t @t])
+    %+  murn  people
+    |=(l=loaded ?~(ship.body.l ~ `[(ship-key (scot %p u.ship.body.l)) `@t`id.l]))
+  =/  mine=(list [@t @t])  (skim (weld aliased own) |=([* id=@t] =('person/me' id)))
+  (~(gas by (~(gas by (~(gas by *(map @t @t)) aliased)) own)) mine)
 ++  dedupe-json
   |=  js=(list json)
   ^-  (list json)

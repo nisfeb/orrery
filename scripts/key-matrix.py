@@ -49,11 +49,17 @@ def state_ids(side):
 
 
 def retract_all(bid, names):
-    code, a = attrs_of(owner, bid)
-    for n in names:
-        row = dictish(dictish(a).get(n))
-        if row.get('obs'):
-            owner('POST', '/retract', {'id': row['obs'], 'note': 'key gate'})
+    #  a retracted winner hands the attribute to the row under it, which
+    #  may be this gate's too (a status the reader wrote from a page), so
+    #  each name is retracted until nothing is live, or five times
+    for _ in range(5):
+        code, a = attrs_of(owner, bid)
+        rows = [dictish(dictish(a).get(n)) for n in names]
+        live = [r['obs'] for r in rows if r.get('obs')]
+        if not live:
+            return
+        for o in live:
+            owner('POST', '/retract', {'id': o, 'note': 'key gate'})
 
 
 def clean():
@@ -62,7 +68,6 @@ def clean():
         if isinstance(c, dict) and str(c.get('name', '')).startswith('key-gate '):
             owner('DELETE', '/clients/' + str(c.get('id')))
     retract_all('person/me', ('health', 'status', 'mood', 'spouse', 'home'))
-    retract_all('person/me', ('health',))  # a full run leaves two live: the owner's and the writing key's
     retract_all('thing/subaru', ('status',))
     owner('PUT', '/policy', STARTER)
     if STARTER_SCHEMA[0] is not None:

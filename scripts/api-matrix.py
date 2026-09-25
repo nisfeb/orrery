@@ -1377,9 +1377,12 @@ sit = body_by_uid(ONCE_ID or 'none')
 check('the one-off is a situation named by its date and title, found by the uid its rows carry',
       sit.get('id', '').startswith('situation/') and sit['id'].endswith('-gate-cancel-once-%s' % XRUN.lower()) and sit.get('name') == ONCE_NAME, sit.get('id'))
 sattrs = dictish(sit.get('attrs'))
-check('it starts and ends at the event, learned now, and person/me is in it',
+#  the owner is in an event that names nobody else; this title's "gate"
+#  may name a gate person made earlier in the run, who then stands alone
+ps = refs(sit, 'participants')
+check('it starts and ends at the event, learned now, and person/me is in it only when it names nobody else',
       dictish(sattrs.get('starts')).get('value') == iso(CANCEL_ONCE) and dictish(sattrs.get('ends')).get('value') == iso(CANCEL_ONCE + timedelta(minutes=60))
-      and 'started' not in sattrs and 'person/me' in refs(sit, 'participants') and dictish(sattrs.get('starts')).get('by') == 'calendar', sattrs)
+      and 'started' not in sattrs and (ps == ['person/me'] or (bool(ps) and 'person/me' not in ps)) and dictish(sattrs.get('starts')).get('by') == 'calendar', sattrs)
 check('its rows name the calendar and the uid as their source', dictish(dictish(sattrs.get('starts')).get('source')) == {'kind': 'calendar', 'id': ONCE_ID}, dictish(sattrs.get('starts')).get('source'))
 act = body_by_uid(REPEAT_ID or 'none')
 aattrs = dictish(act.get('attrs'))

@@ -4264,7 +4264,7 @@
     =/  n  (fiber:fiber:nexus ,[@t @t])
     ?:  =('' api-key.gen)  (pure:n ['Nothing to add.' 'no api_key set on the generator'])
     =/  user=@t
-      (brief-user:orr all multi decided today lines.waiting (gs:orr last 'said') now tz)
+      (brief-user:orr all schema decided today lines.waiting (gs:orr last 'said') now tz)
     ;<  got=[status=@ud body=@t secs=@ud]  bind:n
       %:  post-json
         (cat 3 url.gen '/chat/completions')
