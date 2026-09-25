@@ -42,8 +42,8 @@ scripts/hoon-test-kit/hoon-mutate.py ~/software/nec --only same-title      # rec
 `|meld` `~nec` before a long run.
 
 The HTTP gates (`scripts/api-matrix.py` and the others) still run against
-an orrery instance on `~feb`. They cover the nexus, which no unit test
-reaches.
+an orrery instance on `~feb`. They cover the nexus's wiring: its reads and
+writes, and which handler each route reaches.
 
 ## What the runs found
 
@@ -75,3 +75,108 @@ Not run yet: the cheap pass on the arms outside this review, about 150
 mutants, and `branch,equal,flag` (377 mutants within `--since` of the
 review's base). The wide `&(...)` and `|(...)` guards, which most of this
 lib uses, are outside the kit's `conjunct` op today.
+
+## Reaching the nexus (version 60)
+
+The nexus (`code/nex/orrery/app.hoon`, about 5,600 lines) could not be
+unit tested. Following the kit's playbook ("Testing nexus code"), its
+rules moved into the lib, and the nexus keeps the reads, the writes and
+a one-line alias per moved arm, so no call site changed.
+
+- **Moved as they were:** the 21 arms that neither run as a fiber nor
+  touch the tree, and the types they need (`actor`, the tallies, the
+  telegram runs). Among them are the rules for what a key sees
+  (`view-of`, `hidden-for`, `seen-by`) and writes (`deny-observe`,
+  `deny-write`). The MCP lib's copy of `open-twin` is an alias now too.
+- **Lifted out of the fibers:** the decisions each fiber made between
+  its reads and writes, each now one pure arm:
+  - `route-of`: the route table, and who may take each route.
+  - `access-refusal` and `request-refusal`: the 403s, the 415 and the
+    cross-site check.
+  - `act-refusal` and `de-mint`: a key's proposal and a new key's request.
+  - `run-fresh`, `run-rows`, `gate-verdict`, `reader-answer`: the readers'
+    verdicts.
+  - `read-item`, `read-held`, `key-hide`: the read channel.
+  - `mail-since`, `mail-fresh`, `brief-replies-of`, `mail-rows`: the mail
+    reader's choices.
+  - `chat-since`, `chat-next`, `sift-rows`: the chat and mail readers'
+    sift, which was written out twice.
+  - `day-count`, `month-spend`, `counted-call`, `counted-pass`,
+    `gen-record-doc`, `transient-status`: the generator's records.
+  - `reabout-one`, `repoint-people`, `op-gone`: a body merged or deleted.
+  - `revives`, `dead-rows`, `offer-refusal`, `replacement`, `answer-fits`,
+    `tg-why`, `touch-due`, `owner-zone`: the writer, sharing, the brief,
+    iris and the telegram filter.
+
+**Proving the nexus unchanged.** Before staging, a script recorded 68
+answers from `~feb`: every read route as the owner, a writing key and a
+read-only key, and every refusal the router makes (owner only, read only,
+no route, no credentials, 415, cross-site, and a key's refused
+proposals). It recorded them again after staging. 61 were
+byte-identical. The other 7 differed only in time: the state's `at`, the
+keys' last-used stamps, and the reconcile, executor and calendar passes
+that ran again when the nexus reloaded.
+
+`tests/lib/nexus.hoon` tests every moved and lifted arm; one test holds
+all 63 routes and their access, generated from the lib's table.
+
+**Mutation.** `~nec` died three times during these runs (the kit's
+PLAYBOOK, "Look after the ship"). What ran:
+
+| pass | mutants run | killed | no-build | survived |
+|---|---|---|---|---|
+| boundary, conjunct on the lifted arms | 36 of 165 before a death | 31 | 1 | 4 |
+| the four ops on `rise-plan`, `rise-row`, `mail-threads` | 4 | 4 | 0 | 0 |
+| `dead-rows`' horizon, rechecked | 1 | 1 | 0 | 0 |
+| `wide` (the `&(...)` and `\|(...)` guards) on all of them | 61 | 53 | 4 | 4 |
+| branch, equal on the lifted arms | 80 of 133 before a death | 68 | 11 | 0 |
+
+Every no-build drops or flips a `?=` whose narrowing later code needs,
+which cannot compile. The survivors:
+
+- `dead-rows`: nothing held a row recorded exactly at the horizon. It is
+  kept, and `test-dead-rows` now says so; the recheck killed it.
+- `mail-since` and `chat-since`: their "before 1970" branch is defensive.
+  The settings cap `backfill_hours` at 720, so the span never passes now.
+- `mail-fresh`: its sort comparator on ties, which it does not order.
+- `open-twin` without its title check, `brief-replies-of` without "the
+  message answered is ours", and `reabout-one` without either half of
+  "an open message to from, and a body to send it to": real gaps, each
+  now a case in `tests/lib/nexus.hoon`, and not yet rechecked.
+
+Still to run: the rest of branch and equal (53), `route-of` under `equal`
+(63), and the recheck of the four `wide` survivors.
+
+## The upgrade and weir tests (version 60)
+
+Before version 60 every fiber came back from a crash through
+`rise-wait:io`. That never spun, but the writer lost the first op after a
+crash, and every fiber nothing pokes stayed down until a reload. Version
+60 ports calendar's `+rise-later`, and its back-off is the lib's
+`+rise-plan`, tested in `test-rise-plan`. Both tests ran on `~feb` with
+the stock grubbery kernel on 2026-09-25 (README, Development, has the
+steps):
+
+- **The upgrade.** Version 59 went back on the ship and took
+  `scripts/upgrade-seed.py`'s odd data: settings of the wrong types,
+  read-inbox items with odd fields, observations at the size caps and
+  unreadable times, and actions with payloads of odd shapes. Then the new
+  code went over it. For five minutes the worker's CPU stayed between 0
+  and 22%, the instance's bang stayed null, the route answered, and a
+  write landed.
+- **`/sys/behn/` refused.** Every fiber that sets a timer crashed once,
+  printed its trace once, said "no timer (weir?); waiting for a poke" and
+  parked. CPU stayed under 21% for five minutes, and a wake sent
+  meanwhile was refused with a 500. With the road back, the next wake
+  resumed the fiber.
+- **`/sys/bowl.sig` refused.** Every fiber that reads the clock parked
+  with "no clock", the web binder included, so orrery's routes were dead
+  while the CPU stayed under 14%. That is a parked app, not a spin.
+- **`/sys/iris/` refused**, with the generator given a key and a forced
+  pass. It crashed on the model call and came back by itself after 1,
+  then 2, then 4 minutes, printing only "again (3 times running)" the
+  third time. A forced pass sent while it waited was refused with a 500.
+
+On a kernel with the fiber-safety guards, the kernel parked the fibers
+itself, and orrery's own handling never ran. Run these on the stock
+kernel.

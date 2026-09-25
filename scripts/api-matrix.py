@@ -100,6 +100,11 @@ print('0. clean slate')
 #  telegram and chat sections turn theirs on themselves)
 for r in ('/telegram', '/chat', '/mail', '/generator', '/read/settings'):
     curl('PUT', API + r, {'enabled': False})
+#  the keys an earlier run minted: a run stopped part way never revokes
+#  them, and the ship holds fifty at most
+for k in (curl('GET', API + '/clients')[1] or []):
+    if str(dictish(k).get('by', '')).startswith('gate-'):
+        curl('DELETE', API + '/clients/' + dictish(k)['id'])
 #  a key with write, for the checks that an owner-only route refuses
 #  even a writing key (no credentials at all is refused earlier, by
 #  another guard, so that would prove nothing about the route)
@@ -973,7 +978,7 @@ for o in dictish(curl('GET', API + '/body/person/me')[1]).get('observations', []
     if dictish(o.get('source')).get('id', '').startswith('https://example.test/') and o['status'] != 'retracted':
         curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
 for a in curl('GET', API + '/actions?status=open')[1] or []:
-    if isinstance(a, dict) and a.get('by') == 'gate-read':
+    if isinstance(a, dict) and a.get('by') in ('gate-read', 'web'):
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
 
 

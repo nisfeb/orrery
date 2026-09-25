@@ -157,12 +157,7 @@
   ?~  ex  (pure:m [%| 'orrery: peek refused'])
   ?.  u.ex  (pure:m [%& `i.ids])
   (first-missing t.ids)
-++  open-twin
-  |=  [all=(list [id=@ta a=action:orr]) kind=@tas title=@t]
-  ^-  (unit [id=@ta a=action:orr])
-  ?~  all  ~
-  ?:  &((is-open:orr a.i.all) =(kind.a.i.all kind) =(title.a.i.all title))  `i.all
-  $(all t.all)
+++  open-twin  open-twin:orr
 ::  ==  per-item answers for an observe batch, as the HTTP route gives them
 ::
 ::  seen carries the ids already answered in this batch, so the second

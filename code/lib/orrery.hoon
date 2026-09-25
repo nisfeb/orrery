@@ -5163,7 +5163,7 @@
   |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da tz=@t]
   ^-  (list exec-plan)
   ::  person/me's timezone, else the one the generator was given
-  =/  zone=@t  =/(z (attr-text all multi now 'person/me' 'timezone') ?:(=('' z) tz z))
+  =/  zone=@t  (owner-zone all multi now tz)
   %+  murn  acts
   |=  [id=@ta a=action]
   ^-  (unit exec-plan)
@@ -6237,4 +6237,919 @@
   ?:  &(=('proposed' cur) =('done' want))  ~['approved' 'done']
   ?:  &(=('claimed' cur) =('approved' want))  ~
   ~[want]
+::  ==  the nexus's pure rules (version 60): moved here from the nexus
+::  so the suites and the mutation runs reach them. The nexus keeps a
+::  one-line alias for each, so no call site there changed.
+::
+::  +trail-entry: one audit row. Both rings carry the same five pairs,
+::  so they are built in one place.
+::
+++  trail-entry
+  |=  [op=@t ok=? why=@t by=@t now=@da]
+  ^-  json
+  %-  pairs:enjs:format
+  ~[['op' s+op] ['ok' b+ok] ['why' s+why] ['by' s+by] ['at' (en-time now)]]
+++  find-row
+  |=  [rs=(list row) id=@ta]
+  ^-  (unit row)
+  ?~  rs  ~
+  ?:  =(id.i.rs id)  `i.rs
+  $(rs t.rs)
+::  +open-twin: an open action with this kind and title, if any
+::
+++  open-twin
+  |=  [all=(list [id=@ta a=action]) kind=@tas title=@t]
+  ^-  (unit [id=@ta a=action])
+  ?~  all  ~
+  ?:  &((is-open a.i.all) =(kind.a.i.all kind) =(title.a.i.all title))  `i.all
+  $(all t.all)
+::  +seen-by: an action as an actor's view shows it: whole for the
+::  owner, its about trimmed to the key's kinds, as +view-of trims the
+::  action list
+::
+++  seen-by
+  |=  [act=actor a=action]
+  ^-  action
+  ?~(scope.act a (scope-about a kinds.u.scope.act))
+::  +settings-file, +settings-view: the document an op writes, and how
+::  its GET shows it (the secrets masked)
+::
+++  settings-file
+  |=  op=@t
+  ^-  @ta
+  ?+  op  %'policy.json'
+    %'set-schema'     %'schema.json'
+    %'set-generator'  %'generator.json'
+    %'set-telegram'   %'telegram.json'
+    %'set-chat'       %'chat.json'
+    %'set-mail'       %'mail.json'
+    %'set-read'       %'read.json'
+  ==
+++  settings-view
+  |=  [op=@t doc=json]
+  ^-  json
+  ?+  op  doc
+    %'set-generator'  (en-config-masked (de-config doc))
+    %'set-telegram'   (en-tg-config-masked (de-tg-config doc))
+    %'set-chat'       (en-chat-config (de-chat-config doc))
+    %'set-mail'       (en-mail-config (de-mail-config doc))
+    %'set-read'       (en-mail-config (de-mail-config doc))
+  ==
+++  list-json
+  |=  [items=(list [id=@t name=@t]) note=@t]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['items' a+(turn items |=([id=@t name=@t] (pairs:enjs:format ~[['id' s+id] ['name' s+name]])))]
+      ['note' s+note]
+  ==
+::  +people-of-ships: every person body with a ship, keyed by that ship
+::  as the settings key one, so a person the owner named on the ship is
+::  known to the reader without a row on the card
+::
+++  people-of-ships
+  |=  all=(list loaded)
+  ^-  (map @t @t)
+  %-  ~(gas by *(map @t @t))
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [@t @t])
+  ?.  =(%person kind.body.l)  ~
+  ?~  ship.body.l  ~
+  `[(ship-key (scot %p u.ship.body.l)) id.l]
+++  dedupe-json
+  |=  js=(list json)
+  ^-  (list json)
+  =|  seen=(set json)
+  |-
+  ?~  js  ~
+  ?:  (~(has in seen) i.js)  $(js t.js)
+  [i.js $(js t.js, seen (~(put in seen) i.js))]
+::  +brief-texts, +brief-tags: every brief sent today (its text), and
+::  the tags of the one whose text is given
+::
+++  brief-texts
+  |=  bl=json
+  ^-  (list @t)
+  =/  today=(list @t)  (turn (ga bl 'today') |=(e=json (gs e 'text')))
+  ?:(=('' (gs bl 'text')) today [(gs bl 'text') today])
+++  brief-tags
+  |=  [bl=json text=@t]
+  ^-  (list [tag=@t id=@ta])
+  =/  hits=(list json)  (skim (ga bl 'today') |=(e=json =(text (gs e 'text'))))
+  =/  t=json  ?^(hits (gj i.hits 'tags') ?:(=(text (gs bl 'text')) (gj bl 'tags') ~))
+  ?.  ?=([%o *] t)  ~
+  (murn ~(tap by p.t) |=([k=@t v=json] ?:(?=([%s *] v) `[k `@ta`p.v] ~)))
+::  +essay-of: a Tlon essay of one text: a story of one inline verse
+::  per line, the author, the moment, the /chat kind, no meta or blob
+::
+++  essay-of
+  |=  [text=@t our=@p now=@da]
+  ^-  *
+  =/  story=*
+    %+  turn  (split-char 10 (trip text))
+    |=(l=tape [%inline ~[(crip l)]])
+  [[story our now] /chat ~ ~]
+++  find-run
+  |=  [runs=(list tg-run) chat=@t]
+  ^-  (unit tg-run)
+  ?~  runs  ~
+  ?:(=(chat.i.runs chat) `i.runs $(runs t.runs))
+::  +tg-final-row: a validated observation (subject, attr, value, at,
+::  conf, message, until) as the writer's row: the source is the message
+::  it came from (kind chat, or web for a page read), by the reader's
+::  signer, the message key gone.
+::
+++  tg-final-row
+  |=  [o=json signer=@t src=@t]
+  ^-  json
+  ?.  ?=([%o *] o)  o
+  =/  msg=@t  (gs o 'message')
+  ?:  =('' msg)  o
+  :-  %o
+  %-  ~(gas by (~(del by p.o) 'message'))
+  :~  ['source' (pairs:enjs:format ~[['kind' s+src] ['id' s+msg]])]
+      ['by' s+signer]
+  ==
+::  +tally-idle: a pass that moved nothing (a claim that was refused
+::  does not count, nor a poke the calendar refused, so a refusal that
+::  repeats does not run passes without end)
+::
+++  tally-idle
+  |=  t=exec-tally
+  ^-  ?
+  ?&  =(0 :(add claimed.t sent.t placed.t ticked.t deleted.t moved.t closed.t adopted.t))
+      ?=(~ failed.t)
+  ==
+::  +tang-head: a refusal's first line, as the note an action fails with
+::
+++  tang-head
+  |=  t=tang
+  ^-  @t
+  ?~  t  'refused'
+  (crip ~(ram re i.t))
+::  +note-missing: a desk link does not know, named once in the tally
+::
+++  note-missing
+  |=  [t=exec-tally name=@t]
+  ^-  exec-tally
+  ?:  (lien missing.t |=(x=@t =(x name)))  t
+  t(missing (snoc missing.t name))
+::  ==  the scope, applied
+::
+::  +hidden-for: the attributes an actor never sees: none for the
+::  owner, policy.sensitive for a key
+::
+++  hidden-for
+  |=  [act=actor policy=json]
+  ^-  (set @t)
+  ?:(owner.act ~ (sensitive-of policy))
+::  +view-of: what an actor may see: the bodies in its kinds with the
+::  hidden attributes dropped, and the actions in its action kinds. A
+::  value that refs a body outside the kinds reads as cleared on a row
+::  with a synthetic id, and an about naming one is trimmed away: a key
+::  never learns such a body exists. The owner sees everything.
+::
+++  view-of
+  |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action]) hide=(set @t)]
+  ^-  [all=(list loaded) acts=(list [id=@ta a=action])]
+  ?~  scope.act  [all acts]
+  =/  s=scope  u.scope.act
+  :-  %+  murn  all
+      |=  l=loaded
+      ^-  (unit loaded)
+      ?.  (kind-in-scope s kind.body.l)  ~
+      `l(rows (veil-refs (drop-attrs rows.l hide) kinds.s))
+  %+  turn  (skim acts |=([* a=action] (action-in-scope s kind.a)))
+  |=([id=@ta a=action] [id (scope-about a kinds.s)])
+::  +deny-observe: why a key may not send this batch, or ~. The owner is
+::  never denied. A batch with one item outside the scope is refused
+::  whole, naming the first offender (which the key itself sent). A key
+::  whose scope says sensitive may observe the attributes the policy
+::  marks sensitive; every view goes on hiding them from it.
+::
+++  deny-observe
+  |=  [act=actor jon=json policy=json]
+  ^-  (unit @t)
+  ?~  scope.act  ~
+  ?.  write.u.scope.act  `'read only key'
+  =/  bad=(unit @t)  (out-of-scope jon u.scope.act (key-hide u.scope.act policy))
+  ?~  bad  ~
+  `(cat 3 'not in scope: ' u.bad)
+::  +deny-write: why a key may not write a body of this kind, or ~
+::
+++  deny-write
+  |=  [act=actor kind=@tas]
+  ^-  (unit @t)
+  ?~  scope.act  ~
+  ?.  write.u.scope.act  `'read only key'
+  ?.  (kind-in-scope u.scope.act kind)  `(cat 3 'not in scope: ' kind)
+  ~
+::  ==  who is asking
+::
+::  an actor: the owner (the cookie, writing as "http"), or a key with
+::  its identity and its scope
+::
++$  actor  [owner=? by=@t scope=(unit scope)]
+::  +$  chat-tally: what one pass did
+::
++$  chat-tally
+  $:  read=@ud  filed=@ud  strangers=@ud  held=@ud
+      changed=@ud  conversations=@ud  unpicked=@ud  own=@ud
+      notes=(list @t)
+  ==
+::  +$  tg-run: one chat's updates that passed the filters, oldest first
+::
++$  tg-item  [name=@ta uid=@ud msg=tg-msg who=@t]
++$  tg-run   [chat=@t items=(list tg-item)]
+::  ==  the executor (version 34): the ship carries out its own approved
+::  actions. docs/superpowers/specs/2026-09-21-executors-on-ship-design.md
+::
+::  The lib plans (+plan-exec, +plan-mirror); the fiber here files. One
+::  pass is +exec-pass (the approved actions, each claimed, read back,
+::  carried out and reported) then +todo-pass (the calendar's todo list
+::  against the task actions), then the record.
+::
+::  what a pass did, for exec-last.json
+::
++$  exec-tally
+  $:  claimed=@ud                               ::  actions the ship claimed
+      sent=@ud                                  ::  messages delivered
+      placed=@ud                                ::  events and todos made
+      failed=(list [id=@t title=@t note=@t])    ::  the newest first
+      ticked=@ud                                ::  todos ticked for a done action
+      deleted=@ud                               ::  todos deleted for a dismissed or failed one
+      moved=@ud                                 ::  todos whose due followed the action's
+      closed=@ud                                ::  actions done because their todo was ticked
+      adopted=@ud                               ::  hand-typed todos made into tasks
+      missing=(list @t)                         ::  desks link does not know
+      notes=(list @t)
+  ==
+::  ==  the routes (version 60)
+::
+::  +route-path: the path under /apps/orrery a request names; a trailing
+::  slash parses as a trailing empty knot and is dropped
+::
+++  route-path
+  |=  site=path
+  ^-  path
+  =/  suffix0=path  (slag 2 site)
+  ?:  &(?=(^ suffix0) =('' (rear `path`suffix0)))  (snip `path`suffix0)
+  suffix0
+::  +$  access: who may take a route: the owner alone, the owner or a
+::  key with write (so a client that walks the owner through a setup
+::  can finish it), or every actor (the route applies a key's scope
+::  itself)
+::
++$  access  ?(%own %writes %any)
+::  +route-of: the route a request names and who may take it, or ~ for
+::  no such route. The nexus dispatches on the tag.
+::
+++  route-of
+  |=  [meth=@t suffix=path]
+  ^-  (unit [tag=@tas =access])
+  ?:  &(=('GET' meth) ?=(~ suffix))                             `[%get-page %own]
+  ?:  &(=('GET' meth) ?=([%'orrery.css' ~] suffix))             `[%get-css %own]
+  ?:  &(=('GET' meth) ?=([%'orrery.js' ~] suffix))              `[%get-js %own]
+  ?:  &(=('GET' meth) ?=([%api %state ~] suffix))               `[%get-state %any]
+  ?:  &(=('GET' meth) ?=([%api %body @ @ ~] suffix))            `[%get-body %any]
+  ?:  &(=('DELETE' meth) ?=([%api %body @ @ ~] suffix))         `[%delete-body %own]
+  ?:  &(=('GET' meth) ?=([%api %resolve ~] suffix))             `[%get-resolve %any]
+  ?:  &(=('POST' meth) ?=([%api %observe ~] suffix))            `[%post-observe %any]
+  ?:  &(=('POST' meth) ?=([%api %retract ~] suffix))            `[%post-retract %any]
+  ?:  &(=('POST' meth) ?=([%api %bodies ~] suffix))             `[%post-bodies %any]
+  ?:  &(=('POST' meth) ?=([%api %merge ~] suffix))              `[%post-merge %own]
+  ?:  &(=('POST' meth) ?=([%api %act ~] suffix))                `[%post-act %any]
+  ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))             `[%get-actions %any]
+  ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))          `[%post-actions %any]
+  ?:  &(=('POST' meth) ?=([%api %actions @ %refine ~] suffix))  `[%post-actions-refine %any]
+  ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))              `[%get-schema %own]
+  ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))              `[%put-schema %own]
+  ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))              `[%get-policy %own]
+  ?:  &(=('PUT' meth) ?=([%api %policy ~] suffix))              `[%put-policy %own]
+  ?:  &(=('POST' meth) ?=([%api %share ~] suffix))              `[%post-share %own]
+  ?:  &(=('DELETE' meth) ?=([%api %share @ @ @ ~] suffix))      `[%delete-share %own]
+  ?:  &(=('GET' meth) ?=([%api %shares ~] suffix))              `[%get-shares %own]
+  ?:  &(=('POST' meth) ?=([%api %accept ~] suffix))             `[%post-accept %own]
+  ?:  &(=('POST' meth) ?=([%api %decline ~] suffix))            `[%post-decline %own]
+  ?:  &(=('POST' meth) ?=([%api %sync ~] suffix))               `[%post-sync %own]
+  ?:  &(=('POST' meth) ?=([%api %clients ~] suffix))            `[%post-clients %own]
+  ?:  &(=('GET' meth) ?=([%api %clients ~] suffix))             `[%get-clients %own]
+  ?:  &(=('DELETE' meth) ?=([%api %clients @ ~] suffix))        `[%delete-clients %own]
+  ?:  &(=('GET' meth) ?=([%api %generator ~] suffix))           `[%get-generator %own]
+  ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))           `[%put-generator %own]
+  ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))     `[%get-generator-last %own]
+  ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))           `[%post-generate %any]
+  ?:  &(=('POST' meth) ?=([%api %reconcile ~] suffix))          `[%post-reconcile %own]
+  ?:  &(=('GET' meth) ?=([%api %reconcile %last ~] suffix))     `[%get-reconcile-last %own]
+  ?:  &(=('GET' meth) ?=([%api %telegram ~] suffix))            `[%get-telegram %own]
+  ?:  &(=('PUT' meth) ?=([%api %telegram ~] suffix))            `[%put-telegram %own]
+  ?:  &(=('GET' meth) ?=([%api %telegram %last ~] suffix))      `[%get-telegram-last %own]
+  ?:  &(=('POST' meth) ?=([%api %telegram %webhook ~] suffix))  `[%post-telegram-webhook %writes]
+  ?:  &(=('GET' meth) ?=([%api %telegram %webhook ~] suffix))   `[%get-telegram-webhook %writes]
+  ?:  &(=('POST' meth) ?=([%api %telegram %wake ~] suffix))     `[%post-telegram-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %chat ~] suffix))                `[%get-chat %writes]
+  ?:  &(=('PUT' meth) ?=([%api %chat ~] suffix))                `[%put-chat %writes]
+  ?:  &(=('GET' meth) ?=([%api %chat %last ~] suffix))          `[%get-chat-last %own]
+  ?:  &(=('POST' meth) ?=([%api %chat %wake ~] suffix))         `[%post-chat-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %chat %peek ~] suffix))          `[%get-chat-peek %own]
+  ?:  &(=('GET' meth) ?=([%api %version ~] suffix))             `[%get-version %any]
+  ?:  &(=('GET' meth) ?=([%api %chat %lists ~] suffix))         `[%get-chat-lists %own]
+  ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))           `[%get-chat-dms %own]
+  ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))      `[%get-chat-channels %own]
+  ?:  &(=('POST' meth) ?=([%api %read ~] suffix))               `[%post-read %writes]
+  ?:  &(=('GET' meth) ?=([%api %read %settings ~] suffix))      `[%get-read-settings %writes]
+  ?:  &(=('PUT' meth) ?=([%api %read %settings ~] suffix))      `[%put-read-settings %writes]
+  ?:  &(=('GET' meth) ?=([%api %read %last ~] suffix))          `[%get-read-last %own]
+  ?:  &(=('POST' meth) ?=([%api %read %wake ~] suffix))         `[%post-read-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %mail ~] suffix))                `[%get-mail %writes]
+  ?:  &(=('PUT' meth) ?=([%api %mail ~] suffix))                `[%put-mail %writes]
+  ?:  &(=('GET' meth) ?=([%api %mail %last ~] suffix))          `[%get-mail-last %own]
+  ?:  &(=('POST' meth) ?=([%api %mail %wake ~] suffix))         `[%post-mail-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %brief %last ~] suffix))         `[%get-brief-last %own]
+  ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))          `[%get-exec-last %own]
+  ?:  &(=('GET' meth) ?=([%api %calendar %last ~] suffix))      `[%get-calendar-last %own]
+  ?:  &(=('POST' meth) ?=([%api %exec %wake ~] suffix))         `[%post-exec-wake %own]
+  ~
+::  +access-refusal: why this actor may not take a route of this access,
+::  or ~
+::
+++  access-refusal
+  |=  [act=actor =access]
+  ^-  (unit @t)
+  ?:  owner.act  ~
+  ?-  access
+    %any     ~
+    %own     `'owner only'
+    %writes  ?:(&(?=(^ scope.act) write.u.scope.act) ~ `'read only key')
+  ==
+::  +request-refusal: a request refused before its route: a body that
+::  does not say it is JSON (a POST with no body carries none to
+::  mistype), and the owner's cookie on a request another site sent (a
+::  browser says where a request came from; the Host header is no help,
+::  a proxy rewrites it). ponytail: a browser too old to send
+::  Sec-Fetch-Site is not held.
+::
+++  request-refusal
+  |=  [meth=@t body=(unit octs) ctype=@t site=@t owner=?]
+  ^-  (unit [code=@ud why=@t])
+  ?:  ?&  |(=('POST' meth) =('PUT' meth))
+          ?=(^ body)
+          !=(0 p.u.body)
+          !=('application/json' (end [3 16] (crip (cass (trip ctype)))))
+      ==
+    `[415 'content-type: application/json required']
+  ?:  &(owner !=('GET' meth) |(=('cross-site' site) =('same-site' site)))
+    `[403 'a request from another site is refused']
+  ~
+::  +act-refusal: why a key may not propose this action, or ~. A kind
+::  outside its action kinds is 403 (the key sent the kind itself); a
+::  body outside its kinds is 400 no such body, in about or in what the
+::  payload names (a message's to, a merge's pair), so a key never
+::  learns such a body exists; and a key does not merge at all, which
+::  is the owner's and reconcile's.
+::
+++  act-refusal
+  |=  [act=actor a=action]
+  ^-  (unit [code=@ud why=@t])
+  ?~  scope.act  ~
+  =/  s=scope  u.scope.act
+  ?.  (action-in-scope s kind.a)  `[403 (cat 3 'not in scope: ' kind.a)]
+  =/  beyond
+    |=  ids=(list @t)
+    ^-  (unit @t)
+    ?~  ids  ~
+    =/  pk  (parse-bid i.ids)
+    ?:  &(?=(^ pk) !(kind-in-scope s kind.u.pk))  `i.ids
+    $(ids t.ids)
+  =/  out=(unit @t)  (beyond ~(tap in about.a))
+  ?^  out  `[400 (cat 3 'about: no such body ' u.out)]
+  ?:  =(%merge kind.a)  `[403 'a key may not propose a merge']
+  =/  named=(list @t)
+    (skip (turn `(list @t)`~['to' 'from' 'into'] |=(k=@t (gs payload.a k))) |=(t=@t =('' t)))
+  =/  far=(unit @t)  (beyond named)
+  ?^  far  `[400 (cat 3 'payload: no such body ' u.far)]
+  ~
+::  ==  the read channel (version 60)
+::
+::  +read-item: a read-inbox item as the reader's message (the title
+::  heads the text), the scope of the key that handed it in (~ for the
+::  owner's), and the kind its facts are filed as: signed by the key's
+::  by, else by web
+::
+++  read-item
+  |=  [item=json now=@da]
+  ^-  [msg=tg-msg sc=(unit scope) kind=reader-kind]
+  =/  title=@t  (gs item 'title')
+  =/  text=@t  (gs item 'text')
+  =/  msg=tg-msg
+    :*  (gs (gj item 'source') 'id')
+        (gs item 'who')
+        ?:(=('' title) text (rap 3 title nl nl text ~))
+        (fall (de-iso (gs item 'at')) now)
+        (gs item 'id')
+        ''
+    ==
+  =/  sc=(unit scope)
+    =/  sj=json  (gj item 'scope')
+    ?.  ?=([%o *] sj)  ~
+    =/  d  (de-scope sj)
+    ?:(?=(%& -.d) `p.d ~)
+  =/  kind=reader-kind  read-kind
+  =?  kind  ?=(^ sc)  kind(by (gs item 'by'))
+  [msg sc kind]
+::  +read-held: whether today's texts are spent: the record's count, when
+::  its day is today, at the cap
+::
+++  read-held
+  |=  [last=json now=@da cap=@ud]
+  ^-  ?
+  (gte (day-count last 'read_today' now) cap)
+::  +key-hide: what a key may not write: the policy's sensitive names
+::  and the address attributes (where the executor sends a person's
+::  messages), unless its scope says sensitive: write
+::
+++  key-hide
+  |=  [s=scope policy=json]
+  ^-  (set @t)
+  ?:  sensitive.s  ~
+  (~(uni in (sensitive-of policy)) address-attrs)
+::  ==  the readers' verdicts (version 60)
+::
+::  +run-fresh: a run without its questions: a question states nothing,
+::  and neither does an empty text; a handed-in page that ends in a
+::  question still says things
+::
+++  run-fresh
+  |=  [run=(list [msg=tg-msg who=@t]) kind=reader-kind]
+  ^-  (list [msg=tg-msg who=@t])
+  %+  skip  run
+  |=  [msg=tg-msg who=@t]
+  ?:  =('' text.msg)  &
+  &(!=('web' channel.kind) =('?' (rsh [3 (dec (met 3 text.msg))] text.msg)))
+::  +run-rows: what the analyst reads: the chat's window as context, then
+::  the run's new messages, oldest first
+::
+++  run-rows
+  |=  [recent=json fresh=(list [msg=tg-msg who=@t]) kind=reader-kind]
+  ^-  (list window-row)
+  ?~  fresh  ~
+  %+  weld
+    (turn (tg-window recent chat.msg.i.fresh) |=([id=@t at=@t w=@t t=@t] ^-(window-row [id at w t &])))
+  %+  turn  `(list [msg=tg-msg who=@t])`fresh
+  |=([msg=tg-msg who=@t] ^-(window-row [id:(tg-source msg kind) (en-iso at.msg) who text.msg |]))
+::  +gate-verdict: whether the gate lets the run through, and the note
+::  saying so. An answer without the question's noul is no answer, and
+::  no answer reads the run.
+::
+++  gate-verdict
+  |=  [g=(unit json) threshold=@ud]
+  ^-  [read=? note=@t]
+  =?  g  ?&(?=(^ g) ?=(~ (gj (gj u.g 'worth_reading') 'noul')))  ~
+  =/  p=@ud  ?~(g 100 (noul-of u.g 'worth_reading'))
+  =/  read=?  !(lth p threshold)
+  :-  read
+  ?~  g  'gate unavailable, analyst asked'
+  (rap 3 'gate: ' (crip (a-co:co p)) ?:(read ', read' ', not read') ~)
+::  +reader-answer: the analyst's answer as JSON, or why not and whether
+::  the model counts as down, so the run waits and is asked again:
+::  unreachable or timed out, 401 to 404, 408, 429 and 5xx, and a 200
+::  that carries the host's error (a failure after the request began)
+::
+++  reader-answer
+  |=  [status=@ud body=@t]
+  ^-  (each json [down=? why=@t])
+  ?.  =(200 status)
+    :+  %|
+      ?|  =(0 status)
+          &((gte status 401) (lte status 404))
+          =(408 status)
+          =(429 status)
+          &((gte status 500) (lte status 599))
+      ==
+    (rap 3 'model: ' (crip (a-co:co status)) ' ' (end [3 200] body) ~)
+  =/  resp=json  (fall (de:json:html body) [%o ~])
+  =/  ans  (answer-of resp)
+  ?:  ?=(%| -.ans)  [%| ?=(^ (gj resp 'error')) p.ans]
+  =/  parsed=(unit json)  (parse-answer text.p.ans)
+  ?~  parsed  [%| | 'model: the answer is not JSON']
+  [%& u.parsed]
+::  +owner-zone: person/me's timezone, else the fallback given
+::
+++  owner-zone
+  |=  [all=(list loaded) multi=(set @t) now=@da fallback=@t]
+  ^-  @t
+  =/  z=@t  (attr-text all multi now 'person/me' 'timezone')
+  ?:(=('' z) fallback z)
+::  ==  the mail reader's choices (version 60)
+::
+::  +mail-since: the floor: the backfill on the first pass, then never
+::  later than a week ago, so mail delivered late, mail the cap held and
+::  a reply the model could not read are read on a later pass; the seen
+::  ring keeps what was read from being read twice
+::
+++  mail-since
+  |=  [last=json backfill=@ud now=@da]
+  ^-  @da
+  =/  first=(unit @da)  (de-iso (gs last 'since'))
+  =/  span=@dr  (mul backfill ~h1)
+  ?~  first  ?:((lth now span) ~1970.1.1 (sub now span))
+  (max u.first (sub now ~d7))
+::  +mail-fresh: the copies to read, oldest first: verified as their
+::  sender's, sent since the floor and not in the future
+::
+++  mail-fresh
+  |=  [msgs=(list mail-msg) since=@da now=@da]
+  ^-  (list mail-msg)
+  %+  sort
+    %+  skim  msgs
+    |=(x=mail-msg &(trusted.x (gte sent.x since) (lte sent.x now)))
+  |=([a=mail-msg b=mail-msg] (lth sent.a sent.b))
+::  +brief-replies-of: the owner's replies to a brief sent today, each
+::  with the brief's text: from us, answering a message from us whose
+::  body is one of today's briefs word for word (a client's brief for
+::  the same day carries other tags), under a brief's subject, and not
+::  read before
+::
+++  brief-replies-of
+  |=  [fresh=(list mail-msg) msgs=(list mail-msg) our=@p seen=(set @t) sent-today=(list @t)]
+  ^-  (list [r=mail-msg root=@t])
+  =/  by-id=(map @t mail-msg)  (~(gas by *(map @t mail-msg)) (turn msgs |=(x=mail-msg [id.x x])))
+  %+  murn  fresh
+  |=  x=mail-msg
+  ^-  (unit [r=mail-msg root=@t])
+  ?.  &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of subj.x)) !(~(has in seen) (cat 3 'mail:' id.x)))  ~
+  =/  root=(unit mail-msg)  (~(get by by-id) (scot %uv u.prev.x))
+  ?~  root  ~
+  ?.  &(=(our from.u.root) (lien sent-today |=(t=@t =(t body.u.root))))  ~
+  `[x body.u.root]
+::  +mail-rows: everyone else's mail as the reader's rows; the owner's
+::  own and a blank body say nothing
+::
+++  mail-rows
+  |=  [fresh=(list mail-msg) our=@p]
+  ^-  (list tg-msg)
+  %+  murn  fresh
+  |=  x=mail-msg
+  ^-  (unit tg-msg)
+  ?:  |(=(our from.x) =('' (trim-cord body.x)))  ~
+  `(mail-row x)
+::  ==  the chat reader's choices (version 60)
+::
+::  +day-count: a record's count under key for today, 0 when the record
+::  is from another UTC day
+::
+++  day-count
+  |=  [last=json key=@t now=@da]
+  ^-  @ud
+  ?.  =((end [3 10] (en-iso now)) (gs last 'day'))  0
+  (fall (gn last key) 0)
+::  +chat-since: where the scry starts, and the floor under which a row
+::  is not read. The first pass looks back backfill hours and reads
+::  nothing sent before that; a later pass takes whatever the scry says
+::  changed, however old its sent, since a writ delivered late shows up
+::  once.
+::
+++  chat-since
+  |=  [last=json backfill=@ud now=@da]
+  ^-  [since=@da floor=@da]
+  =/  first=(unit @da)  (de-iso (gs last 'since'))
+  =/  span=@dr  (mul backfill ~h1)
+  =/  since=@da  ?^(first u.first ?:((lth now span) ~1970.1.1 (sub now span)))
+  [since ?^(first *@da since)]
+::  +chat-next: where the next pass starts. A pass one scry did not
+::  answer asks again from the same since, the seen ring keeping what was
+::  read from being read twice; a message the cap held is neither read
+::  nor remembered, so the next pass starts at the first one held.
+::
+++  chat-next
+  |=  [answered=? since=@da held-at=(unit @da) now=@da]
+  ^-  @da
+  ?.  answered  since
+  (fall held-at now)
+::  +$  sift: the rows a chat pass reads, gathered into runs, and what
+::  it left: strangers, held by the cap (and the first held's time),
+::  the ids to remember, and how many were taken against the cap
+::
++$  sift
+  $:  runs=(list [chat=@t items=(list [key=@t msg=tg-msg who=@t])])
+      strangers=@ud
+      held=@ud
+      held-at=(unit @da)
+      new=(list @t)
+      taken=@ud
+  ==
+::  +sift-rows: the rows sifted (already read, a stranger, no text, the
+::  cap) and gathered into runs, one per conversation in the order the
+::  first of each arrived, so a conversation's new messages are read
+::  together and a message further down that settles an earlier one is
+::  seen before anything is proposed from the earlier one alone. A
+::  reader's key-of names a row in its seen ring.
+::
+++  chat-key  |=(m=tg-msg ^-(@t (rap 3 chat.m '/' mid.m ~)))
+++  mail-key  |=(m=tg-msg ^-(@t (cat 3 'mail:' mid.m)))
+++  sift-rows
+  |=  [rows=(list tg-msg) seen=(set @t) people=(map @t @t) today=@ud cap=@ud key-of=$-(tg-msg @t)]
+  ^-  sift
+  =|  acc=sift
+  |-  ^+  acc
+  ?~  rows  acc(runs (flop (turn runs.acc |=(r=[chat=@t items=(list [key=@t msg=tg-msg who=@t])] r(items (flop items.r))))))
+  =/  msg=tg-msg  i.rows
+  =/  key=@t  (key-of msg)
+  ?:  (~(has in seen) key)  $(rows t.rows)
+  =/  who=(unit @t)  (~(get by people) from.msg)
+  ?~  who  $(rows t.rows, strangers.acc +(strangers.acc), new.acc [key new.acc])
+  ?:  =('' text.msg)  $(rows t.rows, new.acc [key new.acc])
+  ?:  (gte (add today taken.acc) cap)
+    $(rows t.rows, held.acc +(held.acc), held-at.acc ?^(held-at.acc held-at.acc `at.msg))
+  =/  item  [key msg u.who]
+  =/  hit=?  (lien runs.acc |=(r=[chat=@t *] =(chat.r chat.msg)))
+  %=  $
+    rows  t.rows
+    taken.acc  +(taken.acc)
+    runs.acc
+      ?.  hit  [[chat.msg ~[item]] runs.acc]
+      %+  turn  runs.acc
+      |=  r=[chat=@t items=(list [key=@t msg=tg-msg who=@t])]
+      ?:(=(chat.r chat.msg) r(items [item items.r]) r)
+  ==
+::  ==  the generator's records (version 60)
+::
+::  +month-spend: the month's spend in micro-dollars, this call's cost
+::  (from the model's own figure) added, from 0 in a new month
+::
+++  month-spend
+  |=  [last=json usage=json now=@da]
+  ^-  @ud
+  =/  month=@t  (end [3 7] (en-iso now))
+  =/  prior=@ud  ?:(=(month (gs last 'month')) (fall (gn last 'spend_month_micro') 0) 0)
+  =/  cost=json  (gj usage 'cost')
+  (add prior ?:(?=([%n *] cost) (micro-of p.cost) 0))
+::  +transient-status: a failed call that may pass if asked again (no
+::  answer, a timeout, the rate limit, the host's error), so the pass
+::  keeps no digest and the next wake asks again; one that will not (a
+::  refused key, a prompt too long) keeps it
+::
+++  transient-status
+  |=  s=@ud
+  ^-  ?
+  |(=(0 s) =(408 s) =(429 s) &((gte s 500) (lte s 599)))
+::  +counted-call: the generator's record with one more call today and
+::  its cost added to the month's, for a call made outside its pass (a
+::  refine)
+::
+++  counted-call
+  |=  [last=json now=@da usage=json]
+  ^-  json
+  =/  base=(map @t json)  ?:(?=([%o *] last) p.last ~)
+  :-  %o
+  %-  ~(gas by base)
+  :~  ['day' s+(end [3 10] (en-iso now))]
+      ['calls_today' (numb:enjs:format +((day-count last 'calls_today' now)))]
+      ['month' s+(end [3 7] (en-iso now))]
+      ['spend_month_micro' (numb:enjs:format (month-spend last usage now))]
+  ==
+::  +gen-record-doc: generator-last.json after a pass. A skip (held by
+::  the limits, nothing new) says why, and keeps what the last real pass
+::  did for the page to show: its digest, its counts, its usage, its
+::  error and its time, and its notes after the skip's own.
+::
+++  gen-record-doc
+  |=  $:  last=json  now=@da  dg=(unit @ux)  filed=@ud  dropped=@ud  notes=(list @t)
+          usage=json  error=(unit @t)  secs=@ud  skipped=?  rev=json
+      ==
+  ^-  json
+  =/  keep=@t
+    ?:  skipped  (gs last 'digest')
+    ?~(dg '' (scot %ux u.dg))
+  =/  kept  |=([k=@t d=json] ^-(json ?.(skipped d (gj last k))))
+  =/  said=(list @t)
+    ?.  skipped  notes
+    (scag 20 (dedupe (weld notes (strings (ga last 'notes')))))
+  %-  pairs:enjs:format
+  :~  ['at' (en-time now)]
+      ['called' (gj last 'called')]
+      ['day' (gj last 'day')]
+      ['calls_today' (gj last 'calls_today')]
+      ['urgent_today' (gj last 'urgent_today')]
+      ::  the month's spend, in micro-dollars, from the model's own
+      ::  cost figure; the page shows it beside the calls
+      ['month' s+(end [3 7] (en-iso now))]
+      ['spend_month_micro' (numb:enjs:format (month-spend last usage now))]
+      ['rev' rev]
+      ['digest' s+keep]
+      ['skipped' b+skipped]
+      ['filed' (kept 'filed' (numb:enjs:format filed))]
+      ['dropped' (kept 'dropped' (numb:enjs:format dropped))]
+      ['notes' a+(turn said |=(n=@t `json`s+n))]
+      ['usage' (kept 'usage' usage)]
+      ['error' (kept 'error' ?~(error ~ s+u.error))]
+      ['seconds' (kept 'seconds' (numb:enjs:format secs))]
+  ==
+::  +counted-pass: the generator's record with one more call today, and
+::  one more urgent call when the pass was urgent, both from 0 on a new
+::  day
+::
+++  counted-pass
+  |=  [last=json now=@da urgent=?]
+  ^-  json
+  =/  today=@ud  (day-count last 'calls_today' now)
+  =/  urgent-today=@ud  (day-count last 'urgent_today' now)
+  =/  base=(map @t json)  ?:(?=([%o *] last) p.last ~)
+  :-  %o
+  %-  ~(gas by base)
+  :~  ['called' (en-time now)]
+      ['day' s+(end [3 10] (en-iso now))]
+      ['calls_today' (numb:enjs:format +(today))]
+      ['urgent_today' (numb:enjs:format ?:(urgent +(urgent-today) urgent-today))]
+  ==
+::  ==  a body gone, and a late answer (version 60)
+::
+::  +reabout-one: an action once from is merged into into, or deleted
+::  (into ~), or ~ when it does not name from. An open message to from
+::  goes to into; about names into where it named from, or loses from.
+::
+++  reabout-one
+  |=  [a=action from=bid into=(unit bid)]
+  ^-  (unit action)
+  =/  to-it=?  &((is-open a) =(from (gs payload.a 'to')))
+  ?.  |((~(has in about.a) from) &(to-it ?=(^ into)))  ~
+  =/  kept=(set bid)  (~(del in about.a) from)
+  :-  ~
+  %=  a
+    about  ?~(into kept ?.((~(has in about.a) from) about.a (~(put in kept) u.into)))
+    payload  ?.(&(to-it ?=(^ into)) payload.a (set-key payload.a 'to' s+(need into)))
+  ==
+::  +repoint-people: a reader's settings with every people entry naming
+::  from pointed at into, or ~ when none named it
+::
+++  repoint-people
+  |=  [doc=json from=bid into=bid]
+  ^-  (unit json)
+  =/  p=json  (gj doc 'people')
+  ?.  ?=([%o *] p)  ~
+  ?.  (lien ~(val by p.p) |=(v=json =(v s+from)))  ~
+  `(set-key doc 'people' [%o (~(run by p.p) |=(v=json ?:(=(v s+from) s+into v)))])
+::  +answer-fits: whether a 200 answer is shaped for the endpoint that
+::  asked: the decider answers with answers, the model with choices or
+::  an error. Iris's answer carries nothing that names its request, so
+::  a late answer to one that timed out is skipped this way. ponytail:
+::  two late answers from one endpoint still cross; the kernel handing
+::  back the request's wire would end it. Anything but a 200 fits.
+::
+++  answer-fits
+  |=  [wire=@ta status=@ud body=@t]
+  ^-  ?
+  ?.  =(200 status)  &
+  =/  j=json  (fall (de:json:html body) ~)
+  ?+  wire  &
+    %decider  (has-key j 'answers')
+    ?(%model %reader %brief %refine)  |((has-key j 'choices') (has-key j 'error'))
+  ==
+::  ==  the writer's choices (version 60)
+::
+::  +revives: whether a row already stored is written again: the same
+::  claim is no news, but the same claim corrected (its until or its
+::  confidence changed, which the id leaves out) after the owner
+::  retracted it is the new row
+::
+++  revives
+  |=  [old=(unit obs) new=obs]
+  ^-  ?
+  ?&  ?=(^ old)
+      retracted.u.old
+      !retracted.new
+      |(!=(until.u.old until.new) !=(conf.u.old conf.new))
+  ==
+::  +dead-rows: what compaction culls from one body: superseded,
+::  expired and retracted rows recorded before the horizon, save the
+::  row each attribute would fall back to if its winner went
+::
+++  dead-rows
+  |=  [rows=(list row) multi=(set @t) horizon=@da now=@da]
+  ^-  (list @ta)
+  =/  winners  (fold rows multi now)
+  =/  keep=(set @ta)  (fallback-ids rows multi now)
+  %+  murn  rows
+  |=  r=row
+  ^-  (unit @ta)
+  ?:  (gte (max at.obs.r seen.obs.r) horizon)  ~
+  ?:  (~(has in keep) id.r)  ~
+  =/  st=@tas  (status-of r winners now)
+  ?:(?=(?(%superseded %expired %retracted) st) `id.r ~)
+::  +op-gone: the body a writer op takes away (a delete's id, a merge's
+::  from), or '' for any other op
+::
+++  op-gone
+  |=  op=json
+  ^-  @t
+  =/  o=@t  (gs op 'op')
+  ?:  =('delete-body' o)  (gs op 'id')
+  ?:  =('merge' o)  (gs op 'from')
+  ''
+::  +offer-refusal: why a share offer is dropped, or ~. A full inbox
+::  drops new offers (200 is far past what a person gets), and one ship
+::  holds at most twenty, so a stranger cannot fill it; an offer already
+::  held is always taken again.
+::
+++  offer-refusal
+  |=  [cur=(map @t json) key=@t src=@p]
+  ^-  (unit @t)
+  ?:  (~(has by cur) key)  ~
+  ?:  (gte ~(wyt by cur) 200)  `'inbox full'
+  =/  theirs=@ud  (lent (skim ~(val by cur) |=(o=json =((scot %p src) (gs o 'host')))))
+  ?:  (gte theirs 20)  `'too many offers from this ship'
+  ~
+::  +replacement: the action a brief move filed in place of the one it
+::  changed: another proposed action of the same title proposed this
+::  second or later
+::
+++  replacement
+  |=  [after=(list [id=@ta a=action]) old=@ta title=@t now=@da]
+  ^-  (unit @ta)
+  =/  hits=(list [id=@ta a=action])
+    %+  skim  after
+    |=([id=@ta a=action] &(!=(id old) =(title.a title) =(%proposed status.a) (gte proposed.a (sub now (mod now ~s1)))))
+  ?~(hits ~ `id.i.hits)
+::  ==  keys and the telegram filter (version 60)
+::
+::  +de-mint: a request to mint a key: a name, the identity its writes
+::  are signed with, and its scope, or why not
+::
+++  de-mint
+  |=  jon=json
+  ^-  (each [name=@t by=@t sc=scope] @t)
+  ?.  ?=([%o *] jon)  [%| 'a JSON object is required']
+  =/  name=@t  (gs jon 'name')
+  ?:  |(=('' name) (gth (met 3 name) max-name))  [%| 'name: 1 to 200 bytes']
+  =/  who=@t  (gs jon 'by')
+  ?:  |(=('' who) (gth (met 3 who) max-by))  [%| 'by: 1 to 64 bytes']
+  =/  sc  (de-scope (gj jon 'scope'))
+  ?:  ?=(%| -.sc)  [%| p.sc]
+  [%& name who p.sc]
+::  +touch-due: whether a key's last use is stamped again: at most hourly
+::
+++  touch-due
+  |=  [used=(unit @da) now=@da]
+  ^-  ?
+  ?~  used  &
+  !(lth now (add u.used ~h1))
+::  +tg-why: why the telegram reader ignores an update, as far as the
+::  update alone says: not a message, a chat not in chats, a sender not
+::  in people. A stranger's business connection and an empty text are
+::  checked after.
+::
+++  tg-why
+  |=  [cfg=tg-config mu=(unit tg-msg)]
+  ^-  (unit [chat=@t from=@t note=@t])
+  ?~  mu  `['' '' 'not a message']
+  =/  msg=tg-msg  u.mu
+  ?.  (~(has in chats.cfg) chat.msg)  `[chat.msg from.msg (rap 3 'chat ' chat.msg ' is not in chats' ~)]
+  ?.  (~(has by people.cfg) from.msg)  `[chat.msg from.msg (rap 3 'sender ' from.msg ' is not in people' ~)]
+  ~
+::  ==  after a crash (version 60)
+::
+::  +rise-plan: a crashed fiber's crashes in a row and when it tries
+::  again, from its row in rise.json: 1, 2, 4 and up to 60 minutes, the
+::  count starting over after two quiet hours, longer than the longest
+::  wait, so the waits stay at an hour rather than cycling back to a
+::  minute. A restart that is not a crash (a poke refused while waiting)
+::  keeps the wait it had.
+::
+++  rise-plan
+  |=  [row=json crash=? now=@da]
+  ^-  [n=@ud until=@da]
+  =/  was=@ud  (fall (gn row 'n') 0)
+  =/  n=@ud
+    ?.  crash  was
+    ?:((gth now (add (da-of-ms (fall (gn row 'last_ms') 0)) ~h2)) 1 +(was))
+  :-  n
+  ?.  crash  (da-of-ms (fall (gn row 'until_ms') 0))
+  (add now (min ~h1 (mul ~m1 (bex (dec (min n 7))))))
+::  +rise-row: a fiber's row in rise.json
+::
+++  rise-row
+  |=  [plan=[n=@ud until=@da] now=@da]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['n' (numb:enjs:format n.plan)]
+      ['last_ms' (numb:enjs:format (ms-of now))]
+      ['until_ms' (numb:enjs:format (ms-of until.plan))]
+  ==
+::  +mail-threads: the threads a mail pass walks: the most recently
+::  active, from auspex's inbox order (/mail/idx, newest first), those
+::  the tree holds. ponytail: at most max-mail-threads a pass; more
+::  threads than that with mail since the floor leaves the oldest
+::  touched unread, and without the index (an auspex that keeps none)
+::  the cap takes them in the tree's order.
+::
+++  max-mail-threads  200
+++  mail-threads
+  |=  [idx=(unit (list @uv)) segs=(list @ta)]
+  ^-  (set @ta)
+  ?~  idx  (sy (scag max-mail-threads segs))
+  =/  have=(set @ta)  (sy segs)
+  %-  sy
+  %+  scag  max-mail-threads
+  (skim (turn u.idx |=(t=@uv ^-(@ta (scot %uv t)))) |=(x=@ta (~(has in have) x)))
 --
