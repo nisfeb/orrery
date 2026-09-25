@@ -377,7 +377,10 @@
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ::  a request that crashed ends: nothing would ever poke it
-        ::  awake, and a dart here could fail it again at once
+        ::  awake, and a dart here could fail it again at once. The kick
+        ::  first, or a late answer queued before it would crash the
+        ::  request's first step at a reload
+        ;<  ~  bind:m  take-kick
         ?^  prod  ((slog leaf+"%orrery request: failed" u.prod) (pure:m ~))
         (handle-request name.rail)
       ==
@@ -416,6 +419,7 @@
   |=  [=prod:fiber:nexus msg=tape]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  ~  bind:m  take-kick
   ::  a clean start takes down any wait an earlier run left set: its wake
   ::  would come to a fiber no longer waiting for it
   ?~  prod
@@ -448,6 +452,20 @@
     (soft-behn /rise/set [[/ %timer-set] `[wire @da]`[/rise until.plan]])
   %-  ?:(|(set !crash) same (slog leaf+"{msg}: no timer (weir?); waiting for a poke" ~))
   (rise-park note)
+::  +take-kick: the start's kick, taken before anything is sent (rule 9
+::  of the crash-loop rules; calendar's +take-kick). A reload or a
+::  restart queues a null kick behind the inputs already waiting (a
+::  timer's wake, news, a late answer), and a first step that sends
+::  asserts it was kicked (%real-input-to-oneshot-step), so a queued
+::  input crashed it: every reload counted as a crash, and each one
+::  lengthened the wait. Real inputs are held for the steps that wait.
+::
+++  take-kick
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?~(in [%done ~] [%skip ~])
 ::  +rise-park: wait for the /rise wake; a poke meanwhile is refused with
 ::  note (the restart it brings is not a crash, see +rise-later)
 ::

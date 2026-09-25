@@ -25,8 +25,8 @@ scripts/hoon-test-kit/hoon-test.sh ~/software/nec              # both suites, ab
 scripts/hoon-test-kit/hoon-test.sh ~/software/nec generator    # one file
 ```
 
-Exit 0 is a pass. On a failure the test names are in `~nec`'s terminal,
-not on stdout.
+Exit 0 is a pass. The runner prints each test's result, and for a
+failure its expected and actual values.
 
 The mutation runner takes about 16 s a mutant here, since each one
 rebuilds the whole 6,200-line lib. The whole menu is about 1,400 mutants,
@@ -130,6 +130,9 @@ PLAYBOOK, "Look after the ship"). What ran:
 | `dead-rows`' horizon, rechecked | 1 | 1 | 0 | 0 |
 | `wide` (the `&(...)` and `\|(...)` guards) on all of them | 61 | 53 | 4 | 4 |
 | branch, equal on the lifted arms | 80 of 133 before a death | 68 | 11 | 0 |
+| `wide` on the three arms its survivors were in, rechecked | 17 | 16 | 1 | 0 |
+| equal on the 53 the death left, less `brief-texts` | 53 | 53 | 0 | 0 |
+| `route-of` under `equal` | 63 | 63 | 0 | 0 |
 
 Every no-build drops or flips a `?=` whose narrowing later code needs,
 which cannot compile. The survivors:
@@ -142,10 +145,11 @@ which cannot compile. The survivors:
 - `open-twin` without its title check, `brief-replies-of` without "the
   message answered is ours", and `reabout-one` without either half of
   "an open message to from, and a body to send it to": real gaps, each
-  now a case in `tests/lib/nexus.hoon`, and not yet rechecked.
+  now a case in `tests/lib/nexus.hoon`; the recheck killed all four.
 
-Still to run: the rest of branch and equal (53), `route-of` under `equal`
-(63), and the recheck of the four `wide` survivors.
+Left out: `brief-texts`' two mutants. Two of `~nec`'s three deaths came
+while one of them ran, which points at a runtime fault rather than at
+orrery; reproducing it would crash the ship on purpose.
 
 ## The upgrade and weir tests (version 60)
 
@@ -180,3 +184,13 @@ steps):
 On a kernel with the fiber-safety guards, the kernel parked the fibers
 itself, and orrery's own handling never ran. Run these on the stock
 kernel.
+
+**The kick (rule 9).** The port first shipped without calendar's later
+`+take-kick`: a restarted fiber's first step sent at once, and grubbery
+queues the restart's null kick behind whatever the fiber was holding, so
+a held input crashed the step (`real-input-to-oneshot-step`) and counted
+as another crash. `+rise-later` and the request fiber now take the kick
+first. Eleven reloads of `~feb`'s instance with writes in flight never
+tripped it on the old code, so the test did not bite here; the forced
+crash test ran again with the fix and backed off 1, 2 and 4 minutes as
+before.
