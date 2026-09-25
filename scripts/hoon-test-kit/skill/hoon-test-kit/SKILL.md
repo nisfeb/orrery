@@ -38,9 +38,26 @@ scripts/hoon-test-kit/hoon-mutate.py <pier> --only <arm>,<arm>   # recheck fixed
 scripts/hoon-test-kit/hoon-mutate.py <pier> --since <rev>          # arms a diff touches
 ```
 
-Exit codes: **1** means a test failed (the names are in the ship's terminal,
-not stdout), **3** means a lib did not build, **4** means the ship did not
-answer. **4 is never a test result.** Stop and report it.
+Each test prints `OK`, `FAILED` (with expected/actual) or `CRASHED` (with
+its trace) on stdout. Exit codes: **1** means a test failed, **2** that
+nothing ran, **3** that a lib did not build (its compiler message is only on
+the ship's terminal), **4** that the ship did not answer. **4 is never a
+test result.** Stop and report it.
+
+A **grubbery** app (libs importing with `/<` or `/&`) needs
+`DIALECT=grubbery`, `CODE` and `PRELUDE` in `hoon-test.conf`: the kit
+translates its libs for clay. README.md, "A grubbery app".
+
+**Nexus code** (PLAYBOOK.md, "Testing nexus code"): move pure arms to a
+lib behind one-line aliases; drive routes on a dev ship with a route script
+(log in with `ship-cookie.sh`, never the dojo); and drive fibers with
+`hoon/fiber-test.hoon`, entering through the nexus's `+on-file` and
+asserting the pokes and responses the fiber sent.
+
+**Before a grubbery app releases** anything touching start-up, crash
+handling or reads of stored state, follow PLAYBOOK.md's "Never ship a crash
+loop": test the upgrade on a ship with old data (7) and with a refusing
+weir (8). A spinning ship is interrupted only by ^C in its dojo.
 
 ## Rules
 

@@ -6,12 +6,14 @@ report every break that no test noticed. See README.md and PLAYBOOK.md.
 
 Each mutant is written into the test desk's mount, never into the repo, and
 the clean lib is synced back when the run ends, however it ends. A mutant
-that loops forever is interrupted with SIGINT to the ship's king process,
-exactly what ^C in its dojo does.
+that loops forever stops the run, since only ^C typed in the ship's dojo
+ends a spinning event; with DOJO_PANE=<tmux pane> the runner types it.
 """
 import argparse, os, re, shlex, signal, subprocess, sys, time
 
 KIT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, KIT)
+import grubbery_clay  # noqa: E402
 
 
 def find_conf():
@@ -42,7 +44,34 @@ CONF = find_conf()
 ROOT = os.path.dirname(CONF)
 _c = read_conf(CONF)
 DESK = _c['DESK']
-LIBS = [(f'{ROOT}/{p}', os.path.basename(p)[:-len('.hoon')]) for p in _c['LIBS'].split()]
+DIALECT = _c.get('DIALECT', 'clay')
+CODE = f"{ROOT}/{_c.get('CODE', '')}"
+PRELUDE = _c.get('PRELUDE', '').split()
+
+
+def lib_dest(entry):
+    """Where a LIBS entry lands on the desk, as hoon-test.sh puts it."""
+    if '=' in entry:
+        return entry.split('=', 1)[1]
+    if DIALECT == 'grubbery':
+        return os.path.relpath(f'{ROOT}/{entry}', CODE)
+    return 'lib/' + os.path.basename(entry)
+
+
+# (source path, desk-relative dest, name shown in results)
+LIBS = [(f"{ROOT}/{e.split('=', 1)[0]}", lib_dest(e), lib_dest(e)[len('lib/'):-len('.hoon')])
+        for e in _c['LIBS'].split()]
+
+
+def put_lib(pier, src, dest, text=None):
+    """A lib onto the desk's mount: the source, or a mutant's text of it.
+    A grubbery lib is translated on the way, exactly as a sync does."""
+    path = f'{pier}/{DESK}/{dest}'
+    if DIALECT == 'grubbery':
+        grubbery_clay.install(CODE, src, path, f'{pier}/{DESK}', PRELUDE, text)
+        return
+    with open(path, 'w') as f:
+        f.write(open(src).read() if text is None else text)
 SWAP = {'lte': 'lth', 'lth': 'lte', 'gte': 'gth', 'gth': 'gte'}
 
 
@@ -68,7 +97,7 @@ def boundary(lines):
             yield n, f'{op}->{SWAP[op]}', {n: new}
 
 
-def conjunct(lines):
+def tall_conjunct(lines):
     """One child of a tall ?& (or ?|) replaced by its identity, & (or |):
     the guard as if that condition were never written."""
     for n, line in enumerate(lines):
@@ -90,6 +119,63 @@ def conjunct(lines):
             edit[s] = head + unit + '\n'
             child = (lines[s][col:] if s == n else lines[s].strip()).strip()
             yield s, f'{rune} drop {child[:40]}', edit
+
+
+def wide_children(code, start):
+    """The top-level children of the wide form whose ( is at code[start],
+    and the index of its ). Children are split at single spaces outside
+    any bracket or quote. None when the form doesn't close on this line."""
+    depth, quote, kids, cur = 0, None, [], start + 1
+    i = start + 1
+    while i < len(code):
+        c = code[i]
+        if quote:
+            if c == '\\':
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+        elif c in '\'"':
+            quote = c
+        elif c in '([{':
+            depth += 1
+        elif c in ')]}':
+            if depth == 0:
+                if c != ')':
+                    return None
+                kids.append((cur, i))
+                return kids, i
+            depth -= 1
+        elif c == ' ' and depth == 0:
+            kids.append((cur, i))
+            cur = i + 1
+        i += 1
+    return None
+
+
+def wide_conjunct(lines):
+    """One child of a wide &(...), |(...), ?&(...) or ?|(...) replaced by
+    its identity, as conjunct does for the tall forms: orrery and auspex
+    write most one-line guards this way."""
+    for n, line in enumerate(lines):
+        code = code_part(line)
+        for m in re.finditer(r'(?<![a-z0-9$%^*~=?!-])(\?)?([&|])\(', code):
+            got = wide_children(code, m.end() - 1)
+            if not got:
+                continue
+            kids, close = got
+            if len(kids) < 2:
+                continue
+            rune = (m.group(1) or '') + m.group(2) + '('
+            for a, b in kids:
+                new = line[:a] + m.group(2) + line[b:]
+                yield n, f'{rune} drop {code[a:b][:40]}', {n: new}
+
+
+def conjunct(lines):
+    """Every condition of every conjunction, tall or wide."""
+    yield from tall_conjunct(lines)
+    yield from wide_conjunct(lines)
 
 
 def swapper(pattern, table, label):
@@ -115,6 +201,7 @@ equal = swapper(r'(?:(?<=[\s(\[])|^)!?=\(', {'=(': '!=(', '!=(': '=('}, 'equal')
 flag = swapper(r'%\.[yn]\b', {'%.y': '%.n', '%.n': '%.y'}, 'flag')
 
 MENU = {op.__name__: op for op in [boundary, conjunct, branch, equal, flag]}
+MENU["wide"] = wide_conjunct  # conjunct's wide half alone, for a rerun after it was added
 
 
 def touched_arms(rev):
@@ -133,7 +220,7 @@ def touched_arms(rev):
 
 
 def mutants(menu):
-    for path, lib in LIBS:
+    for path, _, lib in LIBS:
         lines = open(path).readlines()
         for op in menu:
             for n, what, edit in op(lines):
@@ -141,22 +228,13 @@ def mutants(menu):
                 yield lib, n + 1, arm_at(lines, n), what, ''.join(l for l in out if l is not None)
 
 
-def king_pid(pier):
-    name = os.path.basename(os.path.abspath(pier))
-    for pid in filter(str.isdigit, os.listdir('/proc')):
-        try:
-            argv = open(f'/proc/{pid}/cmdline', 'rb').read().split(b'\0')
-        except OSError:
-            continue
-        args = [a.decode(errors='replace') for a in argv if a]
-        if args and 'vere' in args[0] and 'work' not in args[1:2] and name in args[1:2]:
-            return int(pid)
-
-
 def run(pier, env=None, timeout=None):
     return subprocess.run([f'{KIT}/hoon-test.sh', pier],
                           env={**os.environ, 'HOON_TEST_CONF': CONF, **(env or {})},
-                          capture_output=True, text=True, timeout=timeout)
+                          capture_output=True, text=True, timeout=timeout,
+                          # its own session, so a ^C for the runner is not
+                          # also delivered to the suite mid-run
+                          start_new_session=True)
 
 
 def main():
@@ -181,10 +259,30 @@ def main():
     if run(a.pier).returncode != 0:
         sys.exit('the suites fail on the clean libs; fix that first')
     tally, survivors = {}, []
+    last = None
+    # ^C (or kill -INT) asks to stop BETWEEN mutants: the one running
+    # finishes, then the clean libs go back. Interrupted mid-mutant, the
+    # runner never reached its restore and left a mutant on the desk.
+    # A second ^C stops at once, as before.
+    stop = []
+    def ask_stop(sig, frame):
+        if stop:
+            raise KeyboardInterrupt
+        stop.append(1)
+        print('stopping after this mutant; ^C again to stop now', flush=True)
+    signal.signal(signal.SIGINT, ask_stop)
     try:
         for i, (lib, line, arm, what, text) in enumerate(todo, 1):
-            with open(f'{a.pier}/{DESK}/lib/{lib}.hoon', 'w') as f:
-                f.write(text)
+            if stop:
+                print(f'[{i}/{len(todo)}] stopped by request; the rest did not run', flush=True)
+                break
+            src, dest = next((p, d) for p, d, n in LIBS if n == lib)
+            # one mutant at a time: the lib the last mutant broke goes back
+            # to clean first, or every later mutant runs against two breaks
+            if last and last != (src, dest):
+                put_lib(a.pier, *last)
+            put_lib(a.pier, src, dest, text)
+            last = (src, dest)
             t0 = time.time()
             r = run(a.pier, {'NOSYNC': '1', 'TEST_T': '120'})
             if r.returncode == 4:  # no answer: the ship is down, stop here
@@ -193,9 +291,17 @@ def main():
                 break
             verdict = {0: 'SURVIVED', 1: 'killed', 3: 'no-build'}.get(r.returncode, 'timeout')
             if verdict == 'timeout':
-                pid = king_pid(a.pier)
-                if pid:
-                    os.kill(pid, signal.SIGINT)  # ^C: ends the looping event
+                # A spinning event is ended by ^C typed in the ship's dojo,
+                # and by nothing else: a signal to the worker (or the king)
+                # does not interrupt it. With DOJO_PANE set to the dojo's
+                # tmux pane, send that ^C and go on; without it, stop here.
+                pane = os.environ.get('DOJO_PANE')
+                if not pane:
+                    print(f'[{i}/{len(todo)}] timeout  {lib}:{line} +{arm} {what}: the ship may be '
+                          'spinning on this mutant. Press ^C in its dojo (or rerun with '
+                          'DOJO_PANE=<tmux pane>); results from here are void', flush=True)
+                    break
+                subprocess.run(['tmux', 'send-keys', '-t', pane, 'C-c'], check=False)
                 time.sleep(5)
             tally[verdict] = tally.get(verdict, 0) + 1
             if verdict == 'SURVIVED':
@@ -205,9 +311,8 @@ def main():
         # Write the clean libs AND force the commit. A sync alone is not
         # enough: if the mount already matches the repo, rsync reports no
         # change and the desk keeps the last mutant it committed.
-        for path, lib in LIBS:
-            with open(path) as src, open(f'{a.pier}/{DESK}/lib/{lib}.hoon', 'w') as dst:
-                dst.write(src.read())
+        for src, dest, _ in LIBS:
+            put_lib(a.pier, src, dest)
         if run(a.pier, {'NOSYNC': '1'}).returncode != 0:
             print('could not restore the clean libs on the ship; once it is up, run '
                   'NOSYNC=1 hoon-test.sh <pier>')
