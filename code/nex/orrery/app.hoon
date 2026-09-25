@@ -327,11 +327,11 @@
         ;<  now=@da  bind:m  get-time:io
         ;<  tz=@t  bind:m  owner-tz
         =/  day=@t  (local-day:orr now tz)
-        =/  seven=@da  (add from:(day-bounds:orr day tz) ~h7)
+        =/  seven=@da  (seven-of:orr day tz)
         ;<  ~  bind:m
           ?.  &((gte now seven) (lth now (add seven ~h1)))  (pure:(fiber:fiber:nexus ,~) ~)
           (brief-send day |)
-        =/  next=@da  ?:((lth now seven) seven (add seven ~d1))
+        =/  next=@da  ?:((lth now seven) seven (seven-of:orr (day-after:orr day) tz))
         ;<  ~  bind:m  (cancel-timer:io /brief)
         ;<  ~  bind:m  (set-timer:io /brief (add next ~s1))
         ;<  in=gen-in  bind:m  (take-gen-in /brief)
@@ -362,7 +362,12 @@
         ::  inside it took the beacon's news, so an approval made while
         ::  it ran would otherwise wait for the next wake
         ?:  busy  $(kept k, seen s)
+        ::  an hour with no news still wakes it: an occurrence crosses
+        ::  now on its own, and the events reader must say so
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /exec-hour (add now ~h1))
         ;<  *  bind:m  take-exec-in
+        ;<  ~  bind:m  (cancel-timer:io /exec-hour)
         $(kept k, seen s)
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
@@ -648,7 +653,18 @@
     (write-obs t.items sens changed)
   =/  road=road:tarball  (rf 0 (obs-dir kind.u.pk slug.u.pk) (obs-id:orr o))
   ;<  ex=?  bind:m  (peek-exists:io road)
-  ?:  ex  (write-obs t.items sens |(changed (~(has in sens) attr.o)))
+  ?:  ex
+    ::  the same claim again is no news; the same claim corrected (its
+    ::  until or its confidence changed, which the id leaves out) after
+    ::  the owner retracted it is written as the new row
+    ;<  vw=view:nexus  bind:m  (peek:io road ~)
+    =/  old=(unit obs:orr)  ?.(?=([%file *] vw) ~ (read-obs:orr (sang-noun:tarball sang.vw)))
+    ?.  ?&  ?=(^ old)  retracted.u.old  !retracted.o
+            |(!=(until.u.old until.o) !=(conf.u.old conf.o))
+        ==
+      (write-obs t.items sens |(changed (~(has in sens) attr.o)))
+    ;<  ~  bind:m  (over:io road [[/orrery %obs] `stored-obs:orr`[%1 o]])
+    (write-obs t.items sens &)
   ;<  err=(unit tang)  bind:m
     (make-soft:io road |+[[[/orrery %obs] `stored-obs:orr`[%1 o]] ~])
   (write-obs t.items sens |(changed ?=(~ err)))
@@ -790,6 +806,14 @@
           !=('application/json' (end [3 16] ctype))
       ==
     (send-err eyre-id 415 'content-type: application/json required')
+  ::  the owner's cookie rides on a form another site's page submits,
+  ::  and a POST with no body passes the gate above: a browser says
+  ::  where the request came from, and one from another site changes
+  ::  nothing. ponytail: a browser too old to send Sec-Fetch-Site is
+  ::  not held; the Host header is no help, a proxy rewrites it
+  =/  site=@t  (fall (get-header:http 'sec-fetch-site' header-list.request.req) '')
+  ?:  &(owner.act !=('GET' meth) |(=('cross-site' site) =('same-site' site)))
+    (send-err eyre-id 403 'a request from another site is refused')
   ;<  ~  bind:m  ensure-me-from-request
   =/  jon=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) ~)
@@ -1042,7 +1066,11 @@
   ;<  hit=(unit [kind=@tas slug=@ta r=row:orr])  bind:m  (find-obs 0 `@ta`id)
   ?~  hit  (refuse 'retract' (cat 3 'no observation ' id))
   ?:  retracted.obs.r.u.hit  (note-then-no 'retract' 'already retracted')
-  =/  o=obs:orr  obs.r.u.hit(retracted &, note why)
+  ::  seen moves to now: the retraction is what the ship recorded, so
+  ::  the row is kept the retention from today, labelled retracted, and
+  ::  reaches a peer, instead of being culled in the same op
+  ;<  now=@da  bind:m  get-time:io
+  =/  o=obs:orr  obs.r.u.hit(retracted &, note why, seen now)
   ;<  ~  bind:m
     %+  over:io  (rf 0 (obs-dir kind.u.hit slug.u.hit) id.r.u.hit)
     [[/orrery %obs] `stored-obs:orr`[%1 o]]
@@ -1060,11 +1088,15 @@
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  =/  pk  (parse-bid:orr (gs:orr jon 'id'))
+  =/  id=@t  (gs:orr jon 'id')
+  =/  pk  (parse-bid:orr id)
   ?~  pk  (refuse 'delete-body' 'id: expected <kind>/<slug>')
+  ?:  =('person/me' id)  (refuse 'delete-body' 'person/me cannot be deleted')
   ;<  ex=?  bind:m  (peek-exists:io (rv 0 (body-dir kind.u.pk slug.u.pk)))
   ?.  ex  (refuse 'delete-body' 'no such body')
   ;<  *  bind:m  (cull-soft:io (rv 0 (body-dir kind.u.pk slug.u.pk)))
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  ~  bind:m  (reabout acts id ~)
   ;<  ~  bind:m  (note 'delete-body' & '')
   (pure:m &)
 ::  +do-merge: fold one body into another. The rows move, the references
@@ -1096,7 +1128,9 @@
   ;<  ~  bind:m  (write-rows 0 (obs-dir kind.u.ik slug.u.ik) fresh)
   ;<  ~  bind:m  (repoint-each pointing into now)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  ;<  ~  bind:m  (reabout acts from into)
+  ;<  ~  bind:m  (reabout acts from `into)
+  ;<  ~  bind:m  (repeople %'telegram.json' from into)
+  ;<  ~  bind:m  (repeople %'chat.json' from into)
   =/  merged=body:orr  (absorb:orr body.u.dst body.u.src)
   ;<  ~  bind:m
     ?:  =(merged body.u.dst)  (pure:(fiber:fiber:nexus ,~) ~)
@@ -1152,17 +1186,37 @@
 ::  body it was merged into instead. about is a set, so no duplicate.
 ::
 ++  reabout
-  |=  [acts=(list [id=@ta a=action:orr]) from=bid:orr into=bid:orr]
+  |=  [acts=(list [id=@ta a=action:orr]) from=bid:orr into=(unit bid:orr)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?~  acts  (pure:m ~)
   =/  cur=[id=@ta a=action:orr]  i.acts
-  ?.  (~(has in about.a.cur) from)  (reabout t.acts from into)
+  ::  an open message to the body goes to where it went (a merge), and
+  ::  about names where it went, or loses it (a delete)
+  =/  to-it=?  &((is-open:orr a.cur) =(from (gs:orr payload.a.cur 'to')))
+  ?.  |((~(has in about.a.cur) from) &(to-it ?=(^ into)))  (reabout t.acts from into)
   =/  kept=(set bid:orr)  (~(del in about.a.cur) from)
-  =/  next=action:orr  a.cur(about (~(put in kept) into))
+  =/  next=action:orr
+    %=  a.cur
+      about  ?~(into kept ?.((~(has in about.a.cur) from) about.a.cur (~(put in kept) u.into)))
+      payload  ?.(&(to-it ?=(^ into)) payload.a.cur (set-key:orr payload.a.cur 'to' s+(need into)))
+    ==
   ;<  ~  bind:m
     (over:io (rf 0 /actions id.cur) [[/orrery %action] `stored-action:orr`[%2 next]])
   (reabout t.acts from into)
+::  +repeople: a reader's people map with every entry naming from
+::  re-pointed at into, written back only when one did
+::
+++  repeople
+  |=  [file=@ta from=bid:orr into=bid:orr]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 0 / file))
+  =/  p=json  (gj:orr doc 'people')
+  ?.  ?=([%o *] p)  (pure:m ~)
+  ?.  (lien ~(val by p.p) |=(v=json =(v s+from)))  (pure:m ~)
+  =/  next=json  [%o (~(run by p.p) |=(v=json ?:(=(v s+from) s+into v)))]
+  (over:io (rf 0 / file) [[/ %json] (set-key:orr doc 'people' next)])
 ::  +load-actions: every action grub
 ::
 ++  load-actions
@@ -1243,8 +1297,24 @@
   |=  [up=@ud a=action:orr]
   =/  m  (fiber:fiber:nexus ,[a=action:orr note=@t])
   ^-  form:m
-  ;<  ship=@t  bind:m  (body-attr up (gs:orr payload.a 'to') 'ship')
+  ;<  ship=@t  bind:m  (body-ship up (gs:orr payload.a 'to'))
   (pure:m (route-message:orr a ship))
+::  +body-ship: a person's ship: the ship attribute, else the one on the
+::  body's record, where the page and the readers keep it
+::
+++  body-ship
+  |=  [up=@ud id=bid:orr]
+  =/  m  (fiber:fiber:nexus ,@t)
+  ^-  form:m
+  ;<  a=@t  bind:m  (body-attr up id 'ship')
+  ?.  =('' a)  (pure:m a)
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m '')
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
+  ?.  ?=([%ball *] vw)  (pure:m '')
+  =/  bf=(unit body:orr)  (body-in:om ball.vw)
+  ?~  bf  (pure:m '')
+  (pure:m ?~(ship.u.bf '' (scot %p u.ship.u.bf)))
 ::  +open-twin: an open action with this kind and title, if any
 ::
 ++  open-twin
@@ -1403,11 +1473,13 @@
   ?.  ?=([%ball *] vw)  (pure:m ~)
   =/  rows=(list row:orr)  (rows-in:om ball.vw)
   =/  winners  (fold:orr rows multi.terms now)
+  =/  keep=(set @ta)  (fallback-ids:orr rows multi.terms now)
   =/  dead=(list @ta)
     %+  murn  rows
     |=  r=row:orr
     ^-  (unit @ta)
     ?:  (gte (max at.obs.r seen.obs.r) horizon)  ~
+    ?:  (~(has in keep) id.r)  ~
     =/  st=@tas  (status-of:orr r winners now)
     ?:(?=(?(%superseded %expired %retracted) st) `id.r ~)
   (cull-each 0 (obs-dir kind slug) dead)
@@ -1486,16 +1558,39 @@
 ::
 ++  drop-share
   |=  [kind=@tas slug=@ta id=bid:orr]
+  (drop-share-at 1 kind slug id)
+++  drop-share-at
+  |=  [up=@ud kind=@tas slug=@ta id=bid:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  ;<  shares=json  bind:m  (read-json (rf up / %'shares.json'))
   =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
   ?.  (~(has by all) id)  (pure:m ~)
-  ;<  ~  bind:m  (over:io (rf 1 / %'shares.json') [[/ %json] [%o (~(del by all) id)]])
+  ;<  ~  bind:m  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by all) id)]])
   ;<  base=(unit path)  bind:m  self-base
   ?~  base
-    (note-inbox-at 1 'delete-body' | 'cannot find where this app is installed' '')
+    (note-inbox-at up 'delete-body' | 'cannot find where this app is installed' '')
   (set-share-group u.base kind slug ~)
+::  +drop-share-of, +drop-shares-in: the share of a body reconcile
+::  deleted or merged away, so the peer's grant does not outlive it and
+::  reach a body a reader makes again under the same id
+::
+++  drop-share-of
+  |=  [up=@ud id=bid:orr]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m ~)
+  (drop-share-at up kind.u.pk slug.u.pk id)
+++  drop-shares-in
+  |=  ops=(list json)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  ops  (pure:m ~)
+  =/  op=@t  (gs:orr i.ops 'op')
+  =/  gone=@t  ?:(=('delete-body' op) (gs:orr i.ops 'id') ?:(=('merge' op) (gs:orr i.ops 'from') ''))
+  ;<  ~  bind:m  ?:(=('' gone) (pure:(fiber:fiber:nexus ,~) ~) (drop-share-of 0 gone))
+  $(ops t.ops)
 ::  +serve-merge: POST one body folded into another, owner only. The
 ::  route checks what the writer refuses, so a client hears 400 or 404
 ::  rather than a silent refusal in the trail, and counts what the write
@@ -1645,6 +1740,21 @@
     ?~  pk  ~
     ?:((kind-in-scope:orr s kind.u.pk) ~ `b)
   ?^  outside  (send-err eyre-id 400 (cat 3 'about: no such body ' u.outside))
+  ::  a key does not merge (the owner's and reconcile's), and the bodies
+  ::  its payload names (a message's to, a merge's pair) are held to its
+  ::  kinds the way about is: a key never reaches a body it cannot see
+  ?:  &(?=(^ scope.act) =(%merge kind.p.got))  (send-err eyre-id 403 'a key may not propose a merge')
+  =/  named=(list @t)
+    (skip (turn `(list @t)`~['to' 'from' 'into'] |=(k=@t (gs:orr payload.p.got k))) |=(t=@t =('' t)))
+  =/  beyond=(unit @t)
+    ?~  scope.act  ~
+    %+  roll  named
+    |=  [b=@t acc=(unit @t)]
+    ?^  acc  acc
+    =/  pk  (parse-bid:orr b)
+    ?~  pk  ~
+    ?:((kind-in-scope:orr u.scope.act kind.u.pk) ~ `b)
+  ?^  beyond  (send-err eyre-id 400 (cat 3 'payload: no such body ' u.beyond))
   ;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ~(tap in about.p.got))
   ?^  missing  (send-err eyre-id 400 (cat 3 'about: no such body ' u.missing))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
@@ -1740,7 +1850,9 @@
     ;<  again=(unit @t)  bind:(fiber:fiber:nexus ,?)  (lock-stamp id)
     (pure:(fiber:fiber:nexus ,?) =(first again))
   ?.  same  (send-err eyre-id 409 'a refinement is running')
-  ;<  ~  bind:m  ?~(first (pure:(fiber:fiber:nexus ,~) ~) (drop-lock id))
+  ::  the stale lock is dropped only while it still holds the stamp read
+  ::  above: another request may have taken it over in between
+  ;<  ~  bind:m  ?~(first (pure:(fiber:fiber:nexus ,~) ~) (drop-lock-if id u.first))
   ::  The make is the arbiter: two requests can pass the checks at once,
   ::  and the second make fails on the name, the way a resent telegram
   ::  update's does.
@@ -1748,7 +1860,7 @@
     (make-soft:io lock |+[[[/ %json] (pairs:enjs:format ~[['at' s+(en-iso:orr now)]])] ~])
   ?^  err  (send-err eyre-id 409 'a refinement is running')
   ;<  got=[code=@ud body=json]  bind:m  (refine-run a id text act now)
-  ;<  ~  bind:m  (drop-lock id)
+  ;<  ~  bind:m  (drop-lock-if id (en-iso:orr now))
   (send-json eyre-id code.got body.got)
 ::  +lock-stamp: the at of the lock on an action, ~ when there is no
 ::  lock, '' when the lock has no readable stamp.
@@ -1768,6 +1880,38 @@
   ^-  form:m
   ;<  *  bind:m  (cull-soft:io (rf 1 /refining id))
   (pure:m ~)
+::  +drop-lock-if: the lock dropped only when it holds this stamp
+::
+++  drop-lock-if
+  |=  [id=@ta stamp=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=(unit @t)  bind:m  (lock-stamp id)
+  ?.  =(cur `stamp)  (pure:m ~)
+  (drop-lock id)
+::  +count-call: a model call made outside the generator's pass (a
+::  refine): one more call today and its cost added to the month's
+::
+++  count-call
+  |=  [up=@ud now=@da usage=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf up / %'generator-last.json'))
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  month=@t  (end [3 7] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'calls_today') 0) 0)
+  =/  prior=@ud  ?:(=(month (gs:orr last 'month')) (fall (gn:orr last 'spend_month_micro') 0) 0)
+  =/  cost=json  (gj:orr usage 'cost')
+  =/  base=(map @t json)  ?:(?=([%o *] last) p.last ~)
+  %+  over:io  (rf up / %'generator-last.json')
+  :-  [/ %json]
+  :-  %o
+  %-  ~(gas by base)
+  :~  ['day' s+day]
+      ['calls_today' (numb:enjs:format +(today))]
+      ['month' s+month]
+      ['spend_month_micro' (numb:enjs:format (add prior ?:(?=([%n *] cost) (micro-of:orr p.cost) 0)))]
+  ==
 ::  +refine-run: the model call and the filing, as a status and a body.
 ::  The prompt carries the action, the schema's kinds and payload
 ::  shapes, the bodies the note could mean and the owner's clock. The
@@ -1805,6 +1949,12 @@
     ?:(=('' mine) timezone.cfg mine)
   =/  who=@t  ?:(owner.act 'user' by.act)
   =/  shown=action:orr  (seen-by act a)
+  ::  a refine is a model call like the generator's: under the day's
+  ::  cap, counted, and its cost added to the month's
+  ;<  gl=json  bind:m  (read-json (rf 1 / %'generator-last.json'))
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  calls=@ud  ?:(=(day (gs:orr gl 'day')) (fall (gn:orr gl 'calls_today') 0) 0)
+  ?:  (gte calls max-daily.cfg)  (pure:m (fail 429 'the day\'s model calls are spent'))
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
     %:  post-json
       (cat 3 url.cfg '/chat/completions')
@@ -1813,6 +1963,7 @@
       ~m2
       %refine
     ==
+  ;<  ~  bind:m  (count-call 1 now (gj:orr (fall (de:json:html body.got) ~) 'usage'))
   ?.  =(200 status.got)
     %-  pure:m
     %+  fail  502
@@ -1822,7 +1973,11 @@
   ?:  ?=(%| -.ans)  (pure:m (fail 502 p.ans))
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
   ?~  parsed  (pure:m (fail 502 'the model answered without JSON'))
-  =/  checked  (refine-check:orr u.parsed shown id ctx now)
+  =/  checked
+    %:  refine-check-in:orr  u.parsed  shown  id  ctx  now
+      (sy (turn all0 |=(l=loaded:orr id.l)))
+      ?~(scope.act ~ `kinds.u.scope.act)
+    ==
   ?:  ?=(%| -.checked)
     (pure:m [200 (pairs:enjs:format ~[['ok' b+|] ['note' s+p.checked]])])
   =/  unseen=(list @t)  (skip ~(tap in about.a) |=(x=@t (~(has in about.shown) x)))
@@ -2018,11 +2173,16 @@
     %+  lien  acts
     |=([id=@ta a=action:orr] &(=(id aid) =(%claimed status.a) =('reconcile' (claimant:orr a))))
   ?.  mine  $(todo t.todo)
-  ;<  *  bind:m  (file-ops ~[(merge-op:orr from.i.todo into.i.todo)])
+  ;<  before=(list loaded:orr)  bind:m  (load-bodies 0)
+  ::  from gone before the merge ran (another merge took it) is not a
+  ::  merge done
+  =/  had=?  ?=(^ (loaded-of:orr before from.i.todo))
+  ;<  *  bind:m  ?.(had (pure:(fiber:fiber:nexus ,@ud) 0) (file-ops ~[(merge-op:orr from.i.todo into.i.todo)]))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  =/  ok=?  &(?=(~ (loaded-of:orr all from.i.todo)) ?=(^ (loaded-of:orr all into.i.todo)))
+  =/  ok=?  &(had ?=(~ (loaded-of:orr all from.i.todo)) ?=(^ (loaded-of:orr all into.i.todo)))
+  ;<  ~  bind:m  ?.(ok (pure:(fiber:fiber:nexus ,~) ~) (drop-share-of 0 from.i.todo))
   ;<  *  bind:m
-    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' 'the merge was refused') 'reconcile')])
+    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' ?:(had 'the merge was refused' 'a body in this pair is gone')) 'reconcile')])
   $(todo t.todo, n ?:(ok +(n) n))
 ::  +reload-if: the bodies again when ops were filed, else the ones read
 ::
@@ -2048,6 +2208,7 @@
   ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   =/  activities  (plan-activities:orr all multi now min.cfg)
   ;<  n=@ud  bind:m  (file-ops ops.activities)
+  ;<  ~  bind:m  (drop-shares-in ops.activities)
   ;<  all=(list loaded:orr)  bind:m  (reload-if n all)
   =/  parts  (plan-participants:orr all multi now)
   ;<  n=@ud  bind:m  (file-ops ops.parts)
@@ -2055,6 +2216,7 @@
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  people  (people-pass:orr all acts multi now)
   ;<  np=@ud  bind:m  (file-ops ops.people)
+  ;<  ~  bind:m  (drop-shares-in ops.people)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  merges  (approved-merges:orr acts)
   ;<  merged=@ud  bind:m  (run-merges merges)
@@ -2065,6 +2227,7 @@
   ;<  *  bind:m  (file-ops (expire-ops:orr expire))
   =/  prune=(list bid:orr)  (plan-prune:orr all multi now prune.cfg)
   ;<  *  bind:m  (file-ops (turn prune delete-op:orr))
+  ;<  ~  bind:m  (drop-shares-in (turn prune delete-op:orr))
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]
@@ -2501,6 +2664,10 @@
   ::  a full inbox drops new offers; 200 is far past what a person gets
   ?:  &((gte ~(wyt by cur) 200) !(~(has by cur) key))
     (note-inbox 'offer' | 'inbox full' (scot %p src))
+  ::  one ship holds at most twenty, so a stranger cannot fill it
+  =/  theirs=@ud  (lent (skim ~(val by cur) |=(o=json =((scot %p src) (gs:orr o 'host')))))
+  ?:  &((gte theirs 20) !(~(has by cur) key))
+    (note-inbox 'offer' | 'too many offers from this ship' (scot %p src))
   =/  offer=json
     %-  pairs:enjs:format
     :~  ['host' s+(scot %p src)]
@@ -3084,14 +3251,21 @@
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (ask-model cfg parts)
   ::  the call counts against the limits whatever it answered
   ;<  ~  bind:m  (gen-count now ?=(^ urgent))
-  ?.  =(200 status.got)
+  ::  a failure that may pass (no answer, a timeout, the rate limit, the
+  ::  host's error) keeps no digest, so the next wake asks again; one
+  ::  that will not (a refused key, a prompt too long) keeps it
+  =/  s=@ud  status.got
+  =/  passing=?  |(=(0 s) =(408 s) =(429 s) &((gte s 500) (lte s 599)))
+  ?.  =(200 s)
     =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
-    ;<  ~  bind:m  (gen-record `dg 0 0 ~ ~ `why secs.got | rev)
+    ;<  ~  bind:m  (gen-record ?:(passing ~ `dg) 0 0 ~ ~ `why secs.got | rev)
     (pure:m ~)
   =/  resp=json  (fall (de:json:html body.got) [%o ~])
   =/  ans  (answer-of:orr resp)
   ?:  ?=(%| -.ans)
-    ;<  ~  bind:m  (gen-record `dg 0 0 ~ ~ `p.ans secs.got | rev)
+    ::  a failed answer still cost what its usage says
+    =/  host-error=?  ?=(^ (gj:orr resp 'error'))
+    ;<  ~  bind:m  (gen-record ?:(host-error ~ `dg) 0 0 ~ (gj:orr resp 'usage') `p.ans secs.got | rev)
     (pure:m ~)
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
   ?~  parsed
@@ -3145,7 +3319,13 @@
     (add prior ?:(?=([%n *] cost) (micro-of:orr p.cost) 0))
   =/  keep=@t
     ?:  skipped  (gs:orr last 'digest')
-    ?~(dg (gs:orr last 'digest') (scot %ux u.dg))
+    ?~(dg '' (scot %ux u.dg))
+  ::  a skip (held by the limits, nothing new) says why, and keeps what
+  ::  the last real pass did for the page to show
+  =/  kept  |=([k=@t d=json] ^-(json ?.(skipped d (gj:orr last k))))
+  =/  said=(list @t)
+    ?.  skipped  notes
+    (scag 20 (dedupe:orr (weld notes (strings:orr (ga:orr last 'notes')))))
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['at' (en-time:orr now)]
@@ -3160,12 +3340,12 @@
         ['rev' rev]
         ['digest' s+keep]
         ['skipped' b+skipped]
-        ['filed' (numb:enjs:format filed)]
-        ['dropped' (numb:enjs:format dropped)]
-        ['notes' a+(turn notes |=(n=@t `json`s+n))]
-        ['usage' usage]
-        ['error' ?~(error ~ s+u.error)]
-        ['seconds' (numb:enjs:format secs)]
+        ['filed' (kept 'filed' (numb:enjs:format filed))]
+        ['dropped' (kept 'dropped' (numb:enjs:format dropped))]
+        ['notes' a+(turn said |=(n=@t `json`s+n))]
+        ['usage' (kept 'usage' usage)]
+        ['error' (kept 'error' ?~(error ~ s+u.error))]
+        ['seconds' (kept 'seconds' (numb:enjs:format secs))]
     ==
   (over:io (rf 0 / %'generator-last.json') [[/ %json] doc])
 ::  +gen-count: one more model call today, at now, for the limits
@@ -3225,6 +3405,22 @@
   ;<  t0=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-request:io request)
   ;<  ~  bind:m  (set-timer:io /[wire] (add t0 timeout))
+  ::  iris's answer carries nothing that names its request, so a late
+  ::  answer to one that timed out would be taken as this one's. An
+  ::  answer shaped for another endpoint is skipped as such: the
+  ::  decider answers with answers, the model with choices or an error.
+  ::  ponytail: two late answers from one endpoint still cross; the
+  ::  kernel handing back the request's wire would end it.
+  =/  fits
+    |=  resp=client-response:iris
+    ^-  ?
+    ?.  ?=(%finished -.resp)  &
+    ?.  =(200 status-code.response-header.resp)  &
+    =/  j=json  (fall (de:json:html ?~(full-file.resp '' q.data.u.full-file.resp)) ~)
+    ?+  wire  &
+      %decider  (has-key:orr j 'answers')
+      ?(%model %reader %brief %refine)  |((has-key:orr j 'choices') (has-key:orr j 'error'))
+    ==
   ;<  res=[why=@t r=(unit client-response:iris)]  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
@@ -3236,7 +3432,9 @@
         ?.(=(/[wire] !<(path q.sage.u.in)) [%skip ~] [%done 'no answer before the timer' ~])
       ?.  =([/ %http-response] p.sage.u.in)  [%skip ~]
       =/  resp=client-response:iris  !<(client-response:iris q.sage.u.in)
-      ?:(?=(%cancel -.resp) [%done 'the request was cancelled' ~] [%done '' `resp])
+      ?:  ?=(%cancel -.resp)  [%done 'the request was cancelled' ~]
+      ?.  (fits resp)  [%skip ~]
+      [%done '' `resp]
     ==
   ;<  ~  bind:m  (cancel-timer:io /[wire])
   ;<  t1=@da  bind:m  get-time:io
@@ -3385,6 +3583,7 @@
         ['who' s+who]
         ['at' s+(en-iso:orr at)]
         ['by' s+by.act]
+        ['scope' ?~(scope.act ~ (en-scope:orr u.scope.act))]
     ==
   ;<  *  bind:m  (make-soft:io (rf 1 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
   ;<  ~  bind:m  (over:io (rf 1 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
@@ -3756,7 +3955,10 @@
     ::  a message the cap held is neither read nor remembered, so the
     ::  next pass starts at the first one held and finds it again,
     ::  without asking for what came before it a second time
-    ;<  ~  bind:m  (chat-record last now (fall held-at.sifted now) tally ~ ~)
+    ::  a pass one scry did not answer asks again from the same since,
+    ::  the seen ring keeping what was read from being read twice
+    =/  next=@da  ?:(|(?=(%| -.chat) ?=(%| -.chans)) since (fall held-at.sifted now))
+    ;<  ~  bind:m  (chat-record last now next tally ~ ~)
     (pure:m poll.cfg)
   =/  run  i.runs
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
@@ -3867,9 +4069,15 @@
   ?.  enabled.cfg  (pure:m poll.cfg)
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'mail-last.json'))
+  ::  the floor: the backfill on the first pass, then never later than
+  ::  a week ago, so mail delivered late, mail the cap held and a reply
+  ::  the model could not read are read on a later pass; the seen ring
+  ::  keeps what was read from being read twice
   =/  first=(unit @da)  (de-iso:orr (gs:orr last 'since'))
   =/  span=@dr  (mul backfill.cfg ~h1)
-  =/  since=@da  ?^(first u.first ?:((lth now span) ~1970.1.1 (sub now span)))
+  =/  since=@da
+    ?~  first  ?:((lth now span) ~1970.1.1 (sub now span))
+    (max u.first (sub now ~d7))
   =/  record
     |=  [notes=(list @t)]
     ^-  form:m
@@ -3885,7 +4093,7 @@
   =/  fresh=(list mail-msg:orr)
     %+  sort
       %+  skim  msgs
-      |=(x=mail-msg:orr &(!forged.x (gth sent.x since) (lte sent.x now)))
+      |=(x=mail-msg:orr &(trusted.x (gte sent.x since) (lte sent.x now)))
     |=([a=mail-msg:orr b=mail-msg:orr] (lth sent.a sent.b))
   ;<  seen-j=json  bind:m  (read-json (rf 0 / %'mail-seen.json'))
   =/  seen=(set @t)  (sy (strings:orr ?:(?=([%a *] seen-j) p.seen-j ~)))
@@ -3899,15 +4107,20 @@
   ::  word (a client's brief for the same day carries other tags)
   ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
   =/  by-id=(map @t mail-msg:orr)  (~(gas by *(map @t mail-msg:orr)) (turn msgs |=(x=mail-msg:orr [id.x x])))
-  =/  replies=(list mail-msg:orr)
-    %+  skim  fresh
+  =/  sent-today=(list @t)  (brief-texts bl)
+  =/  replies=(list [r=mail-msg:orr root=@t])
+    %+  murn  fresh
     |=  x=mail-msg:orr
-    ?.  &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of:orr subj.x)) !(~(has in seen) (cat 3 'mail:' id.x)))  |
+    ^-  (unit [r=mail-msg:orr root=@t])
+    ?.  &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of:orr subj.x)) !(~(has in seen) (cat 3 'mail:' id.x)))  ~
     =/  root=(unit mail-msg:orr)  (~(get by by-id) (scot %uv u.prev.x))
-    ?~  root  |
-    &(=(our from.u.root) =(body.u.root (gs:orr bl 'text')))
+    ?~  root  ~
+    ?.  &(=(our from.u.root) (lien sent-today |=(t=@t =(t body.u.root))))  ~
+    `[x body.u.root]
   ;<  [handled=(list @t) reply-notes=(list @t)]  bind:m  (brief-replies replies all schema now tz)
   ;<  ~  bind:m  (reader-remember %'mail-seen.json' seen-j handled)
+  ::  read again: the write above is what the later writes build on
+  ;<  seen-j=json  bind:m  (read-json (rf 0 / %'mail-seen.json'))
   =/  people=(map @t @t)  (people-of-ships all)
   =?  people  !(~(has by people) me)  (~(put by people) me 'person/me')
   =/  tg=tg-config:orr  (mail-as-tg:orr cfg)
@@ -3977,7 +4190,7 @@
   |-
   ?~  runs
     ;<  ~  bind:m  (reader-remember %'mail-seen.json' seen-j new)
-    ;<  ~  bind:m  (reader-record %'mail-last.json' last now (fall held-at.sifted now) tally ~ ~)
+    ;<  ~  bind:m  (reader-record %'mail-last.json' last now since tally ~ ~)
     (pure:m poll.cfg)
   =/  run  i.runs
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
@@ -4117,18 +4330,34 @@
         (gs:orr item 'id')
         ''
     ==
+  ::  the daily cap holds what waits until tomorrow, retried every five
+  ::  minutes like a text the model is down for
+  =/  day=@t  (end [3 10] (en-iso:orr now))
+  =/  today=@ud  ?:(=(day (gs:orr last 'day')) (fall (gn:orr last 'read_today') 0) 0)
+  ?:  (gte today max-daily.cfg)
+    ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~['held: today\'s texts are spent'] ~)
+    (pure:m &)
+  ::  a key's text is read as the key: its rows signed by it, and only
+  ::  what the key could have filed itself kept
+  =/  scope=(unit scope:orr)
+    =/  sj=json  (gj:orr item 'scope')
+    ?.  ?=([%o *] sj)  ~
+    =/  d  (de-scope:orr sj)
+    ?:(?=(%& -.d) `p.d ~)
+  =/  kind=reader-kind:orr  read-kind:orr
+  =?  kind  ?=(^ scope)  kind(by (gs:orr item 'by'))
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
-    (tg-read tg ~[[msg (gs:orr item 'who')]] now read-kind:orr schema all)
+    (tg-read tg ~[[msg (gs:orr item 'who')]] now kind schema all)
   ::  a text not read for want of a model (down, or no key set) waits;
   ::  one the gate judged not worth reading is done with
-  =/  keyless=?  (lien notes.facts |=(n=@t =('no api_key' (end [3 10] n))))
-  ?:  |(down &(!read keyless))
+  ?:  down
     ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~ `notes.facts)
     (pure:m &)
-  ;<  ~  bind:m  (tg-file facts now read-kind:orr)
-  ;<  recent=json  bind:m  (read-json (rf 0 / %'read-recent.json'))
-  ;<  ~  bind:m
-    (over:io (rf 0 / %'read-recent.json') [[/ %json] (tg-remember:orr recent msg (gs:orr item 'who') now read-kind:orr)])
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  =?  facts  ?=(^ scope)
+    %^  scope-facts:orr  facts  u.scope
+    ?:(sensitive.u.scope ~ (~(uni in (sensitive-of:orr policy)) address-attrs:orr))
+  ;<  ~  bind:m  (tg-file facts now kind)
   =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
   =/  tally=chat-tally
     :*  ?:(read 1 0)  n  0  0  1  1  0  0
@@ -4166,7 +4395,7 @@
   =/  store=json  (fall store.cal [%o ~])
   =/  today=(list @t)
     %:  brief-today:orr
-      (events-of:orr store)  ?~(cache *cal-order:orr order.u.cache)  (todos-of:orr store)
+      (events-in:orr store &)  ?~(cache *cal-order:orr order.u.cache)  (todos-of:orr store)
       all  multi  from  to  tz
     ==
   =/  waiting  (brief-waiting:orr acts all tz)
@@ -4201,14 +4430,19 @@
     ?~  aus  (pure:n `'auspex desk not installed')
     ;<  err=(unit tang)  bind:n  (poke-auspex u.aus our (brief-subject:orr day) text)
     (pure:n ?~(err ~ `(tang-head u.err)))
+  =/  tags-j=json  [%o (~(gas by *(map @t json)) (turn tags.waiting |=([tag=@t id=@ta] [tag `json`s+id])))]
   %+  over:io  (rf 0 / %'brief-last.json')
   :-  [/ %json]
   %-  pairs:enjs:format
   :~  ['day' s+day]
       ['at' s+(en-iso:orr now)]
       ['sent' b+?=(~ sent)]
-      ['tags' [%o (~(gas by *(map @t json)) (turn tags.waiting |=([tag=@t id=@ta] [tag `json`s+id])))]]
+      ['tags' tags-j]
       ['text' s+text]
+      :-  'today'
+      :-  %a
+      %+  snoc  ?:(=(day (gs:orr last 'day')) (ga:orr last 'today') *(list json))
+      (pairs:enjs:format ~[['text' s+text] ['tags' tags-j]])
       ['said' s+suggestions]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
@@ -4233,28 +4467,28 @@
 ::  Answers the ids handled and the notes.
 ::
 ++  brief-replies
-  |=  [replies=(list mail-msg:orr) all=(list loaded:orr) schema=json now=@da tz=@t]
+  |=  [replies=(list [r=mail-msg:orr root=@t]) all=(list loaded:orr) schema=json now=@da tz=@t]
   =/  m  (fiber:fiber:nexus ,[(list @t) (list @t)])
   ^-  form:m
   ?~  replies  (pure:m [~ ~])
-  =/  sorted=(list mail-msg:orr)  (sort replies |=([a=mail-msg:orr b=mail-msg:orr] (lth sent.a sent.b)))
+  =/  sorted=(list [r=mail-msg:orr root=@t])
+    (sort replies |=([a=[r=mail-msg:orr *] b=[r=mail-msg:orr *]] (lth sent.r.a sent.r.b)))
   ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
-  =/  tags=(list [tag=@t id=@ta])
-    =/  t=json  (gj:orr bl 'tags')
-    ?.  ?=([%o *] t)  ~
-    (murn ~(tap by p.t) |=([k=@t v=json] ?:(?=([%s *] v) `[k `@ta`p.v] ~)))
   =|  handled=(list @t)
   =|  notes=(list @t)
   |-
   ?~  sorted  (pure:m [(flop handled) (flop notes)])
-  =/  r=mail-msg:orr  i.sorted
+  =/  r=mail-msg:orr  r.i.sorted
   =/  key=@t  (cat 3 'mail:' id.r)
   =/  day=@t  (brief-day-of:orr subj.r)
   ?.  =(day (gs:orr bl 'day'))
     $(sorted t.sorted, handled [key handled], notes [(rap 3 'a reply to the brief of ' day ' left: the last brief is ' (gs:orr bl 'day') ~) notes])
-  =/  words=@t  (own-words:orr body.r (gs:orr bl 'text'))
+  ::  the tags of the brief this reply answers: a wake sends a second
+  ::  brief the same day under other tags
+  =/  tags=(list [tag=@t id=@ta])  (brief-tags bl root.i.sorted)
+  =/  words=@t  (own-words:orr body.r root.i.sorted)
   ?:  =('' words)  $(sorted t.sorted, handled [key handled])
   ?:  =('' api-key.gen)
     (pure:m [(flop handled) (flop ['no api_key set on the generator: the reply waits' notes])])
@@ -4279,13 +4513,28 @@
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
   =/  moves=(list move:orr)  (moves-of:orr u.parsed tags known)
   ;<  moved=(list @t)  bind:m  (apply-moves moves acts now)
-  =/  facts=tg-facts:orr  (validate-reader:orr u.parsed rows ctx)
+  =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
   ;<  ~  bind:m  (tg-file facts now mail-kind:orr)
   %=  $
     sorted  t.sorted
     handled  [key handled]
     notes  (weld (flop (weld moved notes.facts)) notes)
   ==
+::  +brief-texts, +brief-tags: every brief sent today (its text), and
+::  the tags of the one whose text is given
+::
+++  brief-texts
+  |=  bl=json
+  ^-  (list @t)
+  =/  today=(list @t)  (turn (ga:orr bl 'today') |=(e=json (gs:orr e 'text')))
+  ?:(=('' (gs:orr bl 'text')) today [(gs:orr bl 'text') today])
+++  brief-tags
+  |=  [bl=json text=@t]
+  ^-  (list [tag=@t id=@ta])
+  =/  hits=(list json)  (skim (ga:orr bl 'today') |=(e=json =(text (gs:orr e 'text'))))
+  =/  t=json  ?^(hits (gj:orr i.hits 'tags') ?:(=(text (gs:orr bl 'text')) (gj:orr bl 'tags') ~))
+  ?.  ?=([%o *] t)  ~
+  (murn ~(tap by p.t) |=([k=@t v=json] ?:(?=([%s *] v) `[k `@ta`p.v] ~)))
 ::  +apply-moves: each move on its action, through the writer: the
 ::  status steps; a new due or subject on an action still open
 ::  dismisses it and proposes it again as changed, then moves the new
@@ -4326,7 +4575,7 @@
   =/  made=(unit @ta)
     =/  hits=(list [id=@ta a=action:orr])
       %+  skim  after
-      |=([id=@ta a=action:orr] &(!=(id id.mv) =(title.a title.u.cur) =(%proposed status.a) (gte proposed.a now)))
+      |=([id=@ta a=action:orr] &(!=(id id.mv) =(title.a title.u.cur) =(%proposed status.a) (gte proposed.a (sub now (mod now ~s1)))))
     ?~(hits ~ `id.i.hits)
   ?~  made  $(moves t.moves, said [(rap 3 tag.mv ': the changed action was not filed' ~) said])
   =/  want=@t  ?:(!=('' status.mv) status.mv ?:(=(%proposed status.u.cur) '' 'approved'))
@@ -4603,12 +4852,17 @@
   ::  from the earlier one alone.
   =/  fresh=(list [msg=tg-msg:orr who=@t])
     %+  skip  run
-    |=([msg=tg-msg:orr who=@t] |(=('' text.msg) =('?' (rsh [3 (dec (met 3 text.msg))] text.msg))))
+    |=  [msg=tg-msg:orr who=@t]
+    ?:  =('' text.msg)  &
+    ::  a handed-in page that ends in a question still says things
+    &(!=('web' channel.kind) =('?' (rsh [3 (dec (met 3 text.msg))] text.msg)))
   ?~  fresh  (pure:m [| | ~ ~ ~ ~['a question states nothing'] ~])
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
+  ::  no key is a model that cannot be reached: the run waits, as for
+  ::  one that is down, rather than being taken as read
   ?:  =('' api-key.gen)
-    (pure:m [| | ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
+    (pure:m [| & ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
   ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
   =/  rows=(list window-row:orr)
@@ -4617,6 +4871,8 @@
     %+  turn  fresh
     |=([msg=tg-msg:orr who=@t] ^-(window-row:orr [id:(tg-source:orr msg kind) (en-iso:orr at.msg) who text.msg |]))
   ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
+  ::  an answer without the question's noul is no answer: read
+  =?  gate  ?&(?=(^ gate) ?=(~ (gj:orr (gj:orr u.gate 'worth_reading') 'noul')))  ~
   =/  p=@ud  ?~(gate 100 (noul-of:orr u.gate 'worth_reading'))
   =/  gate-note=@t
     ?~  gate  'gate unavailable, analyst asked'
@@ -4646,8 +4902,11 @@
           &((gte s 500) (lte s 599))
       ==
     (pure:m [& down ~ ~ ~ ~[gate-note why] ~])
-  =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
-  ?:  ?=(%| -.ans)  (pure:m [& | ~ ~ ~ ~[gate-note p.ans] ~])
+  =/  resp=json  (fall (de:json:html body.got) [%o ~])
+  =/  ans  (answer-of:orr resp)
+  ::  a 200 that carries an error is the host's failure after the
+  ::  request began, which passes: the run waits like one that is down
+  ?:  ?=(%| -.ans)  (pure:m [& ?=(^ (gj:orr resp 'error')) ~ ~ ~ ~[gate-note p.ans] ~])
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
   ?~  parsed  (pure:m [& | ~ ~ ~ ~[gate-note 'model: the answer is not JSON'] ~])
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
@@ -4696,7 +4955,7 @@
   |=  [facts=tg-facts:orr now=@da kind=reader-kind:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind)))
+  =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind ?:(=('web' channel.kind) 'web' 'chat'))))
   ;<  *  bind:m  (file-ops-on (observe-ops:orr bodies.facts obs) /tg)
   =/  act-ops=(list json)
     %+  turn  acts.facts
@@ -4710,17 +4969,18 @@
   (pure:m ~)
 ::  +tg-final-row: a validated observation (subject, attr, value, at,
 ::  conf, message, until) as the writer's row: the source is the message
-::  it came from, by telegram, the message key gone.
+::  it came from (kind chat, or web for a page read), by the reader's
+::  signer, the message key gone.
 ::
 ++  tg-final-row
-  |=  [o=json signer=@t]
+  |=  [o=json signer=@t src=@t]
   ^-  json
   ?.  ?=([%o *] o)  o
   =/  msg=@t  (gs:orr o 'message')
   ?:  =('' msg)  o
   :-  %o
   %-  ~(gas by (~(del by p.o) 'message'))
-  :~  ['source' (pairs:enjs:format ~[['kind' s+'chat'] ['id' s+msg]])]
+  :~  ['source' (pairs:enjs:format ~[['kind' s+src] ['id' s+msg]])]
       ['by' s+signer]
   ==
 ::  +tg-stranger: whether a business message comes through a connection
@@ -4885,9 +5145,9 @@
   ;<  cal=exec-cal  bind:m  (read-calendar seen)
   ;<  tally=exec-tally  bind:m  (exec-pass cal)
   ;<  tally=exec-tally  bind:m  (todo-pass cal tally)
-  ;<  ~  bind:m  (events-pass cal)
+  ;<  wrote=?  bind:m  (events-pass cal)
   ;<  ~  bind:m  (exec-record tally)
-  (pure:m [seen.cal !(tally-idle tally)])
+  (pure:m [seen.cal |(wrote !(tally-idle tally))])
 ::  +tally-idle: a pass that moved nothing (a claim that was refused
 ::  does not count, nor a poke the calendar refused, so a refusal that
 ::  repeats does not run passes without end)
@@ -5000,7 +5260,8 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
-  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now)
+  ;<  tz=@t  bind:m  owner-tz
+  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now tz)
   ;<  chat-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
   =/  chat=chat-config:orr  (de-chat-config:orr chat-j)
   ::  the desks the plans need, found and their roads proved, once, and
@@ -5076,7 +5337,7 @@
   ?.  mine  $(plans t.plans)
   =.  claimed.tally  +(claimed.tally)
   ;<  [ok=? note=@t]  bind:m  (exec-one p tg p.desk)
-  ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p ?:(ok 'done' 'failed') note)] /exec)
+  ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p ?:(ok 'done' 'failed') (end [3 500] note))] /exec)
   =?  tally  !ok
     =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
     tally(failed (scag 20 f))
@@ -5126,7 +5387,7 @@
       :~  ['chat_id' s+(gs:orr body.p 'chat_id')]
           ['text' s+(clean-text:orr (gs:orr body.p 'text'))]
       ==
-    (pure:m [ok ?:(ok (cat 3 'sent to ' to.p) why)])
+    (pure:m [ok ?:(ok (rap 3 'sent to ' (gs:orr body.p 'who') ' by telegram' ~) why)])
   ::
       %mail
     =/  who=(unit @p)  (slaw %p to.p)
@@ -5135,7 +5396,7 @@
       %+  poke-auspex  base
       [u.who (gs:orr body.p 'subject') (clean-text:orr (gs:orr body.p 'text'))]
     ?^  err  (pure:m [| (tang-head u.err)])
-    (pure:m [& (cat 3 'sent by mail to ' to.p)])
+    (pure:m [& (rap 3 'sent to ' (gs:orr body.p 'who') ' by mail' ~)])
   ::
       %chat
     =/  nest=@t  (gs:orr body.p 'channel')
@@ -5147,7 +5408,7 @@
     ?~  who  (pure:m [| (cat 3 to.p ' is not a ship name')])
     ;<  err=(unit @t)  bind:m  (send-dm u.who (clean-text:orr (gs:orr body.p 'text')))
     ?^  err  (pure:m [| u.err])
-    (pure:m [& (cat 3 'sent on Urbit to ' to.p)])
+    (pure:m [& (rap 3 'sent to ' (gs:orr body.p 'who') ' on Urbit' ~)])
   ::
       %calendar
     ;<  err=(unit tang)  bind:m  (poke-calendar base body.p)
@@ -5258,7 +5519,8 @@
     ?.  ?=([~ %file *] vw)  ~
     (fall (mole |.(!<(json (need-vase:tarball sang.u.vw)))) ~)
   =/  at=@ud  (fall (gn:orr last 'at') 0)
-  ?:  (gte at since)
+  =/  stage=@t  (gs:orr last 'stage')
+  ?:  &((gte at since) |(=('send' stage) =('reject' stage)))
     =/  ok=json  (gj:orr last 'ok')
     ?:  =([%b |] ok)  (pure:m `~[leaf+(trip (cat 3 'auspex: ' (gs:orr last 'why')))])
     (pure:m ~)
@@ -5308,21 +5570,21 @@
 ::
 ++  events-pass
   |=  cal=exec-cal
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
-  ?~  store.cal  (pure:m ~)
-  ?~  base.cal  (pure:m ~)
+  ?~  store.cal  (pure:m |)
+  ?~  base.cal  (pure:m |)
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base.cal %'order.calendar-cache'] ~)
   =/  cache=(unit cal-cache:orr)
     ?.  ?=([~ %file *] vw)  ~
     (mole |.(;;(cal-cache:orr (sang-noun:tarball sang.u.vw))))
-  ?~  cache  (pure:m ~)
+  ?~  cache  (pure:m |)
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  seen-json=json  bind:m  (read-json (rf 0 / %'calendar-seen.json'))
+  ;<  tz=@t  bind:m  owner-tz
   =/  multi=(set @t)  (multi-of:orr schema)
-  =/  tz=@t  (attr-text:orr all multi now 'person/me' 'timezone')
   =/  seen=(map @t @t)
     %-  ~(gas by *(map @t @t))
     %+  murn  ?:(?=([%o *] seen-json) ~(tap by p.seen-json) ~)
@@ -5340,18 +5602,23 @@
         ['events' (numb:enjs:format (lent events))]
     ==
   ?:  &(!active ?=([%o *] last) !=(~ p.last))
-    (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] [%o (~(gas by p.last) saw)]])
-  %+  over:io  (rf 0 / %'calendar-events-last.json')
-  :-  [/ %json]
-  %-  pairs:enjs:format
-  %+  weld  saw
-  ^-  (list [@t json])
-  :~  ['acted_at' ?:(active (en-time:orr now) ~)]
-      ['made' (numb:enjs:format made.plan)]
-      ['rows' (numb:enjs:format rows.plan)]
-      ['cancelled' (numb:enjs:format cancelled.plan)]
-      ['ops' (numb:enjs:format n)]
-  ==
+    ;<  ~  bind:m  (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] [%o (~(gas by p.last) saw)]])
+    (pure:m |)
+  ;<  ~  bind:m
+    %+  over:io  (rf 0 / %'calendar-events-last.json')
+    :-  [/ %json]
+    %-  pairs:enjs:format
+    %+  weld  saw
+    ^-  (list [@t json])
+    :~  ['acted_at' ?:(active (en-time:orr now) ~)]
+        ['made' (numb:enjs:format made.plan)]
+        ['rows' (numb:enjs:format rows.plan)]
+        ['cancelled' (numb:enjs:format cancelled.plan)]
+        ['ops' (numb:enjs:format n)]
+    ==
+  ::  what it wrote is work: the settle inside the filing took the
+  ::  beacon's news, so another pass must follow at once
+  (pure:m !=(0 n))
 ::  +calendar-json: the calendar's store as JSON. The store's noun is
 ::  the calendar's own type, which orrery cannot clam, and a peek with
 ::  a JSON blot converts in the PEEKING fiber's code namespace (the
@@ -5628,7 +5895,9 @@
   ^-  (unit @t)
   ?~  scope.act  ~
   ?.  write.u.scope.act  `'read only key'
-  =/  hide=(set @t)  ?:(sensitive.u.scope.act ~ (hidden-for act policy))
+  =/  hide=(set @t)
+    ?:  sensitive.u.scope.act  ~
+    (~(uni in (hidden-for act policy)) address-attrs:orr)
   =/  bad=(unit @t)  (out-of-scope:orr jon u.scope.act hide)
   ?~  bad  ~
   `(cat 3 'not in scope: ' u.bad)

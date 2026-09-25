@@ -192,6 +192,8 @@ const readSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tg
 ok('the read card carries its settings and last read, between mail and the brief', readSettings.includes('<h2>Read</h2>') && readSettings.indexOf('<h2>Mail</h2>') < readSettings.indexOf('<h2>Read</h2>') && readSettings.indexOf('<h2>Read</h2>') < readSettings.indexOf('<h2>Daily brief</h2>')
   && readSettings.includes('data-save-read="1"') && readSettings.includes('Last read at 2026-09-24 20:00:00: read 1, filed 4. Read today: 3.') && readSettings.includes('1790000000000-0xab: The tow'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
+const payloadHtml = render.inbox([{ id: 'a1', kind: 'message', title: 'Wish Sarah happy birthday', status: 'proposed', proposed: '2026-09-20T10:00:00Z', by: 'generator', about: [], payload: { via: 'chat', to: 'person/sarah', text: 'Happy <b>birthday</b>', why: 'it is today' } }], state);
+ok('the inbox shows what an action will do, escaped, the recipient linked, the why left out', payloadHtml.includes('class="payload"') && payloadHtml.includes('>via</span> chat') && payloadHtml.includes('Happy &lt;b&gt;birthday&lt;/b&gt;') && !payloadHtml.includes('<b>birthday</b>') && payloadHtml.includes('href="#body/person/sarah"') && !payloadHtml.includes('it is today'));
 const libVersion = parseInt((require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'lib', 'orrery.hoon'), 'utf8').match(/\n\+\+  version  (\d+)\n/) || [])[1], 10);
 const jsonVersion = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'version.json'), 'utf8')).version;
 ok('the lib\'s version is the desk\'s', libVersion === jsonVersion, [libVersion, jsonVersion]);
@@ -199,7 +201,7 @@ ok('the settings view reads both chat lists in one route', src.includes("api('/c
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes('if (dirty) return true;')
-  && src.includes('dirty = false; setTimeout(function () { refresh(true); }, 300);')
+  && src.includes('function later() { dirty = typedNote(); setTimeout(function () { refresh(!dirty); }, 300); }')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });"));
 ok('a refine holds the row\'s move buttons while it runs and frees them on a refusal or an error',
   src.indexOf("holdMoves(true);") > src.indexOf("b.dataset.refine) {") && src.indexOf("holdMoves(true);") < src.indexOf("post('/actions/' + seg(rid) + '/refine'")

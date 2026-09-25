@@ -52,6 +52,10 @@
     %-  text:om
     (pairs:enjs:format ~[['id' s+id.u.twin] ['status' s+status.a.u.twin] ['existing' b+&]])
   =/  a=action:orr  p.got(status (initial-status:orr kind.p.got (auto-of:orr policy)))
+  ::  the writer runs the channel rule before it stores the action, and
+  ::  a rewritten via changes the id: the answer names the one it stores
+  ;<  bodies=(list loaded:orr)  bind:m  load-bodies:om
+  =.  a  a:(route-message:orr a (ship-of:orr bodies (gs:orr payload.a 'to') now))
   ;<  err=(unit tang)  bind:m
     (poke-writer:om (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]]))
   ?^  err  (pure:m (fail:om 'the writer refused the poke'))

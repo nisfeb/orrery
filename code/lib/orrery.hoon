@@ -399,6 +399,10 @@
     [%| 'value.ref: expected <kind>/<slug>']
   ?:  &(?=([%o *] value) =(subject (gs value 'ref')))
     [%| 'value.ref: a body cannot refer to itself']
+  ::  a time is stored as UTC, so the fold and the phase, which compare
+  ::  the text, compare instants
+  =?  value  ?&  (~(has in time-attrs) attr)  ?=([%s *] value)  ?=(^ (de-iso-any p.value))  ==
+    s+(en-iso (need (de-iso-any ?>(?=([%s *] value) p.value))))
   =/  at=(unit @da)  ?.((has-key jon 'at') `now (gt jon 'at'))
   ?~  at  [%| 'at: expected an ISO 8601 UTC time such as 2026-09-16T22:05:00Z']
   =/  until=(unit @da)  (gt jon 'until')
@@ -488,7 +492,14 @@
   |=  [jon=json now=@da default-by=@t]
   ^-  [bodies=(list (each [id=bid =body] @t)) obs=(list (each obs @t))]
   :-  (turn (ga jon 'bodies') |=(j=json (de-body j now)))
-  (turn (ga jon 'observations') |=(j=json (de-obs j now default-by)))
+  ::  each row is seen a moment after the one before it, so two rows
+  ::  of one batch on one attribute at one time fold in request order
+  =/  i=@ud  0
+  =/  os=(list json)  (ga jon 'observations')
+  |-  ^-  (list (each obs @t))
+  ?~  os  ~
+  :-  (de-obs i.os (add now (mul i ~s0..0001)) default-by)
+  $(os t.os, i +(i))
 ::  +ship-source: an observation claiming a ship source. Only the inbox
 ::  sets that kind, from the transport; a local client that sent it
 ::  would be forging a ship's claim.
@@ -653,6 +664,25 @@
   ?.  (later r u.same)  acc
   =/  rest=(list row)  (skip cur |=(x=row =(value.obs.x value.obs.r)))
   (~(put by acc) attr [r rest])
+::  +fallback-ids: the row the fold would fall back to for each
+::  attribute (each value, for a multi-valued one) should its winner
+::  be retracted or expire: the newest live row after the winner.
+::  Compaction keeps these, so a retracted winner reverts to the old
+::  value instead of leaving the attribute blank.
+::
+++  fallback-ids
+  |=  [rows=(list row) multi=(set @t) when=@da]
+  ^-  (set @ta)
+  =/  live=(list row)  (sort (skim rows |=(r=row (is-live obs.r when))) later)
+  =|  count=(map [@t json] @ud)
+  =|  out=(set @ta)
+  |-
+  ?~  live  out
+  =/  r=row  i.live
+  =/  k=[@t json]  [attr.obs.r ?:((~(has in multi) attr.obs.r) value.obs.r ~)]
+  =/  n=@ud  (fall (~(get by count) k) 0)
+  =?  out  =(1 n)  (~(put in out) id.r)
+  $(live t.live, count (~(put by count) k +(n)))
 ::  +status-of: what a row is, seen from when, given the winners
 ::
 ++  status-of
@@ -827,7 +857,9 @@
   ^-  body
   =/  als=(set @t)  (~(uni in aliases.into) aliases.from)
   =.  als  ?:(=('' name.from) als (~(put in als) name.from))
-  into(aliases als)
+  ::  from's ship is kept when into has none: it is how the readers and
+  ::  the executor find the person
+  into(aliases als, ship ?~(ship.into ship.from ship.into))
 ::  +move-rows: from's rows re-subjected onto into, those into does not
 ::  already hold. A copy with an id already there is left as it is.
 ::
@@ -836,7 +868,7 @@
   ^-  (list row)
   =/  held=(set @ta)  (sy (turn dst |=(r=row id.r)))
   %+  skim  (turn src |=(r=row (resubject r into)))
-  |=(r=row !(~(has in held) id.r))
+  |=(r=row &(!(~(has in held) id.r) !=(`into (ref-of value.obs.r))))
 ::  +ref-rows: every live row on any body but from whose value points at
 ::  from, each with the body that holds it
 ::
@@ -852,7 +884,9 @@
     %+  skim  rows.l
     |=  r=row
     ^-  ?
-    ?.  (is-live obs.r when)  |
+    ::  a future row is repointed too, or it names a culled body when
+    ::  its time comes; a retracted one says nothing
+    ?:  retracted.obs.r  |
     =/  t=(unit bid)  (ref-of value.obs.r)
     ?~(t | =(u.t from))
   |=(r=row [id.l r])
@@ -1224,6 +1258,25 @@
       ['sensitive' s+`@t`?:(sensitive.s 'write' 'none')]
   ==
 ++  kind-in-scope    |=([s=scope k=@tas] ^-(? (~(has in kinds.s) k)))
+::  +ship-of: a person's ship as the executor finds it: the ship
+::  attribute, else the ship on the body's record
+::
+++  ship-of
+  |=  [all=(list loaded) id=@t now=@da]
+  ^-  @t
+  =/  a=@t  (attr-text all ~ now id 'ship')
+  ?.  =('' a)  a
+  =/  hit=(unit loaded)  (loaded-of all id)
+  ?~  hit  ''
+  ?~(ship.body.u.hit '' (scot %p u.ship.body.u.hit))
+::  +address-attrs: where the executor sends a person's messages. A
+::  key writes them only with sensitive: write, since one that could
+::  would redirect the owner's approved messages (version 60).
+::
+::  +time-attrs: the attributes whose value is an instant
+::
+++  time-attrs  `(set @t)`(sy `(list @t)`~['starts' 'ends' 'started' 'ended' 'next' 'last'])
+++  address-attrs  `(set @t)`(sy `(list @t)`~['ship' 'telegram'])
 ++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))
 ::  +de-client, +en-client-row, +en-client-view: a stored row (with the
 ::  salt and the hash) and what the owner sees of it (without them). A
@@ -1593,12 +1646,15 @@
   ^-  @t
   =/  st=@t  (winner-text winners 'status')
   ?:  |(=('closed' st) =('cancelled' st))  st
-  =/  end=@t  =/(e (winner-text winners 'ended') ?:(=('' e) (winner-text winners 'ends') e))
-  =/  start=@t  =/(s (winner-text winners 'started') ?:(=('' s) (winner-text winners 'starts') s))
-  =/  now-iso=@t  (en-iso now)
-  ?:  &(!=('' end) (lte-iso end now-iso))  'over'
-  ?:  &(!=('' start) (lte-iso start now-iso))  'under way'
-  ?:  !=('' start)  'upcoming'
+  =/  start=(unit @da)
+    (de-iso-any =/(s (winner-text winners 'started') ?:(=('' s) (winner-text winners 'starts') s)))
+  =/  end=(unit @da)
+    =/  got=(unit @da)  (de-iso-any =/(e (winner-text winners 'ended') ?:(=('' e) (winner-text winners 'ends') e)))
+    ?:  &(?=(^ got) ?=(^ start) (gth u.start u.got))  ~
+    got
+  ?:  &(?=(^ end) (lte u.end now))  'over'
+  ?:  &(?=(^ start) (lte u.start now))  'under way'
+  ?:  ?=(^ start)  'upcoming'
   ?:(=('' st) 'open' st)
 ::  +lte-iso: ISO 8601 UTC strings of one shape compare as text
 ::
@@ -1615,7 +1671,9 @@
   ?:  =(ka kb)  &
   =/  both=@ud  ~(wyt in (~(int in ka) kb))
   =/  short=@ud  (min ~(wyt in ka) ~(wyt in kb))
-  (gte both (max 2 (div (mul 8 short) 10)))
+  ::  four fifths rounded up: a three- or four-word title needs every
+  ::  word, so "Call the dentist" never stands for "Call the plumber"
+  (gte both (max 2 (div (add (mul 8 short) 9) 10)))
 ::  the pieces of the user prompt and the count of decided actions shown
 ++  recent      60
 ++  prompt-bodies  300
@@ -1686,15 +1744,17 @@
       ==
   ^-  (list @t)
   =/  multi=(set @t)  (multi-of schema)
-  =/  shown=(list loaded)  (scag prompt-bodies all)
   =/  hidden=(set @t)
     %-  sy
-    %+  murn  shown
+    %+  murn  all
     |=  l=loaded
     ^-  (unit @t)
     ?.  =(%situation kind.body.l)  ~
     =/  ph=@t  (phase (fold rows.l multi now) now)
     ?:(|(=('closed' ph) =('cancelled' ph) =('over' ph)) `id.l ~)
+  ::  the cap keeps the bodies most recently told of, person/me always,
+  ::  after the hidden are gone: a hash-order cut dropped open ones
+  =/  shown=(list loaded)  (newest-bodies (skip all |=(l=loaded (~(has in hidden) id.l))) prompt-bodies)
   =/  section
     |=  kinds=(list @tas)
     ^-  (list @t)
@@ -1725,7 +1785,7 @@
   =/  p2=@t  (join-cords nl (section ~[%situation]))
   =/  open=(list @t)
     :-  'Open actions (proposed or approved, do not duplicate):'
-    %+  murn  acts
+    %+  murn  (sort acts |=([a=[id=@ta *] b=[id=@ta *]] (aor id.a id.b)))
     |=  [id=@ta a=action]
     ^-  (unit @t)
     ?.  (is-open a)  ~
@@ -1740,6 +1800,21 @@
   =/  p4=@t
     (rap 3 'Now: ' (en-iso now) ', timezone ' ?:(=('' tz) 'unknown' tz) '. Answer with the JSON object.' ~)
   ~[p0 p1 p2 p3 p4]
+::  +newest-bodies: at most n bodies, person/me first, then by their
+::  newest row
+::
+++  newest-bodies
+  |=  [all=(list loaded) n=@ud]
+  ^-  (list loaded)
+  =/  newest  |=(l=loaded ^-(@da (roll rows.l |=([r=row acc=@da] ^-(@da (max acc seen.obs.r))))))
+  %+  scag  n
+  %+  sort  all
+  |=  [a=loaded b=loaded]
+  ?:  =('person/me' id.a)  &
+  ?:  =('person/me' id.b)  |
+  =/  na=@da  (newest a)
+  =/  nb=@da  (newest b)
+  ?:(=(na nb) (aor id.a id.b) (gth na nb))
 ::  +digest: a hash of everything but the clock
 ::
 ++  digest
@@ -1847,6 +1922,9 @@
   =/  six=tape  (scag 6 (weld frac "000000"))
   =/  micro=@ud  (add (mul whole 1.000.000) (fall (rush (crip six) dem) 0))
   =/  e=@sd  expo
+  ::  an exponent past thirty saturates: a model's 1e99999999 would
+  ::  otherwise multiply a bignum a hundred million times
+  ?:  (gth (abs:si e) 30)  ?:((syn:si e) (mul micro (pow 10 30)) 0)
   |-
   ?:  =(--0 e)  micro
   ?:  (syn:si e)  $(micro (mul micro 10), e (dif:si e --1))
@@ -2062,20 +2140,16 @@
   =/  payload=(map @t json)
     =/  p=json  (gj a 'payload')
     ?:(?=([%o *] p) p.p ~)
-  =/  shape=json  (gj payloads kind)
-  =/  missing=(list @t)
-    ?.  ?=([%o *] shape)  ~
-    %+  murn  ~(tap by p.shape)
-    |=  [k=@t v=json]
-    ^-  (unit @t)
-    ?.  ?=([%s *] v)  ~
-    ?.  =('required' (end [3 8] p.v))  ~
-    ?:((~(has by payload) k) ~ `k)
-  ?^  missing
-    $(todo t.todo, notes [(rap 3 'dropped ' title ': payload lacks ' (join-cords ', ' missing) ~) notes])
+  ::  held to the kind's shape as the reader holds it: times to UTC, a
+  ::  value from its list, a recipient that is a body; otherwise the
+  ::  action would wait approved for ever with no way out
+  =/  held  (hold-payload payload (gj payloads kind) known ~)
+  ?:  ?=([%| *] held)
+    $(todo t.todo, notes [(rap 3 'dropped ' title ': ' p.held ~) notes])
+  =.  payload  p.held
   =/  why=@t  (end [3 300] (gs a 'why'))
   =?  payload  !=('' why)  (~(put by payload) 'why' s+why)
-  =/  due=(unit @da)  (de-iso (gs a 'due'))
+  =/  due=(unit @da)  (de-iso-any (gs a 'due'))
   =/  row=json
     %-  pairs:enjs:format
     %-  zing
@@ -2131,12 +2205,16 @@
     ^-  @da
     ?~  status-at  at
     ?:((gte u.status-at at) (add u.status-at ~s1) at)
-  =/  end=(unit @da)
-    =/  e=@t  (winner-text winners 'ended')
-    (de-iso-any ?:(=('' e) (winner-text winners 'ends') e))
   =/  started=@t  (winner-text winners 'started')
   =/  start=(unit @da)
     (de-iso-any ?:(=('' started) (winner-text winners 'starts') started))
+  ::  a plan moved later has a start past its old end: that end is not
+  ::  the situation's any more
+  =/  end=(unit @da)
+    =/  e=@t  (winner-text winners 'ended')
+    =/  got=(unit @da)  (de-iso-any ?:(=('' e) (winner-text winners 'ends') e))
+    ?:  &(?=(^ got) ?=(^ start) (gth u.start u.got))  ~
+    got
   ?^  end
     ?.  (lth u.end now)  ~
     `[id.l (after u.end) (cat 3 'ended ' (en-iso u.end))]
@@ -2222,6 +2300,11 @@
   |=  [bodies=(list json) rows=(list json)]
   ^-  (list json)
   ?:  &(?=(~ bodies) ?=(~ rows))  ~
+  ::  more bodies than one batch holds go first, without rows: a row
+  ::  filed before its body is dropped as on an unknown subject
+  ?:  (gth (lent bodies) 50)
+    :-  (pairs:enjs:format ~[['op' s+'observe'] ['bodies' a+(scag 50 bodies)] ['observations' a+~]])
+    $(bodies (slag 50 bodies))
   :-  %-  pairs:enjs:format
       :~  ['op' s+'observe']
           ['bodies' a+(scag 50 bodies)]
@@ -2310,6 +2393,16 @@
   ?:  &(?=(^ r) |(=(',' i.r) =('.' i.r) =(';' i.r)))  $(r t.r)
   (flop r)
 ++  weekday-heads  ^-((list tape) ~["mon" "tue" "wed" "thu" "fri" "sat" "sun"])
+::  +is-weekday: a weekday's name or its short forms, a plural too:
+::  "sunset" and "wedding" are not
+::
+++  is-weekday
+  |=  t=tape
+  ^-  ?
+  =/  w=tape  t
+  =?  w  &((gth (lent w) 3) =("s" (scag 1 (flop w))))  (scag (dec (lent w)) w)
+  %-  ~(has in (sy `(list tape)`~["mon" "monday" "tue" "tues" "tuesday" "wed" "weds" "wednesday" "thu" "thur" "thurs" "thursday" "fri" "friday" "sat" "saturday" "sun" "sunday"]))
+  w
 ++  month-heads    ^-((list tape) ~["jan" "feb" "mar" "apr" "may" "jun" "jul" "aug" "sep" "oct" "nov" "dec"])
 ++  has-head
   |=  [t=tape heads=(list tape)]
@@ -2365,7 +2458,7 @@
   ?~  toks  (flop out)
   =/  t=tape  (cass (strip-punct-tail i.toks))
   =/  nx=tape  ?~(t.toks ~ (cass (strip-punct-tail i.t.toks)))
-  ?:  (has-head t weekday-heads)  $(toks t.toks)
+  ?:  (is-weekday t)  $(toks t.toks)
   ?:  (is-time-token t)  $(toks t.toks)
   ?:  (is-iso-date t)  $(toks t.toks)
   ?:  (is-slash-date t)  $(toks t.toks)
@@ -2514,7 +2607,9 @@
       ?.  =(" and " (scag 5 r2))  ~
       (capword (slag 5 r2))
     =/  names=(list @t)  ?~(second ~[w1] ~[w1 (crip word.u.second)])
-    =/  r3=tape  (skip-spaces ?~(second rest rest.u.second))
+    ::  the calendar convention attaches the dash to the name, "Mira-
+    ::  Ballet"; "Flight - SFO to JFK" and "Dentist - cleaning" name no one
+    =/  r3=tape  ?~(second rest rest.u.second)
     ?.  &(?=(^ r3) =('-' i.r3))  ~
     =/  r4=tape  t.r3
     ?.  &(?=(^ r4) |(=(' ' i.r4) =(9 i.r4)))  ~
@@ -3111,12 +3206,14 @@
 ::  one message as the reader sees it: its thread, its id (the sham of
 ::  the unsigned, as auspex names it), who, what, when, what it answers
 ::
-+$  mail-msg  [tid=@t id=@t from=@p subj=@t body=@t sent=@da prev=(unit @uv) forged=?]
++$  mail-msg  [tid=@t id=@t from=@p subj=@t body=@t sent=@da prev=(unit @uv) trusted=?]
 ++  mail-msg-of
   |=  [tid=@t st=mail-stored]
   ^-  mail-msg
   =/  u=mail-unsigned  u.msg.st
-  [tid (scot %uv (sham u)) from.u subj.u body.u sent.u prev.u =(%forged verdict.st)]
+  ::  only a verified copy is the sender's: an unverified from (every
+  ::  moon's and comet's) is anyone's claim, and a forged one a lie
+  [tid (scot %uv (sham u)) from.u subj.u body.u sent.u prev.u =(%verified verdict.st)]
 ::  +mail-row: a message as the reader's row: the thread is the chat,
 ::  the subject heads the text
 ::
@@ -3255,14 +3352,23 @@
 ++  tg-remember
   |=  [recent=json m=tg-msg who=@t now=@da kind=reader-kind]
   ^-  json
-  =/  base=(map @t json)  ?:(?=([%o *] recent) p.recent ~)
-  ?:  |(=('' text.m) =('/' (end [3 1] text.m)))  [%o base]
   =/  cutoff=@da  (sub now ~d1)
-  =/  kept=(list json)
-    %+  skip  (ga recent chat.m)
+  ::  every chat's window drops what is older than a day, and a chat
+  ::  left empty goes, so the file holds a day of text and no more
+  =/  fresh-row
     |=  r=json
+    ^-  ?
     =/  at=(unit @da)  (de-iso (gs r 'at'))
-    ?~(at & (lth u.at cutoff))
+    ?~(at | (gte u.at cutoff))
+  =/  base=(map @t json)
+    ?.  ?=([%o *] recent)  ~
+    %-  ~(gas by *(map @t json))
+    %+  murn  ~(tap by p.recent)
+    |=  [k=@t v=json]
+    =/  kept=(list json)  (skim (ga recent k) fresh-row)
+    ?~(kept ~ `[k a+kept])
+  ?:  |(=('' text.m) =('/' (end [3 1] text.m)))  [%o base]
+  =/  kept=(list json)  (ga [%o base] chat.m)
   =/  row=json
     %-  pairs:enjs:format
     :~  ['id' s+id:(tg-source m kind)]
@@ -3996,6 +4102,11 @@
   ?~  raw  [(flop out) (flop notes)]
   =/  o=json  i.raw
   ?.  ?=([%o *] o)  $(raw t.raw)
+  ::  an array value is one observation per element: the writer holds
+  ::  one value to a row
+  =/  arr=json  (gj o 'value')
+  ?:  ?=([%a *] arr)
+    $(raw (weld (turn p.arr |=(e=json (set-key o 'value' e))) t.raw))
   =/  subject=@t  (canon-id alias (lower (trim-cord (gs o 'subject'))))
   =/  attr=@t  (lower (trim-cord (gs o 'attr')))
   =/  value=json
@@ -4570,6 +4681,21 @@
 ++  refine-check
   |=  [answer=json a=action id=@ta ctx=reader-ctx now=@da]
   ^-  (each refined @t)
+  (refine-check-in answer a id ctx now ~ ~)
+::  +refine-check-in: +refine-check knowing every body on the ship and
+::  the kinds a key may reach (~ for the owner): a body the ship has is
+::  a reference, never made again (which renamed it), and one outside
+::  the key's kinds is neither made nor named
+::
+++  refine-check-in
+  |=  [answer=json a=action id=@ta ctx=reader-ctx now=@da exists=(set @t) kinds=(unit (set @tas))]
+  ^-  (each refined @t)
+  =/  in-scope
+    |=  b=@t
+    ^-  ?
+    ?~  kinds  &
+    =/  pk  (parse-bid b)
+    ?~(pk | (~(has in u.kinds) kind.u.pk))
   =/  refused=@t  (gs answer 'refused')
   ?.  =('' refused)  [%| refused]
   ::  the original's own links count as known: the context caps its
@@ -4585,6 +4711,8 @@
     =/  pk  (parse-bid bid)
     ?~  pk  ~
     ?:  (~(has in had) bid)  ~
+    ?:  (~(has in exists) bid)  ~
+    ?.  (in-scope bid)  ~
     ?.  ?=(?(%person %place %thing %org) kind.u.pk)  ~
     ?.  (~(has by attrs.ctx) `@t`kind.u.pk)  ~
     =/  name=@t  (end [3 120] (trim-cord (gs b 'name')))
@@ -4597,7 +4725,9 @@
         ['name' s+name]
         ['aliases' a+(turn aliases |=(x=@t `json`s+x))]
     ==
-  =/  known=(set @t)  (~(gas in had) (turn made |=(b=json (gs b 'id'))))
+  =/  known=(set @t)
+    %-  ~(gas in had)
+    (weld (turn made |=(b=json (gs b 'id'))) (skim ~(tap in exists) in-scope))
   ::  a name or an alias, lower-cased, stands for its id: the model may
   ::  write "dana" where the ship says person/dana-hill
   =/  alias=(map @t @t)
@@ -4621,7 +4751,9 @@
   =/  title=@t
     =/  t=@t  (end [3 200] (trim-cord (gs act 'title')))
     ?:(=('' t) title.a t)
-  =/  about-raw=(list @t)  (turn (ga act 'about') resolve)
+  =/  about-raw=(list @t)
+    ?.  (has-key act 'about')  ~(tap in about.a)
+    (turn (ga act 'about') resolve)
   =/  bad=(list @t)  (skip about-raw |=(x=@t (~(has in known) x)))
   ?^  bad  [%| (rap 3 'no body named ' i.bad ' on the ship' ~)]
   =/  about=(list @t)  (scag 20 (dedupe about-raw))
@@ -4631,7 +4763,9 @@
   =/  held  (hold-payload pay (fall (~(get by payloads.ctx) kind.a) `json`~) known alias)
   ?:  ?=([%| *] held)  [%| p.held]
   =/  due-s=@t  (gs act 'due')
-  =/  due=(unit @da)  ?:(=('' due-s) ~ (de-iso-any due-s))
+  =/  due=(unit @da)
+    ?.  (has-key act 'due')  due.a
+    ?:(=('' due-s) ~ (de-iso-any due-s))
   ?:  &(!=('' due-s) ?=(~ due))  [%| 'due is not a time']
   ::  each extra as an act, or why it is dropped; the revision stands
   ::  whatever becomes of its extras, so a bad one is a note, not a refusal
@@ -4735,12 +4869,49 @@
   =/  new=(list window-row)  (skip rows |=(r=window-row context.r))
   =/  earlier=(list window-row)  (skim rows |=(r=window-row context.r))
   %-  pairs:enjs:format
-  :~  ['message' s+?~(new '' text:(rear new))]
+  :~  ['message' s+(run-text new)]
       ['from' s+?~(new '' who:(rear new))]
       ['earlier' a+(turn earlier |=(r=window-row `json`s+text.r))]
       ['known_bodies' a+(turn (rank-bodies bodies.ctx rows) |=(b=ctx-body `json`s+(known-line b)))]
       ['rule' s+'a status is a circumstance, never a feeling; only facts about people, things, places and plans are recorded']
   ==
+::  +scope-facts: what a key's handed-in text may file (version 60): the
+::  bodies of its kinds, the observations it could have made itself
+::  (+out-of-scope's rule, hidden attributes held back), the actions
+::  of its action kinds about bodies of its kinds; the rest dropped
+::  with a note
+::
+++  scope-facts
+  |=  [f=tg-facts s=scope hide=(set @t)]
+  ^-  tg-facts
+  =/  in-kinds
+    |=  b=@t
+    ^-  ?
+    =/  pk  (parse-bid b)
+    ?~(pk | (kind-in-scope s kind.u.pk))
+  =/  bodies=(list json)  (skim bodies.f |=(b=json (in-kinds (gs b 'id'))))
+  =/  obs=(list json)
+    %+  skim  obs.f
+    |=(o=json ?=(~ (out-of-scope (pairs:enjs:format ~[['observations' a+~[o]]]) s hide)))
+  =/  acts=(list json)
+    %+  skim  acts.f
+    |=  a=json
+    ?.  (~(has in actions.s) `@tas`(gs a 'kind'))  |
+    (levy (strings (ga a 'about')) in-kinds)
+  =/  dropped=@ud
+    :(add (sub (lent bodies.f) (lent bodies)) (sub (lent obs.f) (lent obs)) (sub (lent acts.f) (lent acts)))
+  =/  said=(list @t)
+    ?:  =(0 dropped)  ~
+    ~[(rap 3 'dropped ' (crip (a-co:co dropped)) ' outside the key\'s scope' ~)]
+  f(bodies bodies, obs obs, acts acts, notes (weld notes.f said))
+::  +run-text: a run's new messages as the one message the decider
+::  judges, oldest first, a line each: judging the last alone let "ugh"
+::  after "car broke down" drop the whole run
+::
+++  run-text
+  |=  new=(list window-row)
+  ^-  @t
+  (join-lines (turn new |=(r=window-row text.r)))
 ::  +noul-question: a yes-or-no question with its criteria
 ::
 ++  noul-question
@@ -4809,7 +4980,7 @@
   %-  pairs:enjs:format
   :~  :-  'state'
       %-  pairs:enjs:format
-      :~  ['message' s+?~(new '' text:(rear new))]
+      :~  ['message' s+(run-text new)]
           ['from' s+?~(new '' who:(rear new))]
           ['proposals' a+(turn asked |=([i=@ud o=json] (pairs:enjs:format ~[['n' (numb:enjs:format i)] ['subject' s+(gs o 'subject')] ['value' s+(ref-or-text (gj o 'value'))]])))]
           ['rule' s+'status on a person is what they are doing or dealing with right now, in plain words; never a feeling, a quote or a wish']
@@ -4944,8 +5115,15 @@
     ?~(due.a ~ ~[['due_ms' (numb:enjs:format (ms-of u.due.a))]])
   =/  s=(unit @da)  (gt payload.a 'starts')
   ?~  s  ~
-  =/  start=@da  (wall-of u.s zone)
-  =/  end=@da  (wall-of (fall (gt payload.a 'ends') (add u.s ~h1)) zone)
+  ::  a zone the ship cannot render (or none) is sent as the UTC
+  ::  instant under Etc/UTC, which the calendar knows; sent unshifted
+  ::  under its own name the calendar would read UTC as the local clock
+  =/  shift=?  (~(has by zones) zone)
+  =.  zone  ?:(shift zone 'Etc/UTC')
+  =/  start=@da  ?:(shift (wall-of u.s zone) u.s)
+  =/  end=@da
+    =/  e=@da  (fall (gt payload.a 'ends') (add u.s ~h1))
+    ?:(shift (wall-of e zone) e)
   =/  loc=@t  (gs payload.a 'location')
   =/  meta=json
     (pairs:enjs:format ?:(=('' loc) meta-base (snoc meta-base ['location' s+loc])))
@@ -4966,7 +5144,7 @@
     ^-  (list [@t json])
     ~[['cat' s+'timed'] ['fin' s+'to'] ['end_ms' (numb:enjs:format (ms-of end))]]
   ^-  (list [@t json])
-  ?:(=('' zone) ~ ~[['zone' s+zone]])
+  ~[['zone' s+zone]]
 ::  +plan-exec: what to do for each approved action. A message goes by
 ::  its via: telegram to the person's telegram chat id, mail to their
 ::  ship (with its ~); another via is not ours. The chat id is the
@@ -4982,9 +5160,10 @@
 ::  Anything else, or an add with no start, yields nothing.
 ::
 ++  plan-exec
-  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da]
+  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da tz=@t]
   ^-  (list exec-plan)
-  =/  zone=@t  (attr-text all multi now 'person/me' 'timezone')
+  ::  person/me's timezone, else the one the generator was given
+  =/  zone=@t  =/(z (attr-text all multi now 'person/me' 'timezone') ?:(=('' z) tz z))
   %+  murn  acts
   |=  [id=@ta a=action]
   ^-  (unit exec-plan)
@@ -4999,7 +5178,7 @@
       =/  note=@t  ?.(=('' chat) '' (rap 3 who ' has no telegram attribute and is not in people' ~))
       :-  ~
       :*  id  kind.a  %telegram  chat
-          (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text]])
+          (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text] ['who' s+who]])
           note
       ==
     ?:  |(=('mail' via) =('chat' via))
@@ -5019,7 +5198,7 @@
       =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
       :-  ~
       :*  id  kind.a  ?:(=('mail' via) %mail %chat)  to
-          (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text] ['channel' s+nest]])
+          (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text] ['channel' s+nest] ['who' s+who]])
           note
       ==
     ~
@@ -5192,7 +5371,7 @@
       ~[['kind' s+'task'] ['title' s+name.t] ['about' a+~]]
     %+  weld
       ^-  (list [@t json])
-      ?:(=('' note.t) ~ ~[['payload' (pairs:enjs:format ~[['notes' s+note.t]])]])
+      ~[['payload' (pairs:enjs:format (weld `(list [@t json])`~[['todo' s+id.t]] `(list [@t json])`?:(=('' note.t) ~ ~[['notes' s+note.t]])))]]
     ^-  (list [@t json])
     ?~(due.t ~ ~[['due' s+(en-iso u.due.t)]])
   =/  stamped=json  (fill-act-as raw now 'calendar')
@@ -5216,12 +5395,17 @@
   |=  [todos=(list todo) acts=(list [id=@ta a=action]) now=@da]
   ^-  (list mirror-op)
   =/  by-id=(map @ta action)  (~(gas by *(map @ta action)) acts)
+  =/  adopted=(set @t)
+    (sy (murn acts |=([* a=action] =/(t (gs payload.a 'todo') ?:(=('' t) ~ `t)))))
   %-  zing
   %+  turn  todos
   |=  t=todo
   ^-  (list mirror-op)
   ?:  =('' orrery.t)
-    ?:(done.t ~ (adopt-ops t now))
+    ::  a todo adopted before whose mark never landed (a read-only
+    ::  shared calendar drops the edit) is not adopted again
+    ?:  |(done.t (~(has in adopted) id.t))  ~
+    (adopt-ops t now)
   =/  hit=(unit action)  (~(get by by-id) `@ta`orrery.t)
   ?~  hit  ~
   =/  a=action  u.hit
@@ -5237,6 +5421,9 @@
     [%calendar (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+id.t]])]~
   ?.  live  ~
   ?:  =(due.t due.a)  ~
+  ::  a todo the owner typed is theirs to reschedule: only a todo the
+  ::  ship made follows its action's due
+  ?:  =('calendar' by.a)  ~
   [%calendar (edit-todo-op t orrery.t due.a)]~
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
@@ -5270,6 +5457,14 @@
 ++  events-of
   |=  cal=json
   ^-  (list cal-event)
+  (events-in cal |)
+::  +events-in: the store's events, the ship's own placed ones kept
+::  when own is set (the brief lists them; the reader must not read
+::  back what the ship wrote)
+::
+++  events-in
+  |=  [cal=json keep-own=?]
+  ^-  (list cal-event)
   %+  murn  (ga cal 'events')
   |=  e=json
   ^-  (unit cal-event)
@@ -5283,7 +5478,7 @@
         =('orrery-' (end [3 7] (gs e 'id')))
         (lien tags |=(t=@t =('orrery' (lower t))))
     ==
-  ?:  own  ~
+  ?:  &(own !keep-own)  ~
   :-  ~
   :*  (gs e 'id')
       (gs e 'cal')
@@ -5386,7 +5581,7 @@
     :-  all
     |=  l=loaded
     ?.  ?=(?(%activity %situation) kind.body.l)  |
-    (lien rows.l |=(r=row =(id.ev (uid-of-source source.obs.r))))
+    (lien rows.l |=(r=row (names-uid source.obs.r id.ev)))
   ?^  by-uid  by-uid
   =/  title=@t  (normalize-title name.ev)
   ?:  =('' title)  ~
@@ -5413,6 +5608,14 @@
   ?.  =('calendar' kind.s)  ''
   =/  cut=(unit @ud)  (find "/" (trip id.s))
   ?~(cut id.s (rsh [3 +(u.cut)] id.s))
+::  +names-uid: whether a calendar row's source is this event's: the
+::  whole id (the store names no calendar today, so a uid with a slash
+::  in it is stored whole) or the uid after <calendar>/
+::
+++  names-uid
+  |=  [s=source uid=@t]
+  ^-  ?
+  &(=('calendar' kind.s) |(=(uid id.s) =(uid (uid-of-source s))))
 ++  find-first-loaded
   |=  [all=(list loaded) f=$-(loaded ?)]
   ^-  (unit loaded)
@@ -5424,7 +5627,7 @@
 ++  prune-seen
   |=  [seen=(map @t @t) now=@da]
   ^-  (map @t @t)
-  =/  floor=@ud  (ms-of (sub now ~d60))
+  =/  floor=@ud  (ms-of (sub now ~d400))
   %-  ~(gas by *(map @t @t))
   %+  skip  ~(tap by seen)
   |=  [k=@t v=@t]
@@ -5499,7 +5702,11 @@
       =/  key=@t  (rap 3 'occ/' cal.ev '/' id.ev '/' (crip (a-co:co (ms-of l.occ))) ~)
       =/  mark=@t  (fall (~(get by seen) key) '')
       =/  behind=?  (lte r.occ now)
-      ?:  |(=('f' mark) &(=('s' mark) !behind))  $(todo t.todo)
+      ::  back: cancelled when it went (a CalDAV move deletes then puts
+      ::  again), here again now, so it is reopened
+      =/  gkey=@t  (cat 3 'gone/' id.ev)
+      =/  back=?  &(?=(^ hit) (~(has by seen) gkey))
+      ?:  &(!back |(=('f' mark) &(=('s' mark) !behind)))  $(todo t.todo)
       =?  bodies  ?=(~ hit)
         (snoc bodies (pairs:enjs:format ~[['id' s+id] ['name' s+name.ev]]))
       =?  made  ?=(~ hit)  +(made)
@@ -5521,8 +5728,8 @@
         ==
       %=  $
         todo  t.todo
-        rows  (weld rows fresh)
-        seen  (~(put by seen) key ?:(behind 'f' 's'))
+        rows  :(weld rows fresh `(list json)`?.(back ~ ~[(event-row ev id 'status' s+'open' now ~ 100)]))
+        seen  (~(put by (~(del by seen) gkey)) key ?:(behind 'f' 's'))
       ==
     ::  a series: one activity, its content once, each occurrence
     ::  behind as last, the next as next
@@ -5595,8 +5802,10 @@
       %+  murn  rows.l
       |=(r=row ?:(=('calendar' kind.source.obs.r) `source.obs.r ~))
     ?~  srcs  $(ls t.ls)
+    ::  every event the situation came from must be gone: two events of
+    ::  one title on one day share it
+    ?:  (lien `(list source)`srcs |=(s=source |((~(has in ids) id.s) (~(has in ids) (uid-of-source s)))))  $(ls t.ls)
     =/  uid=@t  (uid-of-source i.srcs)
-    ?:  (~(has in ids) uid)  $(ls t.ls)
     =/  gkey=@t  (cat 3 'gone/' uid)
     ?:  (~(has by seen) gkey)  $(ls t.ls)
     =/  w=(map @t (list row))  (fold rows.l multi now)
@@ -5656,6 +5865,20 @@
   =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
   [(utc-of wall tz) (utc-of (add wall ~d1) tz)]
 ++  hhmm  |=([at=@da tz=@t] ^-(@t (cut 3 [11 5] (local-iso (en-iso at) tz))))
+::  +seven-of: 07:00 on the owner's clock on a day, as an instant;
+::  +day-after: the next day's date. Midnight plus seven hours is not
+::  seven on a day the clocks change.
+::
+++  seven-of
+  |=  [day=@t tz=@t]
+  ^-  @da
+  =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
+  (utc-of (add wall ~h7) tz)
+++  day-after
+  |=  day=@t
+  ^-  @t
+  =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
+  (end [3 10] (en-iso (add wall ~d1)))
 ++  weekday-names  `(list @t)`~['Sunday' 'Monday' 'Tuesday' 'Wednesday' 'Thursday' 'Friday' 'Saturday']
 ++  month-names
   ^-  (list @t)
@@ -5691,17 +5914,26 @@
           all=(list loaded)  multi=(set @t)  from=@da  to=@da  tz=@t
       ==
   ^-  (list @t)
+  ::  an all-day or dated span, and a todo due on a date, are UTC days
+  ::  in the calendar; the owner's day as such a day is d0 to d1
+  =/  d0=@da  =/(w (wall-of from tz) (sub w (mod w ~d1)))
+  =/  d1=@da  (add d0 ~d1)
   =/  rows=(list [all=? at=@da text=@t])
     %-  zing
     %+  turn  events
     |=  ev=cal-event
     ^-  (list [all=? at=@da text=@t])
     =/  text=@t  ?:(=('' location.ev) name.ev (rap 3 name.ev ', ' location.ev ~))
-    %+  murn  (occurrences id.ev order (sub from ~d1) to)
+    =/  timed=?  =('timed' cat.ev)
+    ::  a month back, so a span that began before the day is found
+    %+  murn  (occurrences id.ev order (sub from ~d31) to)
     |=  [idx=@ud l=@da r=@da]
     ^-  (unit [all=? at=@da text=@t])
-    ?:  |((lte r from) (gte l to))  ~
-    `[|(!=('timed' cat.ev) &((lte l from) (gte r to))) l text]
+    ?:  timed
+      ?:  |((lte r from) (gte l to))  ~
+      `[&((lte l from) (gte r to)) l text]
+    ?:  |((lte r d0) (gte l d1))  ~
+    `[& l text]
   =/  titled=(set @t)  (sy (turn events |=(ev=cal-event (normalize-title name.ev))))
   =/  expected=(list [all=? at=@da text=@t])
     %+  murn  all
@@ -5732,14 +5964,23 @@
   =/  slot-lines=(list @t)
     (turn slots |=([all=? at=@da text=@t] (rap 3 ?:(all 'All day' (hhmm at tz)) '  ' text ~)))
   =/  open=(list todo)  (skim todos |=(t=todo &(!done.t !=('' (trim-cord name.t)))))
+  ::  a due at midnight UTC is a date: due today is not overdue today
+  =/  on-date  |=(d=@da =(0 (mod d ~d1)))
   =/  dated=(list todo)
-    %+  sort  (skim open |=(t=todo &(?=(^ due.t) (lth u.due.t to))))
+    %+  sort
+      %+  skim  open
+      |=(t=todo ?~(due.t | ?:((on-date u.due.t) (lth u.due.t d1) (lth u.due.t to))))
     |=([a=todo b=todo] (lth (fall due.a *@da) (fall due.b *@da)))
   =/  undated=(list todo)  (skim open |=(t=todo ?=(~ due.t)))
+  =/  late
+    |=  t=todo
+    ^-  ?
+    ?~  due.t  |
+    ?:((on-date u.due.t) (lth u.due.t d0) (lth u.due.t from))
   =/  todo-lines=(list @t)
     %+  weld
       %+  turn  dated
-      |=(t=todo (rap 3 'To do  ' name.t ?:((lth (fall due.t to) from) ' (overdue)' '') ~))
+      |=(t=todo (rap 3 'To do  ' name.t ?:((late t) ' (overdue)' '') ~))
     %+  weld  (turn (scag 10 undated) |=(t=todo (cat 3 'To do  ' name.t)))
     ?:  (lte (lent undated) 10)  ~
     ~[(rap 3 'and ' (crip (a-co:co (sub (lent undated) 10))) ' more to do' ~)]
@@ -5907,7 +6148,7 @@
   =/  t=@t  (trim-cord i.ls)
   =/  n=@ud  (met 3 t)
   ?:  ?|  &((gte n 10) =('On ' (end [3 3] t)) =('wrote:' (rsh [3 (sub n 6)] t)))
-          =('-----Original Message' (end [3 22] t))
+          =('-----Original Message' (end [3 21] t))
       ==
     $(ls ~)
   ?:  |(=('>' (end [3 1] t)) (~(has in said) t))  $(ls t.ls)

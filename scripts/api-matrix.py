@@ -344,7 +344,10 @@ code, d = observe([], [obs('thing/subaru', 'plate', 'ABC 123', now - timedelta(m
 check('a write with retention 0 lands', code == 200 and all_ok(d, 'observations', 1), (code, d))
 code, bs = body('thing/subaru')
 statuses = {o['id']: o['status'] for o in bs.get('observations', [])} if code == 200 else {}
-check('superseded observations were culled', code == 200 and 'superseded' not in statuses.values(), statuses)
+#  compaction keeps the row each attribute falls back to should its
+#  winner be retracted: one superseded row per attribute at most
+kept = [o.get('attr') for o in bs.get('observations', []) if o.get('status') == 'superseded'] if code == 200 else []
+check('superseded observations were culled but for one fallback per attribute', code == 200 and len(kept) == len(set(kept)), statuses)
 check('live observations remain', code == 200 and bs['attrs']['location']['value'] == ref(SHOP) and bs['attrs']['plate']['value'] == 'ABC 123', bs.get('attrs') if code == 200 else bs)
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 
@@ -478,6 +481,9 @@ CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 seen = []
 DOWN = False  # the analyst answers 503 while set: the reader's model outage
+#  defined further down; until then the stub answers 503, since a reader
+#  on the ship may call it as soon as it listens (the last run's settings)
+TG_CANNED = DECIDER_CANNED = REFINE_CANNED = None
 class Stub(http.server.BaseHTTPRequestHandler):
     #  one stub for the model, the decider and Telegram, told apart by path:
     #  the analyst's chat request by its system block (the analyst prompt's
@@ -501,9 +507,11 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 # the refine prompt ends with the owner's note, which picks the reply
                 user = ((body.get('messages') or [{}])[-1].get('content') or [{}])[0].get('text', '')
                 tail = user.rstrip().rsplit('The note: ', 1)[-1]
-                out = REFINE_CANNED.get(tail, REFINE_CANNED[''])
+                out = REFINE_CANNED and REFINE_CANNED.get(tail, REFINE_CANNED[''])
             else:
                 out = TG_CANNED if system.startswith('You turn') else CANNED
+        if out is None:
+            out, status = {'error': {'message': 'the stub is not ready'}}, 503
         out = json.dumps(out).encode()
         self.send_response(status); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
@@ -547,7 +555,12 @@ filed_two = dictish(last).get('filed') == 2 and dictish(last).get('dropped') == 
 # lands on the forced pass's own, so a skipped record with a fresh at is
 # the same proof: the two filed are checked on the action list just below
 check('the pass wrote a fresh record without error, two filed unless skipped', isinstance(last, dict) and last.get('at') != before_at and ((filed_two and 'stub note' in notes) or last.get('skipped') is True) and not last.get('error') and last.get('calls_today') >= 1, last)
-_, hdrs, body = seen[0] if seen else ('', {}, {})
+#  the generator's request, not a reader's: the readers are on by
+#  default and may call the stub first
+def system_of(b):
+    return ((b.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
+gen_seen = [x for x in seen if x[2].get('messages') and not system_of(x[2]).startswith(('You turn', 'You refine'))]
+_, hdrs, body = gen_seen[0] if gen_seen else ('', {}, {})
 check('the stub saw the prompt with cache marks and temperature 0, reasoning off', body.get('model') == 'moonshotai/kimi-k3' and body.get('temperature') == 0 and body['messages'][1]['content'][0].get('cache_control') and body.get('provider') == {'zdr': True}, body.keys() if body else 'no request')
 check('the key went in the header, not the body', hdrs.get('authorization') == 'Bearer sk-stub' and 'sk-stub' not in json.dumps(body), hdrs.get('authorization'))
 code, acts = curl('GET', API + '/actions?status=open')
@@ -621,8 +634,9 @@ u0 = dictish(before).get('urgent_today') or 0
 code, d, last = urgent_pass()
 check('an urgent request answers ok and says it is urgent', code == 200 and dictish(d).get('urgent') is True, (code, d))
 check('the urgent pass ran past the cooldown and says so', last and not dictish(last).get('skipped') and any(x.startswith('urgent pass: thing/gate-car') for x in dictish(last).get('notes', [])) and dictish(last).get('urgent_today') == u0 + 1, last)
-prompt_seen = json.dumps(seen[-1][2]) if len(seen) == n + 1 else ''
-check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(seen), n))
+gen_new = [b for _, _, b in seen[n:] if b.get('messages') and not system_of(b).startswith(('You turn', 'You refine'))]
+prompt_seen = json.dumps(gen_new[-1]) if len(gen_new) == 1 else ''
+check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(gen_new), len(seen), n))
 for a in curl('GET', API + '/actions?status=proposed')[1] or []:
     if isinstance(a, dict) and a.get('by') == 'generator':
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
@@ -922,11 +936,18 @@ check('the reader is switched off again', code == 200, (code, d))
 # ---- version 57: the version route, both chat lists in one pass ----
 code, d = curl('GET', API + '/version', jar=None, token=dictish(curl('POST', API + '/clients', {'name': 'gate version', 'by': 'gate-v', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})[1]).get('token'))
 check('any key reads the version, the desk\'s', code == 200 and dictish(d).get('version') == json.load(open('code/version.json'))['version'], (code, d))
+code, d = gate.curl('POST', API + '/exec/wake', {}, jar=JAR, headers=['Sec-Fetch-Site: cross-site'])
+check('the owner\'s cookie on a request another site sent changes nothing', code == 403 and dictish(d).get('error') == 'a request from another site is refused', (code, d))
 code, d = curl('GET', API + '/chat/lists')
 check('the chat lists come as one document, each with items and a note', code == 200 and isinstance(dictish(dictish(d).get('dms')).get('items'), list) and 'note' in dictish(dictish(d).get('channels')), (code, d))
 
 
 # ---- the read channel (version 59): text a key hands in becomes facts through the stub model ----
+#  a text with no model to read it waits, so the stub listens and the
+#  generator holds its key for this section alone
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
 code, d = curl('PUT', API + '/read/settings', {'enabled': True, 'gate': 0, 'model': 'stub/read'})
 check('the read settings answer as stored', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('model') == 'stub/read', (code, d))
 code, rk = curl('POST', API + '/clients', {'name': 'gate read writer', 'by': 'gate-read', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True}})
@@ -938,12 +959,22 @@ code, d = curl('POST', API + '/read', {'text': 'x'}, jar=None, token=dictish(rro
 check('a read-only key may not hand text in', code == 403 and dictish(d).get('error') == 'read only key', (code, d))
 code, d = curl('POST', API + '/read', {'title': 'nothing'})
 check('text is required', code == 400 and dictish(d).get('error') == 'text: required', (code, d))
-read_last = gate.wait('the text was read and recorded', lambda: (lambda l: l if any(READID in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/read/last')[1])), 60)
+read_last = gate.wait('the text was read and recorded', lambda: (lambda l: l if any(READID in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/read/last')[1])), 60) or {}
 check('the record names the text by its id and title', any(READID + ': A page about the car' in n for n in read_last.get('notes', [])), read_last)
 st = dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('status'))
-check('the facts carry the page as their source and are signed by the web channel', st.get('by') == 'web' and dictish(st.get('source')) == {'kind': 'web', 'id': 'https://example.test/car-%s' % RUN}, st)
+check('the facts carry the page as their source and are signed by the key that handed it in', st.get('by') == 'gate-read' and dictish(st.get('source')) == {'kind': 'web', 'id': 'https://example.test/car-%s' % RUN}, st)
 owner_only('the read record is the owner\'s, even to a writing key', 'GET', '/read/last')
 curl('PUT', API + '/read/settings', {'enabled': False})
+curl('PUT', API + '/generator', {'api_key': None})
+srv.shutdown()
+srv.server_close()
+# the page's facts and actions: the next run's clean slate expects none
+for o in dictish(curl('GET', API + '/body/person/me')[1]).get('observations', []):
+    if dictish(o.get('source')).get('id', '').startswith('https://example.test/') and o['status'] != 'retracted':
+        curl('POST', API + '/retract', {'id': o['id'], 'note': 'matrix rerun'})
+for a in curl('GET', API + '/actions?status=open')[1] or []:
+    if isinstance(a, dict) and a.get('by') == 'gate-read':
+        curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
@@ -1130,7 +1161,7 @@ n = len(seen)
 TGID = propose('message', 'Gate telegram %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-tg', 'text': 'the gate says hello %s' % XRUN})
 check('a message via telegram is proposed and approved', bool(TGID) and approve(TGID) == 200, TGID)
 a = settled(TGID)
-check('the ship claimed it and reported done with the chat', a.get('status') == 'done' and a.get('note') == 'sent to 1001' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+check('the ship claimed it and reported done with the chat', a.get('status') == 'done' and a.get('note') == 'sent to person/gate-tg by telegram' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
 check('the stub saw one sendMessage under the token with the chat id and the text', len(sent) == 1 and sent[0][0] == '/bot123:abc/sendMessage' and sent[0][1].get('chat_id') == '1001' and sent[0][1].get('text') == 'the gate says hello %s' % XRUN, sent)
 last = exec_last(claimed=1, sent=1)
@@ -1139,7 +1170,7 @@ check('the record counts the claim and the send, and says when', last.get('claim
 PEOPLEID = propose('message', 'Gate telegram people %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-people', 'text': 'the people map hears this %s' % XRUN})
 approve(PEOPLEID)
 a = settled(PEOPLEID)
-check('a person the people map knows is sent to that user id', a.get('status') == 'done' and a.get('note') == 'sent to 1002' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
+check('a person the people map knows is sent to that user id', a.get('status') == 'done' and a.get('note') == 'sent to person/gate-people by telegram' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
 check('the stub saw the second sendMessage under the chat id from the people map', len(sent) == 2 and sent[1][1].get('chat_id') == '1002' and sent[1][1].get('text') == 'the people map hears this %s' % XRUN, sent)
 # a message to a person with a ship: the channel rule files it via chat before the id is computed, and the rewrite is on the trail
@@ -1169,10 +1200,10 @@ MADE.append(EXTRAID)
 check('the extra is a task carrying refined_from and the original\'s about, approved under auto',
       rx and rx[0].get('kind') == 'task' and rx[0].get('title') == REFINE_EXTRA and dictish(rx[0].get('payload')).get('refined_from') == SHIPID
       and 'person/gate-shipped' in (rx[0].get('about') or []) and rx[0].get('status') == 'approved' and rx[0].get('due') == '2099-01-01T12:00:00Z', rx)
-asked = [b for p, _, b in seen[n_refine:] if p.endswith('/chat/completions')]
-sysblock = ((asked[-1].get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '') if asked else ''
+#  the readers' calls (on by default) go to the same stub: only the refine's count
+asked = [(h, b) for p, h, b in seen[n_refine:] if p.endswith('/chat/completions') and system_of(b).startswith('You refine')]
 check('the model was asked once under the generator\'s key, with the refine prompt as the system block',
-      len(asked) == 1 and sysblock.startswith('You refine') and any(h.get('authorization') == 'Bearer sk-stub' for p, h, _ in seen[n_refine:] if p.endswith('/chat/completions')), (len(asked), sysblock[:40]))
+      len(asked) == 1 and asked[0][0].get('authorization') == 'Bearer sk-stub', len(asked))
 a = action(SHIPID)
 check('read back, the action is still proposed under the new title with a last step revised by user',
       a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
@@ -1224,7 +1255,7 @@ check('a note sets the channel to mail and the revision is not rerouted',
       code == 200 and dictish(d).get('ok') is True and dictish(dictish(dictish(d).get('action')).get('payload')).get('via') == 'mail' and dictish(a.get('payload')).get('via') == 'mail', (code, d, a.get('payload')))
 approve(MAILREFID)
 a = settled(MAILREFID, bound=90)
-check('approved, the executor sends it by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ' + OUR and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+check('approved, the executor sends it by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent to person/gate-shipped by mail' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
 curl('PUT', API + '/generator', {'api_key': None})
 before = exec_last()
 approve(SHIPID)
@@ -1262,7 +1293,7 @@ code, d = observe([], [obs('person/gate-ship', 'ship', OUR, now - timedelta(minu
 check('the gate ship person\'s ship lands, after the mail message was proposed via mail', code == 200 and all_ok(d, 'observations', 1), (code, d))
 approve(MAILID)
 a = settled(MAILID, bound=90)
-check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent by mail to ' + OUR and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
+check('a message via mail is sent by mail to the person\'s ship', a.get('status') == 'done' and a.get('note') == 'sent to person/gate-ship by mail' and steps(a)[-1] == ('done', 'ship'), (a.get('status'), a.get('note'), steps(a)))
 code, box = curl('GET', HOST + '/apps/auspex/api/inbox')
 threads = [t for t in dictish(box).get('threads', []) if dictish(t).get('subject') == 'Gate mail %s' % XRUN]
 check('auspex holds the letter, from this ship, with the text as its snippet', code == 200 and len(threads) == 1 and threads[0].get('from') == OUR and threads[0].get('snippet') == 'a letter from the gate %s' % XRUN, (code, threads))
@@ -1349,7 +1380,7 @@ act = body_by_uid(REPEAT_ID or 'none')
 aattrs = dictish(act.get('attrs'))
 check('the repeat is an activity with its cadence, its schedule, an organizer and a next until its end',
       act.get('id') == 'activity/gate-cancel-repeat-%s' % XRUN.lower() and dictish(aattrs.get('cadence')).get('value') == 'weekly' and dictish(aattrs.get('schedule')).get('value') == 'weekly'
-      and refs(act, 'organizer') == ['person/me'] and dictish(aattrs.get('next')).get('value') == iso(datetime.fromtimestamp(was[0] / 1000, timezone.utc))
+      and refs(act, 'organizer') == ['person/me'] and bool(was) and dictish(aattrs.get('next')).get('value') == iso(datetime.fromtimestamp(was[0] / 1000, timezone.utc))
       and dictish(aattrs.get('next')).get('until') == iso(datetime.fromtimestamp(was[0] / 1000, timezone.utc) + timedelta(minutes=60)), aattrs)
 cal_last = dictish(curl('GET', API + '/calendar/last')[1])
 check('the record counts the events, the bodies made and the rows', cal_last.get('made', 0) >= 1 and cal_last.get('rows', 0) >= 5 and bool(cal_last.get('acted_at')), cal_last)

@@ -28,6 +28,11 @@
     (expect-eq !>('under way') !>((phase:gen (win ~[['starts' '2026-09-18T11:00:00Z'] ['ends' '2026-09-18T13:00:00Z']]) now)))
     (expect-eq !>('upcoming') !>((phase:gen (win ~[['status' 'under way'] ['starts' '2026-12-05T19:00:00Z']]) now)))
     (expect-eq !>('open') !>((phase:gen (win ~) now)))
+    ::  the instants themselves: an end at now is over, a start at now
+    ::  under way, and a plan that starts as it ends is over once past
+    (expect-eq !>('over') !>((phase:gen (win ~[['starts' '2026-09-18T11:00:00Z'] ['ends' '2026-09-18T12:00:00Z']]) now)))
+    (expect-eq !>('under way') !>((phase:gen (win ~[['starts' '2026-09-18T12:00:00Z'] ['ends' '2026-09-18T13:00:00Z']]) now)))
+    (expect-eq !>('over') !>((phase:gen (win ~[['starts' '2026-09-18T11:00:00Z'] ['ends' '2026-09-18T11:00:00Z']]) now)))
   ==
 ::  ==  titles
 ::
@@ -37,6 +42,9 @@
     (expect !>((same-title:gen 'Call John\'s shop about the Subaru' 'Call the shop about the Subaru')))
     (expect !>(!(same-title:gen 'Pay the electricity bill' 'Call the shop about the Subaru')))
     (expect !>(!(same-title:gen '' 'Call the shop')))
+    (expect !>(!(same-title:gen 'Call the dentist' 'Call the plumber')))
+    ::  exactly the share needed: both words of the shorter title
+    (expect !>((same-title:gen 'Call Dana' 'Call Dana now')))
     (expect-eq !>(~['call' 'the' 'shop']) !>((tokens:gen 'Call the SHOP!')))
   ==
 ::  ==  the prompt
@@ -325,9 +333,18 @@
   =/  l=loaded:orr
     (sit 'situation/2026-09-10-dentist' ~[['ends' '2026-09-10T15:00:00Z'] ['status' 'open']] now)
   =/  got  (plan-retire:orr ~[l] ~ now ~d30)
+  ::  a status told at the very end: the close still lands after it
+  =/  end=@da  ~2026.9.10..15.00.00
+  =/  tie=loaded:orr  (sit 'situation/2026-09-10-dentist' ~[['ends' '2026-09-10T15:00:00Z'] ['status' 'open']] end)
   ;:  weld
     (expect-eq !>(1) !>((lent got)))
     (expect-eq !>((add now ~s1)) !>(at:(snag 0 got)))
+    (expect-eq !>((add end ~s1)) !>(at:(snag 0 (plan-retire:orr ~[tie] ~ now ~d30))))
+    ::  a plan that starts as it ends has ended, not merely been scheduled
+    %+  expect-eq  !>('ended 2026-09-10T15:00:00Z')
+    !>  =/  pin=loaded:orr
+          (sit 'situation/2026-09-10-pin' ~[['starts' '2026-09-10T15:00:00Z'] ['ends' '2026-09-10T15:00:00Z']] (sub now ~d40))
+        why:(snag 0 (plan-retire:orr ~[pin] ~ now ~d30))
     (expect !>((is-trip:orr 'situation/2026-09-01-trip')))
     (expect !>(!(is-trip:orr 'situation/2026-09-01-triple')))
   ==
@@ -384,6 +401,7 @@
     (expect-eq !>(`[(list @t) (unit @t)]`[~ `'Felix']) !>((names-in:orr 'Felix Fencing Lesson')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'trip to Boston')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'FELIX x')))
+    (expect-eq !>(`(list @t)`~) !>(-:(names-in:orr 'Flight - SFO to JFK')))
   ==
 ++  test-cal-uid
   ;:  weld
@@ -777,7 +795,12 @@
     %-  jo
     '{"bodies": [{"id": "place/johns-machine-shop", "name": "John\'s Machine Shop"}, {"id": "person/sara", "name": "Sarah"}, {"id": "Person/Me", "aliases": ["the boss"]}, {"id": "cat/x", "name": "x"}], "observations": [{"subject": "person/me", "attr": "location", "value": {"ref": "place/home"}, "conf": 80, "message": "telegram/1/2"}, {"subject": "person/me", "attr": "mood", "value": "tired", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "status", "value": "on jury duty", "message": "telegram/1/1"}, {"subject": "thing/subaru", "attr": "status", "value": "at the shop", "message": "telegram/1/2"}, {"subject": "person/sara", "attr": "status", "value": "x", "message": "telegram/1/2"}, {"subject": "person/me", "attr": "income", "value": 5, "message": "telegram/1/2"}, {"subject": "situation/2026-09-19-x", "attr": "status", "value": "upcoming", "message": "telegram/1/2"}], "actions": [{"kind": "calendar", "title": "Dinner with Sarah", "about": ["person/sarah"], "payload": {"title": "Dinner with Sarah", "starts": "2026-09-19T20:00:00-04:00", "ends": "2026-11-01T00:00:00Z", "location": "the usual place"}, "message": "telegram/1/2"}, {"kind": "message", "title": "Tell Sarah", "payload": {"via": "Telegram", "to": "person/sara", "text": "hi"}, "message": "telegram/1/2"}, {"kind": "home", "title": "Porch", "payload": {"service": "x"}, "message": "telegram/1/2"}, {"kind": "task", "title": "Call the shop", "about": ["thing/subaru", "org/nope"], "due": "2026-09-18", "message": "telegram/1/2"}]}'
   =/  got=tg-facts:orr  (validate-reader:orr answer tg-rows tg-ctx)
+  =/  arr=tg-facts:orr
+    %^  validate-reader:orr
+      (jo '{"observations": [{"subject": "thing/subaru", "attr": "status", "value": ["at the shop", "towed"], "message": "telegram/1/2"}]}')
+    tg-rows  tg-ctx
   ;:  weld
+    (expect-eq !>(`(list json)`~[s+'at the shop' s+'towed']) !>((turn obs.arr |=(o=json (gj:orr o 'value')))))
     ::  bodies: the shop is new and kept (grounding decides later), sara is Sarah, me gains an alias, cat is no kind
     (expect-eq !>(`(list @t)`~['place/johns-machine-shop' 'person/me']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))
     (expect-eq !>(`(list @t)`~['the boss']) !>((strings:orr (ga:orr (snag 1 bodies.got) 'aliases'))))
@@ -982,7 +1005,7 @@
   ^-  (map @t @t)
   (my ~[['1001' 'person/me'] ['777' 'person/ann']])
 ++  test-plan-exec
-  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '')
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
     (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm4' 'm5' 'c1' 'c2' 'c3' 'c4' 'c5' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
@@ -1001,7 +1024,7 @@
     (expect-eq !>('777') !>((gs:orr body:(~(got by by-id) 'm5') 'chat_id')))
     (expect-eq !>('') !>(note:(~(got by by-id) 'm5')))
     ::  the attribute wins over the people map
-    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now) |=(p=exec-plan:orr [id.p p])))) 'm1')))
+    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now '') |=(p=exec-plan:orr [id.p p])))) 'm1')))
     (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c1')))
     (expect-eq !>('timed') !>((gs:orr body:(~(got by by-id) 'c1') 'cat')))
     (expect-eq !>('allday') !>((gs:orr body:(~(got by by-id) 'c2') 'cat')))
@@ -1012,7 +1035,7 @@
 ::  start, c4 an event and no start, c5 no event at all
 ::
 ++  test-plan-exec-cancel
-  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now)
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '')
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
     ::  c3: a cancel with an event and a start becomes an uncalendar
@@ -1059,6 +1082,8 @@
     (expect-eq !>(1.790.366.400.000) !>((need (gn:orr (need (event-json:orr id.c1 a.c1 '')) 'start_ms'))))
     (expect-eq !>('to') !>((gs:orr ej 'fin')))
     (expect-eq !>('America/New_York') !>((gs:orr ej 'zone')))
+    ::  no zone the ship knows: the UTC instant, named as UTC
+    (expect-eq !>('Etc/UTC') !>((gs:orr (need (event-json:orr id.c1 a.c1 '')) 'zone')))
     (expect-eq !>('allday') !>((gs:orr aj 'cat')))
     (expect-eq !>(1) !>((need (gn:orr aj 'span_days'))))
     (expect-eq !>(1.790.985.600.000) !>((need (gn:orr aj 'start_ms'))))
@@ -1409,9 +1434,9 @@
 ++  test-prune-seen
   =/  seen=(map @t @t)
     %-  my
-    :~  ['occ/home/u-1/1780000000000' 'f']
+    :~  ['occ/home/u-1/1740000000000' 'f']
         ['occ/home/u-1/1790035200000' 's']
-        ['next/work/u-2/1780000000000' 'x']
+        ['next/work/u-2/1740000000000' 'x']
         ['act/work/u-2/0x1' 'x']
         ['gone/u-3' 'x']
     ==
@@ -1424,13 +1449,52 @@
   ==
 ++  test-events-of
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  ::  each mark alone makes an event the ship's own: the reader skips it,
+  ::  the brief keeps it
+  =/  own=json
+    %-  jo
+    '''
+    {"events": [
+      {"id": "u-1", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "a", "orrery": "a1"}},
+      {"id": "orrery-2", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "b"}},
+      {"id": "u-3", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "c", "tags": ["Orrery"]}}]}
+    '''
   ;:  weld
+    (expect-eq !>(`(list cal-event:orr)`~) !>((events-of:orr own)))
+    (expect-eq !>(3) !>((lent (events-in:orr own &))))
     (expect-eq !>(`(list @t)`~['u-coffee' 'u-standup' 'u-bday']) !>((turn evs |=(e=cal-event:orr id.e))))
     (expect-eq !>(`(list @t)`~['once' 'weekly' 'yearly']) !>((turn evs |=(e=cal-event:orr kind.e))))
     (expect-eq !>('Blue Bottle') !>(location:(snag 0 evs)))
     (expect-eq !>('weekly') !>((cadence-of:orr 'rrule' 'timed' (jo '{"rrule": "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261201T000000Z"}'))))
     (expect-eq !>('rrule') !>((cadence-of:orr 'rrule' 'timed' (jo '{"rrule": "BYDAY=TU"}'))))
     (expect-eq !>('cron') !>((cadence-of:orr 'cron' 'timed' (jo '{}'))))
+  ==
+::  bodies past one batch's fifty go first, without rows; fifty go with them
+++  test-observe-ops-split
+  =/  b  |=(i=@ud ^-(json (pairs:enjs:format ~[['id' s+(crip "thing/t{(a-co:co i)}")]])))
+  =/  row=json  (jo '{"subject": "thing/t1", "attr": "status", "value": "x"}')
+  =/  one=(list json)  (observe-ops:orr (turn (gulf 1 50) b) ~[row])
+  =/  two=(list json)  (observe-ops:orr (turn (gulf 1 51) b) ~[row])
+  ;:  weld
+    (expect-eq !>(1) !>((lent one)))
+    (expect-eq !>(1) !>((lent (ga:orr (snag 0 one) 'observations'))))
+    (expect-eq !>(2) !>((lent two)))
+    (expect-eq !>(50) !>((lent (ga:orr (snag 0 two) 'bodies'))))
+    (expect-eq !>(0) !>((lent (ga:orr (snag 0 two) 'observations'))))
+  ==
+::  a one-off takes an open situation of its title within a day of the
+::  occurrence, on either side; a day apart is another occasion
+++  test-same-event-window
+  =/  ev=cal-event:orr  (snag 0 (events-of:orr cal-store))
+  =/  at=@da  ~2026.9.22..12.00.00
+  =/  sit
+    |=  s=@t
+    ^-  (list loaded:orr)
+    ~[(mkb 'situation/2026-09-22-coffee' %situation 'Coffee with Mira Quill' ~ ~[['starts' s+s]] cal-now)]
+  ;:  weld
+    (expect !>(!=(~ (same-event:orr ev | at (sit '2026-09-23T11:00:00Z') ~ cal-now))))
+    (expect !>(=(~ (same-event:orr ev | at (sit '2026-09-23T12:00:00Z') ~ cal-now))))
+    (expect !>(=(~ (same-event:orr ev | at (sit '2026-09-21T12:00:00Z') ~ cal-now))))
   ==
 ++  test-occurrences
   =/  b  (occurrences:orr 'u-bday' cal-order ~2026.9.1 ~2027.12.31)
@@ -1559,7 +1623,7 @@
 ::
 ++  test-mail-config-and-row
   =/  c=mail-config:orr  (de-mail-config:orr (jo '{"enabled": true, "poll_minutes": 0, "backfill_hours": 9999, "model": ""}'))
-  =/  msg=mail-msg:orr  ['0v1.tid' '0v2.mid' ~sampel-palnet 'Lunch?' 'Friday at noon' ~2026.9.23..12.00.00 ~ |]
+  =/  msg=mail-msg:orr  ['0v1.tid' '0v2.mid' ~sampel-palnet 'Lunch?' 'Friday at noon' ~2026.9.23..12.00.00 ~ &]
   =/  row=tg-msg:orr  (mail-row:orr msg)
   ;:  weld
     (expect-eq !>(&) !>(enabled.c))
@@ -1608,6 +1672,7 @@
         ['t2' 'Call the shop' '' | `~2026.9.21..15.00.00 '' ~]
         ['t3' 'Done thing' '' & ~ '' ~]
         ['t4' 'Someday' '' | ~ '' ~]
+        ['t5' 'Pay rent' '' | `~2026.9.21 '' ~]
     ==
   =/  all=(list loaded:orr)
     :~  (mkb 'situation/2026-09-21-dentist' %situation 'Dentist' ~ ~[['starts' s+'2026-09-21T18:00:00Z']] cal-now)
@@ -1620,9 +1685,39 @@
     ::  the standup is on the calendar (its title), the dentist is not;
     ::  the coffee is at 20:00 local; the milk is overdue, someday undated
     %+  expect-eq
-      !>(`(list @t)`~['09:30  Standup' '14:00  Dentist' '20:00  Coffee with Mira Quill, Blue Bottle' 'To do  Buy milk (overdue)' 'To do  Call the shop' 'To do  Someday'])
+      !>(`(list @t)`~['09:30  Standup' '14:00  Dentist' '20:00  Coffee with Mira Quill, Blue Bottle' 'To do  Buy milk (overdue)' 'To do  Pay rent' 'To do  Call the shop' 'To do  Someday'])
       !>(got)
   ==
+::  the day's edges: a show ending as the day starts and a flight
+::  leaving as it ends are the neighbours' days, tomorrow's fair and a
+::  todo due tomorrow wait for it, a span of exactly the day is all day,
+::  and ten undated todos are all listed with no "more" line
+++  test-brief-today-edges
+  =/  [from=@da to=@da]  (day-bounds:orr '2026-09-21' 'America/New_York')
+  =/  ev  |=([id=@t cat=@t name=@t] ^-(cal-event:orr [id 'home' cat name '' '' ~ 'once']))
+  =/  evs=(list cal-event:orr)
+    :~  (ev 'e-show' 'timed' 'Late show')
+        (ev 'e-flight' 'timed' 'Early flight')
+        (ev 'e-fair' 'allday' 'Fair')
+        (ev 'e-day' 'timed' 'Whole day')
+    ==
+  =/  ref  |=([id=@ta l=@da r=@da] ^-([@da (set cal-ref:orr)] [l (sy ~[`cal-ref:orr`[id 0 l r]])]))
+  =/  order=cal-order:orr
+    %+  gas:on-cal-order:orr  *cal-order:orr
+    :~  (ref 'e-show' (sub from ~h1) from)
+        (ref 'e-flight' to (add to ~h1))
+        (ref 'e-fair' ~2026.9.22 ~2026.9.23)
+        (ref 'e-day' from to)
+    ==
+  =/  todos=(list todo:orr)
+    :-  ['t-next' 'Tomorrow' '' | `~2026.9.22 '' ~]
+    (turn (gulf 1 10) |=(i=@ud ^-(todo:orr [(crip "u{(a-co:co i)}") (crip "Undated {(a-co:co i)}") '' | ~ '' ~])))
+  =/  got=(list @t)  (brief-today:orr evs order todos ~ ~ from to 'America/New_York')
+  %+  expect-eq
+    !>  ^-  (list @t)
+        :-  'All day  Whole day'
+        (turn (gulf 1 10) |=(i=@ud (crip "To do  Undated {(a-co:co i)}")))
+    !>  got
 ++  test-own-words-and-moves
   =/  brief=@t  'Today, Wednesday\0a\0a[A1] Tell Mira\0a     message\0a\0aSuggestions\0aNothing to add.'
   =/  reply=@t  'approve A1, and we got the car back\0a\0aSuggestions\0a> Today, Wednesday\0aOn Wed, Sep 23, orrery wrote:\0a> [A1] Tell Mira'

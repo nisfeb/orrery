@@ -17,6 +17,12 @@
     (expect !>(!(ok-kind:orr '9lives')))
     (expect !>(!(ok-kind:orr '')))
     (expect !>(!(ok-kind:orr 'a-very-long-kind-name-over-24')))
+    ::  the first letter and the last are letters too
+    (expect !>((ok-kind:orr 'activity')))
+    (expect !>((ok-kind:orr 'zone')))
+    ::  the cap as a pair: exactly max-kind accepted, one more refused
+    (expect !>((ok-kind:orr (crip (reap 24 'k')))))
+    (expect !>(!(ok-kind:orr (crip (reap 25 'k')))))
   ==
 ++  test-ok-slug
   ;:  weld
@@ -24,6 +30,9 @@
     (expect !>((ok-slug:orr 'me')))
     (expect !>(!(ok-slug:orr '-x')))
     (expect !>(!(ok-slug:orr 'John')))
+    (expect !>((ok-slug:orr 'oz-trip')))
+    (expect !>((ok-slug:orr (crip (reap 64 's')))))
+    (expect !>(!(ok-slug:orr (crip (reap 65 's')))))
   ==
 ++  test-parse-bid
   ;:  weld
@@ -272,6 +281,12 @@
     (expect-eq !>(1) !>(~(wyt by (fold:orr ~[(r 'a' o)] ~ (add t0 ~h1)))))
     (expect-eq !>(0) !>(~(wyt by (fold:orr ~[(r 'a' o)] ~ (add t0 ~h5)))))
   ==
+::  compaction keeps the row a retracted winner falls back to
+++  test-fallback-ids
+  =/  a  (r 'a' (mk 'location' s+'Route 9' t0))
+  =/  b  (r 'b' (mk 'location' s+'tow truck' (add t0 ~h1)))
+  =/  c  (r 'c' (mk 'location' s+'shop' (add t0 ~h4)))
+  (expect-eq !>((sy `(list @ta)`~['b'])) !>((fallback-ids:orr ~[a b c] ~ (add t0 ~d1))))
 ::  a null value wins its slot and clears it; a retracted row is ignored
 ++  test-fold-retracted-and-null
   =/  a  (r 'a' (mk 'status' s+'stranded' t0))
@@ -438,6 +453,8 @@
     (expect-eq !>(`(unit @p)`[~ ~sampel-palnet]) !>(ship.got))
     (expect-eq !>(t0) !>(created.got))
     (expect-eq !>((sy `(list @t)`~['Andy' 'AE' 'Alice Baker'])) !>(aliases.got))
+    ::  into with no ship keeps from's
+    (expect-eq !>(`(unit @p)`[~ ~zod]) !>(ship:(absorb:orr into(ship ~) gone(ship `~zod))))
   ==
 ::  ==  actions, policy, encoders
 ::
@@ -607,6 +624,9 @@
     (expect-eq !>('value: a string, number, boolean, null or object, at most 2000 bytes') !>((bad-obs (obs-with 'value' s+(big 2.001)))))
     (expect-eq !>('source.id: over 200 bytes') !>((bad-obs (obs-with 'source' (pairs:enjs:format ~[['kind' s+'user'] ['id' s+(big 201)]])))))
     (expect-eq !>('by: over 64 bytes') !>((bad-obs (obs-with 'by' s+(big 65)))))
+    ::  each cap as a pair: exactly the cap is accepted
+    (expect-eq !>('accepted') !>((bad-obs (obs-with 'source' (pairs:enjs:format ~[['kind' s+'user'] ['id' s+(big 200)]])))))
+    (expect-eq !>('accepted') !>((bad-obs (obs-with 'by' s+(big 64)))))
     (expect-eq !>('title: 1 to 200 bytes') !>((bad-act (act-with 'title' s+(big 201)))))
     (expect-eq !>('payload: over 4000 bytes') !>((bad-act (act-with 'payload' (pairs:enjs:format ~[['x' s+(big 4.001)]])))))
     (expect-eq !>('about: over 20') !>((bad-act (act-with 'about' a+(reap 21 `json`s+'thing/subaru')))))

@@ -86,3 +86,4 @@ ul.links li { padding: .2rem 0; border-bottom: 1px solid var(--line); }
 ul.legend { display: flex; flex-wrap: wrap; gap: .5rem .9rem; margin-top: 1rem; font-size: .85em; color: var(--muted); }
 ul.legend i { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .3em; }
 @media (max-width: 800px) { .graph { grid-template-columns: 1fr; } .graph canvas { height: 55vh; } }
+.payload { font-size: .9em; overflow-wrap: anywhere; margin: .2rem 0; }

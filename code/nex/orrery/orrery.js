@@ -231,6 +231,19 @@
     ((a && a.history) || []).forEach(function (h) { if (h && h.status === 'claimed') who = h.by || ''; });
     return who;
   }
+  // what an action will do, shown before it is approved: the recipient,
+  // the text, the channel, a calendar event's times or that it is a
+  // cancel. A title says what the proposer meant; the payload is what
+  // the executor sends.
+  function payloadLine(p, byId) {
+    var keys = Object.keys(p || {}).filter(function (k) { return k !== 'why'; }).sort();
+    if (!keys.length) return '';
+    return '<div class="payload">' + keys.map(function (k) {
+      var v = p[k];
+      var shown = (k === 'to' && typeof v === 'string' && v.indexOf('/') > 0) ? links([v], byId) : fmtValue(v);
+      return '<span class="muted">' + esc(k) + '</span> ' + shown;
+    }).join(' &middot; ') + '</div>';
+  }
   function inbox(actions, state) {
     var out = '<h1>Inbox</h1>';
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
@@ -241,7 +254,7 @@
         (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
         ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + esc(a.by || '') + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' +
-        (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + '<div>';
+        (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + payloadLine(a.payload, byId) + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
         out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
       });
@@ -760,7 +773,10 @@
   }
 
   // a write answers before the writer applies, so the refetch waits
-  function later() { dirty = false; setTimeout(function () { refresh(true); }, 300); }
+  // after a move: a note half-typed under another action is kept, so the
+  // refresh waits for it rather than wiping it
+  function typedNote() { return Array.prototype.some.call(view.querySelectorAll('[data-refine-text]'), function (i) { return !!i.value.trim(); }); }
+  function later() { dirty = typedNote(); setTimeout(function () { refresh(!dirty); }, 300); }
 
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
@@ -924,14 +940,18 @@
   // the generator form as the API takes it; a blank key is left out so
   // the stored one stays; "off" reasoning is {"enabled": false}
   function field(scope, name) { var el = view.querySelector(scope + ' [name="' + name + '"]'); return el ? el.value.trim() : ''; }
+  // a number left blank is sent as null, which clears the stored one so
+  // the ship's default stands; a 0 there would stop the generator or hold
+  // every message for good
+  function numOrNull(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
   function generatorForm() {
     var val = function (name) { return field('#generator', name); };
     var effort = val('effort').toLowerCase();
     var g = { enabled: !!view.querySelector('#generator input[name="enabled"]:checked'), url: val('url'), model: val('model'),
       reasoning: effort === 'off' ? { enabled: false } : { effort: effort || 'high' },
-      max_tokens: parseInt(val('max_tokens'), 10) || 8000, max_actions: parseInt(val('max_actions'), 10) || 5,
-      cooldown_minutes: parseInt(val('cooldown_minutes'), 10) || 0, max_daily: parseInt(val('max_daily'), 10) || 0,
-      max_urgent: parseInt(val('max_urgent'), 10) || 0 };
+      max_tokens: numOrNull(val('max_tokens')), max_actions: numOrNull(val('max_actions')),
+      cooldown_minutes: numOrNull(val('cooldown_minutes')), max_daily: numOrNull(val('max_daily')),
+      max_urgent: numOrNull(val('max_urgent')) };
     if (val('api_key')) g.api_key = val('api_key');
     return g;
   }
@@ -944,8 +964,8 @@
     try { people = JSON.parse(val('people') || '{}'); } catch (e) { say('people: ' + e.message, true); return null; }
     var t = { enabled: !!view.querySelector('#telegram input[name="enabled"]:checked'), public_url: val('public_url'), model: val('model'),
       chats: val('chats').split(',').map(function (c) { return c.trim(); }).filter(Boolean), people: people,
-      gate: parseInt(val('gate'), 10) || 0, escalate: parseInt(val('escalate'), 10) || 0,
-      max_daily_messages: parseInt(val('max_daily_messages'), 10) || 0 };
+      gate: numOrNull(val('gate')), escalate: numOrNull(val('escalate')),
+      max_daily_messages: numOrNull(val('max_daily_messages')) };
     if (val('token')) t.token = val('token');
     if (val('secret')) t.secret = val('secret');
     return t;

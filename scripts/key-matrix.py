@@ -158,6 +158,8 @@ check('a ship source is refused per item', code == 200 and len(o) == 1 and dicti
       and dictish(o[0]).get('error') == 'source.kind: reserved for the inbox', d)
 code, a = attrs_of(owner, 'person/me')
 check('the forged ship claim was not written', dictish(dictish(a).get('mood')).get('value') != 'forged', a)
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/me', 'telegram', '999', T0, 'kg-16')]})
+check('an address attribute is 403 for a key without sensitive write', code == 403, d)
 code, d = triage('POST', '/observe', {'bodies': [{'id': 'org/acme', 'name': 'Acme'}], 'observations': []})
 check('a body outside the kinds is 403', code == 403, d)
 code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('org/acme', 'status', 'x', T0, 'kg-5')]})
