@@ -741,13 +741,23 @@
     return api(path, { method: method || 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) });
   }
 
-  var refreshing = false, again = false;
+  // drawn: the view the page shows, so a refresh can tell a redraw of
+  // it from a move to another
+  var refreshing = false, again = false, drawn = '';
   function refresh(force) {
     if (refreshing) { again = true; return; }
     if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }
     refreshing = true;
     var r = route(location.hash);
     var p;
+    // the fetches take half a minute on a busy ship, and the owner may
+    // start typing meanwhile: what was typed on this same view outlives
+    // the refresh (a schema edit was lost so, 2026-09-25)
+    var mark = edits, here = r.name + ' ' + (r.id || ''), held = false;
+    function show(html) {
+      if (edits !== mark && here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }
+      view.innerHTML = html; drawn = here; return true;
+    }
     if (r.name !== 'keys') minted = null;
     var proposed = null;
     function state() {
@@ -758,16 +768,16 @@
       });
     }
     if (r.name !== 'bodies') unmountGraph();
-    if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { view.innerHTML = body(d[0], d[1]); });
-    else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { view.innerHTML = inbox(d[0], d[1]); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last'), api('/read/settings'), api('/read/last')]).then(function (d) { var lists = d[10] || {}; view.innerHTML = settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14], d[15], d[16]); });
-    else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { view.innerHTML = keys(d[0], d[1], minted); });
-    else p = state().then(function (s) { view.innerHTML = bodies(s); mountGraph(s); });
+    if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { show(body(d[0], d[1])); });
+    else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { show(inbox(d[0], d[1])); });
+    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last'), api('/read/settings'), api('/read/last')]).then(function (d) { var lists = d[10] || {}; show(settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14], d[15], d[16])); });
+    else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { show(keys(d[0], d[1], minted)); });
+    else p = state().then(function (s) { if (show(bodies(s))) mountGraph(s); });
     // the state view carries every open action, so a view that read it
     // has the count already; only settings and keys ask for it
     p = p.then(function () { return proposed === null ? api('/actions?status=proposed').then(function (a) { return a.length; }) : proposed; }).then(function (n) {
       countEl.textContent = n ? String(n) : '';
-      say('');
+      if (!held) say('');
     }).catch(function (e) { say(String(e.message || e), true); });
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
   }
@@ -1018,6 +1028,9 @@
   // a token pasted into the telegram card was lost to a timed refresh
   // after a tab switch (2026-09-21). Saving clears the mark.
   var dirty = false;
+  // every edit counted: a refresh whose fetches were out while one was
+  // made does not draw over it
+  var edits = 0;
   // Enter in a refine box presses its button.
   view.addEventListener('keydown', function (e) {
     var el = e.target;
@@ -1028,7 +1041,7 @@
   });
   view.addEventListener('input', function (e) {
     var el = e.target;
-    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) dirty = true;
+    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }
   });
   function editing() {
     if (dirty) return true;

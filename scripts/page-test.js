@@ -208,6 +208,11 @@ ok('a refine holds the row\'s move buttons while it runs and frees them on a ref
   && src.includes("view.querySelectorAll('[data-move^=\"' + rid + ':\"]')")
   && src.indexOf("holdMoves(false);", src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")) > 0
   && src.slice(src.indexOf(".catch(function (e) { var el = noteOf();")).split('\n')[0].includes('holdMoves(false);'));
+ok('a refresh whose fetches were out while the owner typed on the same view does not draw over it',
+  src.includes("if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }")
+  && src.includes("if (edits !== mark && here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }")
+  && (src.match(/view\.innerHTML = /g) || []).length === 1
+  && src.includes("show(settings(") && src.includes("if (!held) say('');"));
 ok('a refine keeps the page-wide dirty flag on submit and fetches the revised row on success',
   src.indexOf("dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]')") > src.indexOf("post('/actions/' + seg(rid) + '/refine'")
   && src.indexOf("refresh(true);", src.indexOf("post('/actions/' + seg(rid) + '/refine'")) < src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")
