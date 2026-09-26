@@ -1,4 +1,16 @@
 :root { --ink: #101541; --amber: #f9a804; --muted: #6b6f80; --line: #e2e4ec; --bg: #fbfbfd; --card: #ffffff; --bad: #b3261e; }
+/* dark: the page's own palette, so a browser does not darken it by
+   guesswork (which darkened the graph's canvas and left its labels navy
+   on black); the canvas reads these same tokens */
+:root { color-scheme: light dark; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #e8eaf4; --muted: #a3a8bb; --line: #30344a; --bg: #11131c; --card: #1a1d2b; --bad: #ff8a80; }
+  .badge.live, .badge.approved { background: #1f3b27; }
+  .badge.proposed { background: #4a3d12; }
+  .badge.failed, .badge.retracted { background: #4a1f1c; }
+  .count:not(:empty) { color: #101541; }
+  a { color: #9fb4ff; }
+}
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }

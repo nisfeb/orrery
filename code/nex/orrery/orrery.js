@@ -104,7 +104,11 @@
   // says what the ship knows. The list a hundred bodies made was not
   // something to read; the shape of the connections is.
   var KIND_COLORS = { person: '#f9a804', place: '#3b82f6', thing: '#10b981', org: '#8b5cf6', situation: '#ef4444', activity: '#f97316', note: '#6b7280' };
-  function graphOf(state, showPast) {
+  var EVENT_KINDS = { situation: true, activity: true };
+  // withEvents false is the relationship diagram: no situation or
+  // activity is a node, and two bodies that share events are one line
+  // saying how many, beside what else relates them ("son · 25 events")
+  function graphOf(state, showPast, withEvents) {
     var nodes = [], byId = Object.create(null), edges = [], seen = Object.create(null);
     (state.bodies || []).forEach(function (b) {
       var st = b.attrs && b.attrs.status, closed = !!(st && !Array.isArray(st) && (st.value === 'closed' || st.value === 'cancelled'));
@@ -129,19 +133,70 @@
       });
       (n.body.involved || []).forEach(function (sid) { edge(n.id, sid, 'involved', ''); });
     });
-    return { nodes: nodes, edges: edges, byId: byId };
+    // a person's relationship to the owner ("son", "wife") is text, not a
+    // ref, and it is the line a relationship diagram is for
+    var me = state.me || 'person/me';
+    nodes.forEach(function (n) {
+      if (n.kind !== 'person' || n.id === me) return;
+      var r = n.body.attrs && n.body.attrs.relationship;
+      r = Array.isArray(r) ? r[0] : r;
+      if (r && typeof r.value === 'string' && r.value.trim()) edge(me, n.id, r.value.trim(), r.at || '');
+    });
+    if (withEvents === false) {
+      var pairs = Object.create(null), order = [];
+      var line = function (from, to) {
+        var key = from < to ? from + '|' + to : to + '|' + from;
+        if (!pairs[key]) { pairs[key] = { from: from, to: to, words: [], shared: 0, at: '' }; order.push(key); }
+        return pairs[key];
+      };
+      edges.forEach(function (e) {
+        if (EVENT_KINDS[byId[e.from].kind] || EVENT_KINDS[byId[e.to].kind]) return;
+        var l = line(e.from, e.to);
+        if (l.words.indexOf(e.attr) < 0) l.words.push(e.attr);
+      });
+      nodes.forEach(function (ev) {
+        if (!EVENT_KINDS[ev.kind]) return;
+        var with_ = [];
+        edges.forEach(function (e) {
+          var other = e.from === ev.id ? e.to : e.to === ev.id ? e.from : null;
+          if (other && !EVENT_KINDS[byId[other].kind] && with_.indexOf(other) < 0) with_.push(other);
+        });
+        for (var i = 0; i < with_.length; i++) for (var j = i + 1; j < with_.length; j++) line(with_[i], with_[j]).shared += 1;
+      });
+      nodes.forEach(function (n) { n.degree = 0; });
+      edges = order.map(function (key) {
+        var l = pairs[key];
+        var words = l.words.slice();
+        if (l.shared) words.push(l.shared + (l.shared === 1 ? ' event' : ' events'));
+        byId[l.from].degree += 1; byId[l.to].degree += 1;
+        return { from: l.from, to: l.to, attr: words.join(' \u00b7 '), at: l.at };
+      });
+      nodes = nodes.filter(function (n) { return !EVENT_KINDS[n.kind]; });
+    }
+    // a body with no line is off the diagram (scattered round the rest,
+    // they read as an orbit); the finder and byId still reach it
+    return { nodes: nodes.filter(function (n) { return n.degree > 0; }), all: nodes, edges: edges, byId: byId, me: me };
   }
+  // what a line says, read from its first end: a situation's participants
+  // are each a participant
+  function edgeWord(attr) { return attr === 'participants' ? 'participant' : attr; }
   function bodies(state) {
     var n = (state.bodies || []).length;
     var out = '<h1>Bodies <span class="muted">' + n + '</span></h1>' +
       '<div class="graph-bar"><input id="graph-find" placeholder="find a body by name" aria-label="find a body">' +
+      '<label class="box"><input type="checkbox" id="graph-events"> events</label>' +
       '<label class="box"><input type="checkbox" id="graph-past"> past situations</label>' +
-      '<span class="muted">drag to turn, pinch or wheel to zoom, two fingers to move, tap a body or a line</span></div>' +
+      '<span class="muted">tap a body to centre on it; drag to move, pinch or wheel to zoom</span>' +
+      '<span class="muted" id="graph-alone"></span></div>' +
       '<div class="graph"><canvas id="graph" aria-label="the bodies and their connections"></canvas>' +
-      '<aside id="graph-pane" class="card"><p class="muted">Nothing picked. Click a body or a line between two.</p>' +
-      '<ul class="legend">' + Object.keys(KIND_COLORS).map(function (k) { return '<li><i style="background:' + KIND_COLORS[k] + '"></i>' + esc(k) + '</li>'; }).join('') + '</ul></aside></div>';
+      '<aside id="graph-pane" class="card">' + emptyPane() + '</aside></div>';
     if (!n) out += '<p class="muted">Nothing observed yet.</p>';
     return out;
+  }
+  // the pane with nothing picked: what to do, and what the colours are
+  function emptyPane() {
+    return '<p class="muted">Nothing picked. Tap a body to centre on it, or a line to see what it says.</p>' +
+      '<ul class="legend">' + Object.keys(KIND_COLORS).map(function (k) { return '<li><i style="background:' + KIND_COLORS[k] + '"></i>' + esc(k) + '</li>'; }).join('') + '</ul>';
   }
   // what the pane says of a node: the body's current attributes and its
   // connections, each a link that picks the other end
@@ -570,62 +625,77 @@
 
   // ---- the app ----
 
-  // ---- the graph: a force layout in three dimensions, drawn on a
-  // canvas, turned by dragging, zoomed by a pinch or the wheel and moved
-  // by two fingers. Positions live across refreshes so the beacon's
-  // redraw does not scatter what the owner was looking at. It is fitted
-  // to the canvas, so a phone shows the whole of it, and drawn only
-  // while something moves: the layout settling, a spin, a hand on it.
+  // ---- the graph: a relationship diagram, flat, centred on one body
+  // (the owner, until another is tapped), each line labelled with what
+  // it is. A force layout places the rest: bodies push apart, a line
+  // pulls its ends together. Drag moves the diagram, a pinch or the
+  // wheel zooms it, a tap on a body centres on it. Positions live across
+  // refreshes so the beacon's redraw does not scatter what the owner was
+  // looking at, and it is drawn only while something moves. Its colours
+  // are the page's own, so it reads in dark mode too.
   // ponytail: the repulsion is every pair, fine to a thousand bodies;
   // a grid when it shows.
   var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-  var graphPos = Object.create(null), graphView = { rx: -0.35, ry: 0.6, zoom: 1, px: 0, py: 0, picked: null, past: false, spin: !coarse, touching: 0 }, graphTimer = null, graphState = null;
+  var graphPos = Object.create(null), graphView = { zoom: 1, px: 0, py: 0, picked: null, focus: null, past: false, events: false, touching: 0 }, graphTimer = null, graphState = null;
+  function palette() {
+    var cs = getComputedStyle(document.documentElement);
+    function v(name, dflt) { return (cs.getPropertyValue(name) || '').trim() || dflt; }
+    return { ink: v('--ink', '#101541'), muted: v('--muted', '#6b6f80'), card: v('--card', '#ffffff') };
+  }
   function mountGraph(state) {
     graphState = state;
     var canvas = document.getElementById('graph');
     if (!canvas) return;
-    var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past');
+    var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past'), eventsBox = document.getElementById('graph-events'), aloneEl = document.getElementById('graph-alone');
     pastBox.checked = graphView.past;
-    var g = graphOf(state, graphView.past), ctx = canvas.getContext('2d');
-    var ids = Object.create(null), at = Object.create(null), added = 0;
+    eventsBox.checked = graphView.events;
+    // the pane lists every connection, events too, whatever the diagram shows
+    var g = graphOf(state, graphView.past, graphView.events), full = graphView.events ? g : graphOf(state, graphView.past), ctx = canvas.getContext('2d');
+    var alone = g.all.length - g.nodes.length;
+    if (aloneEl) aloneEl.textContent = alone ? alone + ' with no connection: find them by name' : '';
+    var at = Object.create(null), added = 0;
     g.nodes.forEach(function (n, i) {
-      ids[n.id] = true;
       at[n.id] = i;
-      if (!graphPos[n.id]) {
+      var p = graphPos[n.id];
+      if (!p || p.z !== undefined) {
+        var t = i * 2.399, r = 40 + 30 * Math.sqrt(i);
+        graphPos[n.id] = { x: r * Math.cos(t), y: r * Math.sin(t), vx: 0, vy: 0 };
         added += 1;
-        var t = i * 2.399, r = 120 + 60 * Math.sqrt(i);
-        graphPos[n.id] = { x: r * Math.cos(t), y: (i % 7 - 3) * 40, z: r * Math.sin(t), vx: 0, vy: 0, vz: 0 };
       }
       n.p = graphPos[n.id];
     });
-    Object.keys(graphPos).forEach(function (id) { if (!ids[id]) delete graphPos[id]; });
+    Object.keys(graphPos).forEach(function (id) { if (at[id] === undefined) delete graphPos[id]; });
+    if (!graphView.focus || at[graphView.focus] === undefined) graphView.focus = at[g.me] !== undefined ? g.me : null;
     // a refresh that brought no new body leaves the layout as it lies
-    var hot = 160, steps = added ? 0 : hot, drag = null, moved = false, proj = [], frames = 0, touchy = coarse;
+    var hot = 220, steps = added ? 0 : hot, drag = null, moved = false, proj = [], frames = 0, touchy = coarse;
     function step() {
       if (steps >= hot) return;
       steps += 1;
-      var k = 0.02 * (1 - steps / hot) + 0.002;
-      for (var i = 0; i < g.nodes.length; i++) {
+      var k = 0.02 * (1 - steps / hot) + 0.002, i, j;
+      for (i = 0; i < g.nodes.length; i++) {
         var a = g.nodes[i].p;
-        for (var j = i + 1; j < g.nodes.length; j++) {
-          var b = g.nodes[j].p, dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z, d2 = dx * dx + dy * dy + dz * dz + 1, f = 9000 / d2;
+        for (j = i + 1; j < g.nodes.length; j++) {
+          var b = g.nodes[j].p, dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 1, f = 9000 / d2;
           if (f > 40) f = 40;
           var d = Math.sqrt(d2);
-          dx = dx / d * f; dy = dy / d * f; dz = dz / d * f;
-          a.vx += dx; a.vy += dy; a.vz += dz; b.vx -= dx; b.vy -= dy; b.vz -= dz;
+          dx = dx / d * f; dy = dy / d * f;
+          a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
         }
-        a.vx -= a.x * 0.01; a.vy -= a.y * 0.01; a.vz -= a.z * 0.01;
+        a.vx -= a.x * 0.01; a.vy -= a.y * 0.01;
       }
       g.edges.forEach(function (e) {
-        var a = g.byId[e.from].p, b = g.byId[e.to].p, dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01, f = (d - 90) * 0.02;
-        dx = dx / d * f; dy = dy / d * f; dz = dz / d * f;
-        a.vx += dx; a.vy += dy; a.vz += dz; b.vx -= dx; b.vy -= dy; b.vz -= dz;
+        var a = g.byId[e.from].p, b = g.byId[e.to].p, dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - 90) * 0.02;
+        dx = dx / d * f; dy = dy / d * f;
+        a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
       });
       g.nodes.forEach(function (n) {
         var p = n.p;
-        p.x += p.vx * k * 10; p.y += p.vy * k * 10; p.z += p.vz * k * 10;
-        p.vx *= 0.6; p.vy *= 0.6; p.vz *= 0.6;
+        p.x += p.vx * k * 10; p.y += p.vy * k * 10;
+        p.vx *= 0.6; p.vy *= 0.6;
       });
+      // the body in focus is drawn to the centre, and the rest settle round it
+      var fp = graphView.focus && g.byId[graphView.focus] && g.byId[graphView.focus].p;
+      if (fp) { fp.x *= 0.7; fp.y *= 0.7; fp.vx = 0; fp.vy = 0; }
     }
     function size() {
       var w = canvas.clientWidth || 600, h = canvas.clientHeight || 480, dpr = window.devicePixelRatio || 1;
@@ -633,61 +703,105 @@
       return { w: w, h: h, dpr: dpr };
     }
     // the farthest body from the centre sets the scale, so the whole
-    // graph fits the canvas at zoom 1 on any screen
-    function reach() {
+    // diagram fits the canvas at zoom 1 on any screen
+    function scaleOf(s) {
       var R = 60;
-      g.nodes.forEach(function (n) { var p = n.p, d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z); if (d > R) R = d; });
-      return R;
+      g.nodes.forEach(function (n) { var d = Math.sqrt(n.p.x * n.p.x + n.p.y * n.p.y); if (d > R) R = d; });
+      return graphView.zoom * Math.min(s.w, s.h) * 0.45 / R;
     }
-    function project(p, s, R) {
-      var cy = Math.cos(graphView.ry), sy = Math.sin(graphView.ry), cx = Math.cos(graphView.rx), sx = Math.sin(graphView.rx);
-      var x = p.x * cy + p.z * sy, z = -p.x * sy + p.z * cy, y = p.y * cx - z * sx; z = p.y * sx + z * cx;
-      var D = Math.max(700, 2.5 * R), f = D / (D + z), scale = graphView.zoom * Math.min(s.w, s.h) * 0.42 / R;
-      return { x: s.w / 2 + graphView.px + x * f * scale, y: s.h / 2 + graphView.py + y * f * scale, f: f, z: z };
+    function project(p, s, scale) { return { x: s.w / 2 + graphView.px + p.x * scale, y: s.h / 2 + graphView.py + p.y * scale }; }
+    // a label with a halo of the canvas's own colour, readable over lines,
+    // put at the first of its places that no label drawn before covers; a
+    // label with no free place is left out, unless it must be drawn
+    var boxes = [], room = { w: 0, h: 0 };
+    function label(text, spots, font, color, c, must) {
+      ctx.font = font;
+      var w = ctx.measureText(text).width, h = 14, at = null;
+      for (var i = 0; i < spots.length && !at; i++) {
+        var x = spots[i][0], y = spots[i][1], free = x >= 2 && x + w <= room.w - 2 && y - h >= 0 && y + 3 <= room.h;
+        for (var j = 0; j < boxes.length && free; j++) {
+          var b = boxes[j];
+          if (x < b[0] + b[2] && x + w > b[0] && y - h + 3 < b[1] + b[3] && y + 3 > b[1]) free = false;
+        }
+        if (free) at = spots[i];
+      }
+      if (!at) { if (!must) return; at = spots[0]; }
+      boxes.push([at[0], at[1] - h + 3, w, h]);
+      ctx.lineJoin = 'round'; ctx.lineWidth = 3.5; ctx.strokeStyle = c.card; ctx.strokeText(text, at[0], at[1]);
+      ctx.fillStyle = color; ctx.fillText(text, at[0], at[1]);
     }
     function draw() {
-      var s = size(), R = reach();
+      var s = size(), scale = scaleOf(s), c = palette();
       ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
       ctx.clearRect(0, 0, s.w, s.h);
-      proj = g.nodes.map(function (n) { return project(n.p, s, R); });
-      var pickedId = graphView.picked && graphView.picked.id, pickedEdge = graphView.picked && graphView.picked.attr ? graphView.picked : null;
+      proj = g.nodes.map(function (n) { return project(n.p, s, scale); });
+      var focus = graphView.focus, pickedEdge = graphView.picked && graphView.picked.attr ? graphView.picked : null;
       var near = Object.create(null);
-      if (pickedId) g.edges.forEach(function (e) { if (e.from === pickedId) near[e.to] = true; if (e.to === pickedId) near[e.from] = true; });
+      if (focus) g.edges.forEach(function (e) { if (e.from === focus) near[e.to] = true; if (e.to === focus) near[e.from] = true; });
+      // a line's words are drawn where they fit: every line of a small
+      // diagram, the lines at the body in focus when there are few, and
+      // all of them close up
+      var close = graphView.zoom >= 1.8, words = [], lit0 = 0;
+      g.edges.forEach(function (e) { if (e.from === focus || e.to === focus) lit0 += 1; });
+      var sayAll = g.edges.length <= 40, sayLit = lit0 <= 12;
       g.edges.forEach(function (e) {
         var a = proj[at[e.from]], b = proj[at[e.to]];
-        var lit = pickedEdge === e || e.from === pickedId || e.to === pickedId;
-        ctx.strokeStyle = lit ? '#101541' : 'rgba(16,21,65,' + (0.12 + 0.25 * Math.min(a.f, b.f)) + ')';
-        ctx.lineWidth = lit ? 2 : 1;
+        var lit = pickedEdge === e || e.from === focus || e.to === focus;
+        ctx.globalAlpha = lit ? 0.9 : (focus ? 0.2 : 0.4);
+        ctx.strokeStyle = lit ? c.ink : c.muted;
+        ctx.lineWidth = lit ? 1.6 : 1;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        if (lit) { ctx.fillStyle = '#6b6f80'; ctx.font = '11px system-ui'; ctx.fillText(e.attr, (a.x + b.x) / 2 + 4, (a.y + b.y) / 2 - 4); }
+        if (close || sayAll || pickedEdge === e || (lit && sayLit)) words.push([edgeWord(e.attr), 0, 0, lit, e]);
       });
-      var order = g.nodes.map(function (n, i) { return i; }).sort(function (i, j) { return proj[j].z - proj[i].z; });
-      order.forEach(function (i) {
-        var n = g.nodes[i], p = proj[i], r = (4 + Math.min(n.degree, 12) * 0.9) * p.f * graphView.zoom;
-        var dim = pickedId && n.id !== pickedId && !near[n.id];
-        ctx.globalAlpha = dim ? 0.35 : 1;
-        ctx.fillStyle = KIND_COLORS[n.kind] || '#6b7280';
-        if (n.closed) ctx.fillStyle = '#c9cbd4';
+      ctx.globalAlpha = 1;
+      g.nodes.forEach(function (n, i) {
+        var p = proj[i], ev = !!EVENT_KINDS[n.kind], r = (ev ? 4 : 6 + Math.min(n.degree, 10) * 0.4) * Math.min(1.6, Math.sqrt(graphView.zoom)) + (n.id === focus ? 3 : 0);
+        ctx.globalAlpha = focus && n.id !== focus && !near[n.id] ? 0.35 : 1;
+        ctx.fillStyle = n.closed ? c.muted : (KIND_COLORS[n.kind] || c.muted);
         ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
-        if (n.id === pickedId) { ctx.lineWidth = 3; ctx.strokeStyle = '#101541'; ctx.stroke(); }
-        if (n.id === pickedId || near[n.id] || (!pickedId && n.degree >= 4) || g.nodes.length <= 30) {
-          ctx.fillStyle = '#101541'; ctx.font = (n.id === pickedId ? 'bold ' : '') + '12px system-ui';
-          ctx.fillText(n.name.length > 28 ? n.name.slice(0, 27) + '…' : n.name, p.x + r + 3, p.y + 4);
-        }
-        ctx.globalAlpha = 1;
+        if (n.id === focus || (graphView.picked && graphView.picked.id === n.id)) { ctx.lineWidth = 2.5; ctx.strokeStyle = c.ink; ctx.stroke(); }
+        n.r = r;
+      });
+      ctx.globalAlpha = 1;
+      boxes = []; room = { w: s.w, h: s.h };
+      // names first, the body in focus before the rest, then the lines'
+      // words in the room that is left
+      var nearCount = Object.keys(near).length, named = [];
+      g.nodes.forEach(function (n, i) {
+        var ev = !!EVENT_KINDS[n.kind];
+        // people, places, things and orgs are few, and always named where
+        // there is room; an event only near the focus or close up
+        if (n.id === focus || !ev || (near[n.id] && nearCount <= 25) || graphView.zoom >= 2.2) named.push(i);
+      });
+      named.sort(function (i, j) { return (g.nodes[j].id === focus) - (g.nodes[i].id === focus); });
+      named.forEach(function (i) {
+        var n = g.nodes[i], p = proj[i], t = n.name.length > 28 ? n.name.slice(0, 27) + '\u2026' : n.name, font = (n.id === focus ? 'bold ' : '') + '12px system-ui';
+        ctx.font = font;
+        var w = ctx.measureText(t).width;
+        label(t, [[p.x + n.r + 3, p.y + 4], [p.x - n.r - 3 - w, p.y + 4], [p.x - w / 2, p.y - n.r - 4], [p.x - w / 2, p.y + n.r + 13]],
+          font, focus && n.id !== focus && !near[n.id] ? c.muted : c.ink, c, n.id === focus);
+      });
+      words.forEach(function (wd) {
+        var e = wd[4], a = proj[at[e.from]], b = proj[at[e.to]], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d * 12, ny = dx / d * 12;
+        ctx.font = '11px system-ui';
+        var w = ctx.measureText(wd[0]).width, spots = [];
+        [0.5, 0.35, 0.65].forEach(function (t) {
+          var mx = a.x + dx * t - w / 2, my = a.y + dy * t + 4;
+          spots.push([mx, my], [mx + nx, my + ny], [mx - nx, my - ny]);
+        });
+        label(wd[0], spots, '11px system-ui', wd[3] ? c.ink : c.muted, c, pickedEdge === e);
       });
     }
-    // a frame is drawn while the layout settles, while it spins or a hand
-    // is on it, and twice after anything else moved it; then it rests
+    // a frame is drawn while the layout settles or a hand is on it, and
+    // twice after anything else moved it; then it rests
     function wake() { frames = 2; if (!graphTimer) graphTimer = requestAnimationFrame(loop); }
     function loop() {
       graphTimer = null;
       var settling = steps < hot;
       step();
-      if (graphView.spin && !drag) graphView.ry += 0.002;
       draw();
       if (frames > 0) frames -= 1;
-      if (settling || graphView.spin || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);
+      if (settling || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);
     }
     // a finger is wider than a cursor, so a touch reaches farther
     function hit(x, y) {
@@ -704,21 +818,34 @@
       });
       return be;
     }
+    // a body picked is centred on, when it is on the diagram; a line
+    // picked is only lit
     function pick(what) {
       graphView.picked = what;
-      graphView.spin = !what && !coarse;
-      if (!what) pane.innerHTML = '<p class="muted">Nothing picked. Click a body or a line between two.</p>';
-      else pane.innerHTML = what.attr ? edgePane(what, g) : nodePane(what, g);
+      if (what && !what.attr && at[what.id] !== undefined && graphView.focus !== what.id) {
+        graphView.focus = what.id; graphView.px = 0; graphView.py = 0;
+        steps = Math.min(steps, hot / 2);
+      }
+      if (!what) pane.innerHTML = emptyPane();
+      else pane.innerHTML = what.attr ? edgePane(what, g) : nodePane(full.byId[what.id] || what, full);
       wake();
     }
-    // pointer events carry mouse, pen and touch alike: one pointer turns
-    // the graph, two pinch it and move it, a touch that did not move picks
+    // pointer events carry mouse, pen and touch alike: one pointer moves
+    // the diagram, two pinch it about their midpoint, a touch that did
+    // not move picks
     var pts = Object.create(null), pinch = null;
     function pos(ev) { var r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
     function held() { return Object.keys(pts).map(function (k) { return pts[k]; }); }
     function spread(t) { return Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y) || 1; }
     function mid(t) { return { x: (t[0].x + t[1].x) / 2, y: (t[0].y + t[1].y) / 2 }; }
-    function zoomTo(z) { graphView.zoom = Math.max(0.3, Math.min(8, z)); }
+    // zoom about a point on the canvas: what is under it stays under it
+    function zoomAbout(z, x, y, z0, px0, py0) {
+      z = Math.max(0.3, Math.min(8, z));
+      var w = canvas.clientWidth || 600, h = canvas.clientHeight || 480;
+      var ax = x - w / 2 - px0, ay = y - h / 2 - py0;
+      graphView.px = px0 + ax - ax * z / z0; graphView.py = py0 + ay - ay * z / z0;
+      graphView.zoom = z;
+    }
     canvas.onpointerdown = function (ev) {
       touchy = ev.pointerType !== 'mouse';
       try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* a pointer the page did not see start */ }
@@ -736,12 +863,13 @@
       var t = held();
       if (pinch && t.length >= 2) {
         var m = mid(t);
-        zoomTo(pinch.zoom * spread(t) / pinch.d);
-        graphView.px = pinch.px + m.x - pinch.mid.x; graphView.py = pinch.py + m.y - pinch.mid.y;
+        zoomAbout(pinch.zoom * spread(t) / pinch.d, pinch.mid.x, pinch.mid.y, pinch.zoom, pinch.px, pinch.py);
+        graphView.px += m.x - pinch.mid.x; graphView.py += m.y - pinch.mid.y;
       } else if (drag) {
         var dx = p.x - drag.x, dy = p.y - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > (touchy ? 8 : 3)) moved = true;
-        graphView.ry += dx * 0.008; graphView.rx += dy * 0.008; drag = p;
+        if (moved) { graphView.px += dx; graphView.py += dy; }
+        drag = p;
       }
       wake();
     };
@@ -757,20 +885,22 @@
       wake();
     }
     canvas.onpointerup = canvas.onpointercancel = lift;
-    canvas.onwheel = function (ev) { ev.preventDefault(); zoomTo(graphView.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)); wake(); };
+    canvas.onwheel = function (ev) { ev.preventDefault(); var p = pos(ev); zoomAbout(graphView.zoom * (ev.deltaY > 0 ? 0.9 : 1.1), p.x, p.y, graphView.zoom, graphView.px, graphView.py); wake(); };
     canvas.ondblclick = function () { graphView.zoom = 1; graphView.px = 0; graphView.py = 0; wake(); };
     pane.onclick = function (ev) {
       var a = ev.target.closest('[data-pick]'); if (!a) return;
-      ev.preventDefault(); var n = g.byId[a.dataset.pick]; if (n) pick(n);
+      ev.preventDefault(); var n = full.byId[a.dataset.pick]; if (n) pick(n);
     };
     find.oninput = function () {
       var q = find.value.trim().toLowerCase(); if (!q) return;
-      var n = g.nodes.filter(function (n) { return n.name.toLowerCase().indexOf(q) >= 0 || n.id.indexOf(q) >= 0; })[0];
+      var n = full.all.filter(function (n) { return n.name.toLowerCase().indexOf(q) >= 0 || n.id.indexOf(q) >= 0; })[0];
       if (n) pick(n);
     };
     pastBox.onchange = function () { graphView.past = pastBox.checked; unmountGraph(); mountGraph(graphState); };
+    eventsBox.onchange = function () { graphView.events = eventsBox.checked; unmountGraph(); mountGraph(graphState); };
     unmountGraph();
-    if (graphView.picked) { var again = g.byId[graphView.picked.id]; pick(again || null); }
+    if (graphView.picked) { var again = graphView.picked.attr ? null : full.byId[graphView.picked.id]; pick(again || null); }
+    else pick(null);
     wake();
   }
   function unmountGraph() { if (graphTimer) cancelAnimationFrame(graphTimer); graphTimer = null; }

@@ -46,12 +46,21 @@ let n = 0;
 function ok(label, cond, detail) { n += 1; assert.ok(cond, label + (detail === undefined ? '' : '   ' + JSON.stringify(detail))); console.log('  ok   ' + label); }
 
 const bodies = render.bodies(state);
-ok('the bodies view is a graph with a pane and a finder', bodies.includes('<canvas id="graph"') && bodies.includes('id="graph-pane"') && bodies.includes('id="graph-find"') && bodies.includes('id="graph-past"'));
+ok('the bodies view is a graph with a pane and a finder, the pane naming the colours', bodies.includes('<canvas id="graph"') && bodies.includes('id="graph-pane"') && bodies.includes('id="graph-find"') && bodies.includes('id="graph-past"') && bodies.includes('id="graph-events"')
+  && bodies.includes('class="legend"'));
 const g = render.graphOf(state, false), gp = render.graphOf(state, true);
 const tiny = render.graphOf({ bodies: [{ id: 'thing/x', kind: 'thing', name: 'x', attrs: { location: { value: { ref: 'place/y' } }, owners: [{ value: { ref: 'person/me' } }, { value: { ref: 'place/y' } }] }, involved: [] }, { id: 'place/y', kind: 'place', name: 'y', attrs: { things: [{ value: { ref: 'thing/x' } }] }, involved: [] }, { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] }] }, false);
 ok('every body is a node, each ref attribute an edge, an involvement an edge, and a pair with one attribute one edge',
   g.nodes.some(function (n) { return n.id === 'person/me'; }) && g.edges.some(function (e) { return e.attr === 'involved' && e.from === 'person/me' && e.to === 'situation/2026-09-16-breakdown'; })
   && tiny.edges.length === 4 && tiny.byId['thing/x'].degree === 4 && tiny.edges.filter(function (e) { return e.attr === 'location'; }).length === 1);
+const fam = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] },
+  { id: 'person/lin', kind: 'person', name: 'Lin', attrs: { relationship: { value: 'son', at: '2026-09-01T00:00:00Z' } }, involved: [] },
+  { id: 'thing/lamp', kind: 'thing', name: 'lamp', attrs: {}, involved: [] }] }, false);
+ok('a person\'s relationship to the owner is a line labelled with it, from the owner',
+  fam.edges.length === 1 && fam.edges[0].from === 'person/me' && fam.edges[0].to === 'person/lin' && fam.edges[0].attr === 'son');
+ok('a body with no line is off the diagram but found by name', !fam.nodes.some(function (n) { return n.id === 'thing/lamp'; })
+  && fam.all.some(function (n) { return n.id === 'thing/lamp'; }) && !!fam.byId['thing/lamp'] && fam.nodes.length === 2);
 ok('a closed situation is off the graph until past is asked for', !g.byId['situation/2026-09-01-preop'] && !!gp.byId['situation/2026-09-01-preop']);
 const me = g.byId['person/me'];
 ok('the pane names a body, its attributes and its connections, escaped', me && render.nodePane(me, g).includes('href="#body/person/me"') && render.nodePane(g.byId['thing/subaru'], g).includes('&lt;b&gt;Subaru&lt;/b&gt;') && !render.nodePane(g.byId['thing/subaru'], g).includes('<b>Subaru</b>'));
@@ -207,13 +216,33 @@ ok('a view seen before draws at once, even while another answer is out, except t
 ok('an answer that lands after the owner moved to another view is kept, not drawn over it',
   src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here) return;") > src.indexOf("seen[v.here] = d;"));
 ok('the graph takes mouse, pen and touch as pointers: a pinch zooms and moves it, and nothing is left on window',
-  src.includes('canvas.onpointerdown = function (ev) {') && src.includes('zoomTo(pinch.zoom * spread(t) / pinch.d);')
+  src.includes('canvas.onpointerdown = function (ev) {') && src.includes('zoomAbout(pinch.zoom * spread(t) / pinch.d, pinch.mid.x, pinch.mid.y, pinch.zoom, pinch.px, pinch.py);')
   && !src.includes('window.onmouse') && !src.includes('window.ontouch') && src.includes("bd = touchy ? 24 : 12"));
 ok('a refresh that brings no new body does not settle the layout again',
-  src.includes('var hot = 160, steps = added ? 0 : hot,'));
+  src.includes('var hot = 220, steps = added ? 0 : hot,'));
 ok('the graph is drawn only while something moves, and fitted to its canvas',
-  src.includes('if (settling || graphView.spin || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);')
-  && src.includes('scale = graphView.zoom * Math.min(s.w, s.h) * 0.42 / R;') && !src.includes('g.nodes.indexOf('));
+  src.includes('if (settling || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);')
+  && src.includes('return graphView.zoom * Math.min(s.w, s.h) * 0.45 / R;') && !src.includes('g.nodes.indexOf('));
+ok('the diagram is flat and centred on a body: no turning, no spin, a tap centres on what it picks, and an empty pane keeps the legend',
+  src.includes('if (!what) pane.innerHTML = emptyPane();') && !src.includes('graphView.ry') && !src.includes('spin') && src.includes('graphView.focus = what.id;')
+  && src.includes('if (fp) { fp.x *= 0.7; fp.y *= 0.7; fp.vx = 0; fp.vy = 0; }'));
+const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.css'), 'utf8');
+ok('the page has its own dark palette, and the diagram draws in the page\'s colours, labels haloed',
+  css.includes('@media (prefers-color-scheme: dark)') && css.includes(':root { color-scheme: light dark; }')
+  && src.includes("return { ink: v('--ink', '#101541'), muted: v('--muted', '#6b6f80'), card: v('--card', '#ffffff') };")
+  && !src.includes("ctx.fillStyle = '#101541'") && !src.includes("ctx.strokeStyle = '#101541'") && src.includes('ctx.strokeText(text, at[0], at[1]);'));
+ok('a label goes where no label before it lies and inside the canvas, or is left out unless it must be drawn',
+  src.includes('free = x >= 2 && x + w <= room.w - 2 && y - h >= 0 && y + 3 <= room.h;') && src.includes("if (!at) { if (!must) return; at = spots[0]; }"));
+const people = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] },
+  { id: 'person/lin', kind: 'person', name: 'Lin', attrs: { relationship: { value: 'son' } }, involved: [] },
+  { id: 'person/ann', kind: 'person', name: 'Ann', attrs: {}, involved: [] },
+  { id: 'activity/sail', kind: 'activity', name: 'Sail', attrs: { participants: [{ value: { ref: 'person/me' } }, { value: { ref: 'person/lin' } }, { value: { ref: 'person/ann' } }] }, involved: [] },
+  { id: 'situation/fair', kind: 'situation', name: 'Fair', attrs: { participants: [{ value: { ref: 'person/me' } }, { value: { ref: 'person/lin' } }] }, involved: [] }] }, false, false);
+const said = function (a, b) { var e = people.edges.filter(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); })[0]; return e && e.attr; };
+ok('the relationship diagram has no event nodes: two bodies that share events are one line saying how many, beside what else relates them',
+  !people.nodes.some(function (n) { return n.kind === 'activity' || n.kind === 'situation'; }) && said('person/me', 'person/lin') === 'son \u00b7 2 events'
+  && said('person/me', 'person/ann') === '1 event' && said('person/lin', 'person/ann') === '1 event' && people.edges.length === 3);
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes('if (dirty || graphView.touching) return true;')
