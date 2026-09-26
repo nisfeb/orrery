@@ -54,6 +54,7 @@
     ['GET' `path`~[%api %actions] %get-actions %any]
     ['POST' `path`~[%api %actions 'x0'] %post-actions %any]
     ['POST' `path`~[%api %actions 'x0' %refine] %post-actions-refine %any]
+    ['GET' `path`~[%api %settings] %get-settings %own]
     ['GET' `path`~[%api %schema] %get-schema %own]
     ['PUT' `path`~[%api %schema] %put-schema %own]
     ['GET' `path`~[%api %policy] %get-policy %own]
@@ -110,6 +111,22 @@
     (expect-eq !>(~) !>((route-of:orr 'PATCH' /api/state)))
     (expect-eq !>(~) !>((route-of:orr 'GET' /api/nope)))
     (expect-eq !>(~) !>((route-of:orr 'POST' /api/state)))
+  ==
+::  the page carries its stylesheet and script, each in place of its tag;
+::  a page without them is served as it is
+++  test-inline-page
+  =/  html=@t
+    %+  rap  3
+    :~  '<head><link rel="stylesheet" href="/apps/orrery/orrery.css"></head>'
+        '<body><script src="/apps/orrery/orrery.js"></script></body>'
+    ==
+  ;:  weld
+    %+  expect-eq
+      !>('<head><style>b{}</style></head><body><script>go()</script></body>')
+    !>((inline-page:orr html 'b{}' 'go()'))
+    (expect-eq !>('<p>x</p>') !>((inline-page:orr '<p>x</p>' 'b{}' 'go()')))
+    (expect-eq !>('abXd') !>((swap-once:orr 'abcd' 'c' 'X')))
+    (expect-eq !>('abcd') !>((swap-once:orr 'abcd' 'z' 'X')))
   ==
 ++  test-access-refusal
   ;:  weld

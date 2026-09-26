@@ -66,7 +66,8 @@
           [%over %& [/ %'link.json'] [[/ %json] link]]
           [%over %& [/ %'weir.json'] [[/ %json] weir-json]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
-          [%over %& [/ %'orrery.html'] [[/ %mime] page-html]]
+          ::  the page carries its stylesheet and script: one request
+          [%over %& [/ %'orrery.html'] [[/ %mime] [p.page-html (as-octs:mimes:html (inline-page:orr q.q.page-html q.q.page-css q.q.page-js))]]]
           [%over %& [/ %'orrery.css'] [[/ %mime] page-css]]
           [%over %& [/ %'orrery.js'] [[/ %mime] page-js]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
@@ -966,6 +967,7 @@
     %get-actions            (serve-actions eyre-id args act)
     %post-actions           (serve-set-action eyre-id s2 jon act)
     %post-actions-refine    (serve-refine eyre-id s2 jon act)
+    %get-settings           (serve-settings eyre-id)
     %get-schema             (serve-doc eyre-id %'schema.json')
     %put-schema             (serve-set-doc eyre-id 'set-schema' jon)
     %get-policy             (serve-doc eyre-id %'policy.json')
@@ -3610,17 +3612,67 @@
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  lists=json  bind:m  chat-lists
+  (send-json eyre-id 200 lists)
+++  chat-lists
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
   =/  both
     |=  [d=[items=(list [id=@t name=@t]) note=@t] c=[items=(list [id=@t name=@t]) note=@t]]
-    ^-  form:m
-    %^  send-json  eyre-id  200
+    ^-  json
     (pairs:enjs:format ~[['dms' (list-json d)] ['channels' (list-json c)]])
   ;<  live=(unit ?)  bind:m  groups-live
-  ?~  live  (both [~ 'the /sys/scry/ road is refused'] [~ 'the /sys/scry/ road is refused'])
-  ?.  u.live  (both [~ 'groups desk not installed'] [~ 'groups desk not installed'])
+  ?~  live  (pure:m (both [~ 'the /sys/scry/ road is refused'] [~ 'the /sys/scry/ road is refused']))
+  ?.  u.live  (pure:m (both [~ 'groups desk not installed'] [~ 'groups desk not installed']))
   ;<  d=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
   ;<  c=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
-  (both d c)
+  (pure:m (both d c))
+::  +serve-settings: everything the settings page shows, in one answer,
+::  each document as its own route answers it: one request for the
+::  page, where seventeen took forty seconds on the owner's ship
+::
+++  serve-settings
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  doc  |=(n=@ta (read-json (rf 1 / n)))
+  ;<  schema=json  bind:m  (doc %'schema.json')
+  ;<  policy=json  bind:m  (doc %'policy.json')
+  ;<  generator=json  bind:m  (doc %'generator.json')
+  ;<  generator-last=json  bind:m  (doc %'generator-last.json')
+  ;<  reconcile-last=json  bind:m  (doc %'reconcile-last.json')
+  ;<  telegram=json  bind:m  (doc %'telegram.json')
+  ;<  telegram-last=json  bind:m  (doc %'telegram-last.json')
+  ;<  exec-last=json  bind:m  (doc %'exec-last.json')
+  ;<  chat=json  bind:m  (doc %'chat.json')
+  ;<  chat-last=json  bind:m  (doc %'chat-last.json')
+  ;<  calendar-last=json  bind:m  (doc %'calendar-events-last.json')
+  ;<  mail=json  bind:m  (doc %'mail.json')
+  ;<  mail-last=json  bind:m  (doc %'mail-last.json')
+  ;<  brief-last=json  bind:m  (doc %'brief-last.json')
+  ;<  read=json  bind:m  (doc %'read.json')
+  ;<  read-last=json  bind:m  (doc %'read-last.json')
+  ;<  lists=json  bind:m  chat-lists
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['schema' schema]
+      ['policy' policy]
+      ['generator' (en-config-masked:orr (de-config:orr generator))]
+      ['generator_last' generator-last]
+      ['reconcile_last' reconcile-last]
+      ['telegram' (en-tg-config-masked:orr (de-tg-config:orr telegram))]
+      ['telegram_last' telegram-last]
+      ['exec_last' exec-last]
+      ['chat' (en-chat-config:orr (de-chat-config:orr chat))]
+      ['chat_last' chat-last]
+      ['chat_lists' lists]
+      ['calendar_last' calendar-last]
+      ['mail' (en-mail-config:orr (de-mail-config:orr mail))]
+      ['mail_last' mail-last]
+      ['brief_last' brief-last]
+      ['read' (en-mail-config:orr (de-mail-config:orr read))]
+      ['read_last' read-last]
+  ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
 ::

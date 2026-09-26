@@ -6581,6 +6581,26 @@
   ==
 ::  ==  the routes (version 60)
 ::
+::  +inline-page: the page with its stylesheet and its script inside it,
+::  so opening orrery is one request, not three (each request costs the
+::  owner's ship about two seconds). A page without the two tags is
+::  served as it is.
+::
+++  inline-page
+  |=  [html=@t css=@t js=@t]
+  ^-  @t
+  =.  html
+    (swap-once html '<link rel="stylesheet" href="/apps/orrery/orrery.css">' (rap 3 '<style>' css '</style>' ~))
+  (swap-once html '<script src="/apps/orrery/orrery.js"></script>' (rap 3 '<script>' js '</script>' ~))
+::  +swap-once: the first pin in hay replaced by new, hay when there is
+::  none
+::
+++  swap-once
+  |=  [hay=@t pin=@t new=@t]
+  ^-  @t
+  =/  at=(unit @ud)  (find (trip pin) (trip hay))
+  ?~  at  hay
+  (rap 3 (end [3 u.at] hay) new (rsh [3 (add u.at (met 3 pin))] hay) ~)
 ::  +route-path: the path under /apps/orrery a request names; a trailing
 ::  slash parses as a trailing empty knot and is dropped
 ::
@@ -6617,6 +6637,7 @@
   ?:  &(=('GET' meth) ?=([%api %actions ~] suffix))             `[%get-actions %any]
   ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))          `[%post-actions %any]
   ?:  &(=('POST' meth) ?=([%api %actions @ %refine ~] suffix))  `[%post-actions-refine %any]
+  ?:  &(=('GET' meth) ?=([%api %settings ~] suffix))            `[%get-settings %own]
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))              `[%get-schema %own]
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))              `[%put-schema %own]
   ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))              `[%get-policy %own]

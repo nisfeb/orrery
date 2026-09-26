@@ -136,7 +136,7 @@
     var out = '<h1>Bodies <span class="muted">' + n + '</span></h1>' +
       '<div class="graph-bar"><input id="graph-find" placeholder="find a body by name" aria-label="find a body">' +
       '<label class="box"><input type="checkbox" id="graph-past"> past situations</label>' +
-      '<span class="muted">drag to turn, wheel to zoom, click a body or a line</span></div>' +
+      '<span class="muted">drag to turn, pinch or wheel to zoom, two fingers to move, tap a body or a line</span></div>' +
       '<div class="graph"><canvas id="graph" aria-label="the bodies and their connections"></canvas>' +
       '<aside id="graph-pane" class="card"><p class="muted">Nothing picked. Click a body or a line between two.</p>' +
       '<ul class="legend">' + Object.keys(KIND_COLORS).map(function (k) { return '<li><i style="background:' + KIND_COLORS[k] + '"></i>' + esc(k) + '</li>'; }).join('') + '</ul></aside></div>';
@@ -571,11 +571,15 @@
   // ---- the app ----
 
   // ---- the graph: a force layout in three dimensions, drawn on a
-  // canvas, turned by dragging. Positions live across refreshes so the
-  // beacon's redraw does not scatter what the owner was looking at.
+  // canvas, turned by dragging, zoomed by a pinch or the wheel and moved
+  // by two fingers. Positions live across refreshes so the beacon's
+  // redraw does not scatter what the owner was looking at. It is fitted
+  // to the canvas, so a phone shows the whole of it, and drawn only
+  // while something moves: the layout settling, a spin, a hand on it.
   // ponytail: the repulsion is every pair, fine to a thousand bodies;
   // a grid when it shows.
-  var graphPos = Object.create(null), graphView = { rx: -0.35, ry: 0.6, zoom: 1, picked: null, past: false, spin: true }, graphTimer = null, graphState = null;
+  var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  var graphPos = Object.create(null), graphView = { rx: -0.35, ry: 0.6, zoom: 1, px: 0, py: 0, picked: null, past: false, spin: !coarse, touching: 0 }, graphTimer = null, graphState = null;
   function mountGraph(state) {
     graphState = state;
     var canvas = document.getElementById('graph');
@@ -583,17 +587,20 @@
     var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past');
     pastBox.checked = graphView.past;
     var g = graphOf(state, graphView.past), ctx = canvas.getContext('2d');
-    var ids = Object.create(null);
+    var ids = Object.create(null), at = Object.create(null), added = 0;
     g.nodes.forEach(function (n, i) {
       ids[n.id] = true;
+      at[n.id] = i;
       if (!graphPos[n.id]) {
+        added += 1;
         var t = i * 2.399, r = 120 + 60 * Math.sqrt(i);
         graphPos[n.id] = { x: r * Math.cos(t), y: (i % 7 - 3) * 40, z: r * Math.sin(t), vx: 0, vy: 0, vz: 0 };
       }
       n.p = graphPos[n.id];
     });
     Object.keys(graphPos).forEach(function (id) { if (!ids[id]) delete graphPos[id]; });
-    var steps = 0, hot = 160, drag = null, moved = false, proj = [];
+    // a refresh that brought no new body leaves the layout as it lies
+    var hot = 160, steps = added ? 0 : hot, drag = null, moved = false, proj = [], frames = 0, touchy = coarse;
     function step() {
       if (steps >= hot) return;
       steps += 1;
@@ -625,22 +632,29 @@
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
       return { w: w, h: h, dpr: dpr };
     }
-    function project(p, s) {
+    // the farthest body from the centre sets the scale, so the whole
+    // graph fits the canvas at zoom 1 on any screen
+    function reach() {
+      var R = 60;
+      g.nodes.forEach(function (n) { var p = n.p, d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z); if (d > R) R = d; });
+      return R;
+    }
+    function project(p, s, R) {
       var cy = Math.cos(graphView.ry), sy = Math.sin(graphView.ry), cx = Math.cos(graphView.rx), sx = Math.sin(graphView.rx);
       var x = p.x * cy + p.z * sy, z = -p.x * sy + p.z * cy, y = p.y * cx - z * sx; z = p.y * sx + z * cx;
-      var f = 700 / (700 + z), scale = graphView.zoom * Math.min(s.w, s.h) / 700;
-      return { x: s.w / 2 + x * f * scale, y: s.h / 2 + y * f * scale, f: f, z: z };
+      var D = Math.max(700, 2.5 * R), f = D / (D + z), scale = graphView.zoom * Math.min(s.w, s.h) * 0.42 / R;
+      return { x: s.w / 2 + graphView.px + x * f * scale, y: s.h / 2 + graphView.py + y * f * scale, f: f, z: z };
     }
     function draw() {
-      var s = size();
+      var s = size(), R = reach();
       ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
       ctx.clearRect(0, 0, s.w, s.h);
-      proj = g.nodes.map(function (n) { return project(n.p, s); });
+      proj = g.nodes.map(function (n) { return project(n.p, s, R); });
       var pickedId = graphView.picked && graphView.picked.id, pickedEdge = graphView.picked && graphView.picked.attr ? graphView.picked : null;
       var near = Object.create(null);
       if (pickedId) g.edges.forEach(function (e) { if (e.from === pickedId) near[e.to] = true; if (e.to === pickedId) near[e.from] = true; });
       g.edges.forEach(function (e) {
-        var a = proj[g.nodes.indexOf(g.byId[e.from])], b = proj[g.nodes.indexOf(g.byId[e.to])];
+        var a = proj[at[e.from]], b = proj[at[e.to]];
         var lit = pickedEdge === e || e.from === pickedId || e.to === pickedId;
         ctx.strokeStyle = lit ? '#101541' : 'rgba(16,21,65,' + (0.12 + 0.25 * Math.min(a.f, b.f)) + ')';
         ctx.lineWidth = lit ? 2 : 1;
@@ -663,19 +677,26 @@
         ctx.globalAlpha = 1;
       });
     }
+    // a frame is drawn while the layout settles, while it spins or a hand
+    // is on it, and twice after anything else moved it; then it rests
+    function wake() { frames = 2; if (!graphTimer) graphTimer = requestAnimationFrame(loop); }
     function loop() {
+      graphTimer = null;
+      var settling = steps < hot;
       step();
       if (graphView.spin && !drag) graphView.ry += 0.002;
       draw();
-      graphTimer = requestAnimationFrame(loop);
+      if (frames > 0) frames -= 1;
+      if (settling || graphView.spin || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);
     }
+    // a finger is wider than a cursor, so a touch reaches farther
     function hit(x, y) {
-      var best = null, bd = 12;
+      var best = null, bd = touchy ? 24 : 12;
       g.nodes.forEach(function (n, i) { var p = proj[i], d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = n; } });
       if (best) return best;
-      var be = null, ed = 8;
+      var be = null, ed = touchy ? 14 : 8;
       g.edges.forEach(function (e) {
-        var a = proj[g.nodes.indexOf(g.byId[e.from])], b = proj[g.nodes.indexOf(g.byId[e.to])];
+        var a = proj[at[e.from]], b = proj[at[e.to]];
         var l2 = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y); if (!l2) return;
         var t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / l2));
         var d = Math.hypot(a.x + t * (b.x - a.x) - x, a.y + t * (b.y - a.y) - y);
@@ -685,24 +706,59 @@
     }
     function pick(what) {
       graphView.picked = what;
-      graphView.spin = !what;
+      graphView.spin = !what && !coarse;
       if (!what) pane.innerHTML = '<p class="muted">Nothing picked. Click a body or a line between two.</p>';
       else pane.innerHTML = what.attr ? edgePane(what, g) : nodePane(what, g);
+      wake();
     }
-    function pos(ev) { var r = canvas.getBoundingClientRect(), t = ev.touches ? ev.touches[0] : ev; return { x: t.clientX - r.left, y: t.clientY - r.top }; }
-    canvas.onmousedown = canvas.ontouchstart = function (ev) { drag = pos(ev); moved = false; };
-    window.onmousemove = window.ontouchmove = function (ev) {
-      if (!drag) return;
-      var p = pos(ev), dx = p.x - drag.x, dy = p.y - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      graphView.ry += dx * 0.008; graphView.rx += dy * 0.008; drag = p;
+    // pointer events carry mouse, pen and touch alike: one pointer turns
+    // the graph, two pinch it and move it, a touch that did not move picks
+    var pts = Object.create(null), pinch = null;
+    function pos(ev) { var r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+    function held() { return Object.keys(pts).map(function (k) { return pts[k]; }); }
+    function spread(t) { return Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y) || 1; }
+    function mid(t) { return { x: (t[0].x + t[1].x) / 2, y: (t[0].y + t[1].y) / 2 }; }
+    function zoomTo(z) { graphView.zoom = Math.max(0.3, Math.min(8, z)); }
+    canvas.onpointerdown = function (ev) {
+      touchy = ev.pointerType !== 'mouse';
+      try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* a pointer the page did not see start */ }
+      pts[ev.pointerId] = pos(ev);
+      var t = held();
+      graphView.touching = t.length;
+      if (t.length === 1) { drag = t[0]; moved = false; }
+      else { pinch = { d: spread(t), zoom: graphView.zoom, mid: mid(t), px: graphView.px, py: graphView.py }; drag = null; moved = true; }
+      wake();
     };
-    window.onmouseup = window.ontouchend = function (ev) {
-      if (!drag) return;
-      if (!moved) { var p = drag; pick(hit(p.x, p.y)); }
-      drag = null;
+    canvas.onpointermove = function (ev) {
+      if (!pts[ev.pointerId]) return;
+      var p = pos(ev);
+      pts[ev.pointerId] = p;
+      var t = held();
+      if (pinch && t.length >= 2) {
+        var m = mid(t);
+        zoomTo(pinch.zoom * spread(t) / pinch.d);
+        graphView.px = pinch.px + m.x - pinch.mid.x; graphView.py = pinch.py + m.y - pinch.mid.y;
+      } else if (drag) {
+        var dx = p.x - drag.x, dy = p.y - drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > (touchy ? 8 : 3)) moved = true;
+        graphView.ry += dx * 0.008; graphView.rx += dy * 0.008; drag = p;
+      }
+      wake();
     };
-    canvas.onwheel = function (ev) { ev.preventDefault(); graphView.zoom = Math.max(0.3, Math.min(4, graphView.zoom * (ev.deltaY > 0 ? 0.9 : 1.1))); };
+    function lift(ev) {
+      var p = pts[ev.pointerId];
+      if (!p) return;
+      delete pts[ev.pointerId];
+      var t = held();
+      graphView.touching = t.length;
+      if (t.length < 2) pinch = null;
+      if (!t.length) { if (ev.type === 'pointerup' && drag && !moved) pick(hit(p.x, p.y)); drag = null; }
+      else drag = t[0];
+      wake();
+    }
+    canvas.onpointerup = canvas.onpointercancel = lift;
+    canvas.onwheel = function (ev) { ev.preventDefault(); zoomTo(graphView.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)); wake(); };
+    canvas.ondblclick = function () { graphView.zoom = 1; graphView.px = 0; graphView.py = 0; wake(); };
     pane.onclick = function (ev) {
       var a = ev.target.closest('[data-pick]'); if (!a) return;
       ev.preventDefault(); var n = g.byId[a.dataset.pick]; if (n) pick(n);
@@ -713,9 +769,9 @@
       if (n) pick(n);
     };
     pastBox.onchange = function () { graphView.past = pastBox.checked; unmountGraph(); mountGraph(graphState); };
-    if (graphView.picked) { var again = g.byId[graphView.picked.id]; pick(again || null); }
     unmountGraph();
-    graphTimer = requestAnimationFrame(loop);
+    if (graphView.picked) { var again = g.byId[graphView.picked.id]; pick(again || null); }
+    wake();
   }
   function unmountGraph() { if (graphTimer) cancelAnimationFrame(graphTimer); graphTimer = null; }
   var view = document.getElementById('view');
@@ -742,44 +798,90 @@
   }
 
   // drawn: the view the page shows, so a refresh can tell a redraw of
-  // it from a move to another
-  var refreshing = false, again = false, drawn = '';
+  // it from a move to another. seen: each view's last answer, so a view
+  // visited before draws at once while its fresh answer comes (each
+  // request costs the owner's ship seconds). Settings and keys are never
+  // drawn from it: their forms save whole documents, and a stale one
+  // saved would undo a newer change.
+  var refreshing = false, again = false, drawn = '', seen = Object.create(null), lastState = null;
+  function viewNow() {
+    var r = route(location.hash);
+    var name = r.name === 'body' || r.name === 'inbox' || r.name === 'settings' || r.name === 'keys' ? r.name : 'bodies';
+    return { r: r, name: name, here: name + ' ' + (r.id || ''), cached: name !== 'settings' && name !== 'keys' };
+  }
+  // one view drawn from its answer, through show, which may hold it
+  function drawView(v, d, show) {
+    if (v.name !== 'bodies') unmountGraph();
+    if (v.name === 'body') return show(body(d[0], d[1]));
+    if (v.name === 'inbox') return show(inbox(openActions(d), d));
+    if (v.name === 'settings') {
+      var l = d.chat_lists || {};
+      return show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last));
+    }
+    if (v.name === 'keys') return show(keys(d[0], d[1], minted));
+    // the graph drawn already takes the new state in place: a redraw
+    // would drop the hand on it and the find box's words
+    if (drawn === v.here && document.getElementById('graph')) {
+      var count = view.querySelector('h1 .muted');
+      if (count) count.textContent = String((d.bodies || []).length);
+      mountGraph(d);
+      return true;
+    }
+    if (show(bodies(d))) mountGraph(d);
+    return true;
+  }
+  // a move to a view seen before draws it from what was seen, at once
+  function drawSeen(v) {
+    if (v.here === drawn || !v.cached || !seen[v.here]) return;
+    drawView(v, seen[v.here], function (html) { view.innerHTML = html; drawn = v.here; return true; });
+  }
   function refresh(force) {
-    if (refreshing) { again = true; return; }
+    var v = viewNow();
+    if (v.name !== 'keys') minted = null;
+    // an answer still out for another view does not hold a move
+    if (refreshing) { again = true; drawSeen(v); return; }
     if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }
     refreshing = true;
-    var r = route(location.hash);
-    var p;
-    // the fetches take half a minute on a busy ship, and the owner may
-    // start typing meanwhile: what was typed on this same view outlives
-    // the refresh (a schema edit was lost so, 2026-09-25)
-    var mark = edits, here = r.name + ' ' + (r.id || ''), held = false;
+    // the fetches take seconds on a busy ship, and the owner may start
+    // typing meanwhile: what was typed on this same view outlives the
+    // refresh (a schema edit was lost so, 2026-09-25)
+    var mark = edits, held = false;
     function show(html) {
-      if (edits !== mark && here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }
-      view.innerHTML = html; drawn = here; return true;
+      if ((edits !== mark || graphView.touching) && v.here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }
+      view.innerHTML = html; drawn = v.here; return true;
     }
-    if (r.name !== 'keys') minted = null;
-    var proposed = null;
-    function state() {
-      return api('/state').then(function (s) {
+    // one request a view: the state carries the open actions, /settings
+    // every document the settings page shows, and a body's page takes
+    // its names from the last state read when there is one
+    function fetchView() {
+      if (v.name === 'body') return Promise.all([api('/body/' + seg(v.r.id)), lastState ? Promise.resolve(lastState) : api('/state')]);
+      if (v.name === 'settings') return api('/settings');
+      if (v.name === 'keys') return Promise.all([api('/clients'), api('/schema')]);
+      return api('/state');
+    }
+    drawSeen(v);
+    var p = fetchView().then(function (d) {
+      var s = v.name === 'body' ? d[1] : (v.name === 'bodies' || v.name === 'inbox') ? d : null;
+      if (s && s !== lastState) {
+        lastState = s;
         if (typeof s.rev === 'number') lastRev = String(s.rev);
-        proposed = (s.actions || []).filter(function (a) { return a.status === 'proposed'; }).length;
-        return s;
-      });
-    }
-    if (r.name !== 'bodies') unmountGraph();
-    if (r.name === 'body') p = Promise.all([api('/body/' + seg(r.id)), state()]).then(function (d) { show(body(d[0], d[1])); });
-    else if (r.name === 'inbox') p = Promise.all([api('/actions?status=open'), state()]).then(function (d) { show(inbox(d[0], d[1])); });
-    else if (r.name === 'settings') p = Promise.all([api('/schema'), api('/policy'), api('/generator'), api('/generator/last'), api('/reconcile/last'), api('/telegram'), api('/telegram/last'), api('/exec/last'), api('/chat'), api('/chat/last'), api('/chat/lists'), api('/calendar/last'), api('/mail'), api('/mail/last'), api('/brief/last'), api('/read/settings'), api('/read/last')]).then(function (d) { var lists = d[10] || {}; show(settings(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], lists.dms, lists.channels, d[11], d[12], d[13], d[14], d[15], d[16])); });
-    else if (r.name === 'keys') p = Promise.all([api('/clients'), api('/schema')]).then(function (d) { show(keys(d[0], d[1], minted)); });
-    else p = state().then(function (s) { if (show(bodies(s))) mountGraph(s); });
-    // the state view carries every open action, so a view that read it
-    // has the count already; only settings and keys ask for it
-    p = p.then(function () { return proposed === null ? api('/actions?status=proposed').then(function (a) { return a.length; }) : proposed; }).then(function (n) {
-      countEl.textContent = n ? String(n) : '';
+        var n = (s.actions || []).filter(function (a) { return a.status === 'proposed'; }).length;
+        countEl.textContent = n ? String(n) : '';
+        // the state answers the bodies view and the inbox alike
+        seen['bodies '] = s; seen['inbox '] = s;
+      }
+      seen[v.here] = d;
+      // the owner moved on while it was out: kept, not drawn over the
+      // view they are on
+      if (viewNow().here !== v.here) return;
+      drawView(v, d, show);
       if (!held) say('');
     }).catch(function (e) { say(String(e.message || e), true); });
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
+  }
+  // the inbox's actions, newest first, as the actions route answered them
+  function openActions(state) {
+    return (state.actions || []).slice().sort(function (a, b) { return String(b.proposed || '').localeCompare(String(a.proposed || '')); });
   }
 
   // a write answers before the writer applies, so the refetch waits
@@ -1044,7 +1146,7 @@
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }
   });
   function editing() {
-    if (dirty) return true;
+    if (dirty || graphView.touching) return true;
     var el = document.activeElement;
     return !!(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && view.contains(el));
   }

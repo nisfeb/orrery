@@ -197,10 +197,26 @@ ok('the inbox shows what an action will do, escaped, the recipient linked, the w
 const libVersion = parseInt((require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'lib', 'orrery.hoon'), 'utf8').match(/\n\+\+  version  (\d+)\n/) || [])[1], 10);
 const jsonVersion = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'version.json'), 'utf8')).version;
 ok('the lib\'s version is the desk\'s', libVersion === jsonVersion, [libVersion, jsonVersion]);
-ok('the settings view reads both chat lists in one route', src.includes("api('/chat/lists')"));
+ok('each view is one request: the settings page reads /settings, the chat lists in it; the inbox reads the state',
+  src.includes("if (v.name === 'settings') return api('/settings');") && src.includes("var l = d.chat_lists || {};")
+  && src.includes("if (v.name === 'inbox') return show(inbox(openActions(d), d));") && !src.includes("api('/actions?status=open')")
+  && !src.includes("api('/chat/lists')"));
+ok('a view seen before draws at once, even while another answer is out, except the two whose forms save whole documents',
+  src.includes("cached: name !== 'settings' && name !== 'keys'") && src.includes("if (v.here === drawn || !v.cached || !seen[v.here]) return;")
+  && src.includes("if (refreshing) { again = true; drawSeen(v); return; }"));
+ok('an answer that lands after the owner moved to another view is kept, not drawn over it',
+  src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here) return;") > src.indexOf("seen[v.here] = d;"));
+ok('the graph takes mouse, pen and touch as pointers: a pinch zooms and moves it, and nothing is left on window',
+  src.includes('canvas.onpointerdown = function (ev) {') && src.includes('zoomTo(pinch.zoom * spread(t) / pinch.d);')
+  && !src.includes('window.onmouse') && !src.includes('window.ontouch') && src.includes("bd = touchy ? 24 : 12"));
+ok('a refresh that brings no new body does not settle the layout again',
+  src.includes('var hot = 160, steps = added ? 0 : hot,'));
+ok('the graph is drawn only while something moves, and fitted to its canvas',
+  src.includes('if (settling || graphView.spin || graphView.touching || frames > 0) graphTimer = requestAnimationFrame(loop);')
+  && src.includes('scale = graphView.zoom * Math.min(s.w, s.h) * 0.42 / R;') && !src.includes('g.nodes.indexOf('));
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
-  && src.includes('if (dirty) return true;')
+  && src.includes('if (dirty || graphView.touching) return true;')
   && src.includes('function later() { dirty = typedNote(); setTimeout(function () { refresh(!dirty); }, 300); }')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });"));
 ok('a refine holds the row\'s move buttons while it runs and frees them on a refusal or an error',
@@ -210,8 +226,9 @@ ok('a refine holds the row\'s move buttons while it runs and frees them on a ref
   && src.slice(src.indexOf(".catch(function (e) { var el = noteOf();")).split('\n')[0].includes('holdMoves(false);'));
 ok('a refresh whose fetches were out while the owner typed on the same view does not draw over it',
   src.includes("if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }")
-  && src.includes("if (edits !== mark && here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }")
-  && (src.match(/view\.innerHTML = /g) || []).length === 1
+  && src.includes("if ((edits !== mark || graphView.touching) && v.here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }")
+  && (src.match(/view\.innerHTML = /g) || []).length === 2
+  && src.includes("drawView(v, seen[v.here], function (html) { view.innerHTML = html; drawn = v.here; return true; });")
   && src.includes("show(settings(") && src.includes("if (!held) say('');"));
 ok('a refine keeps the page-wide dirty flag on submit and fetches the revised row on success',
   src.indexOf("dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]')") > src.indexOf("post('/actions/' + seg(rid) + '/refine'")
