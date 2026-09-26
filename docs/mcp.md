@@ -4,7 +4,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 
 ## Calling them
 
-- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`).
+- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`, `orrery-preferences`).
 - By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 
@@ -20,6 +20,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 | `orrery_act` | `kind`, `title`, `payload`, `about`, `due`, `proposed`, `by` | the action id and its status, or the open twin |
 | `orrery_actions` | `status`; or `id`, `status`, `note`, `by` | the list, or the transition, whose answer carries the `by` the ship stores for the step; a `claimed` move holds the action for ten minutes under the actor in `by`, `mcp` by default |
 | `orrery_schema` | `schema` | the schema, or ok after replacing it |
+| `orrery_preferences` | `style`, `preferences`, `by` | the style and preferences, or what they will be after changing either; the rest of the schema is left alone |
 
 `by` defaults to `mcp`. In an observe batch it is per item: an observation's own `by` wins over the batch's, and either is refused over 64 bytes.
 

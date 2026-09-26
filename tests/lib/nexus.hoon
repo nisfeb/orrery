@@ -55,6 +55,8 @@
     ['POST' `path`~[%api %actions 'x0'] %post-actions %any]
     ['POST' `path`~[%api %actions 'x0' %refine] %post-actions-refine %any]
     ['GET' `path`~[%api %settings] %get-settings %own]
+    ['GET' `path`~[%api %preferences] %get-preferences %any]
+    ['PUT' `path`~[%api %preferences] %put-preferences %writes]
     ['GET' `path`~[%api %schema] %get-schema %own]
     ['PUT' `path`~[%api %schema] %put-schema %own]
     ['GET' `path`~[%api %policy] %get-policy %own]
@@ -111,6 +113,32 @@
     (expect-eq !>(~) !>((route-of:orr 'PATCH' /api/state)))
     (expect-eq !>(~) !>((route-of:orr 'GET' /api/nope)))
     (expect-eq !>(~) !>((route-of:orr 'POST' /api/state)))
+  ==
+::  a preferences request: the fields given are checked and trimmed, a
+::  field left out is left as it is, and the rest of the schema stands
+++  test-preferences
+  =/  schema=json  (jo '{"kinds": {"person": {}}, "style": "old", "preferences": ["a"]}')
+  =/  both  (de-preferences:orr (jo '{"style": "  Short.  ", "preferences": [" one ", "", "two"]}'))
+  =/  only  (de-preferences:orr (jo '{"preferences": []}'))
+  ;:  weld
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%& `'Short.' `~['one' 'two']]) !>(both))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%& ~ `~]) !>(only))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'style or preferences: required']) !>((de-preferences:orr (jo '{"other": 1}'))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'style: a string is required']) !>((de-preferences:orr (jo '{"style": 5}'))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'preferences: a list of strings is required']) !>((de-preferences:orr (jo '{"preferences": ["a", 5]}'))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'style: over 1000 bytes']) !>((de-preferences:orr (pairs:enjs:format ~[['style' s+(crip (reap 1.001 'x'))]]))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'preferences: over 30']) !>((de-preferences:orr (pairs:enjs:format ~[['preferences' a+(reap 31 `json`s+'x')]]))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'preferences: one is over 300 bytes']) !>((de-preferences:orr (pairs:enjs:format ~[['preferences' a+~[s+(crip (reap 301 'x'))]]]))))
+    (expect-eq !>(`(each [(unit @t) (unit (list @t))] @t)`[%| 'a JSON object is required']) !>((de-preferences:orr (jo '[1]'))))
+    ::  each cap itself is allowed
+    (expect !>(=(& -:(de-preferences:orr (pairs:enjs:format ~[['style' s+(crip (reap 1.000 'x'))]])))))
+    (expect !>(=(& -:(de-preferences:orr (pairs:enjs:format ~[['preferences' a+(reap 30 `json`s+'x')]])))))
+    (expect !>(=(& -:(de-preferences:orr (pairs:enjs:format ~[['preferences' a+~[s+(crip (reap 300 'x'))]]])))))
+    %+  expect-eq
+      !>((jo '{"kinds": {"person": {}}, "style": "old", "preferences": ["one"]}'))
+    !>((with-preferences:orr schema ~ `~['one']))
+    (expect-eq !>((jo '{"style": "old", "preferences": ["a"]}')) !>((preferences-json:orr schema)))
+    (expect-eq !>((jo '{"style": "", "preferences": []}')) !>((preferences-json:orr (jo '{}'))))
   ==
 ::  the page carries its stylesheet and script, each in place of its tag;
 ::  a page without them is served as it is

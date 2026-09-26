@@ -339,7 +339,7 @@ What a key sees is bounded by its scope: only the kinds it was given, never the 
 
 ## Tools for an AI analyst
 
-If your analyst runs on the ship's MCP server, orrery ships eight tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions` and `orrery_schema`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
+If your analyst runs on the ship's MCP server, orrery ships nine tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions`, `orrery_schema` and `orrery_preferences`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
 
 ## How orrery stores data
 
@@ -469,6 +469,8 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /exec/wake` | run an executor pass now, or restart an executor that crashed; owner only |
 | `GET /version` | `{"version"}`, the desk's; owner or any key |
 | `GET /chat/lists` | both chat lists in one pass: `{"dms": {"items", "note"}, "channels": {"items", "note"}}`; owner only |
+| `GET /preferences` | the owner's `style` and `preferences`, which every prompt reads; any key |
+| `PUT /preferences` | change either or both, and nothing else in the schema: `{"style": "...", "preferences": ["..."]}`, the style at most 1000 bytes, at most 30 preferences of at most 300 bytes each; a field left out is left as it is. The owner or a key with write, so a client like Talon can keep them without holding the whole schema |
 | `GET /settings` | everything the settings page shows, in one answer, each document as its own route answers it (keys and secrets left out): `schema`, `policy`, `generator`, `generator_last`, `reconcile_last`, `telegram`, `telegram_last`, `exec_last`, `chat`, `chat_last`, `chat_lists`, `calendar_last`, `mail`, `mail_last`, `brief_last`, `read`, `read_last`. The page reads this, not the seventeen routes, since each request costs the ship seconds; owner only |
 | `POST /read` | `{"text", "title"?, "source": {"kind", "id"}?, "who"?, "at"?}`: text the ship should read the way it reads a message (a web page from the browser extension, a note); answers `{"ok", "id"}` at once and the read fiber files what it finds, every fact's source the page (`kind` `web`, `id` the url) or what `source` names, spoken by `who` (`person/me` unless said) at `at` (now unless said); text over 64 KB is 413, and with the channel off the text is dropped and the answer says so; owner or a key with `write` |
 | `GET`, `PUT /read/settings` | the read channel's settings, the mail reader's shape (`enabled`, `gate`, `escalate`, `max_daily_messages`, `model`); owner or a key with `write` |

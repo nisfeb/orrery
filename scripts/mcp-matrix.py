@@ -6,7 +6,7 @@ against the HTTP API's answers for the same reads. HOST like
 http://localhost:8080; JAR a curl cookie jar from POST /~/login (the
 MCP server answers JSON-RPC to the owner cookie). Exits 1 on any
 failure. Safe to rerun: it retracts and deletes what it made."""
-import json, sys
+import json, sys, time
 from gate import fails, count, check, dictish, listish, iso, all_ok
 import gate
 from datetime import datetime, timedelta, timezone
@@ -168,6 +168,18 @@ tl = [o for o in listish(dictish(d).get('observations')) if isinstance(o, dict) 
 check('the timeline keeps the retracted row with its note', len(tl) == 1 and tl[0].get('status') == 'retracted' and tl[0].get('note') == 'mcp gate', tl)
 ok, d = call('orrery-retract', {'id': 'nope'})
 check('an unknown observation is an error', not ok, d)
+
+print('== preferences')
+ok, p0 = call('orrery-preferences', {})
+check('the preferences tool reads the style and preferences', ok and isinstance(dictish(p0).get('preferences'), list), p0)
+ok, d = call('orrery-preferences', {'preferences': ['mcp gate preference']})
+check('the preferences tool sets them and says what they will be', ok and dictish(d).get('preferences') == ['mcp gate preference'], d)
+time.sleep(1)
+ok, d = call('orrery-preferences', {})
+check('and the ship holds them', ok and dictish(d).get('preferences') == ['mcp gate preference'], d)
+ok, d = call('orrery-preferences', {'style': 7})
+check('a style that is not a string is an error', not ok, d)
+call('orrery-preferences', {'preferences': dictish(p0).get('preferences') or [], 'style': dictish(p0).get('style') or ''})
 
 print('== schema round trip')
 ok, sc = call('orrery-schema', {})

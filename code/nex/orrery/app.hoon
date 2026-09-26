@@ -604,6 +604,7 @@
   ?:  =('set-action' op)  (do-set-action jon)
   ?:  =('revise-action' op)  (do-revise-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
+  ?:  =('set-preferences' op)  (do-set-preferences jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
   ?:  =('set-telegram' op)  (do-set-telegram jon)
@@ -614,6 +615,23 @@
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
   (refuse op 'unknown op')
+::  +do-set-preferences: the owner's style and standing preferences laid
+::  over the schema as it is now, so a change made to the rest of it
+::  meanwhile stands; held to +de-preferences again, since a poke may
+::  come from anywhere the writer is reached
+::
+++  do-set-preferences
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  req  (de-preferences:orr jon)
+  ?:  ?=(%| -.req)  (refuse 'set-preferences' p.req)
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  next=json  (with-preferences:orr cur style.p.req prefs.p.req)
+  ?:  =(cur next)  (note-then-no 'set-preferences' 'unchanged')
+  ;<  ~  bind:m  (over:io (rf 0 / %'schema.json') [[/ %json] next])
+  ;<  ~  bind:m  (note-by 'set-preferences' & '' (gs:orr jon 'by'))
+  (pure:m &)
 ::  +refuse: a refusal that leaves the writer standing
 ::
 ++  refuse
@@ -968,6 +986,8 @@
     %post-actions           (serve-set-action eyre-id s2 jon act)
     %post-actions-refine    (serve-refine eyre-id s2 jon act)
     %get-settings           (serve-settings eyre-id)
+    %get-preferences        (serve-preferences eyre-id)
+    %put-preferences        (serve-set-preferences eyre-id jon act)
     %get-schema             (serve-doc eyre-id %'schema.json')
     %put-schema             (serve-set-doc eyre-id 'set-schema' jon)
     %get-policy             (serve-doc eyre-id %'policy.json')
@@ -3634,6 +3654,36 @@
   ;<  d=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
   ;<  c=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
   (pure:m (both d c))
+::  +serve-preferences, +serve-set-preferences: the owner's style and
+::  standing preferences alone, which a client with write (Talon) may
+::  change without being handed the whole schema: GET and PUT
+::  /api/preferences. A PUT answers what the schema will hold.
+::
+++  serve-preferences
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  (send-json eyre-id 200 (preferences-json:orr schema))
+++  serve-set-preferences
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  req  (de-preferences:orr jon)
+  ?:  ?=(%| -.req)  (send-err eyre-id 400 p.req)
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  =/  op=json
+    %-  pairs:enjs:format
+    %+  weld
+      ^-  (list [@t json])
+      ~[['op' s+'set-preferences'] ['by' s+by.act]]
+    %+  weld
+      ^-  (list [@t json])
+      ?~(style.p.req ~ ~[['style' s+u.style.p.req]])
+    ^-  (list [@t json])
+    ?~(prefs.p.req ~ ~[['preferences' a+(turn u.prefs.p.req |=(t=@t `json`s+t))]])
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (preferences-json:orr (with-preferences:orr schema style.p.req prefs.p.req)))
 ::  +serve-settings: everything the settings page shows, in one answer,
 ::  each document as its own route answers it: one request for the
 ::  page, where seventeen took forty seconds on the owner's ship

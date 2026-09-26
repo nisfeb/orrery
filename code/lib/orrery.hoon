@@ -1757,6 +1757,57 @@
   |=  [x=tally-row y=tally-row]
   ?.  =(by.x by.y)  (aor by.x by.y)
   (aor kind.x kind.y)
+::  +de-preferences: a request to change the owner's style or standing
+::  preferences, held to what +owner-lines reads: the style a string of
+::  at most 1000 bytes, the preferences a list of at most 30 strings of
+::  at most 300 bytes each, blank ones dropped. A field left out is left
+::  as it is; the error names the field.
+::
+++  de-preferences
+  |=  jon=json
+  ^-  (each [style=(unit @t) prefs=(unit (list @t))] @t)
+  ?.  ?=([%o *] jon)  [%| 'a JSON object is required']
+  =/  s=(unit json)  (~(get by p.jon) 'style')
+  =/  p=(unit json)  (~(get by p.jon) 'preferences')
+  ?:  &(?=(~ s) ?=(~ p))  [%| 'style or preferences: required']
+  =/  style=(each (unit @t) @t)
+    ?~  s  [%& ~]
+    ?.  ?=([%s *] u.s)  [%| 'style: a string is required']
+    =/  t=@t  (trim-cord p.u.s)
+    ?:  (gth (met 3 t) 1.000)  [%| 'style: over 1000 bytes']
+    [%& `t]
+  ?:  ?=(%| -.style)  [%| p.style]
+  =/  prefs=(each (unit (list @t)) @t)
+    ?~  p  [%& ~]
+    ?.  ?=([%a *] u.p)  [%| 'preferences: a list of strings is required']
+    ?.  (levy p.u.p |=(j=json ?=([%s *] j)))  [%| 'preferences: a list of strings is required']
+    =/  ts=(list @t)
+      %+  skip  (murn p.u.p |=(j=json ?.(?=([%s *] j) ~ `(trim-cord p.j))))
+      |=(t=@t =('' t))
+    ?:  (gth (lent ts) 30)  [%| 'preferences: over 30']
+    ?:  (lien ts |=(t=@t (gth (met 3 t) 300)))  [%| 'preferences: one is over 300 bytes']
+    [%& `ts]
+  ?:  ?=(%| -.prefs)  [%| p.prefs]
+  [%& p.style p.prefs]
+::  +with-preferences: the schema with the style and preferences given
+::  laid over it, everything else as it was
+::
+++  with-preferences
+  |=  [schema=json style=(unit @t) prefs=(unit (list @t))]
+  ^-  json
+  =/  m=(map @t json)  ?:(?=([%o *] schema) p.schema ~)
+  =?  m  ?=(^ style)  (~(put by m) 'style' s+u.style)
+  =?  m  ?=(^ prefs)  (~(put by m) 'preferences' a+(turn u.prefs |=(t=@t `json`s+t)))
+  [%o m]
+::  +preferences-json: the style and preferences a schema holds
+::
+++  preferences-json
+  |=  schema=json
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['style' s+(gs schema 'style')]
+      ['preferences' a+(turn (strings (ga schema 'preferences')) |=(t=@t `json`s+t))]
+  ==
 ::  +owner-lines: the owner's own words from the schema, for every
 ::  prompt: the style for text written in their voice, when the prompt
 ::  writes any, and their standing preferences
@@ -6748,6 +6799,8 @@
   ?:  &(=('POST' meth) ?=([%api %actions @ ~] suffix))          `[%post-actions %any]
   ?:  &(=('POST' meth) ?=([%api %actions @ %refine ~] suffix))  `[%post-actions-refine %any]
   ?:  &(=('GET' meth) ?=([%api %settings ~] suffix))            `[%get-settings %own]
+  ?:  &(=('GET' meth) ?=([%api %preferences ~] suffix))         `[%get-preferences %any]
+  ?:  &(=('PUT' meth) ?=([%api %preferences ~] suffix))         `[%put-preferences %writes]
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))              `[%get-schema %own]
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))              `[%put-schema %own]
   ?:  &(=('GET' meth) ?=([%api %policy ~] suffix))              `[%get-policy %own]
