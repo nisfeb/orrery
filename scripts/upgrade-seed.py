@@ -38,3 +38,16 @@ for label, a in [
   ('act note odd payload', {'kind': 'note', 'title': 'Upgrade probe note', 'payload': {'text': 5, 'why': ['a']}}),
 ]:
     say(label, c('POST', API + '/act', a))
+# the schema's owner keys (version 60), in shapes v59 never checked: a
+# style that is not a string, preferences with odd items and a huge one
+code, sch = c('GET', API + '/schema')
+if code == 200 and isinstance(sch, dict):
+    sch = dict(sch, style={'not': 'a string'}, preferences=['plain', 5, {'a': 1}, None, 'p' * 20000])
+    say('schema odd style and preferences', c('PUT', API + '/schema', sch))
+# a dismissal with the longest reason v59 takes (500 bytes), for the
+# decisions the prompts now keep
+code, a = c('POST', API + '/act', {'kind': 'task', 'title': 'Upgrade probe dismissed'})
+if code == 200 and isinstance(a, dict):
+    say('dismiss with a long reason', c('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'why ' * 120}))
+# a calendar row putting the owner in an event, as v59 wrote them all
+say('calendar owner row', c('POST', API + '/observe', {'bodies': [{'id': 'situation/upgrade-probe-event', 'name': 'Upgrade probe event'}], 'observations': [{'subject': 'situation/upgrade-probe-event', 'attr': 'participants', 'value': {'ref': 'person/me'}, 'source': {'kind': 'calendar', 'id': 'home/upgrade-probe'}}]}))
