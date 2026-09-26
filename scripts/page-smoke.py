@@ -29,7 +29,10 @@ def get(path, jar=True):
 code, h, b = get('/apps/orrery')
 check('the page answers 200 as html', code == 200 and h.get('content-type', '').startswith('text/html'), (code, h))
 check('the page is not cached', 'no-cache' in h.get('cache-control', ''), h)
-check('the page loads its script and style', 'orrery.js' in b and 'orrery.css' in b and 'id="view"' in b, b[:200])
+#  the page carries its script and style inside it (one request to open
+#  it); the two routes still answer for anything that loads them apart
+check('the page carries its script and style', '<style>' in b and '/apps/orrery/api' in b and 'src="/apps/orrery/orrery.js"' not in b
+      and 'href="/apps/orrery/orrery.css"' not in b and 'id="view"' in b, b[:200])
 code, h, js = get('/apps/orrery/orrery.js')
 check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and '/apps/orrery/api' in js, (code, h))
 code, h, b = get('/apps/orrery/orrery.css')
