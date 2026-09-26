@@ -1077,7 +1077,7 @@
   ^-  (map @t @t)
   (my ~[['1001' 'person/me'] ['777' 'person/ann']])
 ++  test-plan-exec
-  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '')
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '' ['' ''])
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
     (expect-eq !>(`(list @ta)`~['m1' 'm2' 'm3' 'm4' 'm5' 'c1' 'c2' 'c3' 'c4' 'c5' 't1']) !>((turn plans |=(p=exec-plan:orr id.p))))
@@ -1096,18 +1096,60 @@
     (expect-eq !>('777') !>((gs:orr body:(~(got by by-id) 'm5') 'chat_id')))
     (expect-eq !>('') !>(note:(~(got by by-id) 'm5')))
     ::  the attribute wins over the people map
-    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now '') |=(p=exec-plan:orr [id.p p])))) 'm1')))
+    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now '' ['' '']) |=(p=exec-plan:orr [id.p p])))) 'm1')))
     (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c1')))
     (expect-eq !>('timed') !>((gs:orr body:(~(got by by-id) 'c1') 'cat')))
     (expect-eq !>('allday') !>((gs:orr body:(~(got by by-id) 'c2') 'cat')))
     (expect-eq !>(%todo) !>(target:(~(got by by-id) 't1')))
     (expect-eq !>('todo') !>((gs:orr body:(~(got by by-id) 't1') 'cat')))
   ==
+::  the calendars the owner named go on the poke: a task's todo to one,
+::  a calendar event to the other; none named, no cal, the default
+++  test-exec-cals
+  =/  named  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '' (exec-cals:orr (jo '{"todo_calendar": "c-lists", "event_calendar": "family"}')))
+  =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn named |=(p=exec-plan:orr [id.p p])))
+  ;:  weld
+    (expect-eq !>('c-lists') !>((gs:orr body:(~(got by by-id) 't1') 'cal')))
+    (expect-eq !>('family') !>((gs:orr body:(~(got by by-id) 'c1') 'cal')))
+    (expect-eq !>(['' '']) !>((exec-cals:orr (jo '{}'))))
+    (expect-eq !>(~) !>((gj:orr (need (event-json:orr 't1' a:(snag 10 exec-acts) '' '')) 'cal')))
+  ==
+::  the reasons given, the same words however cased or spaced counted
+::  as one, most often first; and how each proposer's actions fared
+++  test-reasons-and-tally
+  =/  act
+    |=  [n=@ud by=@t kind=@tas status=@tas note=@t]
+    ^-  [@ta action:orr]
+    [(crip "a{(a-co:co n)}") [kind 'x' [%o ~] ~ ~ by (add now (mul n ~s1)) status note ~]]
+  =/  acts=(list [@ta action:orr])
+    :~  (act 1 'mail' %task %dismissed 'a refund, not a bill')
+        (act 2 'mail' %task %dismissed 'A refund,  not a bill ')
+        (act 3 'generator' %task %dismissed 'just the event')
+        (act 4 'mail' %task %done '')
+        (act 5 'generator' %task %dismissed '')
+        (act 6 'generator' %message %approved '')
+        (act 7 'generator' %task %proposed '')
+        (act 8 'mail' %task %failed '')
+        (act 9 'alpha' %note %done '')
+    ==
+  ;:  weld
+    %+  expect-eq
+      !>(`(list [@t @ud @da])`~[['a refund, not a bill' 2 (add now ~s2)] ['just the event' 1 (add now ~s3)]])
+    !>((reason-counts:orr acts))
+    %+  expect-eq
+      !>  ^-  (list tally-row:orr)
+      :~  ['alpha' 'note' 1 0 0 0 0]
+          ['generator' 'message' 1 0 0 0 0]
+          ['generator' 'task' 0 2 1 1 0]
+          ['mail' 'task' 1 2 2 0 1]
+      ==
+    !>((proposal-tally:orr acts))
+  ==
 ::  a calendar action whose mode is cancel: c3 has an event and a
 ::  start, c4 an event and no start, c5 no event at all
 ::
 ++  test-plan-exec-cancel
-  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '')
+  =/  plans  (plan-exec:orr exec-acts exec-bodies ~ exec-people now '' ['' ''])
   =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn plans |=(p=exec-plan:orr [id.p p])))
   ;:  weld
     ::  c3: a cancel with an event and a start becomes an uncalendar
@@ -1132,12 +1174,12 @@
   =/  c1  (snag 5 exec-acts)
   =/  c2  (snag 6 exec-acts)
   =/  t1  (snag 10 exec-acts)
-  =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York'))
-  =/  aj=json  (need (event-json:orr id.c2 a.c2 ''))
+  =/  ej=json  (need (event-json:orr id.c1 a.c1 'America/New_York' ''))
+  =/  aj=json  (need (event-json:orr id.c2 a.c2 '' ''))
   ::  a whole day on New York's clock starts at 04:00Z in summer
   =/  ny=action:orr  a.c2(payload (jo '{"title": "Field day", "starts": "2026-10-03T04:00:00Z", "ends": "2026-10-04T04:00:00Z"}'))
-  =/  nj=json  (need (event-json:orr id.c2 ny 'America/New_York'))
-  =/  tj=json  (need (event-json:orr id.t1 a.t1 'America/New_York'))
+  =/  nj=json  (need (event-json:orr id.c2 ny 'America/New_York' ''))
+  =/  tj=json  (need (event-json:orr id.t1 a.t1 'America/New_York' ''))
   =/  meta=json  (gj:orr ej 'meta')
   ;:  weld
     (expect-eq !>('add-event') !>((gs:orr ej 'action')))
@@ -1151,11 +1193,11 @@
     ::  the calendar wants that clock encoded as if it were UTC
     (expect-eq !>(1.790.352.000.000) !>((need (gn:orr ej 'start_ms'))))
     (expect-eq !>(1.790.359.200.000) !>((need (gn:orr ej 'end_ms'))))
-    (expect-eq !>(1.790.366.400.000) !>((need (gn:orr (need (event-json:orr id.c1 a.c1 '')) 'start_ms'))))
+    (expect-eq !>(1.790.366.400.000) !>((need (gn:orr (need (event-json:orr id.c1 a.c1 '' '')) 'start_ms'))))
     (expect-eq !>('to') !>((gs:orr ej 'fin')))
     (expect-eq !>('America/New_York') !>((gs:orr ej 'zone')))
     ::  no zone the ship knows: the UTC instant, named as UTC
-    (expect-eq !>('Etc/UTC') !>((gs:orr (need (event-json:orr id.c1 a.c1 '')) 'zone')))
+    (expect-eq !>('Etc/UTC') !>((gs:orr (need (event-json:orr id.c1 a.c1 '' '')) 'zone')))
     (expect-eq !>('allday') !>((gs:orr aj 'cat')))
     (expect-eq !>(1) !>((need (gn:orr aj 'span_days'))))
     (expect-eq !>(1.790.985.600.000) !>((need (gn:orr aj 'start_ms'))))
@@ -1564,9 +1606,72 @@
     ^-  (list loaded:orr)
     ~[(mkb 'situation/2026-09-22-coffee' %situation 'Coffee with Mira Quill' ~ ~[['starts' s+s]] cal-now)]
   ;:  weld
-    (expect !>(!=(~ (same-event:orr ev | at (sit '2026-09-23T11:00:00Z') ~ cal-now))))
-    (expect !>(=(~ (same-event:orr ev | at (sit '2026-09-23T12:00:00Z') ~ cal-now))))
-    (expect !>(=(~ (same-event:orr ev | at (sit '2026-09-21T12:00:00Z') ~ cal-now))))
+    (expect !>(!=(~ (same-event:orr ev | at (index-events:orr (sit '2026-09-23T11:00:00Z')) ~ cal-now))))
+    (expect !>(=(~ (same-event:orr ev | at (index-events:orr (sit '2026-09-23T12:00:00Z')) ~ cal-now))))
+    (expect !>(=(~ (same-event:orr ev | at (index-events:orr (sit '2026-09-21T12:00:00Z')) ~ cal-now))))
+  ==
+::  the index finds what a walk of every body found first: by the uid
+::  a row carries, then an activity by title, then an open situation
+++  test-index-events
+  =/  ev=cal-event:orr  (snag 0 (events-of:orr cal-store))
+  =/  with-uid=loaded:orr
+    :+  'situation/by-uid'  [%situation 'Something else' ~ cal-now ~]
+    ~[['r1' ['situation/by-uid' 'starts' s+'2026-09-22T00:00:00Z' cal-now ~ 100 ['calendar' 'home/u-coffee'] 'calendar' cal-now | '']]]
+  =/  titled=loaded:orr  (mkb 'situation/2026-09-22-coffee' %situation 'Coffee with Mira Quill' ~ ~[['starts' s+'2026-09-22T00:00:00Z']] cal-now)
+  =/  act-a=loaded:orr  (mkb 'activity/standup-a' %activity 'Standup' ~ ~ cal-now)
+  =/  act-b=loaded:orr  (mkb 'activity/standup-b' %activity 'Standup' ~ ~ cal-now)
+  =/  sev=cal-event:orr  (snag 1 (events-of:orr cal-store))
+  ;:  weld
+    (expect-eq !>('situation/by-uid') !>(id:(need (same-event:orr ev | ~2026.9.22 (index-events:orr ~[titled with-uid]) ~ cal-now))))
+    (expect-eq !>('situation/2026-09-22-coffee') !>(id:(need (same-event:orr ev | ~2026.9.22 (index-events:orr ~[titled]) ~ cal-now))))
+    (expect-eq !>('activity/standup-a') !>(id:(need (same-event:orr sev & cal-now (index-events:orr ~[act-a act-b]) ~ cal-now))))
+    %+  expect-eq  !>(~)
+    !>  %:  same-event:orr  ev  |  ~2026.9.22
+          (index-events:orr ~[(mkb 'situation/2026-09-22-coffee' %situation 'Coffee with Mira Quill' ~ ~[['starts' s+'2026-09-22T00:00:00Z'] ['status' s+'closed']] cal-now)])
+          ~  cal-now
+        ==
+    %+  expect-eq  !>(~)
+    !>  %:  same-event:orr  ev  |  ~2026.9.22
+          (index-events:orr ~[(mkb 'situation/2026-09-22-coffee' %situation 'Coffee with Mira Quill' ~ ~[['starts' s+'2026-09-22T00:00:00Z'] ['status' s+'cancelled']] cal-now)])
+          ~  cal-now
+        ==
+  ==
+::  an event the calendar no longer holds: its owner row goes when others
+::  are in it and its title does not name the owner, and stays otherwise
+++  test-owner-unsaid
+  =/  me-row
+    |=  [id=@t sub=@t]
+    ^-  row:orr
+    [id [sub 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) cal-now ~ 100 ['calendar' 'home/u-old'] 'calendar' cal-now | '']]
+  =/  lin-row
+    |=  sub=@t
+    ^-  row:orr
+    [(cat 3 sub '/lin') [sub 'participants' (pairs:enjs:format ~[['ref' s+'person/lin']]) cal-now ~ 85 ['calendar' 'home/u-old'] 'calendar' cal-now | '']]
+  =/  people=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'Jackson' ~ ~ cal-now)
+        (mkb 'person/lin' %person 'Lin' ~ ~ cal-now)
+    ==
+  =/  ev
+    |=  [id=@t name=@t rs=(list row:orr)]
+    ^-  loaded:orr
+    [id [%situation name ~ cal-now ~] rs]
+  =/  all=(list loaded:orr)
+    %+  weld  people
+    :~  (ev 'situation/lin-game' 'Lin- game' ~[(me-row 'o1' 'situation/lin-game') (lin-row 'situation/lin-game') ['o4' ['situation/lin-game' 'organizer' (pairs:enjs:format ~[['ref' s+'person/me']]) cal-now ~ 100 ['calendar' 'home/u-old'] 'calendar' cal-now | '']]])
+        (ev 'situation/jackson-lin' 'Jackson and Lin lunch' ~[(me-row 'o2' 'situation/jackson-lin') (lin-row 'situation/jackson-lin')])
+        (ev 'situation/dentist' 'Dentist' ~[(me-row 'o3' 'situation/dentist')])
+    ==
+  =/  known  (known-people:orr all)
+  ;:  weld
+    (expect-eq !>(~[(retract-op:orr 'o1' 'calendar: the event does not name the owner' 'calendar')]) !>((owner-unsaid:orr all ~ known (sy ~['participants']) cal-now)))
+    ::  an event the calendar still holds is left to plan-events, its
+    ::  uid named whole or after the calendar's name
+    (expect-eq !>(`(list json)`~) !>((owner-unsaid:orr all (sy ~['u-old']) known (sy ~['participants']) cal-now)))
+    =/  whole=(list loaded:orr)
+      %+  weld  people
+      :~  (ev 'situation/lin-game' 'Lin- game' ~[(me-row 'o1' 'situation/lin-game') ['l1' ['situation/lin-game' 'participants' (pairs:enjs:format ~[['ref' s+'person/lin']]) cal-now ~ 85 ['calendar' 'g/u-whole'] 'calendar' cal-now | '']]])
+      ==
+    (expect-eq !>(`(list json)`~) !>((owner-unsaid:orr whole (sy ~['g/u-whole']) known (sy ~['participants']) cal-now)))
   ==
 ++  test-occurrences
   =/  b  (occurrences:orr 'u-bday' cal-order ~2026.9.1 ~2027.12.31)

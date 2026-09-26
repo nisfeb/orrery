@@ -214,7 +214,39 @@ ok('a view seen before draws at once, even while another answer is out, except t
   src.includes("cached: name !== 'settings' && name !== 'keys'") && src.includes("if (v.here === drawn || !v.cached || !seen[v.here]) return;")
   && src.includes("if (refreshing) { again = true; drawSeen(v); return; }"));
 ok('an answer that lands after the owner moved to another view is kept, not drawn over it',
-  src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here) return;") > src.indexOf("seen[v.here] = d;"));
+  src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here || again) { if (!held) say(''); return; }") > src.indexOf("seen[v.here] = d;"));
+ok('the state is asked for only if it moved: the page names its rev, and "same" keeps what it holds, drawn once',
+  src.includes("var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';") && src.includes("return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });")
+  && src.includes('var again = seen[v.here] === d && drawn === v.here;'));
+const tidyState = { me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'jackson', ship: '~zod', aliases: ['~bus'], attrs: { home: { value: { ref: 'place/home' } } } },
+  { id: 'person/andrea', kind: 'person', name: 'Andrea', ship: '~wet', aliases: [], attrs: { relationship: { value: 'wife' } } },
+  { id: 'person/martyr', kind: 'person', name: 'jackson wife', aliases: ['~wet', '~bus'], attrs: {} },
+  { id: 'place/home', kind: 'place', name: 'Home', aliases: [], attrs: {} },
+  { id: 'org/lone', kind: 'org', name: 'Lone <Co>', aliases: [], attrs: { phone: { value: '1' } } }] };
+const dupes = render.dupesOf(tidyState);
+const sits = render.dupesOf({ bodies: [
+  { id: 'situation/a', kind: 'situation', name: 'Ballet', attrs: { starts: { value: '2026-10-01T18:00:00Z' } } },
+  { id: 'situation/b', kind: 'situation', name: 'Ballet', attrs: { starts: { value: '2026-10-08T18:00:00Z' } } },
+  { id: 'situation/c', kind: 'situation', name: 'ballet', attrs: { starts: { value: '2026-10-08T19:00:00Z' } } }] });
+ok('likely duplicates: a shared own ship, the surer body as into, no weaker match beside a sure one, the owner never merged away; a situation by name only on the same day',
+  dupes.length === 1 && dupes[0].from.id === 'person/martyr' && dupes[0].into.id === 'person/andrea' && dupes[0].strong
+  && !dupes.some(function (d) { return d.from.id === 'person/me' || d.into.id === 'person/me'; })
+  && sits.length === 1 && sits.every(function (d) { return d.from.id !== 'situation/a' && d.into.id !== 'situation/a'; }));
+const tidy = render.tidyCard(tidyState, false);
+ok('the tidy section offers each duplicate a merge and each body with no connection a delete, names escaped',
+  tidy.includes('data-merge="person/martyr" data-into="person/andrea"') && tidy.includes('data-delete-body="org/lone"') && tidy.includes('Lone &lt;Co&gt;')
+  && !tidy.includes('data-delete-body="person/me"') && !tidy.includes('data-delete-body="place/home"') && tidy.includes('1 possible duplicate, 2 with no connection'));
+const prefs = render.prefsCard({ style: 'No em dashes.', preferences: ['Never a todo for attending'] }, [{ reason: 'never a todo for attending', count: 3 }, { reason: 'a refund, not a bill', count: 2 }]);
+ok('the preferences card holds the style and one preference a line, and offers each reason not kept already',
+  prefs.includes('No em dashes.</textarea>') && prefs.includes('Never a todo for attending</textarea>') && prefs.includes('data-prefer="a refund, not a bill"')
+  && !prefs.includes('data-prefer="never a todo for attending"') && prefs.includes('2 times'));
+const quality = render.qualityCard([{ by: 'mail', kind: 'task', kept: 3, dismissed: 1, reasoned: 1, waiting: 0, failed: 0 }]);
+ok('the quality card says what each proposer kept of what was decided', quality.includes('>mail<') && quality.includes('75%') && quality.includes('(1 with a reason)') && render.qualityCard([]) === '');
+const withCals = render.settings({ kinds: {} }, { todo_calendar: 'c-lists' }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], []);
+ok('the executor card lets the owner pick the lists, says todos stay on the ship, and the settings page leads with preferences',
+  withCals.includes('id="todo-cal" data-now="c-lists"') && withCals.includes('id="event-cal" data-now=""') && withCals.includes('Todos stay on your ship')
+  && withCals.indexOf('id="prefs"') < withCals.indexOf('Executor'));
 ok('the graph takes mouse, pen and touch as pointers: a pinch zooms and moves it, and nothing is left on window',
   src.includes('canvas.onpointerdown = function (ev) {') && src.includes('zoomAbout(pinch.zoom * spread(t) / pinch.d, pinch.mid.x, pinch.mid.y, pinch.zoom, pinch.px, pinch.py);')
   && !src.includes('window.onmouse') && !src.includes('window.ontouch') && src.includes("bd = touchy ? 24 : 12"));

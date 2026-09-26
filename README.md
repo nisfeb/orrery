@@ -297,11 +297,15 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 
 `GET` and `PUT /schema` hold the vocabulary the models are advised to use: the kinds, the attributes each kind commonly has, notes saying what an attribute means where the name alone misleads, the action kinds with the payload shape each takes (`payloads`: a message's `via` is one of the channels listed there, `to` a body id; a calendar event's `starts`), and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted; adding a new kind of fact never changes a type.
 
+A person's family ties are refs, written on both people: `spouse`, `children`, `parents` and `siblings` (the last three multi-valued). `relationship` stays the text of how someone relates to the owner ("son"), and the bodies view draws it as a line too.
+
+The bodies view is a relationship diagram, and under it a tidy section lists likely duplicates (two bodies of one kind that share a ship, or a name; a situation's name only on the same day), each with a merge into the surer of the two, and the bodies nothing links to, each with a delete.
+
 Two keys in the schema are the owner's own words to the models. `style` is a string: how text written in the owner's voice should read (a message, a refined title), for example "No em dashes. Simple, direct sentences." Without it the models write short and plain. `preferences` is a list of strings: standing things the owner does or does not want proposed, for example "Never a todo for attending an event" or "Amounts from my kids' sports club are refunds to me, never bills". The generator, the readers, the refiner and the brief all read the preferences; all but the brief read the style. Each reason the owner gives when dismissing an action is kept too, past the sixty decisions the generator and the brief see, but a preference written here is the surer way to say it once.
 
 Two notes are worth reading before a client writes a cancellation. An activity's `status` is the series, `active` until it folds and `cancelled` when it has, while `skipped` is multi-valued and holds the start of one occurrence that is off, so one practice called off never cancels the class. A `calendar` payload's `mode` is `add`, the default and everything before version 37, or `cancel`, which takes `event`, the calendar's own id for the event to remove, and `starts` when it repeats.
 
-`GET` and `PUT /policy` hold the rules: `auto`, the action kinds approved on proposal; `push`, when to send a notification (`proposed`, `all` or `none`); `retention_days`, how long superseded, expired and retracted rows are kept; and `sensitive`, the attribute names a client key never sees, `health` and `income` from the start.
+`GET` and `PUT /policy` hold the rules: `auto`, the action kinds approved on proposal; `push`, when to send a notification (`proposed`, `all` or `none`); `retention_days`, how long superseded, expired and retracted rows are kept; `sensitive`, the attribute names a client key never sees, `health` and `income` from the start; and `todo_calendar` and `event_calendar`, the calendars the executor files a task's todo and a calendar event in, by the calendar's own id (blank, or absent, is the calendar's default). The executor card on the settings page picks them from the calendar's lists. A todo stays on the ship whichever list it is in: Google Calendar and most CalDAV servers (iCloud among them) do not show tasks.
 
 ## Sharing a body with another ship
 
@@ -439,7 +443,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 
 | method and path | does |
 |---|---|
-| `GET /state?at=&kind=` | every body with its attributes and involvements, the open situations, the open actions, the beacon, the time it was folded at, `me` and the schema |
+| `GET /state?at=&kind=&rev=` | every body with its attributes and involvements, the open situations, the open actions, the beacon, the time it was folded at, `me` and the schema. With `rev` (and no `at`) equal to the beacon, nothing changed since the caller's copy, and the answer is only `{"rev", "same": true}` |
 | `GET /body/<kind>/<slug>?at=` | one body with its timeline |
 | `GET /resolve?q=` | bodies a phrase could mean: an exact hit on a ship, an email address, a phone number, a name or an alias, then bodies sharing every word of it, then prefixes; at most 20 |
 | `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations |

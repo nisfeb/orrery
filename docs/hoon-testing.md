@@ -216,3 +216,21 @@ Left as they were: ten `wide` survivors in `plan-events`' older guards
 (repeats, stale cadence, the seen marks, the cancel of a vanished
 one-off) and one in `cast`'s lead name. That code predates this change,
 and none of those guards is tested alone yet.
+
+## The improvements (version 60)
+
+New arms: `index-events` with `same-event` (the events pass's index),
+`owner-unsaid`, `reason-counts`, `proposal-tally`, `exec-cals` and
+`event-json`'s calendar. All six ops ran on them: 64 mutants, 52 killed.
+
+- Real gaps, each now a case, and the recheck killed them all:
+  - an organizer row naming the owner was not told apart from a
+    participant one;
+  - an event whose rows name its uid whole, a uid with a slash in it,
+    was not taken as held;
+  - the tally's sort by proposer before kind was untested;
+  - a closed or a cancelled situation of the title was never offered
+    to `same-event`'s title match (moved code, first tested now).
+- Equivalent: `reason-counts`' two comparators on an exact tie, and
+  `same-event`'s `gth` at a start equal to the occurrence's, where both
+  branches measure 0.

@@ -1028,9 +1028,16 @@
   =/  when=(unit @da)  (when-arg args now)
   ?~  when  (send-err eyre-id 400 'at: expected an ISO 8601 UTC time')
   =/  kind=@t  (fall (get-key:kv:html-utils 'kind' args) '')
+  ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
+  ::  the page names the rev it drew: nothing written since, nothing to
+  ::  send but that (every fact the ship takes moves the rev, and a
+  ::  situation's phase is read off its times by the page)
+  ?:  ?&  ?=(~ (get-key:kv:html-utils 'at' args))
+          =(`(en:json:html rev) (get-key:kv:html-utils 'rev' args))
+      ==
+    (send-json eyre-id 200 (pairs:enjs:format ~[['rev' rev] ['same' b+&]]))
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
-  ;<  rev=json  bind:m  (read-json (rf 1 /beacon %rev))
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
@@ -3653,9 +3660,19 @@
   ;<  read=json  bind:m  (doc %'read.json')
   ;<  read-last=json  bind:m  (doc %'read-last.json')
   ;<  lists=json  bind:m  chat-lists
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
-  :~  ['schema' schema]
+  :~  ['reasons' a+(turn (scag 30 (reason-counts:orr acts)) |=([r=@t n=@ud l=@da] (pairs:enjs:format ~[['reason' s+r] ['count' (numb:enjs:format n)] ['last' (en-time:orr l)]])))]
+      :-  'tally'
+      :-  %a
+      %+  turn  (proposal-tally:orr acts)
+      |=  t=tally-row:orr
+      %-  pairs:enjs:format
+      :~  ['by' s+by.t]  ['kind' s+kind.t]  ['kept' (numb:enjs:format kept.t)]  ['dismissed' (numb:enjs:format dismissed.t)]
+          ['reasoned' (numb:enjs:format reasoned.t)]  ['waiting' (numb:enjs:format waiting.t)]  ['failed' (numb:enjs:format failed.t)]
+      ==
+      ['schema' schema]
       ['policy' policy]
       ['generator' (en-config-masked:orr (de-config:orr generator))]
       ['generator_last' generator-last]
@@ -5046,7 +5063,8 @@
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
   ;<  tz=@t  bind:m  owner-tz
-  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now tz)
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now tz (exec-cals:orr policy))
   ;<  chat-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
   =/  chat=chat-config:orr  (de-chat-config:orr chat-j)
   ::  the desks the plans need, found and their roads proved, once, and

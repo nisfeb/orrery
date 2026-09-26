@@ -1039,11 +1039,15 @@
       %-  pairs:enjs:format
       :~  :-  'person'
           %+  kind
-            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
+            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'spouse' 'children' 'parents' 'siblings' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
           :~  ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
               ['location' 'where the person is: a place body as a ref when the ship has one, else a short place name; null when they have left and the new place is unknown']
               ['telegram' 'the Telegram chat id the ship reaches this person at, a number as text; identity, like phone']
               ['relationship' 'how they relate to the owner: wife, son, boss, neighbour']
+              ['spouse' 'their husband, wife or partner, a person body as a ref; written on both of them']
+              ['children' 'each of their children, a person body as a ref, one row per child; each child gets parents']
+              ['parents' 'each of their parents, a person body as a ref, one row per parent; each parent gets children']
+              ['siblings' 'each brother or sister, a person body as a ref, one row per sibling; written on both of them']
               ['health' 'a medical fact about the person; kept from client keys by policy']
               ['income' 'a money fact about the person; kept from client keys by policy']
           ==
@@ -1081,7 +1085,7 @@
           ==
           ['note' (kind ~['text'] ~)]
       ==
-      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
@@ -1703,6 +1707,56 @@
   %+  weld  `(list @t)`[head (turn (slag cut decided) one)]
   ?~  kept  ~
   ['Earlier dismissals, with the owner\'s reasons:' kept]
+::  +reason-counts: the reasons the owner gave for dismissing, each with
+::  how often it was given (the same words, case and spacing aside) and
+::  when last, most often first: the settings page offers each as a
+::  standing preference
+::
+++  reason-counts
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list [reason=@t count=@ud last=@da])
+  =/  given=(map @t [reason=@t count=@ud last=@da])
+    %+  roll  acts
+    |=  [[id=@ta a=action] acc=(map @t [reason=@t count=@ud last=@da])]
+    ?.  ?=(%dismissed status.a)  acc
+    =/  said=@t  (trim-cord (squeeze note.a))
+    ?:  =('' said)  acc
+    =/  key=@t  (lower said)
+    =/  was  (~(get by acc) key)
+    ?~  was  (~(put by acc) key [said 1 proposed.a])
+    (~(put by acc) key u.was(count +(count.u.was), last (max last.u.was proposed.a)))
+  %+  sort  ~(val by given)
+  |=  [x=[reason=@t count=@ud last=@da] y=[reason=@t count=@ud last=@da]]
+  ?:  =(count.x count.y)  (gth last.x last.y)
+  (gth count.x count.y)
+::  +proposal-tally: how the actions each proposer made of each kind
+::  fared: kept (approved, carried out, done), dismissed and of those
+::  with a reason, still waiting, failed. The kinds and proposers in
+::  order, so the page lists them the same each time.
+::
++$  tally-row  [by=@t kind=@t kept=@ud dismissed=@ud reasoned=@ud waiting=@ud failed=@ud]
+++  proposal-tally
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list tally-row)
+  =/  fared=(map [@t @t] tally-row)
+    %+  roll  acts
+    |=  [[id=@ta a=action] acc=(map [@t @t] tally-row)]
+    =/  k=[@t @t]  [by.a `@t`kind.a]
+    =/  t=tally-row  (fall (~(get by acc) k) [by.a `@t`kind.a 0 0 0 0 0])
+    =.  t
+      ?+  status.a  t
+        ?(%approved %claimed %done)  t(kept +(kept.t))
+        %proposed  t(waiting +(waiting.t))
+        %failed  t(failed +(failed.t))
+          %dismissed
+        =?  reasoned.t  !=('' (trim-cord note.a))  +(reasoned.t)
+        t(dismissed +(dismissed.t))
+      ==
+    (~(put by acc) k t)
+  %+  sort  ~(val by fared)
+  |=  [x=tally-row y=tally-row]
+  ?.  =(by.x by.y)  (aor by.x by.y)
+  (aor kind.x kind.y)
 ::  +owner-lines: the owner's own words from the schema, for every
 ::  prompt: the style for text written in their voice, when the prompt
 ::  writes any, and their standing preferences
@@ -5156,8 +5210,10 @@
   =/  shift=@dr  (mul ?:((in-dst u.z at) dst.u.z std.u.z) ~m1)
   ?:(west.u.z (sub at shift) (add at shift))
 ++  event-json
-  |=  [id=@ta a=action zone=@t]
+  |=  [id=@ta a=action zone=@t cal=@t]
   ^-  (unit json)
+  ::  the calendar the owner named for it, else the calendar's default
+  =/  home=(list [@t json])  ?:(=('' cal) ~ ~[['cal' s+cal]])
   =/  title=@t  =/(t (gs payload.a 'title') ?:(=('' t) title.a t))
   =/  meta-base=(list [@t json])
     :~  ['name' s+title]
@@ -5172,7 +5228,7 @@
     %-  pairs:enjs:format
     %+  weld
       ^-  (list [@t json])
-      ~[['action' s+'add-event'] ['cat' s+'todo'] ['meta' meta]]
+      (weld `(list [@t json])`~[['action' s+'add-event'] ['cat' s+'todo'] ['meta' meta]] home)
     ^-  (list [@t json])
     ?~(due.a ~ ~[['due_ms' (numb:enjs:format (ms-of u.due.a))]])
   =/  s=(unit @da)  (gt payload.a 'starts')
@@ -5190,6 +5246,8 @@
   =/  meta=json
     (pairs:enjs:format ?:(=('' loc) meta-base (snoc meta-base ['location' s+loc])))
   =/  base=(list [@t json])
+    %+  weld  home
+    ^-  (list [@t json])
     :~  ['action' s+'add-event']
         ['meta' meta]
         ['kind' s+'once']
@@ -5207,6 +5265,10 @@
     ~[['cat' s+'timed'] ['fin' s+'to'] ['end_ms' (numb:enjs:format (ms-of end))]]
   ^-  (list [@t json])
   ~[['zone' s+zone]]
+::  +exec-cals: the calendars the owner named in policy.json for tasks'
+::  todos and for calendar events, '' for the calendar's default
+::
+++  exec-cals  |=(policy=json ^-([todo=@t event=@t] [(gs policy 'todo_calendar') (gs policy 'event_calendar')]))
 ::  +plan-exec: what to do for each approved action. A message goes by
 ::  its via: telegram to the person's telegram chat id, mail to their
 ::  ship (with its ~); another via is not ours. The chat id is the
@@ -5222,7 +5284,7 @@
 ::  Anything else, or an add with no start, yields nothing.
 ::
 ++  plan-exec
-  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da tz=@t]
+  |=  [acts=(list [id=@ta a=action]) all=(list loaded) multi=(set @t) people=(map @t @t) now=@da tz=@t cals=[todo=@t event=@t]]
   ^-  (list exec-plan)
   ::  person/me's timezone, else the one the generator was given
   =/  zone=@t  (owner-zone all multi now tz)
@@ -5265,7 +5327,7 @@
       ==
     ~
   ?:  =(%task kind.a)
-    =/  ej=(unit json)  (event-json id a zone)
+    =/  ej=(unit json)  (event-json id a zone todo.cals)
     ?~  ej  ~
     `[id kind.a %todo '' u.ej '']
   ?.  =(%calendar kind.a)  ~
@@ -5282,7 +5344,7 @@
     `[id kind.a %uncalendar event body '']
   ?.  =('add' mode)
     `[id kind.a %calendar '' (pairs:enjs:format ~) 'mode must be add or cancel']
-  =/  ej=(unit json)  (event-json id a zone)
+  =/  ej=(unit json)  (event-json id a zone event.cals)
   ?~  ej  ~
   `[id kind.a %calendar '' u.ej '']
 ::  +route-message: the owner's channel rule. A person with a ship is
@@ -5631,6 +5693,33 @@
   |=  [ev=cal-event id=bid attr=@t value=json at=@da until=(unit @da) conf=@ud]
   ^-  json
   (obs-row id attr value at until conf (event-source ev) 'calendar')
+::  +event-index: the event bodies the ship keeps, by a calendar uid
+::  their rows carry and by title, built once a pass: matching each of
+::  the calendar's events by a walk of every row of every body cost over
+::  a million checks a pass on the owner's ship (472 events)
+::
++$  event-index
+  $:  uids=(map @t loaded)
+      acts=(map @t loaded)
+      sits=(map @t (list loaded))
+  ==
+++  index-events
+  |=  all=(list loaded)
+  ^-  event-index
+  ::  the first body in all wins, as a walk of all found it: they are
+  ::  put last to first, so the first is put last
+  %+  roll  (flop all)
+  |=  [l=loaded idx=event-index]
+  ?.  ?=(?(%activity %situation) kind.body.l)  idx
+  =.  uids.idx
+    %+  roll  rows.l
+    |=  [r=row u=_uids.idx]
+    ?.  =('calendar' kind.source.obs.r)  u
+    (~(put by (~(put by u) id.source.obs.r l)) (uid-of-source source.obs.r) l)
+  =/  title=@t  (normalize-title name.body.l)
+  ?:  =('' title)  idx
+  ?:  =(%activity kind.body.l)  idx(acts (~(put by acts.idx) title l))
+  idx(sits (~(put by sits.idx) title [l (fall (~(get by sits.idx) title) ~)]))
 ::  +same-event: the body the ship keeps for an event, or ~. The uid
 ::  is the event itself: a body with a calendar row from it is it (the
 ::  source id is the uid, or the client's <calendar>/<uid>). Failing
@@ -5639,25 +5728,16 @@
 ::  this occurrence; a closed one is a past occasion.
 ::
 ++  same-event
-  |=  [ev=cal-event repeats=? start=@da all=(list loaded) multi=(set @t) now=@da]
+  |=  [ev=cal-event repeats=? start=@da idx=event-index multi=(set @t) now=@da]
   ^-  (unit loaded)
-  =/  by-uid=(unit loaded)
-    %-  find-first-loaded
-    :-  all
-    |=  l=loaded
-    ?.  ?=(?(%activity %situation) kind.body.l)  |
-    (lien rows.l |=(r=row (names-uid source.obs.r id.ev)))
+  =/  by-uid=(unit loaded)  (~(get by uids.idx) id.ev)
   ?^  by-uid  by-uid
   =/  title=@t  (normalize-title name.ev)
   ?:  =('' title)  ~
-  ?:  repeats
-    %-  find-first-loaded
-    :-  all
-    |=(l=loaded &(=(%activity kind.body.l) =(title (normalize-title name.body.l))))
+  ?:  repeats  (~(get by acts.idx) title)
   %-  find-first-loaded
-  :-  all
+  :-  (fall (~(get by sits.idx) title) ~)
   |=  l=loaded
-  ?.  &(=(%situation kind.body.l) =(title (normalize-title name.body.l)))  |
   =/  w=(map @t (list row))  (fold rows.l multi now)
   =/  st=@t  (winner-text w 'status')
   ?:  |(=('closed' st) =('cancelled' st))  |
@@ -5734,6 +5814,7 @@
   =|  made=@ud
   =|  drops=(list json)
   =/  ids=(set @t)  (sy (turn events |=(ev=cal-event id.ev)))
+  =/  idx=event-index  (index-events all)
   =/  todo=(list cal-event)  events
   |-
   ?^  todo
@@ -5742,17 +5823,13 @@
     =/  occs=(list [idx=@ud l=@da r=@da])  (occurrences id.ev order from to)
     =/  repeats=?  |(!=('once' kind.ev) ?=([* ^] occs))
     =/  start=@da  ?~(occs now l.i.occs)
-    =/  hit=(unit loaded)  (same-event ev repeats start all multi now)
+    =/  hit=(unit loaded)  (same-event ev repeats start idx multi now)
     ::  a body whose cadence stands at another word is corrected
     ::  whatever the seen map says: the ship's state is what counts
     =/  stale=?
       ?~  hit  |
       =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
       &(!=('' cur) !=(cur kind.ev))
-    ::  nothing in the window says nothing (but a series held at the
-    ::  wrong cadence is still corrected), and a cancel below sees
-    ::  only a one-off the calendar has dropped altogether
-    ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
     =/  people  (cast ev known)
     ::  the owner's calendar is the owner's to organize, but they are
     ::  at an event only when it names them or names nobody else
@@ -5771,6 +5848,11 @@
         ~
       `(retract-op id.r 'calendar: the event does not name the owner' 'calendar')
     =.  drops  (weld drops unsaid)
+    ::  nothing in the window says nothing more (but a series held at
+    ::  the wrong cadence is still corrected), and a cancel below sees
+    ::  only a one-off the calendar has dropped altogether. The owner's
+    ::  rows above are judged for every event the calendar holds.
+    ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
     =.  bodies  (weld bodies made.people)
     ::  a person made here is known to the next event of the pass
     =.  known
@@ -5905,13 +5987,41 @@
       n     +(n)
     ==
   =/  every=(list json)  (weld rows rows.gone)
-  =/  undo=(list json)  (dedupe-json drops)
+  =/  undo=(list json)  (dedupe-json (weld drops (owner-unsaid all ids known multi now)))
   :*  (weld (observe-ops bodies every) undo)
       seen.gone
       made
       (add (lent every) (lent undo))
       n.gone
   ==
+::  +owner-unsaid: the calendar rows that put the owner in an event the
+::  calendar no longer holds, whose other participants are people and
+::  whose title does not name the owner. An event it still holds is
+::  judged by +plan-events, note and all.
+::
+++  owner-unsaid
+  |=  [all=(list loaded) ids=(set @t) known=(map @t bid) multi=(set @t) now=@da]
+  ^-  (list json)
+  %-  zing
+  %+  turn  all
+  |=  l=loaded
+  ^-  (list json)
+  ?.  ?=(?(%activity %situation) kind.body.l)  ~
+  =/  srcs=(list source)
+    (murn rows.l |=(r=row ?:(=('calendar' kind.source.obs.r) `source.obs.r ~)))
+  ?~  srcs  ~
+  ?:  (lien `(list source)`srcs |=(s=source |((~(has in ids) id.s) (~(has in ids) (uid-of-source s)))))  ~
+  =/  mine=(list row)
+    %+  skim  rows.l
+    |=  r=row
+    ?&  =('participants' attr.obs.r)  !retracted.obs.r  =('calendar' kind.source.obs.r)
+        ?=([%o *] value.obs.r)  =('person/me' (ref-or-text value.obs.r))
+    ==
+  ?~  mine  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?.  (lien (fall (~(get by w) 'participants') ~) |=(r=row !=('person/me' (ref-or-text value.obs.r))))  ~
+  ?:  (lien (people-named name.body.l known) |=(b=bid =('person/me' b)))  ~
+  (turn `(list row)`mine |=(r=row (retract-op id.r 'calendar: the event does not name the owner' 'calendar')))
 ::  ==  the daily brief (version 52): one mail each morning from the
 ::  owner to the owner, the way the phone client's brief was, and the
 ::  owner's reply read back once. Pure: +brief-render writes the mail,

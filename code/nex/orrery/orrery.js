@@ -189,9 +189,73 @@
       '<span class="muted">tap a body to centre on it; drag to move, pinch or wheel to zoom</span>' +
       '<span class="muted" id="graph-alone"></span></div>' +
       '<div class="graph"><canvas id="graph" aria-label="the bodies and their connections"></canvas>' +
-      '<aside id="graph-pane" class="card">' + emptyPane() + '</aside></div>';
+      '<aside id="graph-pane" class="card">' + emptyPane() + '</aside></div>' + tidyCard(state, false);
     if (!n) out += '<p class="muted">Nothing observed yet.</p>';
     return out;
+  }
+  // bodies that look like one: two of a kind that share a ship (the one
+  // whose own ship it is counts most) or a name, a situation's name on
+  // the same day only (one title recurs: two ballets are two ballets).
+  // Into is the surer body: the owner, else the one whose own ship it
+  // is, else the one with more attributes, so the owner is never merged
+  // away; and a body with a sure match is offered no weaker one.
+  function dayOf(b) {
+    var a = b.attrs || {}, r = a.starts || a.started;
+    r = Array.isArray(r) ? r[0] : r;
+    return r && typeof r.value === 'string' ? r.value.slice(0, 10) : '';
+  }
+  function dupesOf(state) {
+    var me = state.me || 'person/me', groups = Object.create(null), pairs = [], said = Object.create(null);
+    function put(k, b, why, strong) { (groups[k] = groups[k] || []).push({ b: b, why: why, strong: strong }); }
+    (state.bodies || []).forEach(function (b) {
+      if (b.ship) put(b.kind + '|' + String(b.ship).toLowerCase(), b, 'both are ' + b.ship, true);
+      (b.aliases || []).forEach(function (a) {
+        var t = String(a).trim().toLowerCase();
+        if (/^~[a-z]+(-[a-z]+)*$/.test(t)) put(b.kind + '|' + t, b, 'both are ' + t, false);
+      });
+      var n = String(b.name || '').trim().toLowerCase();
+      if (n && n.charAt(0) !== '~') put(b.kind + '|name|' + n + (b.kind === 'situation' ? '|' + dayOf(b) : ''), b, b.kind === 'situation' ? 'the same name, the same day' : 'the same name', false);
+    });
+    function rank(b) { return (b.id === me ? 1e9 : 0) + (b.ship ? 1e6 : 0) + Object.keys(b.attrs || {}).length; }
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k], strong = g.some(function (x) { return x.strong; });
+      for (var i = 0; i < g.length; i++) for (var j = i + 1; j < g.length; j++) {
+        var a = g[i].b, b = g[j].b;
+        if (a.id === b.id) continue;
+        var into = rank(a) >= rank(b) ? a : b, from = into === a ? b : a, key = from.id + '|' + into.id;
+        if (said[key]) continue;
+        said[key] = true;
+        pairs.push({ from: from, into: into, why: g[i].why, strong: strong });
+      }
+    });
+    var sure = Object.create(null);
+    pairs.forEach(function (p) { if (p.strong) sure[p.from.id] = true; });
+    return pairs.filter(function (p) { return p.strong || !sure[p.from.id]; }).sort(function (x, y) { return (y.strong ? 1 : 0) - (x.strong ? 1 : 0); });
+  }
+  // what the tidy section offers: each likely duplicate with a merge, and
+  // each body with no connection at all with a delete
+  function tidyCard(state, open) {
+    var dupes = dupesOf(state), g = graphOf(state, true, true);
+    var linked = Object.create(null);
+    g.nodes.forEach(function (n) { linked[n.id] = true; });
+    var loose = g.all.filter(function (n) { return !linked[n.id] && n.id !== (state.me || 'person/me'); });
+    if (!dupes.length && !loose.length) return '<div id="tidy"></div>';
+    var out = '<details class="card" id="tidy"' + (open ? ' open' : '') + '><summary>Tidy: ' + dupes.length + ' possible duplicate' + (dupes.length === 1 ? '' : 's') +
+      ', ' + loose.length + ' with no connection</summary>';
+    if (dupes.length) {
+      out += '<h3>Possible duplicates</h3><ul class="links">' + dupes.map(function (d) {
+        return '<li><a href="#body/' + esc(d.from.id) + '">' + esc(d.from.name || d.from.id) + '</a> into <a href="#body/' + esc(d.into.id) + '">' + esc(d.into.name || d.into.id) + '</a> ' +
+          '<span class="muted">' + esc(d.into.kind) + ', ' + esc(d.why) + '</span> <button class="small" data-merge="' + esc(d.from.id) + '" data-into="' + esc(d.into.id) + '">merge</button></li>';
+      }).join('') + '</ul>';
+    }
+    if (loose.length) {
+      out += '<h3>No connection</h3><p class="muted">Nothing links these to anything else. Some are worth keeping for what they say; the rest can go.</p><ul class="links">' + loose.map(function (n) {
+        var facts = Object.keys(n.body.attrs || {}).length;
+        return '<li><a href="#body/' + esc(n.id) + '">' + esc(n.name) + '</a> <span class="muted">' + esc(n.kind) + ' &middot; ' + facts + (facts === 1 ? ' fact' : ' facts') + '</span> ' +
+          '<button class="small danger" data-delete-body="' + esc(n.id) + '" data-name="' + esc(n.name) + '">delete</button></li>';
+      }).join('') + '</ul>';
+    }
+    return out + '</details>';
   }
   // the pane with nothing picked: what to do, and what the colours are
   function emptyPane() {
@@ -377,11 +441,16 @@
   // with their notes, the desks link could not find, and a wake button;
   // there are no settings, since the executor uses the reader's token and
   // the desks the owner consented to on the permits page
-  function executorCard(last, cal) {
-    last = last || {}; cal = cal || {};
+  function executorCard(last, cal, policy) {
+    last = last || {}; cal = cal || {}; policy = policy || {};
     var out = '<div class="card"><h2>Executor</h2><p class="muted">The ship carries out approved actions itself: a message via telegram through the bot, ' +
       'via mail through auspex to the person\'s ship, a calendar action onto the calendar, a task into its todo list; and it keeps the todo list and the tasks ' +
-      'in step both ways. A message via chat is left for the client that sends chat.</p><p><button data-exec-wake="1">wake the executor</button></p>';
+      'in step both ways. A message via chat is left for the client that sends chat.</p><p><button data-exec-wake="1">wake the executor</button></p>' +
+      // which of the calendar's lists they land in; filled from the
+      // calendar once the page is drawn
+      '<p><label class="field">todos go to <select id="todo-cal" data-now="' + esc(policy.todo_calendar || '') + '"><option value="">the calendar\'s default</option></select></label> ' +
+      '<label class="field">calendar events go to <select id="event-cal" data-now="' + esc(policy.event_calendar || '') + '"><option value="">the calendar\'s default</option></select></label> ' +
+      '<button data-save-cals="1">save</button></p><p class="muted">Todos stay on your ship: Google Calendar and most CalDAV servers (iCloud among them) do not show them.</p>';
     if (last.at) {
       out += '<p class="muted">Last looked ' + fmtTime(last.at) + '.' + (last.acted_at ? ' Last acted ' + fmtTime(last.acted_at) + ': ' +
         (last.claimed || 0) + ' claimed, ' + (last.sent || 0) + ' sent, ' + (last.placed || 0) + ' placed, ' +
@@ -535,8 +604,41 @@
     }
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast) {
-    return '<h1>Settings</h1>' + generatorCard(generator, last) + reconcileCard(reconcile) + executorCard(execLast, calLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+  // the owner's style and standing preferences, which every prompt reads,
+  // and the reasons they gave for dismissing, each offered as one
+  function prefsCard(schema, reasons) {
+    schema = schema || {};
+    var prefs = Array.isArray(schema.preferences) ? schema.preferences.filter(function (p) { return typeof p === 'string'; }) : [];
+    var have = Object.create(null);
+    prefs.forEach(function (p) { have[p.trim().toLowerCase()] = true; });
+    var out = '<div class="card" id="prefs"><h2>Style and preferences</h2><p class="muted">Every prompt reads these: how anything written in your voice should read, and what you want proposed and what not.</p>' +
+      '<label class="block">style<textarea class="short" id="pref-style" rows="3" aria-label="style">' + esc(typeof schema.style === 'string' ? schema.style : '') + '</textarea></label>' +
+      '<label class="block">preferences, one a line<textarea class="short" id="pref-list" rows="5" aria-label="preferences">' + esc(prefs.join('\n')) + '</textarea></label>' +
+      '<p><button data-save-prefs="1">save style and preferences</button></p>';
+    var fresh = (reasons || []).filter(function (r) { return r && r.reason && !have[String(r.reason).trim().toLowerCase()]; });
+    if (fresh.length) {
+      out += '<h3>Reasons you gave for dismissing</h3><p class="muted">A reason you give again and again is taste: keep it as a preference and every prompt reads it.</p><ul class="links">' +
+        fresh.map(function (r) {
+          return '<li>' + esc(r.reason) + ' <span class="muted">' + (r.count > 1 ? r.count + ' times' : 'once') + '</span> <button class="small" data-prefer="' + esc(r.reason) + '">keep as a preference</button></li>';
+        }).join('') + '</ul>';
+    }
+    return out + '</div>';
+  }
+  // how each proposer's actions fared, by kind: what the owner kept,
+  // dismissed (and gave a reason for), what waits and what failed
+  function qualityCard(tally) {
+    if (!tally || !tally.length) return '';
+    return '<div class="card"><h2>How proposals fared</h2><table><thead><tr><th>from</th><th>kind</th><th>kept</th><th>dismissed</th><th>waiting</th><th>failed</th><th>kept of decided</th></tr></thead><tbody>' +
+      tally.map(function (t) {
+        var decided = (t.kept || 0) + (t.dismissed || 0);
+        return '<tr><td data-label="from">' + esc(t.by) + '</td><td data-label="kind">' + esc(t.kind) + '</td><td data-label="kept">' + (t.kept || 0) + '</td>' +
+          '<td data-label="dismissed">' + (t.dismissed || 0) + (t.reasoned ? ' <span class="muted">(' + t.reasoned + ' with a reason)</span>' : '') + '</td>' +
+          '<td data-label="waiting">' + (t.waiting || 0) + '</td><td data-label="failed">' + (t.failed || 0) + '</td>' +
+          '<td data-label="kept of decided">' + (decided ? Math.round(100 * (t.kept || 0) / decided) + '%' : '&ndash;') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally) {
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -618,7 +720,7 @@
   var render = {
     phase: phase,
     bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, esc: esc, fmtValue: fmtValue,
-    seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane,
+    seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
   if (typeof document === 'undefined') { return; }
@@ -946,14 +1048,17 @@
     if (v.name === 'inbox') return show(inbox(openActions(d), d));
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
-      return show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last));
+      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally));
+      if (drew) fillCalendars();
+      return drew;
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
     // the graph drawn already takes the new state in place: a redraw
     // would drop the hand on it and the find box's words
     if (drawn === v.here && document.getElementById('graph')) {
-      var count = view.querySelector('h1 .muted');
+      var count = view.querySelector('h1 .muted'), tidy = document.getElementById('tidy');
       if (count) count.textContent = String((d.bodies || []).length);
+      if (tidy) tidy.outerHTML = tidyCard(d, tidy.open);
       mountGraph(d);
       return true;
     }
@@ -987,7 +1092,11 @@
       if (v.name === 'body') return Promise.all([api('/body/' + seg(v.r.id)), lastState ? Promise.resolve(lastState) : api('/state')]);
       if (v.name === 'settings') return api('/settings');
       if (v.name === 'keys') return Promise.all([api('/clients'), api('/schema')]);
-      return api('/state');
+      // the rev drawn already: the ship answers "same" when nothing moved
+      // since, and the state already held stands
+      var had = lastState;
+      var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';
+      return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });
     }
     drawSeen(v);
     var p = fetchView().then(function (d) {
@@ -1000,14 +1109,40 @@
         // the state answers the bodies view and the inbox alike
         seen['bodies '] = s; seen['inbox '] = s;
       }
+      // the very answer drawn already needs no drawing again
+      var again = seen[v.here] === d && drawn === v.here;
       seen[v.here] = d;
       // the owner moved on while it was out: kept, not drawn over the
       // view they are on
-      if (viewNow().here !== v.here) return;
+      if (viewNow().here !== v.here || again) { if (!held) say(''); return; }
       drawView(v, d, show);
       if (!held) say('');
     }).catch(function (e) { say(String(e.message || e), true); });
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
+  }
+  // the calendar's own lists for the executor card's two choices, from
+  // the calendar's route on this same ship; a calendar not installed
+  // leaves the default alone
+  function fillCalendars() {
+    var picks = ['todo-cal', 'event-cal'].map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (!picks.length) return;
+    fetch('/apps/calendar/calendars.json', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (cals) {
+      picks.forEach(function (sel) {
+        (Array.isArray(cals) ? cals : []).forEach(function (c) {
+          if (!c || !c.id || c.readonly) return;
+          var o = document.createElement('option');
+          o.value = c.id;
+          o.textContent = (c.name || c.id) + (c.kind && c.kind !== 'local' ? ' (' + c.kind + ')' : '');
+          sel.appendChild(o);
+        });
+        sel.value = sel.dataset.now || '';
+        if (sel.value !== (sel.dataset.now || '')) {
+          var gone = document.createElement('option');
+          gone.value = sel.dataset.now; gone.textContent = sel.dataset.now + ' (not on the calendar)';
+          sel.appendChild(gone); sel.value = sel.dataset.now;
+        }
+      });
+    }).catch(function () { /* no calendar: the default stands */ });
   }
   // the inbox's actions, newest first, as the actions route answered them
   function openActions(state) {
@@ -1023,7 +1158,35 @@
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b) return;
-    if (b.dataset.retract) {
+    if (b.dataset.merge) {
+      if (!confirm('Merge ' + b.dataset.merge + ' into ' + b.dataset.into + '? Its facts move, what pointed at it points at ' + b.dataset.into + ', and ' + b.dataset.merge + ' goes.')) return;
+      post('/merge', { from: b.dataset.merge, into: b.dataset.into }).then(later).catch(oops);
+    } else if (b.dataset.deleteBody) {
+      if (!confirm('Delete ' + (b.dataset.name || b.dataset.deleteBody) + ' and everything the ship knows of it?')) return;
+      api('/body/' + b.dataset.deleteBody.split('/').map(seg).join('/'), { method: 'DELETE' }).then(later).catch(oops);
+    } else if (b.dataset.prefer) {
+      var list = document.getElementById('pref-list');
+      if (list) { list.value = list.value.replace(/\s+$/, '') + (list.value.trim() ? '\n' : '') + b.dataset.prefer; dirty = true; edits += 1; }
+      var li = b.closest('li'); if (li) li.remove();
+      say('added below: save to keep it');
+    } else if (b.dataset.savePrefs) {
+      var style = (document.getElementById('pref-style') || {}).value || '';
+      var lines = ((document.getElementById('pref-list') || {}).value || '').split('\n').map(function (t) { return t.trim(); }).filter(Boolean);
+      api('/schema').then(function (sch) {
+        sch = sch && typeof sch === 'object' ? sch : {};
+        sch.style = style.trim();
+        sch.preferences = lines;
+        return post('/schema', sch, 'PUT');
+      }).then(function () { dirty = false; say('style and preferences saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.saveCals) {
+      var todoCal = (document.getElementById('todo-cal') || {}).value || '', eventCal = (document.getElementById('event-cal') || {}).value || '';
+      api('/policy').then(function (pol) {
+        pol = pol && typeof pol === 'object' ? pol : {};
+        pol.todo_calendar = todoCal;
+        pol.event_calendar = eventCal;
+        return post('/policy', pol, 'PUT');
+      }).then(function () { dirty = false; say('saved: new todos and events go there'); refresh(true); }).catch(oops);
+    } else if (b.dataset.retract) {
       var note = prompt('Why retract this observation?');
       if (note === null) return;
       post('/retract', { id: b.dataset.retract, note: note, by: 'page' }).then(later).catch(oops);
@@ -1274,6 +1437,9 @@
   view.addEventListener('input', function (e) {
     var el = e.target;
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }
+  });
+  view.addEventListener('change', function (e) {
+    if (e.target && e.target.tagName === 'SELECT') { dirty = true; edits += 1; }
   });
   function editing() {
     if (dirty || graphView.touching) return true;
