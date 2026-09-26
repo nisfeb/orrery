@@ -1757,6 +1757,15 @@
   |=  [x=tally-row y=tally-row]
   ?.  =(by.x by.y)  (aor by.x by.y)
   (aor kind.x kind.y)
+::  +without-alias: a body with one alias taken off, however it is cased
+::  or spaced: the only way an alias leaves, since a write adds to them
+::  (a merge brings the other body's, wrong ones too)
+::
+++  without-alias
+  |=  [b=body alias=@t]
+  ^-  body
+  =/  key=@t  (lower (trim-cord alias))
+  b(aliases (sy (skip ~(tap in aliases.b) |=(a=@t =(key (lower (trim-cord a)))))))
 ::  +de-preferences: a request to change the owner's style or standing
 ::  preferences, held to what +owner-lines reads: the style a string of
 ::  at most 1000 bytes, the preferences a list of at most 30 strings of
@@ -6800,6 +6809,7 @@
   ?:  &(=('POST' meth) ?=([%api %actions @ %refine ~] suffix))  `[%post-actions-refine %any]
   ?:  &(=('GET' meth) ?=([%api %settings ~] suffix))            `[%get-settings %own]
   ?:  &(=('GET' meth) ?=([%api %preferences ~] suffix))         `[%get-preferences %any]
+  ?:  &(=('POST' meth) ?=([%api %unalias ~] suffix))            `[%post-unalias %own]
   ?:  &(=('PUT' meth) ?=([%api %preferences ~] suffix))         `[%put-preferences %writes]
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))              `[%get-schema %own]
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))              `[%put-schema %own]

@@ -217,7 +217,8 @@ ok('an answer that lands after the owner moved to another view is kept, not draw
   src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here || again) { if (!held) say(''); return; }") > src.indexOf("seen[v.here] = d;"));
 ok('the state is asked for only if it moved: the page names its rev, and "same" keeps what it holds, drawn once',
   src.includes("var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';") && src.includes("return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });")
-  && src.includes('var again = seen[v.here] === d && drawn === v.here;'));
+  && src.includes('var again = seen[v.here] === d && drawn === v.here;')
+  && src.indexOf('var again = seen[v.here] === d && drawn === v.here;') < src.indexOf("seen['bodies '] = s; seen['inbox '] = s;"));
 const tidyState = { me: 'person/me', bodies: [
   { id: 'person/me', kind: 'person', name: 'jackson', ship: '~zod', aliases: ['~bus'], attrs: { home: { value: { ref: 'place/home' } } } },
   { id: 'person/andrea', kind: 'person', name: 'Andrea', ship: '~wet', aliases: [], attrs: { relationship: { value: 'wife' } } },
@@ -233,6 +234,10 @@ ok('likely duplicates: a shared own ship, the surer body as into, no weaker matc
   dupes.length === 1 && dupes[0].from.id === 'person/martyr' && dupes[0].into.id === 'person/andrea' && dupes[0].strong
   && !dupes.some(function (d) { return d.from.id === 'person/me' || d.into.id === 'person/me'; })
   && sits.length === 1 && sits.every(function (d) { return d.from.id !== 'situation/a' && d.into.id !== 'situation/a'; }));
+const merged = render.dupesOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'jackson', ship: '~zod', aliases: ['~bus'], attrs: {} },
+  { id: 'person/andrea', kind: 'person', name: 'Andrea', ship: '~wet', aliases: ['~bus', 'jackson'], attrs: {} }] });
+ok('the owner is offered as into only on a ship the other holds as its own, not on an alias a merge brought', merged.length === 0);
 const tidy = render.tidyCard(tidyState, false);
 ok('the tidy section offers each duplicate a merge and each body with no connection a delete, names escaped',
   tidy.includes('data-merge="person/martyr" data-into="person/andrea"') && tidy.includes('data-delete-body="org/lone"') && tidy.includes('Lone &lt;Co&gt;')
@@ -241,6 +246,17 @@ const prefs = render.prefsCard({ style: 'No em dashes.', preferences: ['Never a 
 ok('the preferences card holds the style and one preference a line, and offers each reason not kept already',
   prefs.includes('No em dashes.</textarea>') && prefs.includes('Never a todo for attending</textarea>') && prefs.includes('data-prefer="a refund, not a bill"')
   && !prefs.includes('data-prefer="never a todo for attending"') && prefs.includes('2 times'));
+const aliased = render.body({ id: 'person/andrea', kind: 'person', name: 'Andrea', aliases: ['jack<son>'], attrs: {}, observations: [] }, { bodies: [], actions: [] });
+ok('a body page gives each alias its own remove button, escaped', aliased.includes('data-unalias="jack&lt;son&gt;" data-id="person/andrea"') && !aliased.includes('<son>'));
+ok('after the owner\'s own move the refresh looks again each second until the rev moves, ten times at most',
+  src.includes("function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }")
+  && src.includes("var still = awaitGone ? (s.bodies || []).some(function (x) { return awaitGone.indexOf(x.id) >= 0; }) : s.rev === before;")
+  && src.includes("tidyGone[b.dataset.merge] = true; settled(b, 'merged'); later([b.dataset.merge]);"));
+const goneTidy = render.tidyCard(tidyState, false, { 'person/martyr': true, 'org/lone': true });
+ok('what the owner merged or deleted from the page stays out of the tidy list, whatever a refresh brings back',
+  !goneTidy.includes('data-merge="person/martyr"') && !goneTidy.includes('data-delete-body="org/lone"'));
+ok('a tidy move shows at once: the button says what is under way, and the row is struck through once the ship takes it',
+  src.includes("working(b, 'merging');") && src.includes("settled(b, 'merged'); later([b.dataset.merge]);") && src.includes("function settled(b, what) {"));
 const quality = render.qualityCard([{ by: 'mail', kind: 'task', kept: 3, dismissed: 1, reasoned: 1, waiting: 0, failed: 0 }]);
 ok('the quality card says what each proposer kept of what was decided', quality.includes('>mail<') && quality.includes('75%') && quality.includes('(1 with a reason)') && render.qualityCard([]) === '');
 const withCals = render.settings({ kinds: {} }, { todo_calendar: 'c-lists' }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], []);
@@ -278,7 +294,7 @@ ok('the relationship diagram has no event nodes: two bodies that share events ar
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes('if (dirty || graphView.touching) return true;')
-  && src.includes('function later() { dirty = typedNote(); setTimeout(function () { refresh(!dirty); }, 300); }')
+  && src.includes('function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });"));
 ok('a refine holds the row\'s move buttons while it runs and frees them on a refusal or an error',
   src.indexOf("holdMoves(true);") > src.indexOf("b.dataset.refine) {") && src.indexOf("holdMoves(true);") < src.indexOf("post('/actions/' + seg(rid) + '/refine'")

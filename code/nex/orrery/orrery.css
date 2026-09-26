@@ -104,3 +104,6 @@ label.block { display: block; margin: .4rem 0; }
 details#tidy summary { cursor: pointer; font-weight: 600; }
 details#tidy h3 { font-size: .9rem; color: var(--muted); margin: 1rem 0 .3rem; }
 select { font: inherit; padding: .2rem .3rem; border: 1px solid var(--line); border-radius: 5px; }
+details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }
+.alias { white-space: nowrap; margin-right: .3rem; }
+.alias button.small { margin-left: .15rem; padding: 0 .3rem; }

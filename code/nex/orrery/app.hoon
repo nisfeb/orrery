@@ -605,6 +605,7 @@
   ?:  =('revise-action' op)  (do-revise-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-preferences' op)  (do-set-preferences jon)
+  ?:  =('unalias' op)  (do-unalias jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
   ?:  =('set-telegram' op)  (do-set-telegram jon)
@@ -631,6 +632,25 @@
   ?:  =(cur next)  (note-then-no 'set-preferences' 'unchanged')
   ;<  ~  bind:m  (over:io (rf 0 / %'schema.json') [[/ %json] next])
   ;<  ~  bind:m  (note-by 'set-preferences' & '' (gs:orr jon 'by'))
+  (pure:m &)
+::  +do-unalias: one alias off a body, the body written as it is less
+::  that alias; the owner's to do, since an alias is identity
+::
+++  do-unalias
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  pk  (parse-bid:orr (gs:orr jon 'id'))
+  ?~  pk  (refuse 'unalias' 'id: bad')
+  =/  road=road:tarball  (rf 0 (body-dir kind.u.pk slug.u.pk) %body)
+  ;<  cur=(unit view:nexus)  bind:m  (peek-soft:io road ~)
+  ?.  ?=([~ %file *] cur)  (refuse 'unalias' 'no such body')
+  =/  old=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.u.cur))
+  ?~  old  (refuse 'unalias' 'unreadable body')
+  =/  new=body:orr  (without-alias:orr u.old (gs:orr jon 'alias'))
+  ?:  =(new u.old)  (note-then-no 'unalias' 'no such alias')
+  ;<  ~  bind:m  (over:io road [[/orrery %body] `stored-body:orr`[%2 new]])
+  ;<  ~  bind:m  (note 'unalias' & (rap 3 (gs:orr jon 'id') ' less ' (gs:orr jon 'alias') ~))
   (pure:m &)
 ::  +refuse: a refusal that leaves the writer standing
 ::
@@ -987,6 +1007,7 @@
     %post-actions-refine    (serve-refine eyre-id s2 jon act)
     %get-settings           (serve-settings eyre-id)
     %get-preferences        (serve-preferences eyre-id)
+    %post-unalias           (serve-unalias eyre-id jon)
     %put-preferences        (serve-set-preferences eyre-id jon act)
     %get-schema             (serve-doc eyre-id %'schema.json')
     %put-schema             (serve-set-doc eyre-id 'set-schema' jon)
@@ -3654,6 +3675,22 @@
   ;<  d=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
   ;<  c=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
   (pure:m (both d c))
+::  +serve-unalias: POST /api/unalias {id, alias}: one alias off a body,
+::  the owner's alone
+::
+++  serve-unalias
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  alias=@t  (trim-cord:orr (gs:orr jon 'alias'))
+  ?:  =('' alias)  (send-err eyre-id 400 'alias: required')
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (send-err eyre-id 400 'id: bad')
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
+  ?.  ex  (send-err eyre-id 404 (cat 3 'no such body ' id))
+  %^  write-then  eyre-id  (pairs:enjs:format ~[['op' s+'unalias'] ['id' s+id] ['alias' s+alias]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['alias' s+alias] ['ok' b+&]]))
 ::  +serve-preferences, +serve-set-preferences: the owner's style and
 ::  standing preferences alone, which a client with write (Talon) may
 ::  change without being handed the whole schema: GET and PUT

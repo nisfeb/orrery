@@ -57,6 +57,7 @@
     ['GET' `path`~[%api %settings] %get-settings %own]
     ['GET' `path`~[%api %preferences] %get-preferences %any]
     ['PUT' `path`~[%api %preferences] %put-preferences %writes]
+    ['POST' `path`~[%api %unalias] %post-unalias %own]
     ['GET' `path`~[%api %schema] %get-schema %own]
     ['PUT' `path`~[%api %schema] %put-schema %own]
     ['GET' `path`~[%api %policy] %get-policy %own]
@@ -113,6 +114,13 @@
     (expect-eq !>(~) !>((route-of:orr 'PATCH' /api/state)))
     (expect-eq !>(~) !>((route-of:orr 'GET' /api/nope)))
     (expect-eq !>(~) !>((route-of:orr 'POST' /api/state)))
+  ==
+::  an alias comes off however it is cased or spaced, and the rest stay
+++  test-without-alias
+  =/  b=body:orr  [%person 'Andrea' (sy ~['jackson' '~ricsul-bilwyt-dozzod-nisfeb' 'wife']) now `~wet]
+  ;:  weld
+    (expect-eq !>((sy ~['jackson' 'wife'])) !>(aliases:(without-alias:orr b ' ~Ricsul-Bilwyt-Dozzod-Nisfeb ')))
+    (expect-eq !>(b) !>((without-alias:orr b 'nobody')))
   ==
 ::  a preferences request: the fields given are checked and trimmed, a
 ::  field left out is left as it is, and the rest of the schema stands

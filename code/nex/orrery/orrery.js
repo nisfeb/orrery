@@ -180,7 +180,7 @@
   // what a line says, read from its first end: a situation's participants
   // are each a participant
   function edgeWord(attr) { return attr === 'participants' ? 'participant' : attr; }
-  function bodies(state) {
+  function bodies(state, gone) {
     var n = (state.bodies || []).length;
     var out = '<h1>Bodies <span class="muted">' + n + '</span></h1>' +
       '<div class="graph-bar"><input id="graph-find" placeholder="find a body by name" aria-label="find a body">' +
@@ -189,7 +189,7 @@
       '<span class="muted">tap a body to centre on it; drag to move, pinch or wheel to zoom</span>' +
       '<span class="muted" id="graph-alone"></span></div>' +
       '<div class="graph"><canvas id="graph" aria-label="the bodies and their connections"></canvas>' +
-      '<aside id="graph-pane" class="card">' + emptyPane() + '</aside></div>' + tidyCard(state, false);
+      '<aside id="graph-pane" class="card">' + emptyPane() + '</aside></div>' + tidyCard(state, false, gone);
     if (!n) out += '<p class="muted">Nothing observed yet.</p>';
     return out;
   }
@@ -230,15 +230,21 @@
     });
     var sure = Object.create(null);
     pairs.forEach(function (p) { if (p.strong) sure[p.from.id] = true; });
-    return pairs.filter(function (p) { return p.strong || !sure[p.from.id]; }).sort(function (x, y) { return (y.strong ? 1 : 0) - (x.strong ? 1 : 0); });
+    // the owner is merged into only on a ship the other body holds as its
+    // own: an alias it carries may be a wrong one a merge brought
+    return pairs.filter(function (p) { return (p.strong || !sure[p.from.id]) && (p.into.id !== me || p.strong); })
+      .sort(function (x, y) { return (y.strong ? 1 : 0) - (x.strong ? 1 : 0); });
   }
   // what the tidy section offers: each likely duplicate with a merge, and
   // each body with no connection at all with a delete
-  function tidyCard(state, open) {
-    var dupes = dupesOf(state), g = graphOf(state, true, true);
+  function tidyCard(state, open, gone) {
+    // what the owner merged or deleted from this page is gone from the
+    // list at once, whatever a refresh caught mid-way brings back
+    gone = gone || {};
+    var dupes = dupesOf(state).filter(function (d) { return !gone[d.from.id] && !gone[d.into.id]; }), g = graphOf(state, true, true);
     var linked = Object.create(null);
     g.nodes.forEach(function (n) { linked[n.id] = true; });
-    var loose = g.all.filter(function (n) { return !linked[n.id] && n.id !== (state.me || 'person/me'); });
+    var loose = g.all.filter(function (n) { return !linked[n.id] && !gone[n.id] && n.id !== (state.me || 'person/me'); });
     if (!dupes.length && !loose.length) return '<div id="tidy"></div>';
     var out = '<details class="card" id="tidy"' + (open ? ' open' : '') + '><summary>Tidy: ' + dupes.length + ' possible duplicate' + (dupes.length === 1 ? '' : 's') +
       ', ' + loose.length + ' with no connection</summary>';
@@ -303,7 +309,9 @@
         (end ? ' <span class="muted">' + (timeOf(v, 'ended') ? 'ended ' : 'ends ') + fmtTime(end) + '</span>' : '') + '</p>';
     }
     out += '<p class="muted">' + esc(v.kind) + (v.ship ? ' &middot; ' + esc(v.ship) : '') +
-      (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(esc).join(', ') : '') + '</p>';
+      (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(function (a) {
+        return '<span class="alias">' + esc(a) + '<button class="small" data-unalias="' + esc(a) + '" data-id="' + esc(v.id) + '" aria-label="remove the alias ' + esc(a) + '">&times;</button></span>';
+      }).join(' ') : '') + '</p>';
     var attrs = Object.keys(v.attrs || {}).sort();
     out += '<div class="card"><h2>Now</h2>';
     if (!attrs.length) out += '<p class="muted">No current attributes.</p>';
@@ -1058,11 +1066,11 @@
     if (drawn === v.here && document.getElementById('graph')) {
       var count = view.querySelector('h1 .muted'), tidy = document.getElementById('tidy');
       if (count) count.textContent = String((d.bodies || []).length);
-      if (tidy) tidy.outerHTML = tidyCard(d, tidy.open);
+      if (tidy) tidy.outerHTML = tidyCard(d, tidy.open, tidyGone);
       mountGraph(d);
       return true;
     }
-    if (show(bodies(d))) mountGraph(d);
+    if (show(bodies(d, tidyGone))) mountGraph(d);
     return true;
   }
   // a move to a view seen before draws it from what was seen, at once
@@ -1099,8 +1107,17 @@
       return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });
     }
     drawSeen(v);
+    var before = lastState && lastState.rev;
     var p = fetchView().then(function (d) {
+      // the very answer drawn already needs no drawing again; asked before
+      // the answer is kept below, or every answer would look drawn
+      var again = seen[v.here] === d && drawn === v.here;
       var s = v.name === 'body' ? d[1] : (v.name === 'bodies' || v.name === 'inbox') ? d : null;
+      if (awaitMove > 0 && s) {
+        var still = awaitGone ? (s.bodies || []).some(function (x) { return awaitGone.indexOf(x.id) >= 0; }) : s.rev === before;
+        if (still) { awaitMove -= 1; if (awaitMove > 0) setTimeout(function () { refresh(!dirty); }, 1000); }
+        else { awaitMove = 0; awaitGone = null; }
+      }
       if (s && s !== lastState) {
         lastState = s;
         if (typeof s.rev === 'number') lastRev = String(s.rev);
@@ -1109,8 +1126,6 @@
         // the state answers the bodies view and the inbox alike
         seen['bodies '] = s; seen['inbox '] = s;
       }
-      // the very answer drawn already needs no drawing again
-      var again = seen[v.here] === d && drawn === v.here;
       seen[v.here] = d;
       // the owner moved on while it was out: kept, not drawn over the
       // view they are on
@@ -1120,6 +1135,16 @@
     }).catch(function (e) { say(String(e.message || e), true); });
     p.then(function () { refreshing = false; if (again) { again = false; refresh(); } });
   }
+  // a tidy move shows at once: its button says what is under way, and once
+  // the ship has taken it the row is struck through, before the refresh
+  // that follows comes back (each costs the ship seconds)
+  function working(b, what) { b.disabled = true; b.dataset.was = b.textContent; b.textContent = what + '\u2026'; say(what + '\u2026'); }
+  function settled(b, what) {
+    var li = b.closest('li');
+    if (li) { li.classList.add('done'); b.remove(); li.insertAdjacentHTML('beforeend', ' <span class="muted">' + what + '</span>'); }
+    say(what);
+  }
+  function unsettled(b) { b.disabled = false; if (b.dataset.was) b.textContent = b.dataset.was; }
   // the calendar's own lists for the executor card's two choices, from
   // the calendar's route on this same ship; a calendar not installed
   // leaves the default alone
@@ -1153,17 +1178,29 @@
   // after a move: a note half-typed under another action is kept, so the
   // refresh waits for it rather than wiping it
   function typedNote() { return Array.prototype.some.call(view.querySelectorAll('[data-refine-text]'), function (i) { return !!i.value.trim(); }); }
-  function later() { dirty = typedNote(); setTimeout(function () { refresh(!dirty); }, 300); }
+  // after the owner's own move the refresh looks again each second until
+  // the move shows: the writer applies it a while after the answer, and
+  // the beacon's news can lag a minute. A merge or a delete shows when
+  // the body is gone from the state (the rev also moves for the ship's
+  // other writes meanwhile); any other move when the rev moves.
+  var awaitMove = 0, awaitGone = null, tidyGone = Object.create(null);
+  function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }
 
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.merge) {
       if (!confirm('Merge ' + b.dataset.merge + ' into ' + b.dataset.into + '? Its facts move, what pointed at it points at ' + b.dataset.into + ', and ' + b.dataset.merge + ' goes.')) return;
-      post('/merge', { from: b.dataset.merge, into: b.dataset.into }).then(later).catch(oops);
+      working(b, 'merging');
+      post('/merge', { from: b.dataset.merge, into: b.dataset.into }).then(function () { tidyGone[b.dataset.merge] = true; settled(b, 'merged'); later([b.dataset.merge]); }).catch(function (e) { unsettled(b); oops(e); });
     } else if (b.dataset.deleteBody) {
       if (!confirm('Delete ' + (b.dataset.name || b.dataset.deleteBody) + ' and everything the ship knows of it?')) return;
-      api('/body/' + b.dataset.deleteBody.split('/').map(seg).join('/'), { method: 'DELETE' }).then(later).catch(oops);
+      working(b, 'deleting');
+      api('/body/' + b.dataset.deleteBody.split('/').map(seg).join('/'), { method: 'DELETE' }).then(function () { tidyGone[b.dataset.deleteBody] = true; settled(b, 'deleted'); later([b.dataset.deleteBody]); }).catch(function (e) { unsettled(b); oops(e); });
+    } else if (b.dataset.unalias) {
+      if (!confirm('Take "' + b.dataset.unalias + '" off ' + b.dataset.id + '? The readers no longer know it by that name.')) return;
+      working(b, 'removing');
+      post('/unalias', { id: b.dataset.id, alias: b.dataset.unalias }).then(function () { var s = b.closest('.alias'); if (s) s.remove(); say('alias removed'); later(); }).catch(function (e) { unsettled(b); oops(e); });
     } else if (b.dataset.prefer) {
       var list = document.getElementById('pref-list');
       if (list) { list.value = list.value.replace(/\s+$/, '') + (list.value.trim() ? '\n' : '') + b.dataset.prefer; dirty = true; edits += 1; }
