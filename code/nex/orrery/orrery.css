@@ -100,6 +100,8 @@ ul.legend i { display: inline-block; width: .7em; height: .7em; border-radius: 5
 @media (max-width: 800px) { .graph { grid-template-columns: 1fr; } .graph canvas { height: 55vh; } }
 .payload { font-size: .9em; overflow-wrap: anywhere; margin: .2rem 0; }
 textarea.short { min-height: 0; margin-top: .2rem; }
+.instruct { margin: .5rem 0; }
+.instruct textarea { font: inherit; }
 label.block { display: block; margin: .4rem 0; }
 details#tidy summary { cursor: pointer; font-weight: 600; }
 details#tidy h3 { font-size: .9rem; color: var(--muted); margin: 1rem 0 .3rem; }

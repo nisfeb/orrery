@@ -32,6 +32,8 @@ One refusal has no route counterpart. `orrery: peek refused` means the mcp tools
 
 Some routes have no tool and stay the owner's over the cookie: `DELETE /body/<kind>/<slug>`, `POST /merge`, `POST /bodies`, `GET` and `PUT /policy`, and the sharing and client key routes (`docs/sharing.md`, `docs/keys.md`).
 
+`POST /instruct`, `POST /correct` and `GET /corrections` have no tool either. They are open to the owner and to a key with `write` (README, "Telling the ship"); `DELETE /corrections/<id>` is the owner's.
+
 The writer's trail is not a tool either. `/tr/last`, the last writer outcome, is read through the ball browser at `GET /grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/tr/last?raw=1`, and `/tr/log` beside it holds the last 500 ops.
 
 ## What the analyst can see

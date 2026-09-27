@@ -249,6 +249,21 @@ Anything the note asks for beyond the action itself, such as a todo the day befo
 
 A note the ship cannot carry out, such as switching a light, changes nothing and answers why in `note`.
 
+#### Telling the ship
+
+The Inbox, each body page and each proposed note carry a box for the owner's own words: "Andrea was not in Barcelona", "Sam and Samuel are one person", "never propose calls". `POST /api/instruct {"text", "about", "action", "apply"}` runs one model call (counted like a refine) and answers `{reply, actions, note}`. The actions are the schema's kinds, and four more the writer carries out when approved:
+
+- `correct` `{subject, attr, value, why}` strikes a value.
+- `fact` `{subject, attr, value}` states one, signed `owner`.
+- `merge` `{from, into}` folds two bodies.
+- `preference` `{text}` adds a standing preference.
+
+They are filed as proposals, or approved at once with `apply` (the page's "do it"). `action` names the proposal being answered, so a client can send a reply to a note, such as "remove her", here. The owner, or a key with `write`, may call it.
+
+A value struck as wrong (`POST /api/correct {subject, attr, value, why}`, or "not true" beside a value on the body page) is retracted from every source that said it. The writer then refuses it, whoever files it again. `GET /api/corrections` lists what was struck, and `DELETE /api/corrections/<id>` takes one back; the Struck card under Settings shows both.
+
+Every reader's prompt is told of what the owner struck, and of that reader's own proposals the owner dismissed with a reason. The generator's prompt carries the same, plus its proposals the owner kept and how each (proposer, kind) fared. When the same dismissal reason keeps coming back, the generator may propose a `preference`. The ship proposes only the kinds `schema.actions` lists, so add the four there to use them.
+
 The action stays `proposed` until approved as before, and only a proposed action can be refined: approve first, and a done action is history. One refinement runs at a time per action; a second while the first is still running answers 409.
 
 #### Reconcile
@@ -258,7 +273,7 @@ The ship also reconciles on its own. Twice a day, and on `POST /reconcile`, it r
 1. A future `started` or `ended` becomes `starts` or `ends` (the schedule, dated when it was learned), and a situation status that is not open, closed or cancelled is retracted.
 2. Situations that are occurrences of one repeating event (three or more with the same calendar uid or the same title) become one activity with an observation per occurrence, and the occurrences are deleted.
 3. People are read out of titles ("Mira- Ballet/Tap", "Felix Birthday") and made participants, created when the ship lacks them.
-4. Bodies that name one person (an org made from a person's name, two persons whose names or addresses match) become merge proposals, actions of kind `merge` for the inbox, and the ones you approve are run.
+4. Bodies that name one person (an org made from a person's name, two persons whose names or addresses match) become merge proposals, actions of kind `merge` for the inbox. The executor runs one when you approve it, and this pass runs any it missed.
 5. Then what is over closes: a situation whose end has passed closes at that end, a trip with no end a week after it started, a scheduled situation with a `starts` but no end six hours after it starts, a situation with a start but no end that started more than thirty days ago with nothing seen since closes at its newest observation. Times are read as the readers write them, a bare date included.
 6. A thing whose delivery stage has stood too long is presumed delivered (`out for delivery` three days on, `shipped` or `in transit` a fortnight on): a `status` of `delivered` at the end of the grace, conf 60, signed `retire`, so a carrier's own word later supersedes it.
 7. When `reconcile.prune_days` in the policy is set, closed situations older than that are deleted.

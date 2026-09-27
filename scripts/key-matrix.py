@@ -434,6 +434,35 @@ code, d = writer('GET', '/schema')
 check('a key still may not read the whole schema', code == 403, (code, d))
 owner('PUT', '/preferences', {'preferences': before.get('preferences') or [], 'style': before.get('style') or ''})
 
+print('== corrections')
+owner('POST', '/observe', {'bodies': [{'id': 'org/key-gate-struck', 'name': 'Key Gate Org'}, {'id': 'person/key-gate-struck', 'name': 'Key Gate Person'}], 'observations': []})
+time.sleep(2)
+code, d = triage('POST', '/correct', {'subject': 'org/key-gate-struck', 'attr': 'city', 'value': 'Key Gate Town'})
+check('a key may not strike a value on a kind outside its scope', code == 403 and 'not in scope' in str(dictish(d).get('error')), (code, d))
+code, d = triage('POST', '/correct', {'subject': 'person/key-gate-struck', 'attr': 'employer', 'value': {'ref': 'org/key-gate-struck'}})
+check('nor a ref to a body it may not know of', code == 403, (code, d))
+code, d = triage('POST', '/correct', {'subject': 'person/me', 'attr': 'health', 'value': 'flu'})
+check('nor a sensitive attribute its scope does not name', code == 403 and 'health' in str(dictish(d).get('error')), (code, d))
+code, d = reader('POST', '/correct', {'subject': 'person/key-gate-struck', 'attr': 'city', 'value': 'Key Gate Town'})
+check('a read-only key may not strike a value', code == 403, (code, d))
+code, d = triage('POST', '/correct', {'subject': 'person/key-gate-struck', 'attr': 'city', 'value': 'Key Gate Town'})
+check('a key with write strikes a value in its scope, signed by its by', code == 200 and dictish(d).get('by') == 'talon', (code, d))
+owner('POST', '/correct', {'subject': 'org/key-gate-struck', 'attr': 'city', 'value': 'Key Gate Town'})
+subs = []
+for _ in range(20):
+    code, d = owner('GET', '/corrections')
+    if {'person/key-gate-struck', 'org/key-gate-struck'} <= {dictish(c).get('subject') for c in listish(d)}:
+        break
+    time.sleep(1)
+code, d = reader('GET', '/corrections')
+subs = [dictish(c).get('subject') for c in listish(d)]
+check('a key reads only the corrections its view would show', code == 200 and 'person/key-gate-struck' in subs and 'org/key-gate-struck' not in subs, (code, subs))
+for c in listish(owner('GET', '/corrections')[1]):
+    if str(dictish(c).get('subject', '')).endswith('/key-gate-struck'):
+        owner('DELETE', '/corrections/' + str(dictish(c).get('id')))
+owner('DELETE', '/body/org/key-gate-struck')
+owner('DELETE', '/body/person/key-gate-struck')
+
 print('== cleanup')
 clean()
 if fails:

@@ -1025,6 +1025,32 @@
       ['retention_days' (numb:enjs:format 365)]
       ['sensitive' a+~[s+'health' s+'income']]
   ==
+::  +writer-shapes: the payloads of the action kinds the ship carries out
+::  itself, through its own writer, once the owner approves: a fact struck,
+::  a fact stated, two bodies merged, a standing preference kept
+::
+++  writer-shapes
+  ^-  (list [@t json])
+  =/  shape
+    |=  keys=(list [@t @t])
+    ^-  json
+    (pairs:enjs:format (turn keys |=([k=@t t=@t] [k `json`s+t])))
+  :~  :-  'correct'
+      %-  shape
+      :~  ['subject' 'required: the body id the wrong fact is about']
+          ['attr' 'required: the attribute, as the state names it']
+          ['value' 'required: the wrong value as the state shows it, a string, or {"ref": "kind/slug"}']
+          ['why' 'optional: the owner\'s reason, short']
+      ==
+      :-  'fact'
+      %-  shape
+      :~  ['subject' 'required: the body id']
+          ['attr' 'required: an attribute the schema lists for its kind']
+          ['value' 'required: a string, a number, true or false, or {"ref": "kind/slug"}']
+      ==
+      ['merge' (shape ~[['from' 'required: the body id folded away'] ['into' 'required: the body id kept']])]
+      ['preference' (shape ~[['text' 'required: the standing rule, in the owner\'s words, at most 300 bytes']])]
+  ==
 ++  starter-schema
   ^-  json
   =/  kind
@@ -1086,7 +1112,7 @@
           ['note' (kind ~['text'] ~)]
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
-      ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar'] |=(t=@t `json`s+t))]
+      ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
       :-  'payloads'
@@ -1095,6 +1121,8 @@
         ^-  json
         (pairs:enjs:format (turn keys |=([k=@t t=@t] [k `json`s+t])))
       %-  pairs:enjs:format
+      %+  weld  writer-shapes
+      ^-  (list [@t json])
       :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence']])]
           ['note' (shape ~[['text' 'required: the note for the owner']])]
           :-  'message'
@@ -1766,6 +1794,156 @@
   ^-  body
   =/  key=@t  (lower (trim-cord alias))
   b(aliases (sy (skip ~(tap in aliases.b) |=(a=@t =(key (lower (trim-cord a)))))))
+::  ==  corrections (version 60): what the owner said is not so
+::
+::  +$  correction: a fact the owner struck. No row may say subject.attr
+::  is value again, whoever writes it; value is read as +ref-or-text
+::  reads a value, a ref's id or the text.
+::
++$  correction  [subject=@t attr=@t value=@t why=@t at=@da by=@t]
+++  correction-key
+  |=(c=correction ^-(@t (rap 3 subject.c '|' attr.c '|' (lower value.c) ~)))
+++  correction-id
+  |=(c=correction ^-(@t (crip (a-co:co (mug (correction-key c))))))
+++  en-correction
+  |=  c=correction
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+(correction-id c)]  ['subject' s+subject.c]  ['attr' s+attr.c]
+      ['value' s+value.c]  ['why' s+why.c]  ['at' (en-time at.c)]  ['by' s+by.c]
+  ==
+::  +de-corrections: corrections.json, newest first; a malformed entry is
+::  skipped rather than trusted
+::
+++  de-corrections
+  |=  j=json
+  ^-  (list correction)
+  %+  murn  ?:(?=([%a *] j) p.j ~)
+  |=  e=json
+  ^-  (unit correction)
+  =/  s=@t  (gs e 'subject')
+  =/  a=@t  (gs e 'attr')
+  =/  v=@t  (gs e 'value')
+  ?:  |(=('' s) =('' a) =('' v))  ~
+  `[s a v (gs e 'why') (fall (gt e 'at') *@da) (gs e 'by')]
+::  +de-correct: a request to strike a fact, held at the door: subject a
+::  body id, attr a name, value a string or a ref, why short
+::
+++  de-correct
+  |=  [jon=json now=@da]
+  ^-  (each correction @t)
+  ?.  ?=([%o *] jon)  [%| 'a JSON object is required']
+  =/  subject=@t  (gs jon 'subject')
+  ?:  =(~ (parse-bid subject))  [%| 'subject: expected <kind>/<slug>']
+  =/  attr=@t  (trim-cord (gs jon 'attr'))
+  ?:  |(=('' attr) (gth (met 3 attr) 48))  [%| 'attr: 1 to 48 bytes']
+  =/  v=json  (gj jon 'value')
+  =/  value=@t
+    ?:  &(?=([%o *] v) (only-ref v))  (ref-or-text v)
+    ?:(?=([%s *] v) (trim-cord p.v) '')
+  ?:  |(=('' value) (gth (met 3 value) 300))  [%| 'value: a string or a ref, 1 to 300 bytes']
+  =/  why=@t  (trim-cord (gs jon 'why'))
+  ?:  (gth (met 3 why) 500)  [%| 'why: over 500 bytes']
+  =/  by=@t  (gs jon 'by')
+  [%& subject attr value why now ?:(=('' by) 'owner' by)]
+::  +add-correction: corrections.json with this one first, an earlier
+::  one of the same fact dropped, two hundred at most
+::
+++  add-correction
+  |=  [cs=json c=correction]
+  ^-  json
+  =/  key=@t  (correction-key c)
+  :-  %a
+  %+  turn
+    %+  scag  200
+    `(list correction)`[c (skip (de-corrections cs) |=(x=correction =(key (correction-key x))))]
+  en-correction
+::  +drop-correction: corrections.json without the one of this id
+::
+++  drop-correction
+  |=  [cs=json id=@t]
+  ^-  json
+  a+(turn (skip (de-corrections cs) |=(x=correction =(id (correction-id x)))) en-correction)
+::  +struck-rows: the live rows of a body that say what a correction struck
+::
+++  struck-rows
+  |=  [rows=(list row) c=correction]
+  ^-  (list row)
+  %+  skim  rows
+  |=  r=row
+  ?&  !retracted.obs.r
+      =(subject.c subject.obs.r)
+      =(attr.c attr.obs.r)
+      =((lower value.c) (lower (ref-or-text value.obs.r)))
+  ==
+::  +strike-obs: a batch of observations less the ones a correction
+::  struck, each a refusal naming it, so the writer writes none of them
+::  whoever sent it: the calendar, a client, the readers, reconcile
+::
+++  strike-obs
+  |=  [items=(list (each obs @t)) cs=(list correction)]
+  ^-  (list (each obs @t))
+  ?~  cs  items
+  %+  turn  items
+  |=  e=(each obs @t)
+  ^-  (each obs @t)
+  ?:  ?=(%| -.e)  e
+  =/  o=obs  p.e
+  =/  v=@t  (lower (ref-or-text value.o))
+  ?.  (lien `(list correction)`cs |=(c=correction &(=(subject.o subject.c) =(attr.o attr.c) =(v (lower value.c)))))  e
+  [%| (rap 3 'struck by the owner: ' subject.o ' ' attr.o ' ' (ref-or-text value.o) ~)]
+::  +lesson-lines: what a reader is told of the owner's feedback on it: the
+::  facts the owner struck, and the reader's own proposals the owner
+::  dismissed with a reason, the newest first
+::
+++  lesson-lines
+  |=  [cs=(list correction) acts=(list [id=@ta a=action]) by=@t]
+  ^-  (list @t)
+  =/  struck=(list @t)
+    %+  turn  (scag 30 cs)
+    |=  c=correction
+    (rap 3 '  ' subject.c ' ' attr.c ' = ' value.c ?:(=('' why.c) '' (rap 3 ' (' (end [3 200] (squeeze why.c)) ')' ~)) ~)
+  =/  mine=(list [id=@ta a=action])
+    %+  sort
+      (skim acts |=([* a=action] &(=(by by.a) ?=(%dismissed status.a) !=('' (trim-cord note.a)))))
+    |=([[* x=action] [* y=action]] (gth proposed.x proposed.y))
+  =/  said=(list @t)
+    %+  turn  (scag 20 mine)
+    |=([* a=action] (rap 3 '  ' kind.a ' | ' title.a ' | ' (end [3 200] (squeeze note.a)) ~))
+  %+  weld
+    ^-  (list @t)
+    ?~(struck ~ ['The owner struck these facts as wrong; never write them again:' struck])
+  ^-  (list @t)
+  ?~(said ~ ['The owner dismissed these of your proposals, with the reason; do not propose their like:' said])
+::  +kept-lines: the generator's proposals the owner kept (approved or
+::  carried out), the newest fifteen, as examples of what helps
+::
+++  kept-lines
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list @t)
+  =/  kept=(list [id=@ta a=action])
+    %+  sort
+      (skim acts |=([* a=action] &(=('generator' by.a) ?=(?(%approved %claimed %done) status.a))))
+    |=([[* x=action] [* y=action]] (gth proposed.x proposed.y))
+  ?~  kept  ~
+  :-  'Proposals the owner kept lately (approved or done): what helps. Propose more like these:'
+  %+  turn  (scag 15 `(list [id=@ta a=action])`kept)
+  |=  [* a=action]
+  =/  notes=@t  (gs payload.a 'notes')
+  (rap 3 '  ' kind.a ' | ' title.a ?:(=('' notes) '' (rap 3 ' | ' (end [3 160] (squeeze notes)) ~)) ~)
+::  +fared-lines: how each proposer's kinds fared, where enough were
+::  decided to tell, so the generator proposes less of what is dismissed
+::
+++  fared-lines
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list @t)
+  =/  rows=(list tally-row)
+    (skim (proposal-tally acts) |=(t=tally-row (gte (add kept.t dismissed.t) 3)))
+  ?~  rows  ~
+  :-  'How proposals fared (kept of decided, by who proposed them and kind):'
+  %+  turn  `(list tally-row)`rows
+  |=  t=tally-row
+  (rap 3 '  ' by.t ' ' kind.t ': kept ' (scot %ud kept.t) ' of ' (scot %ud (add kept.t dismissed.t)) ~)
 ::  +de-preferences: a request to change the owner's style or standing
 ::  preferences, held to what +owner-lines reads: the style a string of
 ::  at most 1000 bytes, the preferences a list of at most 30 strings of
@@ -1900,6 +2078,7 @@
           now=@da
           tz=@t
           limit=@ud
+          cs=(list correction)
       ==
   ^-  (list @t)
   =/  multi=(set @t)  (multi-of schema)
@@ -1950,7 +2129,8 @@
     ?.  (is-open a)  ~
     `(rap 3 '  ' kind.a ' | ' title.a ' | about ' (join-cords ', ' ~(tap in about.a)) ~)
   =/  done=(list @t)  (decision-lines 'Recent decisions (do not propose these again):' decided)
-  =/  p3=@t  (join-cords nl (weld open done))
+  =/  struck=(list @t)  (lesson-lines cs ~ '')
+  =/  p3=@t  (join-cords nl ;:(weld open done (kept-lines acts) (fared-lines acts) struck))
   =/  p4=@t
     (rap 3 'Now: ' (en-iso now) ', timezone ' ?:(=('' tz) 'unknown' tz) '. Answer with the JSON object.' ~)
   ~[p0 p1 p2 p3 p4]
@@ -2210,6 +2390,7 @@
   The state: every body with its current attributes (people with status, location and relationships; things; places; orgs; situations with their times and participants; activities with their schedule, last and next occurrence), the open situations, the open actions, and the schema with its notes and the payload shapes for each action kind.
   The recent decisions: actions done, dismissed or failed lately, with their titles. Do not propose these again, or a rewording of them. A dismissal is the owner saying no. Older dismissals that carry the owner's reason follow them.
   The owner's style and standing preferences, when they have written any.
+  The proposals the owner kept lately, as examples of what helps; how each proposer's kinds of proposal have fared; and the facts the owner struck as wrong.
   The time now, and the owner's timezone.
 
   What to propose.
@@ -2221,12 +2402,14 @@
   Respect what the facts say about time: an occurrence in the past is over; a situation that is upcoming has not happened; "last" is the most recent occurrence and "next" the nearest one ahead.
   Do not invent facts, people, places or events. Do not propose things the owner cannot act on. Do not moralise.
   Common sense, always: no todo for attending an event or a routine activity; no message telling someone what they just said; nothing the owner is already doing; nothing a decision already covered; no reminder for what happens on its own.
+  Proposals the owner kept are what helps: propose more like them, and less of a kind the owner mostly dismisses from that proposer. A fact the owner struck is gone for good: never propose on it or state it again.
+  When a fact in the state is wrong and you know what it should be, propose the fix, not a note: a correction (kind "correct") strikes a wrong fact, a fact (kind "fact") states the right one, a merge (kind "merge") folds two bodies that are one. When the owner's dismissal reasons repeat a rule their standing preferences do not hold yet, propose it once as a preference (kind "preference"), in the owner's own words. Propose only the kinds the schema lists.
   A dismissed action may carry the owner's reason after its title. Those reasons are the owner's taste, and they generalise: one "just the event" means every todo for attending is unwanted, one "I always do this" means routine chores are unwanted. Read them before proposing. The owner's standing preferences are the same taste written down once, and they hold over any single decision.
 
   Answer with one JSON object and nothing else:
   {"actions": [{"kind": "task", "title": "...", "about": ["kind/slug"], "due": "...", "payload": {...}, "why": "one sentence"}],
    "notes": ["what makes the state wrong or incomplete"]}
-  "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional, short and few: only what makes the state wrong or incomplete in a way that matters, such as two bodies that are one thing, a person an event plainly involves who is missing, or a situation still open well after it ended. Never a detail one body lacks, and never that something in the past is over.
+  "why" is for the owner's eyes on the page; keep it to one sentence. Notes are optional, short and few: only what makes the state wrong or incomplete in a way that matters and that no action here can fix, such as two bodies that are one thing, a person an event plainly involves who is missing, or a situation still open well after it ended. Never a detail one body lacks, and never that something in the past is over.
   '''
 ::  +attend-words: what a title adds when it only says to go to an event
 ::
@@ -3803,6 +3986,7 @@
       kinds=(list @t)
       payloads=(map @t json)
       owner=(list @t)
+      lessons=(list @t)
   ==
 ::  one message in the prompt's window; context marks an earlier one,
 ::  shown for sense but not to be written from
@@ -3854,7 +4038,7 @@
     ?.  ?=([%o *] p)  ~
     %-  ~(gas by *(map @t json))
     (skim ~(tap by p.p) |=([k=@t v=json] &(?=([%o *] v) (lien kinds |=(x=@t =(x k))))))
-  [bodies attrs notes 'person/me' kinds payloads (owner-lines schema &)]
+  [bodies attrs notes 'person/me' kinds payloads (owner-lines schema &) ~]
 ::  +closed-before: a situation closed, with its end before the cutoff.
 ::  A new message does not refer to something long over.
 ::
@@ -3921,7 +4105,7 @@
         `(list @t)`~['---' 'Answer with the JSON object.']
     ==
   %+  join-cords  nl
-  ;:  weld  head  owner.ctx  attr-lines  note-lines  shapes  extra  `(list @t)`~['']  msg-lines  ==
+  ;:  weld  head  owner.ctx  lessons.ctx  attr-lines  note-lines  shapes  extra  `(list @t)`~['']  msg-lines  ==
 ::  ==  the reader's validation: the model's answer as facts the ship
 ::  will take, with notes on what was dropped (analyze.validate)
 ::
@@ -4800,6 +4984,128 @@
 
   When the note asks for something no action kind can carry, answer {"refused": "<one plain sentence saying why>"} and change nothing.
   '''
+::  ==  instructions (version 60): the owner says what to change or keep
+::  in words, and the ship proposes the actions that do it
+::
+++  instruct-kinds  `(list @t)`~['correct' 'fact' 'merge' 'preference' 'task' 'message' 'calendar']
+::  +instruct-prompt: the system prompt of an instruction, the same for
+::  every owner
+::
+++  instruct-prompt
+  ^-  @t
+  '''
+  You carry out what the owner of orrery tells you to change or remember about their world. orrery is a model of one person's world kept on their own ship: bodies (people, places, things, orgs, situations, activities) with facts about them, and actions the owner approves before the ship carries them out.
+
+  You are given the owner's clock, their style and standing preferences when they have written any, the action kinds you may propose with the payload shape of each, the bodies the ship knows (id, name, aliases), what the ship holds of the bodies the instruction is most likely about, the action the owner is answering when there is one, and the instruction.
+
+  Turn the instruction into the fewest actions that do it:
+  - "correct" strikes a fact that is wrong. It is removed from every source and never written again. The value is the wrong value exactly as the ship holds it: a string, or {"ref": "kind/slug"}.
+  - "fact" states something true, on an attribute the kind's list names.
+  - "merge" folds one body into another that is the same person, place or thing.
+  - "preference" keeps a standing rule every future proposal follows, in the owner's own words, short. Use it when the instruction says how things should be from now on ("never", "always", "stop").
+  - "task", "message" and "calendar" are things to do, in their payload shapes.
+  When the owner answers an action ("remove her", "that's wrong", "not him"), read the instruction against that action and the facts of the bodies it is about.
+  Use only body ids the ship knows. Never invent a body, a fact or an id. When the instruction is unclear, propose nothing and say in the reply what you need to know.
+  Each action has a title: what it does, in a few plain words.
+
+  Answer with one JSON object and nothing else:
+  {"reply": "one short sentence saying what the actions do, in plain words", "actions": [{"kind": "...", "title": "...", "about": ["kind/slug"], "payload": {...}}]}
+  '''
+::  +instruct-focus: the bodies an instruction is most likely about: the
+::  ones the answered action names, then any whose name or alias the
+::  instruction says, eight at most
+::
+++  instruct-focus
+  |=  [all=(list loaded) about=(set @t) text=@t]
+  ^-  (list loaded)
+  =/  said=tape  (cass (trip text))
+  =/  named
+    |=  l=loaded
+    ^-  ?
+    %+  lien  `(list @t)`[name.body.l ~(tap in aliases.body.l)]
+    |=  n=@t
+    =/  t=tape  (cass (trip (trim-cord n)))
+    &((gte (lent t) 3) ?=(^ (find t said)))
+  %+  scag  8
+  %+  weld  (skim all |=(l=loaded (~(has in about) id.l)))
+  (skim all |=(l=loaded &(!(~(has in about) id.l) (named l))))
+::  +instruct-user: the user prompt: the clock, the owner's words, the
+::  kinds and shapes, the bodies, the focus, the action answered, and
+::  the instruction last
+::
+++  instruct-user
+  |=  $:  ctx=reader-ctx  focus=(list loaded)  multi=(set @t)
+          answering=(unit [id=@ta a=action])  text=@t  now=@da  tz=@t
+      ==
+  ^-  @t
+  %+  join-cords  nl
+  ;:  weld
+    `(list @t)`~[(rap 3 'The owner\'s clock reads ' (local-iso (en-iso now) tz) '.' ~)]
+    owner.ctx
+    (ctx-lines ctx 'Action kinds you may propose: ' 'Bodies the ship knows (id | name | aliases):')
+    ^-  (list @t)
+    ?~  focus  ~
+    :-  'What the ship holds of the bodies the instruction is most likely about:'
+    (turn focus |=(l=loaded (cat 3 '  ' (line l multi now))))
+    ^-  (list @t)
+    ?~  answering  ~
+    ~[(cat 3 'The action the owner is answering: ' (en:json:html (en-action id.u.answering a.u.answering)))]
+    `(list @t)`~[(cat 3 'The instruction: ' text)]
+  ==
+::  +instruct-ctx: the reader's context with the instruction's kinds and
+::  their shapes: the ones the ship carries out itself, and the reader's
+::
+++  instruct-ctx
+  |=  [ctx=reader-ctx schema=json]
+  ^-  reader-ctx
+  =/  p=json  (gj schema 'payloads')
+  =/  from-schema=(map @t json)  ?:(?=([%o *] p) p.p ~)
+  %=  ctx
+    kinds  instruct-kinds
+    payloads
+      %-  ~(gas by *(map @t json))
+      %+  murn  instruct-kinds
+      |=  k=@t
+      ^-  (unit [@t json])
+      =/  own=(unit json)  (~(get by (~(gas by *(map @t json)) writer-shapes)) k)
+      ?^  own  `[k u.own]
+      =/  s=(unit json)  (~(get by from-schema) k)
+      ?~(s ~ `[k u.s])
+  ==
+::  +de-instruct: the model's answer as acts to file and notes: each
+::  action of a kind an instruction may propose, about bodies the ship
+::  knows, a writer's kind holding to +writer-op-of, ten at most
+::
+++  de-instruct
+  |=  [ans=json known=(set @t) now=@da who=@t]
+  ^-  [reply=@t acts=(list json) notes=(list @t)]
+  =/  reply=@t  (end [3 500] (trim-cord (gs ans 'reply')))
+  =/  raw=(list json)  (scag 10 (ga ans 'actions'))
+  =|  acts=(list json)
+  =|  notes=(list @t)
+  |-
+  ?~  raw  [reply (flop acts) (flop notes)]
+  =/  e=json  i.raw
+  =/  kind=@t  (gs e 'kind')
+  ?.  (lien instruct-kinds |=(k=@t =(k kind)))
+    $(raw t.raw, notes [(cat 3 'dropped an action of kind ' kind) notes])
+  =/  ids=(list @t)
+    =/  p=json  (gj e 'payload')
+    (skip `(list @t)`~[(gs p 'subject') (gs p 'from') (gs p 'into')] |=(t=@t =('' t)))
+  ?:  (lien ids |=(t=@t !(~(has in known) t)))
+    $(raw t.raw, notes [(cat 3 'dropped an action about a body the ship does not know: ' (gs e 'title')) notes])
+  =/  about=(list json)
+    (skim (ga e 'about') |=(j=json &(?=([%s *] j) (~(has in known) p.j))))
+  =/  fields=(map @t json)  ?:(?=([%o *] e) p.e ~)
+  =/  j=json  (fill-act-as (with-default [%o (~(put by fields) 'about' a+about)] 'title' s+kind) now who)
+  =/  d  (de-action j now who)
+  ?:  ?=(%| -.d)  $(raw t.raw, notes [(cat 3 'dropped an action: ' p.d) notes])
+  =/  why=(each json @t)
+    ?.  ?=(?(%correct %fact %merge %preference) kind.p.d)  [%& ~]
+    (writer-op-of 'x' p.d now)
+  ?:  ?=(%| -.why)
+    $(raw t.raw, notes [(rap 3 'dropped ' title.p.d ': ' p.why ~) notes])
+  $(raw t.raw, acts [j acts])
 ::  +refine-user: the user prompt: the clock, the shapes, the bodies,
 ::  the action and the note, in that order, so the note is the last
 ::  thing the model reads.
@@ -5218,7 +5524,7 @@
 +$  exec-plan
   $:  id=@ta
       kind=@tas
-      target=?(%telegram %mail %chat %calendar %todo %uncalendar)
+      target=?(%telegram %mail %chat %calendar %todo %uncalendar %writer)
       to=@t
       body=json
       note=@t
@@ -5325,6 +5631,43 @@
     ~[['cat' s+'timed'] ['fin' s+'to'] ['end_ms' (numb:enjs:format (ms-of end))]]
   ^-  (list [@t json])
   ~[['zone' s+zone]]
+::  +writer-op-of: what an approved correction, fact, merge or preference
+::  asks of the ship's own writer, or why it cannot be done
+::
+++  writer-op-of
+  |=  [id=@ta a=action now=@da]
+  ^-  (each json @t)
+  =/  p=json  payload.a
+  ?+  kind.a  [%| 'not an action the ship carries out itself']
+      %correct
+    =/  c  (de-correct p now)
+    ?:  ?=(%| -.c)  [%| p.c]
+    :-  %&
+    %-  pairs:enjs:format
+    :~  ['op' s+'correct']  ['subject' s+subject.p.c]  ['attr' s+attr.p.c]
+        ['value' (gj p 'value')]  ['why' s+why.p.c]  ['by' s+'owner']
+    ==
+      %fact
+    =/  subject=@t  (gs p 'subject')
+    ?:  =(~ (parse-bid subject))  [%| 'subject: expected <kind>/<slug>']
+    =/  attr=@t  (trim-cord (gs p 'attr'))
+    ?:  |(=('' attr) (gth (met 3 attr) 48))  [%| 'attr: 1 to 48 bytes']
+    =/  v=json  (gj p 'value')
+    ?:  |(?=(~ v) ?=([%a *] v) &(?=([%o *] v) !(only-ref v)))
+      [%| 'value: a string, a number, true or false, or a ref']
+    [%& (snag 0 (observe-ops ~ ~[(obs-row subject attr v now ~ 100 ['owner' id] 'owner')]))]
+      %merge
+    =/  from=@t  (gs p 'from')
+    =/  into=@t  (gs p 'into')
+    ?:  |(=(~ (parse-bid from)) =(~ (parse-bid into)))  [%| 'from and into: body ids']
+    ?:  =(from into)  [%| 'from and into are the same body']
+    ?:  =('person/me' from)  [%| 'person/me cannot be merged away']
+    [%& (merge-op from into)]
+      %preference
+    =/  t=@t  (trim-cord (gs p 'text'))
+    ?:  |(=('' t) (gth (met 3 t) 300))  [%| 'text: 1 to 300 bytes']
+    [%& (pairs:enjs:format ~[['op' s+'add-preference'] ['text' s+t] ['by' s+'owner']])]
+  ==
 ::  +exec-cals: the calendars the owner named in policy.json for tasks'
 ::  todos and for calendar events, '' for the calendar's default
 ::
@@ -5352,6 +5695,12 @@
   |=  [id=@ta a=action]
   ^-  (unit exec-plan)
   ?.  =(%approved status.a)  ~
+  ::  a correction, a fact or a preference is the writer's: the body is
+  ::  the op, or the note says why it waits. A merge is run-merges'.
+  ?:  ?=(?(%correct %fact %preference) kind.a)
+    =/  w=(each json @t)  (writer-op-of id a now)
+    ?:  ?=(%| -.w)  `[id kind.a %writer '' ~ p.w]
+    `[id kind.a %writer '' p.w '']
   ?:  =(%message kind.a)
     =/  via=@t  (lower (gs payload.a 'via'))
     =/  who=@t  (gs payload.a 'to')
@@ -6702,6 +7051,24 @@
   `(cat 3 'not in scope: ' u.bad)
 ::  +deny-write: why a key may not write a body of this kind, or ~
 ::
+::  +corrections-for: the corrections an actor may see, as its view
+::  would show them: a key sees none on a kind outside its scope, on an
+::  attribute hidden from it, or naming a body it may not know of
+::
+++  corrections-for
+  |=  [act=actor cs=(list correction) hide=(set @t)]
+  ^-  (list correction)
+  ?~  scope.act  cs
+  =/  s=scope  u.scope.act
+  %+  skim  cs
+  |=  c=correction
+  =/  sk  (parse-bid subject.c)
+  =/  vk  (parse-bid value.c)
+  ?&  ?=(^ sk)
+      (kind-in-scope s kind.u.sk)
+      !(~(has in hide) attr.c)
+      |(?=(~ vk) (kind-in-scope s kind.u.vk))
+  ==
 ++  deny-write
   |=  [act=actor kind=@tas]
   ^-  (unit @t)
@@ -6810,6 +7177,10 @@
   ?:  &(=('GET' meth) ?=([%api %settings ~] suffix))            `[%get-settings %own]
   ?:  &(=('GET' meth) ?=([%api %preferences ~] suffix))         `[%get-preferences %any]
   ?:  &(=('POST' meth) ?=([%api %unalias ~] suffix))            `[%post-unalias %own]
+  ?:  &(=('POST' meth) ?=([%api %correct ~] suffix))            `[%post-correct %writes]
+  ?:  &(=('GET' meth) ?=([%api %corrections ~] suffix))         `[%get-corrections %any]
+  ?:  &(=('DELETE' meth) ?=([%api %corrections @ ~] suffix))    `[%delete-corrections %own]
+  ?:  &(=('POST' meth) ?=([%api %instruct ~] suffix))           `[%post-instruct %writes]
   ?:  &(=('PUT' meth) ?=([%api %preferences ~] suffix))         `[%put-preferences %writes]
   ?:  &(=('GET' meth) ?=([%api %schema ~] suffix))              `[%get-schema %own]
   ?:  &(=('PUT' meth) ?=([%api %schema ~] suffix))              `[%put-schema %own]

@@ -125,7 +125,10 @@ for b in old_sits:
     if b.startswith('situation/') and b.endswith('-breakdown'):
         curl('DELETE', API + '/body/' + b)
 retract_matrix('person/sarah')
-for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, ORG, SIT]:
+#  and what a run that died before its teardown left: a gate person
+#  named "the ..." is named by any text with "the" in it
+for b in ['person/sarah', 'thing/subaru', 'place/home', SHOP, ORG, SIT, 'person/gate-tg', 'person/gate-ship', 'person/gate-nobody',
+          'person/gate-people', 'person/gate-shipped', 'person/gate-karl', 'person/gate-struck']:
     curl('DELETE', API + '/body/' + b)
 code, me = body('person/me')
 check('person/me exists', code == 200, (code, me))
@@ -488,7 +491,7 @@ seen = []
 DOWN = False  # the analyst answers 503 while set: the reader's model outage
 #  defined further down; until then the stub answers 503, since a reader
 #  on the ship may call it as soon as it listens (the last run's settings)
-TG_CANNED = DECIDER_CANNED = REFINE_CANNED = None
+TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = None
 class Stub(http.server.BaseHTTPRequestHandler):
     #  one stub for the model, the decider and Telegram, told apart by path:
     #  the analyst's chat request by its system block (the analyst prompt's
@@ -513,6 +516,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 user = ((body.get('messages') or [{}])[-1].get('content') or [{}])[0].get('text', '')
                 tail = user.rstrip().rsplit('The note: ', 1)[-1]
                 out = REFINE_CANNED and REFINE_CANNED.get(tail, REFINE_CANNED[''])
+            elif system.startswith('You carry out'):
+                out = INSTRUCT_CANNED
             else:
                 out = TG_CANNED if system.startswith('You turn') else CANNED
         if out is None:
@@ -880,7 +885,11 @@ if merges:
     code, acts = curl('GET', API + '/actions?status=all')
     mine = [a for a in acts if a.get('id') == merges[0]['id']]
     check('the approved merge ran: the org is gone, its phone is on the person, the action is done', ORG not in ids and dictish(dictish(attrs(s, DANA)).get('phone')).get('value') == '555-0100' and mine and mine[0]['status'] == 'done', (ORG in ids, attrs(s, DANA), mine))
-    check('the record counts the merge', dictish(last).get('merged') == 1, last)
+    #  the executor runs a merge at approval; reconcile runs one it missed.
+    #  Either way it runs once, and reconcile counts only its own
+    ran_by = [h.get('by') for h in (mine[0].get('history') or []) if dictish(h).get('status') == 'claimed'] if mine else []
+    check('the merge ran once, by the executor or reconcile, and reconcile\'s record counts it only when reconcile ran it',
+          len(ran_by) == 1 and ran_by[0] in ('ship', 'reconcile') and dictish(last).get('merged') == (1 if ran_by[0] == 'reconcile' else 0), (ran_by, last))
 for b in [OVER, AHEAD, FUTURE, ORG, DANA, BDAY, 'activity/gate-ballet', 'person/felix'] + BALLET:
     curl('DELETE', API + '/body/' + b)
 
@@ -1509,6 +1518,77 @@ while time.time() < deadline and exec_last().get('at') == before.get('at'):
 after = exec_last()
 check('the owner wakes the executor and the record follows', code == 200 and dictish(d).get('ok') is True and after.get('at') != before.get('at'), (code, d, before.get('at'), after.get('at')))
 check('an idle pass keeps the last active pass\'s counts and acted_at', after.get('acted_at') == before.get('acted_at') and after.get('deleted') == before.get('deleted'), (before, after))
+# ---- corrections and instructions: a value struck as wrong goes from every source and stays out; the owner's words become actions ----
+STRUCK = 'person/gate-struck'
+PARIS, ROME, EMP = 'Gate Paris %s' % XRUN, 'Gate Rome %s' % XRUN, 'Gate Co %s' % XRUN
+def live(attr):
+    return [dictish(o).get('value') for o in dictish(curl('GET', API + '/body/' + STRUCK)[1]).get('observations') or [] if dictish(o).get('attr') == attr and dictish(o).get('status') == 'live']
+def until(fn, bound=30):
+    deadline = time.time() + bound
+    while not fn() and time.time() < deadline:
+        time.sleep(1)
+    return fn()
+now = datetime.now(timezone.utc)
+observe([{'id': STRUCK, 'name': 'Gate Struck'}], [obs(STRUCK, 'city', PARIS, now - timedelta(minutes=2), src('struck-a')),
+                                                  obs(STRUCK, 'city', PARIS, now - timedelta(minutes=1), src('struck-b'))])
+until(lambda: live('city').count(PARIS) == 2)
+code, d = curl('POST', API + '/correct', {'subject': STRUCK, 'attr': 'city', 'value': PARIS, 'why': 'never lived there'})
+CID = dictish(d).get('id', '')
+check('a value struck as wrong answers the correction, by the owner, with its id', code == 200 and bool(CID) and dictish(d).get('by') == 'owner', (code, d))
+check('every row naming the value is retracted, from both sources', until(lambda: PARIS not in live('city')), live('city'))
+code, cs = curl('GET', API + '/corrections')
+check('the corrections list it first, with the reason', code == 200 and isinstance(cs, list) and cs and dictish(cs[0]).get('id') == CID and dictish(cs[0]).get('why') == 'never lived there', (code, cs[:1] if isinstance(cs, list) else cs))
+#  the marker lands in the same batch, so its arrival says the writer took the batch
+observe([], [obs(STRUCK, 'city', PARIS.upper(), now, src('struck-c')), obs(STRUCK, 'nickname', 'marker one', now, src('struck-c'))])
+check('the writer refuses the value again, in any case, from any source', until(lambda: 'marker one' in live('nickname')) and PARIS.upper() not in live('city'), live('city'))
+code, d = curl('POST', API + '/correct', {'subject': 'person/gate-nobody-' + XRUN, 'attr': 'city', 'value': 'x'})
+check('a correction of an unknown body is 404', code == 404, (code, d))
+code, d = curl('POST', API + '/correct', {'subject': STRUCK, 'attr': 'city'})
+check('a correction without a value is 400', code == 400, (code, d))
+code, rokey = curl('POST', API + '/clients', {'name': 'gate read key', 'by': 'gate-read', 'scope': {'kinds': ['person'], 'actions': ['note'], 'write': False, 'sensitive': 'none'}})
+code, d = curl('POST', API + '/correct', {'subject': STRUCK, 'attr': 'city', 'value': 'x'}, jar=None, token=dictish(rokey).get('token'))
+check('a read only key may not strike a value', code == 403, (code, d))
+code, d = curl('POST', API + '/instruct', {'text': 'hello'}, jar=None, token=dictish(rokey).get('token'))
+check('a read only key may not instruct', code == 403, (code, d))
+if dictish(rokey).get('id'):
+    curl('DELETE', API + '/clients/' + dictish(rokey)['id'])
+owner_only('a key may not take a correction back', 'DELETE', '/corrections/' + CID)
+code, d = curl('DELETE', API + '/corrections/' + CID)
+check('the owner takes a correction back by its id', code == 200 and dictish(d).get('ok') is True, (code, d))
+observe([], [obs(STRUCK, 'city', PARIS, now, src('struck-d'))])
+check('taken back, the value may be written again', until(lambda: PARIS in live('city')), live('city'))
+code, d = curl('DELETE', API + '/corrections/' + CID)
+check('taking back an unknown correction is 404', code == 404, (code, d))
+observe([], [obs(STRUCK, 'city', ROME, now + timedelta(seconds=1), src('struck-e'))])
+until(lambda: ROME in live('city'))
+INSTRUCT_CANNED = completion({'reply': 'Struck Rome and noted the job.', 'actions': [
+    {'kind': 'correct', 'title': 'Gate Struck never lived in Rome', 'about': [STRUCK], 'payload': {'subject': STRUCK, 'attr': 'city', 'value': ROME, 'why': 'the owner said so'}},
+    {'kind': 'fact', 'title': 'Gate Struck works at Gate Co', 'about': [STRUCK], 'payload': {'subject': STRUCK, 'attr': 'employer', 'value': EMP}},
+    {'kind': 'launch', 'title': 'Launch something', 'about': [], 'payload': {}}]})
+curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
+code, d = curl('POST', API + '/instruct', {'text': ''})
+check('an empty instruction is 400', code == 400, (code, d))
+n_instruct = len(seen)
+TOLD = 'she never lived in rome and she works at gate co'
+code, d = curl('POST', API + '/instruct', {'text': TOLD, 'about': [STRUCK], 'apply': True}, timeout=180)
+d = dictish(d)
+IDS = [dictish(a).get('id') for a in d.get('actions') or []]
+check('an instruction answers the reply, files the two kinds the ship knows and says why the third was dropped',
+      code == 200 and d.get('ok') is True and d.get('reply') == 'Struck Rome and noted the job.'
+      and sorted(dictish(a).get('kind') for a in d.get('actions') or []) == ['correct', 'fact'] and 'launch' in (d.get('note') or ''), (code, d))
+asked = [b for p, h, b in seen[n_instruct:] if p.endswith('/chat/completions') and system_of(b).startswith('You carry out')]
+user_text = json.dumps(asked[0].get('messages', [])[-1]) if asked else ''
+check('the model was asked once, with the owner\'s words and the body in focus', len(asked) == 1 and TOLD in user_text and STRUCK in user_text, len(asked))
+curl('POST', API + '/exec/wake', {})
+check('with apply, the executor carries both out: Rome is struck and the job stands',
+      until(lambda: ROME not in live('city') and EMP in live('employer'), 90), (live('city'), live('employer')))
+check('both actions end done', until(lambda: IDS and all(action(i).get('status') == 'done' for i in IDS), 60), [action(i).get('status') for i in IDS])
+check('the fact the owner stated is signed owner', any(dictish(o).get('value') == EMP and dictish(o).get('by') == 'owner' for o in dictish(curl('GET', API + '/body/' + STRUCK)[1]).get('observations') or []), None)
+code, cs = curl('GET', API + '/corrections')
+for c in cs if isinstance(cs, list) else []:
+    if dictish(c).get('subject') == STRUCK:
+        curl('DELETE', API + '/corrections/' + dictish(c)['id'])
+curl('DELETE', API + '/body/' + STRUCK)
 # teardown: the events and the todos this run made, and the three people
 for e in [EVENT_ID, ONCE_ID, REPEAT_ID]:
     if e:

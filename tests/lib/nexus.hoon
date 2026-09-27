@@ -58,6 +58,10 @@
     ['GET' `path`~[%api %preferences] %get-preferences %any]
     ['PUT' `path`~[%api %preferences] %put-preferences %writes]
     ['POST' `path`~[%api %unalias] %post-unalias %own]
+    ['POST' `path`~[%api %correct] %post-correct %writes]
+    ['GET' `path`~[%api %corrections] %get-corrections %any]
+    ['DELETE' `path`~[%api %corrections %x] %delete-corrections %own]
+    ['POST' `path`~[%api %instruct] %post-instruct %writes]
     ['GET' `path`~[%api %schema] %get-schema %own]
     ['PUT' `path`~[%api %schema] %put-schema %own]
     ['GET' `path`~[%api %policy] %get-policy %own]
@@ -114,6 +118,248 @@
     (expect-eq !>(~) !>((route-of:orr 'PATCH' /api/state)))
     (expect-eq !>(~) !>((route-of:orr 'GET' /api/nope)))
     (expect-eq !>(~) !>((route-of:orr 'POST' /api/state)))
+  ==
+::  a correction: held at the door, kept newest first and once per fact,
+::  taken back by its id, and matched however the value is cased
+++  test-corrections
+  =/  ref-me  (pairs:enjs:format ~[['ref' s+'person/andrea']])
+  =/  c1  (de-correct:orr (pairs:enjs:format ~[['subject' s+'situation/trip'] ['attr' s+'participants'] ['value' ref-me] ['why' s+'  she stays home ']]) now)
+  =/  c2  (de-correct:orr (jo '{"subject": "person/lin", "attr": "school", "value": "Oak Hill"}') now)
+  ?>  ?=(%& -.c1)
+  ?>  ?=(%& -.c2)
+  =/  stored=json  (add-correction:orr (add-correction:orr [%a ~] p.c1) p.c2)
+  =/  again=json  (add-correction:orr stored p.c1(why 'twice'))
+  =/  cs=(list correction:orr)  (de-corrections:orr again)
+  =/  row
+    |=  [id=@t sub=@t attr=@t v=json gone=?]
+    ^-  row:orr
+    [id [sub attr v now ~ 100 ['calendar' 'u1'] 'calendar' now gone '']]
+  =/  rows=(list row:orr)
+    :~  (row 'r1' 'situation/trip' 'participants' ref-me |)
+        (row 'r2' 'situation/trip' 'participants' (pairs:enjs:format ~[['ref' s+'person/me']]) |)
+        (row 'r3' 'situation/trip' 'participants' ref-me &)
+        (row 'r4' 'situation/trip' 'organizer' ref-me |)
+    ==
+  =/  batch=(list (each obs:orr @t))
+    :~  [%& obs:(row 'x' 'situation/trip' 'participants' ref-me |)]
+        [%& obs:(row 'y' 'person/lin' 'school' s+'OAK HILL' |)]
+        [%& obs:(row 'z' 'person/lin' 'school' s+'Elm' |)]
+        [%| 'already bad']
+    ==
+  =/  struck  (strike-obs:orr batch cs)
+  ;:  weld
+    (expect-eq !>(['situation/trip' 'participants' 'person/andrea' 'she stays home' now 'owner']) !>(p.c1))
+    (expect-eq !>(`(list @t)`~['person/andrea' 'person/lin']) !>((turn cs |=(c=correction:orr ?:(=('person/lin' subject.c) subject.c value.c)))))
+    (expect-eq !>('twice') !>(why:(snag 0 cs)))
+    (expect-eq !>(1) !>((lent (de-corrections:orr (drop-correction:orr again (correction-id:orr p.c1(why 'twice')))))))
+    (expect-eq !>(again) !>((drop-correction:orr again 'nope')))
+    (expect-eq !>(`(list @t)`~['r1']) !>((turn (struck-rows:orr rows p.c1) |=(r=row:orr id.r))))
+    (expect-eq !>(`(list ?)`~[| | & |]) !>((turn struck |=(e=(each obs:orr @t) ?=(%& -.e)))))
+    (expect-eq !>(`(each correction:orr @t)`[%| 'subject: expected <kind>/<slug>']) !>((de-correct:orr (jo '{"subject": "nope", "attr": "a", "value": "b"}') now)))
+    (expect-eq !>(`(each correction:orr @t)`[%| 'value: a string or a ref, 1 to 300 bytes']) !>((de-correct:orr (jo '{"subject": "person/a", "attr": "a", "value": {"x": 1}}') now)))
+    (expect-eq !>(`(each correction:orr @t)`[%| 'attr: 1 to 48 bytes']) !>((de-correct:orr (jo '{"subject": "person/a", "attr": "", "value": "b"}') now)))
+  ==
+::  the edges the mutation run found untested: a correction strikes its
+::  own subject and attribute only, the caps hold at their bounds, a key
+::  sees a ref in its scope, and each list keeps to its own proposer
+++  test-learning-edges
+  =/  row
+    |=  [id=@t sub=@t attr=@t v=json]
+    ^-  row:orr
+    [id [sub attr v now ~ 100 ['calendar' 'u1'] 'calendar' now | '']]
+  =/  c=correction:orr  ['situation/trip' 'venue' 'Oak Hall' '' now 'owner']
+  =/  act
+    |=  [n=@ud by=@t kind=@tas status=@tas note=@t]
+    ^-  [@ta action:orr]
+    [(crip "e{(a-co:co n)}") [kind (crip "E{(a-co:co n)}") [%o ~] ~ ~ by (add now (mul n ~s1)) status note ~]]
+  =/  mk
+    |=  [kind=@tas p=(list [@t json])]
+    ^-  action:orr
+    [kind 'x' (pairs:enjs:format p) ~ ~ 'generator' now %approved '' ~]
+  =/  ok-op
+    |=  a=action:orr
+    ^-  ?
+    =(%& -:(writer-op-of:orr 'a1' a now))
+  =/  fact
+    |=  [attr=@t v=json]
+    ^-  ?
+    (ok-op (mk %fact ~[['subject' s+'person/a'] ['attr' s+attr] ['value' v]]))
+  =/  corr
+    |=  [attr=@t value=@t why=@t]
+    ^-  ?
+    =(%& -:(de-correct:orr (pairs:enjs:format ~[['subject' s+'person/a'] ['attr' s+attr] ['value' s+value] ['why' s+why]]) now))
+  =/  sc  (de-scope:orr (jo '{"kinds": ["situation"], "write": true}'))
+  ?>  ?=(%& -.sc)
+  =/  key=actor:orr  [| 'k' `p.sc]
+  =/  b
+    |=  [id=@t name=@t]
+    ^-  loaded:orr
+    [id [%person name ~ now ~] ~]
+  ;:  weld
+    %+  expect-eq  !>(`(list @t)`~['r1'])
+    !>  %+  turn
+          (struck-rows:orr ~[(row 'r1' 'situation/trip' 'venue' s+'oak hall') (row 'r2' 'situation/gala' 'venue' s+'Oak Hall') (row 'r3' 'situation/trip' 'host' s+'Oak Hall')] c)
+        |=(r=row:orr id.r)
+    %+  expect-eq  !>(`(list ?)`~[| & &])
+    !>  %+  turn
+          (strike-obs:orr ~[[%& obs:(row 'x' 'situation/trip' 'venue' s+'Oak Hall')] [%& obs:(row 'y' 'situation/gala' 'venue' s+'Oak Hall')] [%& obs:(row 'z' 'situation/trip' 'host' s+'Oak Hall')]] ~[c])
+        |=(e=(each obs:orr @t) ?=(%& -.e))
+    ::  an approved action's note is not a dismissal; another proposer's
+    ::  kept action is not the generator's example
+    %+  expect-eq  !>(`(list @t)`~['The owner dismissed these of your proposals, with the reason; do not propose their like:' '  task | E2 | no'])
+    !>((lesson-lines:orr ~ ~[(act 1 'mail' %task %approved 'keep it') (act 2 'mail' %task %dismissed 'no')] 'mail'))
+    %+  expect-eq  !>(`(list @t)`~['Proposals the owner kept lately (approved or done): what helps. Propose more like these:' '  task | E4'])
+    !>((kept-lines:orr ~[(act 3 'mail' %task %done '') (act 4 'generator' %task %done '')]))
+    ::  three decided is enough to tell
+    (expect-eq !>(2) !>((lent (fared-lines:orr ~[(act 5 'generator' %task %done '') (act 6 'generator' %task %done '') (act 7 'generator' %task %dismissed 'x')]))))
+    (expect-eq !>(1) !>((lent (corrections-for:orr key ~[['situation/trip' 'follows' 'situation/gala' '' now 'owner']] ~))))
+    ::  an about body comes once, and a three-letter name is said
+    (expect-eq !>(`(list @t)`~['person/an']) !>((turn (instruct-focus:orr ~[(b 'person/an' 'Ann')] (sy ~['person/an']) 'ann is home') |=(l=loaded:orr id.l))))
+    (expect-eq !>(`(list @t)`~['person/bo']) !>((turn (instruct-focus:orr ~[(b 'person/bo' 'Bob')] ~ 'bob is here') |=(l=loaded:orr id.l))))
+    %+  expect-eq  !>(`(list ?)`~[& | & | & |])
+    !>  ^-  (list ?)
+        :~  (corr (fil 3 48 'a') 'v' '')  (corr (fil 3 49 'a') 'v' '')
+            (corr 'a' (fil 3 300 'v') '')  (corr 'a' (fil 3 301 'v') '')
+            (corr 'a' 'v' (fil 3 500 'w'))  (corr 'a' 'v' (fil 3 501 'w'))
+        ==
+    %+  expect-eq  !>(`(list ?)`~[& | | | &])
+    !>  ^-  (list ?)
+        :~  (fact (fil 3 48 'a') s+'v')  (fact (fil 3 49 'a') s+'v')  (fact 'a' ~)
+            (fact 'a' a+~[s+'v'])  (fact 'a' (pairs:enjs:format ~[['ref' s+'person/b']]))
+        ==
+    %+  expect-eq  !>(`(list ?)`~[| | & |])
+    !>  ^-  (list ?)
+        :~  (ok-op (mk %merge ~[['from' s+'nope'] ['into' s+'person/b']]))
+            (ok-op (mk %merge ~[['from' s+'person/a'] ['into' s+'nope']]))
+            (ok-op (mk %preference ~[['text' s+(fil 3 300 'p')]]))
+            (ok-op (mk %preference ~[['text' s+(fil 3 301 'p')]]))
+        ==
+  ==
+::  a key sees the corrections its view would show, the owner all
+++  test-corrections-for
+  =/  sc  (de-scope:orr (jo '{"kinds": ["situation"], "write": true}'))
+  ?>  ?=(%& -.sc)
+  =/  cs=(list correction:orr)
+    :~  ['situation/trip' 'participants' 'person/andrea' '' now 'owner']
+        ['situation/trip' 'venue' 'Oak Hall' '' now 'owner']
+        ['situation/trip' 'health' 'flu' '' now 'owner']
+        ['person/lin' 'school' 'Oak Hill' '' now 'owner']
+    ==
+  =/  key=actor:orr  [| 'k' `p.sc]
+  ;:  weld
+    (expect-eq !>(4) !>((lent (corrections-for:orr [& 'http' ~] cs (sy ~['health'])))))
+    (expect-eq !>(`(list @t)`~['venue']) !>((turn (corrections-for:orr key cs (sy ~['health'])) |=(c=correction:orr attr.c))))
+  ==
+::  what the readers and the generator are told of the owner's feedback
+++  test-lessons
+  =/  act
+    |=  [n=@ud by=@t kind=@tas status=@tas note=@t]
+    ^-  [@ta action:orr]
+    :-  (crip "a{(a-co:co n)}")
+    [kind (crip "T{(a-co:co n)}") (pairs:enjs:format ~[['notes' s+'bring the forms']]) ~ ~ by (add now (mul n ~s1)) status note ~]
+  =/  acts=(list [@ta action:orr])
+    :~  (act 1 'mail' %task %dismissed 'a refund')
+        (act 2 'mail' %task %dismissed '')
+        (act 3 'chat' %message %dismissed 'not ours')
+        (act 4 'generator' %task %done '')
+        (act 5 'generator' %task %approved '')
+        (act 6 'generator' %task %dismissed 'no')
+        (act 7 'generator' %task %dismissed 'no')
+    ==
+  =/  c=correction:orr  ['situation/trip' 'participants' 'person/andrea' 'she stays home' now 'owner']
+  ;:  weld
+    %+  expect-eq
+      !>  ^-  (list @t)
+      :~  'The owner struck these facts as wrong; never write them again:'
+          '  situation/trip participants = person/andrea (she stays home)'
+          'The owner dismissed these of your proposals, with the reason; do not propose their like:'
+          '  task | T1 | a refund'
+      ==
+    !>((lesson-lines:orr ~[c] acts 'mail'))
+    (expect-eq !>(`(list @t)`~) !>((lesson-lines:orr ~ acts 'telegram')))
+    %+  expect-eq
+      !>(`(list @t)`~['Proposals the owner kept lately (approved or done): what helps. Propose more like these:' '  task | T5 | bring the forms' '  task | T4 | bring the forms'])
+    !>((kept-lines:orr acts))
+    %+  expect-eq
+      !>(`(list @t)`~['How proposals fared (kept of decided, by who proposed them and kind):' '  generator task: kept 2 of 4'])
+    !>((fared-lines:orr acts))
+  ==
+::  what each kind the ship carries out itself asks of its writer, and
+::  the executor's plan for it
+++  test-writer-kinds
+  =/  mk
+    |=  [kind=@tas p=@t]
+    ^-  action:orr
+    [kind 'x' (jo p) ~ ~ 'generator' now %approved '' ~]
+  =/  op
+    |=  a=action:orr
+    ^-  json
+    =/  w  (writer-op-of:orr 'a1' a now)
+    ?>(?=(%& -.w) p.w)
+  =/  bad
+    |=  a=action:orr
+    ^-  @t
+    =/  w  (writer-op-of:orr 'a1' a now)
+    ?>(?=(%| -.w) p.w)
+  =/  fact=json  (op (mk %fact '{"subject": "person/lin", "attr": "school", "value": "Oak Hill"}'))
+  ::  a merge is left to run-merges, which checks it took
+  =/  plans  (plan-exec:orr ~[['c1' (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}}')] ['m1' (mk %merge '{"from": "person/a", "into": "person/b"}')] ['p1' (mk %preference '{"text": ""}')]] ~ ~ ~ now '' ['' ''])
+  ;:  weld
+    (expect-eq !>('correct') !>((gs:orr (op (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}, "why": "home"}')) 'op')))
+    (expect-eq !>('observe') !>((gs:orr fact 'op')))
+    (expect-eq !>('owner') !>((gs:orr (gj:orr (snag 0 (ga:orr fact 'observations')) 'source') 'kind')))
+    (expect-eq !>('Oak Hill') !>((gs:orr (snag 0 (ga:orr fact 'observations')) 'value')))
+    (expect-eq !>((merge-op:orr 'person/a' 'person/b')) !>((op (mk %merge '{"from": "person/a", "into": "person/b"}'))))
+    (expect-eq !>('add-preference') !>((gs:orr (op (mk %preference '{"text": " Never a todo for attending "}')) 'op')))
+    (expect-eq !>('person/me cannot be merged away') !>((bad (mk %merge '{"from": "person/me", "into": "person/b"}'))))
+    (expect-eq !>('value: a string, a number, true or false, or a ref') !>((bad (mk %fact '{"subject": "person/lin", "attr": "school", "value": {"x": 1}}'))))
+    (expect-eq !>('text: 1 to 300 bytes') !>((bad (mk %preference '{"text": ""}'))))
+    (expect-eq !>(`(list @t)`~['c1' 'p1']) !>((turn plans |=(p=exec-plan:orr `@t`id.p))))
+    (expect-eq !>(`(list ?)`~[& &]) !>((turn plans |=(p=exec-plan:orr =(%writer target.p)))))
+    (expect-eq !>(`(list @t)`~['' 'text: 1 to 300 bytes']) !>((turn plans |=(p=exec-plan:orr note.p))))
+  ==
+::  the model's answer to an instruction, held: kinds it may propose,
+::  bodies the ship knows, a writer's kind whole, a default title
+++  test-de-instruct
+  =/  known=(set @t)  (sy ~['situation/trip' 'person/andrea' 'person/me'])
+  =/  ans=json
+    %-  jo
+    '''
+    {"reply": "  Takes Andrea off the trip. ",
+     "actions": [
+      {"kind": "correct", "title": "Andrea is not on the trip", "about": ["situation/trip", "person/nobody"],
+       "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}, "why": "she stays home"}},
+      {"kind": "correct", "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}}},
+      {"kind": "home", "title": "lights", "payload": {}},
+      {"kind": "merge", "title": "one", "payload": {"from": "person/ghost", "into": "person/me"}},
+      {"kind": "fact", "title": "bad", "payload": {"subject": "person/andrea", "attr": "", "value": "x"}},
+      {"kind": "preference", "title": "rule", "payload": {"text": "Andrea stays home when I travel for work"}}]}
+    '''
+  =/  out  (de-instruct:orr ans known now 'owner')
+  ;:  weld
+    (expect-eq !>('Takes Andrea off the trip.') !>(reply.out))
+    (expect-eq !>(`(list @t)`~['correct' 'correct' 'preference']) !>((turn acts.out |=(j=json (gs:orr j 'kind')))))
+    (expect-eq !>(`(list @t)`~['situation/trip']) !>((strings:orr (ga:orr (snag 0 acts.out) 'about'))))
+    (expect-eq !>('correct') !>((gs:orr (snag 1 acts.out) 'title')))
+    (expect-eq !>('owner') !>((gs:orr (snag 0 acts.out) 'by')))
+    (expect-eq !>(3) !>((lent notes.out)))
+  ==
+::  the bodies an instruction is likely about: the answered action's
+::  first, then the ones it names
+++  test-instruct-focus
+  =/  b
+    |=  [id=@t name=@t als=(list @t)]
+    ^-  loaded:orr
+    [id [%person name (sy als) now ~] ~]
+  =/  all=(list loaded:orr)
+    :~  (b 'person/andrea' 'Andrea' ~['wife'])
+        (b 'person/lin' 'Lin' ~)
+        (b 'situation/trip' 'Barcelona trip' ~)
+        (b 'person/al' 'Al' ~)
+    ==
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['situation/trip' 'person/andrea']) !>((turn (instruct-focus:orr all (sy ~['situation/trip']) 'my Wife stays home') |=(l=loaded:orr id.l))))
+    (expect-eq !>(`(list @t)`~) !>((turn (instruct-focus:orr all ~ 'al is here') |=(l=loaded:orr id.l))))
   ==
 ::  an alias comes off however it is cased or spaced, and the rest stay
 ++  test-without-alias

@@ -259,7 +259,27 @@ ok('a tidy move shows at once: the button says what is under way, and the row is
   src.includes("working(b, 'merging');") && src.includes("settled(b, 'merged'); later([b.dataset.merge]);") && src.includes("function settled(b, what) {"));
 const quality = render.qualityCard([{ by: 'mail', kind: 'task', kept: 3, dismissed: 1, reasoned: 1, waiting: 0, failed: 0 }]);
 ok('the quality card says what each proposer kept of what was decided', quality.includes('>mail<') && quality.includes('75%') && quality.includes('(1 with a reason)') && render.qualityCard([]) === '');
+const struck = render.correctionsCard([{ id: '42', subject: 'person/andrea', attr: 'participants', value: 'situation/barcelona', why: 'she was not there', at: '2026-09-27T00:00:00Z', by: 'owner' }]);
+ok('the corrections card lists what was struck, with the reason and an undo by id',
+  struck.includes('href="#body/person/andrea"') && struck.includes('she was not there') && struck.includes('data-uncorrect="42"') && render.correctionsCard([]) === '');
+ok('a string or a ref value may be struck as not true; a number or a list may not',
+  render.notTrue('person/andrea', 'city', 'Paris').includes('data-correct="person/andrea" data-attr="city" data-value="Paris"')
+  && render.notTrue('person/andrea', 'spouse', { ref: 'person/sam' }).includes('data-value="person/sam"')
+  && render.notTrue('person/andrea', 'age', 40) === '' && render.notTrue('person/andrea', 'kids', ['a']) === '');
+const box = render.instructBox('person/andrea', '', 'Tell the ship');
+ok('an instruction box carries its body and action in one key, with a do-it and a propose button',
+  box.includes('data-instruct-text="person/andrea|"') && box.includes('data-instruct="person/andrea|">do it') && box.includes('data-propose="1">propose'));
+ok('the body page offers an instruction box and marks each string value not true',
+  body.includes('data-instruct-text="' + view.id + '|"') && body.includes('data-correct="'));
+ok('the inbox leads with an instruction box and answers a proposed note with one of its own, not a refine box',
+  inboxHtml.indexOf('data-instruct-text="|"') < inboxHtml.indexOf('<ul class="actions">')
+  && render.inbox([{ id: 'n9', kind: 'note', title: 'Andrea in Barcelona?', status: 'proposed', proposed: '', by: 'generator', about: [], history: [] }]).includes('data-instruct-text="|n9"')
+  && !inboxHtml.includes('data-instruct-text="|p1"'));
+ok('a half-typed instruction holds the refresh like a half-typed refine note',
+  src.includes("querySelectorAll('[data-refine-text], [data-instruct-text]')"));
 const withCals = render.settings({ kinds: {} }, { todo_calendar: 'c-lists' }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], []);
+ok('the settings page shows what was struck, after the preferences',
+  render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], [{ id: '1', subject: 'person/a', attr: 'x', value: 'y', why: '', at: '', by: 'owner' }]).includes('Struck as wrong'));
 ok('the executor card lets the owner pick the lists, says todos stay on the ship, and the settings page leads with preferences',
   withCals.includes('id="todo-cal" data-now="c-lists"') && withCals.includes('id="event-cal" data-now=""') && withCals.includes('Todos stay on your ship')
   && withCals.indexOf('id="prefs"') < withCals.indexOf('Executor'));

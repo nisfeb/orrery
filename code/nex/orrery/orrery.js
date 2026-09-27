@@ -312,6 +312,7 @@
       (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(function (a) {
         return '<span class="alias">' + esc(a) + '<button class="small" data-unalias="' + esc(a) + '" data-id="' + esc(v.id) + '" aria-label="remove the alias ' + esc(a) + '">&times;</button></span>';
       }).join(' ') : '') + '</p>';
+    out += instructBox(v.id, '', 'Tell the ship what is wrong or what to do about ' + (v.name || v.id));
     var attrs = Object.keys(v.attrs || {}).sort();
     out += '<div class="card"><h2>Now</h2>';
     if (!attrs.length) out += '<p class="muted">No current attributes.</p>';
@@ -321,7 +322,7 @@
         var rows = v.attrs[a];
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
           if (!r) return;
-          out += '<tr>' + cell('attribute', esc(a)) + cell('value', fmtValue(r.value)) + cell('since', fmtTime(r.at)) +
+          out += '<tr>' + cell('attribute', esc(a)) + cell('value', fmtValue(r.value) + notTrue(v.id, a, r.value)) + cell('since', fmtTime(r.at)) +
             cell('by', esc(r.by || '')) + cell('source', source(r.source)) + '</tr>';
         });
       });
@@ -350,6 +351,24 @@
     return out;
   }
 
+  // a value struck as wrong goes from every source and the writer
+  // refuses it after; a correction names a string or a ref, nothing else
+  function notTrue(id, attr, value) {
+    var named = typeof value === 'string' ? value : (value && typeof value === 'object' && typeof value.ref === 'string' ? value.ref : '');
+    if (!named) return '';
+    return ' <button class="small" data-correct="' + esc(id) + '" data-attr="' + esc(attr) + '" data-value="' + esc(named) + '" aria-label="not true">not true</button>';
+  }
+  // the owner's own words, which the ship turns into actions: filed as
+  // proposals, or done at once. On a body it is about that body; under
+  // an action it answers that action.
+  // the ship's last reply to each box, kept past the redraw its actions cause
+  var replied = Object.create(null);
+  function instructBox(about, action, hint) {
+    var k = esc(about + '|' + action);
+    return '<div class="instruct"><textarea class="short" rows="2" data-instruct-text="' + k + '" placeholder="' + esc(hint) + '" aria-label="an instruction"></textarea>' +
+      '<p><button data-instruct="' + k + '">do it</button> <button data-instruct="' + k + '" data-propose="1">propose</button> <span class="muted" data-instruct-note="' + k + '">' + esc(replied[about + '|' + action] || '') + '</span></p></div>';
+  }
+
   var MOVES = { proposed: ['approved', 'dismissed'], approved: ['done', 'failed', 'dismissed'], claimed: ['dismissed'] };
   var REFINABLE = ['task', 'calendar', 'message'];
   // the claimant is the by of the last claimed step in the history
@@ -372,7 +391,7 @@
     }).join(' &middot; ') + '</div>';
   }
   function inbox(actions, state) {
-    var out = '<h1>Inbox</h1>';
+    var out = '<h1>Inbox</h1>' + instructBox('', '', 'Tell the ship anything: "Andrea was not in Barcelona", "Sam and Samuel are one person", "never propose calls"');
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
     var byId = index(state);
     out += '<ul class="actions">';
@@ -392,6 +411,8 @@
       // three are the lib's reader-kinds, fixed there, so they are fixed here.
       if (a.status === 'proposed' && REFINABLE.indexOf(a.kind) >= 0) {
         out += '<p class="refine"><input data-refine-text="' + esc(a.id) + '" placeholder="a note for this action"> <button data-refine="' + esc(a.id) + '">refine</button> <span class="muted" data-refine-note="' + esc(a.id) + '"></span></p>';
+      } else if (a.status === 'proposed') {
+        out += instructBox('', a.id, 'Answer it: "remove her", "she was never there"');
       }
       out += '</li>';
     });
@@ -645,8 +666,19 @@
           '<td data-label="kept of decided">' + (decided ? Math.round(100 * (t.kept || 0) / decided) + '%' : '&ndash;') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+  // the facts the owner struck, which the writer refuses and every
+  // prompt is told of; undo lets the value be written again
+  function correctionsCard(cs) {
+    if (!cs || !cs.length) return '';
+    return '<div class="card"><h2>Struck as wrong</h2><p class="muted">The writer refuses these and every prompt is told of them.</p><ul class="links">' +
+      cs.map(function (c) {
+        return '<li><a href="#body/' + esc(c.subject) + '">' + esc(c.subject) + '</a> ' + esc(c.attr) + ' = ' + esc(c.value) +
+          (c.why ? ' <span class="muted">' + esc(c.why) + '</span>' : '') + ' <span class="muted">' + fmtTime(c.at) + '</span>' +
+          ' <button class="small" data-uncorrect="' + esc(c.id) + '">undo</button></li>';
+      }).join('') + '</ul></div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections) {
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -728,7 +760,7 @@
   var render = {
     phase: phase,
     bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, esc: esc, fmtValue: fmtValue,
-    seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard,
+    seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
   if (typeof document === 'undefined') { return; }
@@ -1056,7 +1088,7 @@
     if (v.name === 'inbox') return show(inbox(openActions(d), d));
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
-      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally));
+      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1177,7 +1209,7 @@
   // a write answers before the writer applies, so the refetch waits
   // after a move: a note half-typed under another action is kept, so the
   // refresh waits for it rather than wiping it
-  function typedNote() { return Array.prototype.some.call(view.querySelectorAll('[data-refine-text]'), function (i) { return !!i.value.trim(); }); }
+  function typedNote() { return Array.prototype.some.call(view.querySelectorAll('[data-refine-text], [data-instruct-text]'), function (i) { return !!i.value.trim(); }); }
   // after the owner's own move the refresh looks again each second until
   // the move shows: the writer applies it a while after the answer, and
   // the beacon's news can lag a minute. A merge or a delete shows when
@@ -1223,6 +1255,35 @@
         pol.event_calendar = eventCal;
         return post('/policy', pol, 'PUT');
       }).then(function () { dirty = false; say('saved: new todos and events go there'); refresh(true); }).catch(oops);
+    } else if (b.dataset.correct) {
+      var cwhy = prompt('Why is "' + b.dataset.value + '" wrong? It goes from every source, and the ship will not write it again.');
+      if (cwhy === null) return;
+      working(b, 'striking');
+      post('/correct', { subject: b.dataset.correct, attr: b.dataset.attr, value: b.dataset.value, why: cwhy.trim().slice(0, 500) })
+        .then(function () { b.textContent = 'struck'; say('struck: it goes from every source'); later(); }).catch(function (e) { unsettled(b); oops(e); });
+    } else if (b.dataset.uncorrect) {
+      working(b, 'undoing');
+      api('/corrections/' + seg(b.dataset.uncorrect), { method: 'DELETE' }).then(function () { var li = b.closest('li'); if (li) li.remove(); say('taken back: the value may be written again'); }).catch(function (e) { unsettled(b); oops(e); });
+    } else if (b.dataset.instruct) {
+      var ik = b.dataset.instruct, cut0 = ik.indexOf('|');
+      var ibox = view.querySelector('[data-instruct-text="' + ik + '"]'), inote = view.querySelector('[data-instruct-note="' + ik + '"]');
+      var itext = ibox ? ibox.value.trim() : '';
+      if (!itext) { if (inote) inote.textContent = 'type an instruction first'; return; }
+      var ireq = { text: itext, apply: !b.dataset.propose };
+      if (ik.slice(0, cut0)) ireq.about = [ik.slice(0, cut0)];
+      if (ik.slice(cut0 + 1)) ireq.action = ik.slice(cut0 + 1);
+      working(b, 'thinking');
+      post('/instruct', ireq).then(function (d) {
+        var el = view.querySelector('[data-instruct-note="' + ik + '"]'), box = view.querySelector('[data-instruct-text="' + ik + '"]');
+        var n = (d.actions || []).length;
+        replied[ik] = (d.reply || '') + (n ? ' (' + n + (ireq.apply ? ' approved)' : ' proposed)') : '') + (d.note ? ' ' + d.note : '');
+        if (el) el.textContent = replied[ik];
+        if (box) box.value = '';
+        dirty = typedNote();
+        unsettled(b);
+        say(n ? (ireq.apply ? 'done: the writer applies it' : 'proposed: see the inbox') : 'answered');
+        if (n) later();
+      }).catch(function (e) { unsettled(b); var el = view.querySelector('[data-instruct-note="' + ik + '"]'); if (el) el.textContent = e.message; });
     } else if (b.dataset.retract) {
       var note = prompt('Why retract this observation?');
       if (note === null) return;

@@ -78,7 +78,7 @@
 ++  has-sub  |=([hay=@t pin=@t] ^-(? ?=(^ (find (trip pin) (trip hay)))))
 ++  test-build-parts
   =/  f  fixture
-  =/  parts=(list @t)  (build-parts:gen all.f acts.f ~ schema.f now 'America/New_York' 5)
+  =/  parts=(list @t)  (build-parts:gen all.f acts.f ~ schema.f now 'America/New_York' 5 ~)
   =/  p0=@t  (snag 0 parts)
   =/  p1=@t  (snag 1 parts)
   =/  p2=@t  (snag 2 parts)
@@ -88,7 +88,7 @@
     :*  %task  'Go to Ballet'  [%o ~]  (sy ~['activity/ballet'])  ~
         'generator'  now  %dismissed  'just the event'  ~
     ==
-  =/  p3-with=@t  (snag 3 (build-parts:gen all.f acts.f ~[['d1' dismissed]] schema.f now 'America/New_York' 5))
+  =/  p3-with=@t  (snag 3 (build-parts:gen all.f acts.f ~[['d1' dismissed]] schema.f now 'America/New_York' 5 ~))
   ;:  weld
     (expect-eq !>(5) !>((lent parts)))
     (expect !>((has-sub p0 'The owner is person/me. Propose at most 5 actions.')))
@@ -104,8 +104,8 @@
     (expect !>((has-sub p3 'task | Call the shop about the Subaru | about thing/subaru')))
     (expect !>((has-sub p3-with 'dismissed | task | Go to Ballet | just the event')))
     (expect-eq !>('Now: 2026-09-18T12:00:00Z, timezone America/New_York. Answer with the JSON object.') !>(p4))
-    (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5))))
-    (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5)))))
+    (expect-eq !>((digest:gen parts)) !>((digest:gen (build-parts:gen all.f acts.f ~ schema.f (add now ~m5) 'America/New_York' 5 ~))))
+    (expect !>(!=((digest:gen parts) (digest:gen (build-parts:gen all.f ~ ~ schema.f now 'America/New_York' 5 ~)))))
   ==
 ::  the last +recent decisions with their notes, then the older
 ::  dismissals that carry a reason, the last +reasons-kept of them
@@ -150,7 +150,7 @@
         '  - routine chores are mine'
     ==
   =/  f  fixture
-  =/  p0=@t  (snag 0 (build-parts:gen all.f acts.f ~ schema now 'America/New_York' 5))
+  =/  p0=@t  (snag 0 (build-parts:gen all.f acts.f ~ schema now 'America/New_York' 5 ~))
   =/  ctx=reader-ctx:orr  (reader-context:orr all.f schema now)
   =/  rows=(list window-row:orr)  ~[['m1' '2026-09-18T12:00:00Z' 'person/sarah' 'hi' |]]
   =/  brief=@t  (brief-user:orr all.f schema ~ ~ ~ '' now 'America/New_York')
@@ -775,6 +775,7 @@
       :~  ['calendar' (jo '{"title": "required", "starts": "required: ISO 8601 UTC", "ends": "optional: ISO 8601 UTC", "location": "optional"}')]
           ['message' (jo '{"via": "required: one of telegram, mail, chat", "to": "required: the body id of the person", "text": "required"}')]
       ==
+      ~
       ~
   ==
 ++  tg-rows

@@ -234,3 +234,26 @@ New arms: `index-events` with `same-event` (the events pass's index),
 - Equivalent: `reason-counts`' two comparators on an exact tie, and
   `same-event`'s `gth` at a start equal to the occurrence's, where both
   branches measure 0.
+
+## Corrections, instructions and lessons (version 60)
+
+New arms: `de-correct`, `struck-rows`, `strike-obs`, `lesson-lines`,
+`kept-lines`, `fared-lines`, `writer-op-of`, `instruct-focus` and
+`corrections-for`. All six ops ran on them: 134 mutants, 80 killed
+before `test-learning-edges`, and 110 of 121 after it (7 no-build).
+
+- Real gaps, each now a case, and the recheck killed them all:
+  - a correction would have struck the same value on another subject,
+    or under another attribute, in the tree and in a batch alike;
+  - an approved action's note read as a dismissal, and another
+    proposer's kept action as the generator's example;
+  - a key's view of corrections dropped a ref to a body in its scope;
+  - an about body could come twice into the instruction's focus, and a
+    three-letter name was not said;
+  - each byte cap (attr 48, value 300, why 500, a preference's 300) and
+    each of a fact's refused values (null, a list, an object that is
+    not a ref) was untested at its edge;
+  - fared-lines' threshold of three decided.
+- Equivalent: `de-correct`'s object test before `only-ref`, which is
+  false for anything but an object, and the two newest-first sorts'
+  `gth` on an exact tie.

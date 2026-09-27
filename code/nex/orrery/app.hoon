@@ -152,6 +152,9 @@
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
           [%fall %& [/ %'rise.json'] [[/ %json] [%o ~]]]
+          ::  corrections.json: the facts the owner struck, newest first;
+          ::  the writer writes no row that says one again (version 60)
+          [%fall %& [/ %'corrections.json'] [[/ %json] [%a ~]]]
           ::  refine (version 36): one lock grub per action being refined
           [%fall %| /refining empty-dir:loader]
       ==
@@ -606,6 +609,9 @@
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-preferences' op)  (do-set-preferences jon)
   ?:  =('unalias' op)  (do-unalias jon)
+  ?:  =('correct' op)  (do-correct jon)
+  ?:  =('uncorrect' op)  (do-uncorrect jon)
+  ?:  =('add-preference' op)  (do-add-preference jon)
   ?:  =('set-policy' op)  (do-set-doc %'policy.json' 'set-policy' jon)
   ?:  =('set-generator' op)  (do-set-generator jon)
   ?:  =('set-telegram' op)  (do-set-telegram jon)
@@ -632,6 +638,71 @@
   ?:  =(cur next)  (note-then-no 'set-preferences' 'unchanged')
   ;<  ~  bind:m  (over:io (rf 0 / %'schema.json') [[/ %json] next])
   ;<  ~  bind:m  (note-by 'set-preferences' & '' (gs:orr jon 'by'))
+  (pure:m &)
+::  +do-correct: strike a fact: every live row that says it is retracted,
+::  whatever wrote it, and the correction is kept, so no source writes it
+::  again (+strike-obs at the door of every observe)
+::
+++  do-correct
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  req  (de-correct:orr jon now)
+  ?:  ?=(%| -.req)  (refuse 'correct' p.req)
+  =/  c=correction:orr  p.req
+  =/  pk  (parse-bid:orr subject.c)
+  ?~  pk  (refuse 'correct' 'subject: bad')
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (rv 0 (body-dir kind.u.pk slug.u.pk)) ~)
+  =/  rows=(list row:orr)  ?.(?=([~ %ball *] vw) ~ (rows-in:om ball.u.vw))
+  =/  hit=(list row:orr)  (struck-rows:orr rows c)
+  =/  why=@t  ?:(=('' why.c) 'struck by the owner' (cat 3 'struck by the owner: ' why.c))
+  ;<  ~  bind:m  (strike-each hit (end [3 500] why) by.c)
+  ;<  cs=json  bind:m  (read-json (rf 0 / %'corrections.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'corrections.json') [[/ %json] (add-correction:orr cs c)])
+  ;<  ~  bind:m
+    %:  note-by  'correct'  &
+      (rap 3 subject.c ' ' attr.c ' = ' value.c ', retracted ' (scot %ud (lent hit)) ~)
+      by.c
+    ==
+  (pure:m &)
+++  strike-each
+  |=  [rows=(list row:orr) why=@t by=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  rows  (pure:m ~)
+  ;<  *  bind:m  (do-retract (pairs:enjs:format ~[['id' s+id.i.rows] ['note' s+why] ['by' s+by]]))
+  (strike-each t.rows why by)
+::  +do-uncorrect: a correction taken back, by its id: the source may
+::  write the fact again; what was retracted stays retracted
+::
+++  do-uncorrect
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ;<  cs=json  bind:m  (read-json (rf 0 / %'corrections.json'))
+  =/  next=json  (drop-correction:orr cs id)
+  ?:  =(next cs)  (note-then-no 'uncorrect' (cat 3 'no correction ' id))
+  ;<  ~  bind:m  (over:io (rf 0 / %'corrections.json') [[/ %json] next])
+  ;<  ~  bind:m  (note 'uncorrect' & id)
+  (pure:m &)
+::  +do-add-preference: one standing preference added to the owner's,
+::  the same words, however cased, only once, thirty at most
+::
+++  do-add-preference
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  t=@t  (trim-cord:orr (gs:orr jon 'text'))
+  ?:  |(=('' t) (gth (met 3 t) 300))  (refuse 'add-preference' 'text: 1 to 300 bytes')
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  have=(list @t)  (strings:orr (ga:orr cur 'preferences'))
+  ?:  (lien have |=(h=@t =((lower:orr h) (lower:orr t))))  (note-then-no 'add-preference' 'already held')
+  ?:  (gte (lent have) 30)  (refuse 'add-preference' 'preferences: 30 held already')
+  =/  next=json  (with-preferences:orr cur ~ `(snoc have t))
+  ;<  ~  bind:m  (over:io (rf 0 / %'schema.json') [[/ %json] next])
+  ;<  ~  bind:m  (note-by 'add-preference' & t (gs:orr jon 'by'))
   (pure:m &)
 ::  +do-unalias: one alias off a body, the body written as it is less
 ::  that alias; the owner's to do, since an alias is identity
@@ -792,7 +863,10 @@
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ;<  cs=json  bind:m  (read-json (rf 0 / %'corrections.json'))
   =/  prep  (prep-observe:orr jon now 'writer')
+  ::  a row that says what the owner struck is not written, whoever sent it
+  =.  obs.prep  (strike-obs:orr obs.prep (de-corrections:orr cs))
   ;<  c1=?  bind:m  (write-bodies bodies.prep |)
   ;<  c2=?  bind:m  (write-obs obs.prep (sensitive-of:orr policy) |)
   =/  subjects=(list bid:orr)
@@ -1008,6 +1082,10 @@
     %get-settings           (serve-settings eyre-id)
     %get-preferences        (serve-preferences eyre-id)
     %post-unalias           (serve-unalias eyre-id jon)
+    %post-correct           (serve-correct eyre-id jon act)
+    %get-corrections        (serve-corrections eyre-id act)
+    %delete-corrections     (serve-uncorrect eyre-id s2)
+    %post-instruct          (serve-instruct eyre-id jon act)
     %put-preferences        (serve-set-preferences eyre-id jon act)
     %get-schema             (serve-doc eyre-id %'schema.json')
     %put-schema             (serve-set-doc eyre-id 'set-schema' jon)
@@ -2253,32 +2331,34 @@
   $
 ::  +run-merges: the approved merge actions, each claimed, merged and
 ::  reported: done when from is gone and into remains, failed otherwise.
-::  A claim another executor holds is left alone.
+::  A claim another executor holds is left alone. The executor runs it
+::  at approval and reconcile on its pass, each on its own wire.
 ::
 ++  run-merges
-  |=  todo=(list [id=@ta from=bid:orr into=bid:orr])
+  |=  [todo=(list [id=@ta from=bid:orr into=bid:orr]) =wire by=@t]
   =/  m  (fiber:fiber:nexus ,@ud)
   ^-  form:m
+  =/  file  |=(ops=(list json) (file-ops-on ops wire))
   =|  n=@ud
   |-
   ?~  todo  (pure:m n)
   =/  aid=@ta  id.i.todo
-  ;<  *  bind:m  (file-ops ~[(set-action-op:orr aid 'claimed' '' 'reconcile')])
+  ;<  *  bind:m  (file ~[(set-action-op:orr aid 'claimed' '' by)])
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  mine=?
     %+  lien  acts
-    |=([id=@ta a=action:orr] &(=(id aid) =(%claimed status.a) =('reconcile' (claimant:orr a))))
+    |=([id=@ta a=action:orr] &(=(id aid) =(%claimed status.a) =(by (claimant:orr a))))
   ?.  mine  $(todo t.todo)
   ;<  before=(list loaded:orr)  bind:m  (load-bodies 0)
   ::  from gone before the merge ran (another merge took it) is not a
   ::  merge done
   =/  had=?  ?=(^ (loaded-of:orr before from.i.todo))
-  ;<  *  bind:m  ?.(had (pure:(fiber:fiber:nexus ,@ud) 0) (file-ops ~[(merge-op:orr from.i.todo into.i.todo)]))
+  ;<  *  bind:m  ?.(had (pure:(fiber:fiber:nexus ,@ud) 0) (file ~[(merge-op:orr from.i.todo into.i.todo)]))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  ok=?  &(had ?=(~ (loaded-of:orr all from.i.todo)) ?=(^ (loaded-of:orr all into.i.todo)))
   ;<  ~  bind:m  ?.(ok (pure:(fiber:fiber:nexus ,~) ~) (drop-share-of 0 from.i.todo))
   ;<  *  bind:m
-    (file-ops ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' ?:(had 'the merge was refused' 'a body in this pair is gone')) 'reconcile')])
+    (file ~[(set-action-op:orr aid ?:(ok 'done' 'failed') ?:(ok 'merged' ?:(had 'the merge was refused' 'a body in this pair is gone')) by)])
   $(todo t.todo, n ?:(ok +(n) n))
 ::  +reload-if: the bodies again when ops were filed, else the ones read
 ::
@@ -2315,7 +2395,7 @@
   ;<  ~  bind:m  (drop-shares-in ops.people)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  merges  (approved-merges:orr acts)
-  ;<  merged=@ud  bind:m  (run-merges merges)
+  ;<  merged=@ud  bind:m  (run-merges merges /rec 'reconcile')
   ;<  all=(list loaded:orr)  bind:m  (reload-if (add np (lent merges)) all)
   =/  retire  (plan-retire:orr all multi now (mul stale.cfg ~d1))
   ;<  *  bind:m  (file-ops (retire-ops:orr retire))
@@ -3308,7 +3388,9 @@
     %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
     |=([[* a=action:orr] [* b=action:orr]] (lth proposed.a proposed.b))
   =/  tz=@t  (owner-zone:orr all (multi-of:orr schema) now timezone.cfg)
-  =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg)
+  ;<  cs-j=json  bind:m  (read-json (rf 0 / %'corrections.json'))
+  =/  cs=(list correction:orr)  (de-corrections:orr cs-j)
+  =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg cs)
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
   =/  last=json  last0
@@ -3355,7 +3437,7 @@
     ::  the filings change the open actions, so the writer wakes this
     ::  fiber again; the digest recorded is of the prompt as it will read
     ::  with them open, so that wake finds nothing new and asks nothing
-    =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg)
+    =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg cs)
     =/  said=(list @t)
       ?~  urgent  notes.v
       [(cat 3 'urgent pass' ?~(u.urgent '' (cat 3 ': ' (join-cords:orr ', ' u.urgent)))) notes.v]
@@ -3675,6 +3757,137 @@
   ;<  d=[items=(list [id=@t name=@t]) note=@t]  bind:m  dm-list
   ;<  c=[items=(list [id=@t name=@t]) note=@t]  bind:m  channel-list
   (pure:m (both d c))
+::  +serve-correct: POST /api/correct {subject, attr, value, why}: strike
+::  a fact everywhere it is said, and keep it struck. The owner, or a key
+::  with write that may write the subject's kind.
+::
+++  serve-correct
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  =/  req  (de-correct:orr jon now)
+  ?:  ?=(%| -.req)  (send-err eyre-id 400 p.req)
+  =/  pk  (parse-bid:orr subject.p.req)
+  ?~  pk  (send-err eyre-id 400 'subject: bad')
+  ::  a key strikes only what it could have observed: its kinds, no
+  ::  sensitive attribute its scope does not name, no ref out of scope
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  =/  as-obs=json
+    %-  pairs:enjs:format
+    :~  :-  'observations'
+        :-  %a
+        :~  %-  pairs:enjs:format
+            ~[['subject' s+subject.p.req] ['attr' s+attr.p.req] ['value' (gj:orr jon 'value')]]
+    ==  ==
+  =/  denied=(unit @t)  (deny-observe act as-obs policy)
+  ?^  denied  (send-err eyre-id 403 u.denied)
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
+  ?.  ex  (send-err eyre-id 404 (cat 3 'no such body ' subject.p.req))
+  =/  who=@t  ?:(owner.act 'owner' by.act)
+  =/  op=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'correct']  ['subject' s+subject.p.req]  ['attr' s+attr.p.req]
+        ['value' (gj:orr jon 'value')]  ['why' s+why.p.req]  ['by' s+who]
+    ==
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (en-correction:orr p.req(by who)))
+::  +serve-corrections, +serve-uncorrect: the facts the owner struck, and
+::  one taken back by its id
+::
+++  serve-corrections
+  |=  [eyre-id=@ta act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cs=json  bind:m  (read-json (rf 1 / %'corrections.json'))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  (send-json eyre-id 200 a+(turn (corrections-for:orr act (de-corrections:orr cs) (hidden-for act policy)) en-correction:orr))
+++  serve-uncorrect
+  |=  [eyre-id=@ta id=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cs=json  bind:m  (read-json (rf 1 / %'corrections.json'))
+  ?:  =(cs (drop-correction:orr cs id))  (send-err eyre-id 404 (cat 3 'no correction ' id))
+  %^  write-then  eyre-id  (pairs:enjs:format ~[['op' s+'uncorrect'] ['id' s+id]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
+::  +serve-instruct: POST /api/instruct {text, action, about, apply}: the
+::  owner's words turned by the model into actions that do them (strike
+::  a fact, state one, merge two bodies, keep a preference, or something
+::  to do), filed as proposals, or approved at once with apply. The
+::  owner, or a key with write; under the day's model calls, counted.
+::
+++  serve-instruct
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'expected an object')
+  =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
+  ?:  =('' text)  (send-err eyre-id 400 'text: required')
+  ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  =/  cfg=config:orr  (de-config:orr cfg-j)
+  ?:  =('' api-key.cfg)  (send-err eyre-id 503 'the generator has no key')
+  ;<  gl=json  bind:m  (read-json (rf 1 / %'generator-last.json'))
+  ?:  (gte (day-count:orr gl 'calls_today' now) max-daily.cfg)  (send-err eyre-id 429 'the day\'s model calls are spent')
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
+  =/  aid=@t  (gs:orr jon 'action')
+  =/  answering=(unit [id=@ta a=action:orr])
+    ?:  =('' aid)  ~
+    (bind (act-of acts.seen aid) |=(a=action:orr [`@ta`aid a]))
+  =/  about=(set @t)
+    %-  sy
+    %+  weld  (strings:orr (ga:orr jon 'about'))
+    ?~(answering ~ ~(tap in about.a.u.answering))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  ctx=reader-ctx:orr  (instruct-ctx:orr (reader-context:orr all.seen schema now) schema)
+  =/  focus=(list loaded:orr)  (instruct-focus:orr all.seen about text)
+  =/  tz=@t  (owner-zone:orr all0 multi now timezone.cfg)
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    %:  post-json
+      (cat 3 url.cfg '/chat/completions')
+      api-key.cfg
+      (chat-body-with:orr cfg instruct-prompt:orr ~[(instruct-user:orr ctx focus multi answering text now tz)])
+      ~m2
+      %instruct
+    ==
+  ;<  ~  bind:m  (count-call 1 now (gj:orr (fall (de:json:html body.got) ~) 'usage'))
+  ?.  =(200 status.got)
+    %^  send-err  eyre-id  502
+    ?:  =(0 status.got)  (cat 3 'no answer from the model: ' body.got)
+    (rap 3 'the model answered ' (crip (a-co:co status.got)) ~)
+  =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
+  ?:  ?=(%| -.ans)  (send-err eyre-id 502 p.ans)
+  =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
+  ?~  parsed  (send-err eyre-id 502 'the model answered without JSON')
+  =/  who=@t  ?:(owner.act 'owner' by.act)
+  =/  out  (de-instruct:orr u.parsed (sy (turn all.seen |=(l=loaded:orr id.l))) now who)
+  ::  a key files only the kinds its scope names
+  =/  kept=(list json)
+    ?~  scope.act  acts.out
+    (skim acts.out |=(j=json (action-in-scope:orr u.scope.act `@tas`(gs:orr j 'kind'))))
+  =/  ops=(list json)  (turn kept |=(j=json (pairs:enjs:format ~[['op' s+'act'] ['action' j]])))
+  ;<  *  bind:m  (keep:io /instruct (rf 1 /beacon %rev) ~)
+  ;<  ~  bind:m  (poke-each 1 ops)
+  ;<  ~  bind:m  ?~(ops (pure:(fiber:fiber:nexus ,~) ~) (settle /instruct))
+  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed ops now who act)
+  ::  apply: the owner's own words, so the actions are approved at once
+  ;<  ~  bind:m
+    ?.  ?=([~ %b %.y] (~(get by p.jon) 'apply'))  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  poke-each  1
+    %+  turn  views.filed
+    |=(v=json (pairs:enjs:format ~[['op' s+'set-action'] ['id' s+(gs:orr v 'id')] ['status' s+'approved'] ['note' s+''] ['by' s+who]]))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['ok' b+&]
+      ['reply' s+reply.out]
+      ['actions' a+views.filed]
+      ['note' s+(join-cords:orr '\0a' (weld notes.out notes.filed))]
+  ==
 ::  +serve-unalias: POST /api/unalias {id, alias}: one alias off a body,
 ::  the owner's alone
 ::
@@ -3746,6 +3959,7 @@
   ;<  brief-last=json  bind:m  (doc %'brief-last.json')
   ;<  read=json  bind:m  (doc %'read.json')
   ;<  read-last=json  bind:m  (doc %'read-last.json')
+  ;<  corrections=json  bind:m  (doc %'corrections.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -3776,6 +3990,7 @@
       ['brief_last' brief-last]
       ['read' (en-mail-config:orr (de-mail-config:orr read))]
       ['read_last' read-last]
+      ['corrections' a+(turn (de-corrections:orr corrections) en-correction:orr)]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -4837,7 +5052,11 @@
   ?:  =('' api-key.gen)
     (pure:m [| & ~ ~ ~ ~['no api_key set on the generator: the reader has no model'] ~])
   ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
+  ;<  cs-j=json  bind:m  (read-json (rf 0 / %'corrections.json'))
+  ;<  own-acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  ::  what the owner struck, and this reader's proposals they dismissed
+  =.  lessons.ctx  (lesson-lines:orr (de-corrections:orr cs-j) own-acts by.kind)
   =/  rows=(list window-row:orr)  (run-rows:orr recent fresh kind)
   ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
   =/  verdict  (gate-verdict:orr gate gate.cfg)
@@ -5144,6 +5363,8 @@
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ::  nothing approved plans nothing, and the tree is not read for it
   ?.  (lien acts |=([* a=action:orr] =(%approved status.a)))  (pure:m *exec-tally)
+  ::  an approved merge goes at once, not at reconcile's next pass
+  ;<  merged=@ud  bind:m  (run-merges (approved-merges:orr acts) /exec 'ship')
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
@@ -5179,6 +5400,7 @@
     ?~  aus  (pure:(fiber:fiber:nexus ,(unit @t)) ~)
     (road-shut [%& %& u.aus %'main.sig'] [[/ %json] ~])
   =|  tally=exec-tally
+  =.  claimed.tally  merged
   |-
   ?~  plans  (pure:m tally)
   =/  p=exec-plan:orr  i.plans
@@ -5188,7 +5410,7 @@
   ::  a message with no way out is left approved and noted, before any
   ::  desk is asked for it
   ?.  =('' note.p)
-    $(plans t.plans, tally (note-once tally (cat 3 'a message waits: ' note.p)))
+    $(plans t.plans, tally (note-once tally (cat 3 ?:(=(%writer target.p) 'an action waits: ' 'a message waits: ') note.p)))
   ?:  &(=(%telegram target.p) =('' token.tg))
     $(plans t.plans, tally (note-once tally 'a message waits: no bot token'))
   ::  a DM goes only when the owner switched it on, since a kernel
@@ -5200,7 +5422,7 @@
   ::  plan needs the calendar, the same road a calendar action needs.
   =/  desk=(each path exec-tally)
     ?-    target.p
-        ?(%telegram %chat)  [%& /]
+        ?(%telegram %chat %writer)  [%& /]
         %mail
       ?~  aus  [%| (note-missing tally 'auspex')]
       ?~  aus-shut  [%& u.aus]
@@ -5270,6 +5492,9 @@
   =/  m  (fiber:fiber:nexus ,[ok=? note=@t])
   ^-  form:m
   ?+    target.p  (pure:m [| 'a task is placed without a claim'])
+      %writer
+    ;<  ~  bind:m  (poke-writer 0 body.p)
+    (pure:m [& 'carried out'])
       %telegram
     ;<  [ok=? why=@t]  bind:m
       %+  send-telegram  tg
