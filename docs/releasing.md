@@ -207,6 +207,33 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 60's owner steps
+
+No new road, so no consent prompt, and no kernel change beyond the stock grubbery kernel. What an owner sees:
+
+- A crashed fiber comes back by itself.
+- The owner's style and preferences reach every prompt.
+- Each page view is one request, the explorer works by touch, and a refresh no longer draws over an edit.
+- The Bodies view is a relationship diagram with a Tidy list.
+- The owner can tell the ship what is wrong (`POST /api/instruct`), strike a value as not true (`POST /api/correct`), and every prompt is told of both.
+- An approved merge runs at once.
+
+1. After the pull, merge the new keys into the ship's stored schema. Read it with `GET /api/schema`, change the keys below, and write the whole document back with `PUT /api/schema`. Until these keys are there, the generator never proposes a fix and family ties are dropped. The instruction box, "not true" and the executor work without them. Word for word:
+   - `actions` gains `correct`, `fact`, `merge` and `preference`.
+   - `payloads.correct`: `subject` `required: the body id the wrong fact is about`, `attr` `required: the attribute, as the state names it`, `value` `required: the wrong value as the state shows it, a string, or {"ref": "kind/slug"}`, `why` `optional: the owner's reason, short`.
+   - `payloads.fact`: `subject` `required: the body id`, `attr` `required: an attribute the schema lists for its kind`, `value` `required: a string, a number, true or false, or {"ref": "kind/slug"}`.
+   - `payloads.merge`: `from` `required: the body id folded away`, `into` `required: the body id kept`.
+   - `payloads.preference`: `text` `required: the standing rule, in the owner's words, at most 300 bytes`.
+   - `kinds.person.attrs` gains `spouse`, `children`, `parents` and `siblings`. This one is not cosmetic: the writer drops an observation whose attribute is not in that list. The notes:
+     - `kinds.person.notes.spouse`: `their husband, wife or partner, a person body as a ref; written on both of them`
+     - `kinds.person.notes.children`: `each of their children, a person body as a ref, one row per child; each child gets parents`
+     - `kinds.person.notes.parents`: `each of their parents, a person body as a ref, one row per parent; each parent gets children`
+     - `kinds.person.notes.siblings`: `each brother or sister, a person body as a ref, one row per sibling; written on both of them`
+   - `multi` gains `children`, `parents` and `siblings`.
+   - `payloads.message.text`: `required: the message, short, in the owner's own voice`. The prose rules left the starter schema. An owner who wants them keeps them in `style`.
+2. On the Style and preferences card under Settings, write the owner's style and standing preferences. The reasons already given for dismissing are offered there, most often given first.
+3. On the Executor card, pick the lists todos and events go to (policy `todo_calendar` and `event_calendar`).
+
 ### Version 59's owner steps
 
 None. A task adopted from a todo the owner typed by hand is no longer pushed as "Orrery filed" (it read as the ship proposing the owner's own words). `POST /api/read` takes text a client hands the ship to read (the browser extension's page, a note), open to a key with `write`, and the read fiber runs it through the reader's pipeline like a message, the page as every fact's source; settings on the Read card (`/api/read/settings`, on by default, the mail reader's shape), record at `/api/read/last`. No new road.
