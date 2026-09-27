@@ -1216,7 +1216,10 @@
   // the body is gone from the state (the rev also moves for the ship's
   // other writes meanwhile); any other move when the rev moves.
   var awaitMove = 0, awaitGone = null, tidyGone = Object.create(null);
-  function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }
+  // A handler given straight to .then hands its answer in: only a list
+  // names bodies to wait for. An answer taken for one threw in every
+  // refresh after, and the page stopped updating (6de6141 to 90d8086).
+  function later(gone) { dirty = typedNote(); awaitGone = Array.isArray(gone) ? gone : null; awaitMove = awaitGone ? 20 : 10; setTimeout(function () { refresh(!dirty); }, 300); }
 
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');

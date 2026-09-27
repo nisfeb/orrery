@@ -246,10 +246,17 @@ const prefs = render.prefsCard({ style: 'No em dashes.', preferences: ['Never a 
 ok('the preferences card holds the style and one preference a line, and offers each reason not kept already',
   prefs.includes('No em dashes.</textarea>') && prefs.includes('Never a todo for attending</textarea>') && prefs.includes('data-prefer="a refund, not a bill"')
   && !prefs.includes('data-prefer="never a todo for attending"') && prefs.includes('2 times'));
+// later itself, run: .then(later) hands it the ship's answer, which once
+// became the bodies to wait for and threw in every refresh after
+const laterSrc = (src.match(/function later\(gone\) \{[^\n]*\}/) || [''])[0];
+const lat = new Function('typedNote', 'refresh', 'setTimeout',
+  'var dirty, awaitMove, awaitGone; ' + laterSrc + '; later({ ok: true, id: "a1" }); var r = [awaitMove, awaitGone]; later(["person/x"]); return r.concat([awaitMove, awaitGone]);')(
+  function () { return false; }, function () {}, function () {});
+ok('an answer handed in by .then is not taken for bodies to wait for; a list is', lat[0] === 10 && lat[1] === null && lat[2] === 20 && lat[3][0] === 'person/x');
 const aliased = render.body({ id: 'person/andrea', kind: 'person', name: 'Andrea', aliases: ['jack<son>'], attrs: {}, observations: [] }, { bodies: [], actions: [] });
 ok('a body page gives each alias its own remove button, escaped', aliased.includes('data-unalias="jack&lt;son&gt;" data-id="person/andrea"') && !aliased.includes('<son>'));
 ok('after the owner\'s own move the refresh looks again each second until the rev moves, ten times at most',
-  src.includes("function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }")
+  src.includes("function later(gone) { dirty = typedNote(); awaitGone = Array.isArray(gone) ? gone : null; awaitMove = awaitGone ? 20 : 10; setTimeout(function () { refresh(!dirty); }, 300); }")
   && src.includes("var still = awaitGone ? (s.bodies || []).some(function (x) { return awaitGone.indexOf(x.id) >= 0; }) : s.rev === before;")
   && src.includes("tidyGone[b.dataset.merge] = true; settled(b, 'merged'); later([b.dataset.merge]);"));
 const goneTidy = render.tidyCard(tidyState, false, { 'person/martyr': true, 'org/lone': true });
@@ -314,7 +321,7 @@ ok('the relationship diagram has no event nodes: two bodies that share events ar
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes('if (dirty || graphView.touching) return true;')
-  && src.includes('function later(gone) { dirty = typedNote(); awaitMove = gone ? 20 : 10; awaitGone = gone || null; setTimeout(function () { refresh(!dirty); }, 300); }')
+  && src.includes('function later(gone) { dirty = typedNote(); awaitGone = Array.isArray(gone) ? gone : null; awaitMove = awaitGone ? 20 : 10; setTimeout(function () { refresh(!dirty); }, 300); }')
   && src.includes("window.addEventListener('hashchange', function () { dirty = false; refresh(true); });"));
 ok('a refine holds the row\'s move buttons while it runs and frees them on a refusal or an error',
   src.indexOf("holdMoves(true);") > src.indexOf("b.dataset.refine) {") && src.indexOf("holdMoves(true);") < src.indexOf("post('/actions/' + seg(rid) + '/refine'")
