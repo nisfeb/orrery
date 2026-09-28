@@ -190,7 +190,7 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 `$SHIP` and `$JAR` are the dev ship's web address and its owner cookie jar; `$SHIP2` and `$JAR2` a second ship for the sharing gate.
 
-1. `code/version.json` bumped, the number one higher than the last release.
+1. `code/version.json` bumped, the number one higher than the last release, and `++  version` in `code/lib/orrery.hoon` to the same number: it is what `GET /version` answers, and `node scripts/page-test.js` fails until the two agree. Run it after the bump.
 2. `python3 scripts/code-closure.py code` reports nothing missing.
 3. `cmp code/lib/tools.hoon <grubbery checkout>/desk/gub/lib/tools.hoon` prints nothing, against the grubbery kernel checkout. The vendored tool types must equal the kernel's or every tool call breaks.
 4. `python3 scripts/prompt-drift.py <orrery-utils checkout>/common` exits 0: the prompt cords in the lib equal the shared prompt files.
