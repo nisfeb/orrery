@@ -207,6 +207,12 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 62's owner steps
+
+No new road, so no consent prompt, and no schema change. What an owner sees:
+
+- An event the executor placed that doubles another of the same title within a day gets a proposed cancel of orrery's own copy in the inbox, once. Approve it to take the double off the calendar, or dismiss it and it stays. With `calendar` in the policy's `auto` list the cancel would run without a tap.
+
 ### Version 61's owner steps
 
 No new road, so no consent prompt, and no schema change. What an owner sees:
