@@ -591,6 +591,32 @@
     (expect-eq !>(`[@t @t @t]`['person/d-quill' 'person/me' 'same me@x.org']) !>((snag 0 got)))
     (expect-eq !>(`[@t @t @t]`['org/dana-quill' 'person/dana' 'the names match: dana and Dana Quill']) !>((snag 1 got)))
   ==
+++  test-plan-twins
+  =/  all=(list loaded:orr)
+    :~  (mkb 'activity/ballet' %activity 'Ballet' ~ ~[['schedule' s+'weekly, TU']] (sub now ~d9))
+        (mkb 'activity/ballet-2' %activity 'Reminder: Ballet' ~ ~[['schedule' s+'weekly, TU']] now)
+        (mkb 'activity/soccer' %activity 'Soccer' ~ ~[['schedule' s+'weekly, MO']] now)
+        (mkb 'activity/soccer-2' %activity 'Soccer' ~ ~[['schedule' s+'weekly, WE']] now)
+        (mkb 'activity/piano' %activity 'Piano' ~ ~ now)
+        (mkb 'activity/piano-2' %activity 'Piano' ~ ~[['schedule' s+'weekly, FR']] now)
+        (mkb 'activity/violin' %activity 'Violin' ~ ~[['schedule' s+'weekly, SA']] now)
+        (mkb 'activity/violin-2' %activity 'Violin' ~ ~ now)
+        (mkb 'person/ballet' %person 'Ballet' ~ ~ now)
+    ==
+  =/  got  (plan-twins:orr all ~ now)
+  =/  people=(list loaded:orr)
+    :~  (mkb 'org/dana-quill' %org 'Dana Quill' ~ ~ now)
+        (mkb 'person/dana' %person 'dana' ~ ~ (sub now ~d9))
+    ==
+  ;:  weld
+    (expect-eq !>(3) !>((lent got)))
+    (expect-eq !>(`[@t @t @t]`['activity/ballet-2' 'activity/ballet' 'the names match: Ballet and Reminder: Ballet']) !>((snag 0 got)))
+    (expect-eq !>(`[@t @t @t]`['activity/piano-2' 'activity/piano' 'the names match: Piano and Piano']) !>((snag 1 got)))
+    ::  a schedule on either side alone does not keep them apart
+    (expect-eq !>(`[@t @t @t]`['activity/violin-2' 'activity/violin' 'the names match: Violin and Violin']) !>((snag 2 got)))
+    ::  the pass files them beside the people's
+    (expect-eq !>(4) !>(proposed:(people-pass:orr (weld all people) ~ ~ now)))
+  ==
 ++  test-people-ops
   =/  pay
     |=  [f=@t i=@t]

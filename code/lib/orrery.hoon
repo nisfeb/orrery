@@ -3335,6 +3335,38 @@
     seen    (~(put in seen) key)
     out     [[id.from.pair id.into.pair why] out]
   ==
+::  +plan-twins: merge proposals for two activities of one title (as
+::  the calendar reader normalises it) whose schedules do not disagree,
+::  the older kept. Two calendars, or a reader and the calendar, make one
+::  standing appointment twice; the schedule keeps two children's
+::  "Soccer" apart
+::
+++  plan-twins
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [from=bid into=bid why=@t])
+  =/  acts=(list [l=loaded t=@t s=@t])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [l=loaded t=@t s=@t])
+    ?.  =(%activity kind.body.l)  ~
+    =/  t=@t  (normalize-title name.body.l)
+    ?:  =('' t)  ~
+    `[l t (winner-text (fold rows.l multi now) 'schedule')]
+  =|  out=(list [from=bid into=bid why=@t])
+  |-
+  ?~  acts  (flop out)
+  =/  a  i.acts
+  =/  rest  t.acts
+  |-
+  ?~  rest  ^$(acts t.acts)
+  =/  b  i.rest
+  ?.  &(=(t.a t.b) |(=('' s.a) =('' s.b) =(s.a s.b)))  $(rest t.rest)
+  =/  pair=[from=bid into=bid]
+    ?:((lth created.body.l.b created.body.l.a) [id.l.a id.l.b] [id.l.b id.l.a])
+  %=  $
+    rest  t.rest
+    out   [[from.pair into.pair (rap 3 'the names match: ' name.body.l.a ' and ' name.body.l.b ~)] out]
+  ==
 ::  +merge-decided: what the owner already decided about each merge
 ::  pair: done, dismissed, open or failed, a merge that ran winning and
 ::  a dismissal sticking over an open re-proposal. A dismissal reconcile
@@ -3412,7 +3444,7 @@
     ^-  (unit json)
     ?:  &((~(has in ids) (gs payload.a 'from')) (~(has in ids) (gs payload.a 'into')))  ~
     `(set-action-op id 'dismissed' 'reconcile: a body in this pair is gone' 'reconcile')
-  =/  got  (people-ops (plan-people all multi now) acts now)
+  =/  got  (people-ops (weld (plan-people all multi now) (plan-twins all multi now)) acts now)
   [(weld stale ops.got) proposed.got]
 ::  +approved-merges: the merge actions the owner approved, for the
 ::  fiber to claim, run and report
