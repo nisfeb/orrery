@@ -207,6 +207,13 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 61's owner steps
+
+No new road, so no consent prompt, and no schema change. What an owner sees:
+
+- Reconcile proposes merging two activities of one title whose schedules agree, the way it already proposes merging two bodies that name one person.
+- A conversation closes an action: when a reader hears "done", "fixed" or "never mind" about one of the ship's open actions, it is marked done or dismissed, signed by the reader. For your own words to be read, your Telegram user id must be in the reader's `people` as `person/me`, and the chat reader needs `read_own` on.
+
 ### Version 60's owner steps
 
 No new road, so no consent prompt, and no kernel change beyond the stock grubbery kernel. What an owner sees:

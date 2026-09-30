@@ -28,6 +28,18 @@ scripts/hoon-test-kit/hoon-test.sh ~/software/nec generator    # one file
 Exit 0 is a pass. The runner prints each test's result, and for a
 failure its expected and actual values.
 
+When `~nec` is down (`hoon-test.sh` says the ship did not answer), the
+lib still compiles without a ship: it imports nothing, so `vere eval`
+builds it against the ivory pill's zuse in about fifteen seconds. Wrap
+the file and a fixture in one expression and pipe it in:
+
+```sh
+{ echo '=>'; cat code/lib/orrery.hoon; echo '(plan-twins ~ ~ now)'; } | ~/software/vere-v4.6-linux-x86_64 eval
+```
+
+That is a compile and a run, not the suite; the `/+ test` arms need the
+desk.
+
 The mutation runner takes about 16 s a mutant here, since each one
 rebuilds the whole 6,200-line lib. The whole menu is about 1,400 mutants,
 so aim it:
