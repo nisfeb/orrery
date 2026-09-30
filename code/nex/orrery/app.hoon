@@ -5717,12 +5717,18 @@
     |=([k=@t v=json] ?:(?=([%s *] v) `[k p.v] ~))
   =/  events=(list cal-event:orr)  (events-of:orr u.store.cal)
   =/  plan=event-plan:orr  (plan-events:orr events order.u.cache all multi now seen tz)
-  ;<  n=@ud  bind:m  (file-ops-on ops.plan /exec)
+  ::  the executor's own events that double another: a cancel proposed
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  strays=(list json)  (plan-strays:orr (events-in:orr u.store.cal &) order.u.cache acts all now)
+  =/  stray-ops=(list json)
+    %+  turn  strays
+    |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now 'calendar')]]))
+  ;<  n=@ud  bind:m  (file-ops-on (weld ops.plan stray-ops) /exec)
   ;<  ~  bind:m
     ?:  =(seen seen.plan)  (pure:(fiber:fiber:nexus ,~) ~)
     (over:io (rf 0 / %'calendar-seen.json') [[/ %json] [%o (~(run by (prune-seen:orr seen.plan now)) |=(v=@t `json`s+v))]])
   ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
-  =/  active=?  |(!=(0 rows.plan) !=(0 made.plan))
+  =/  active=?  |(!=(0 rows.plan) !=(0 made.plan) ?=(^ strays))
   =/  saw=(list [@t json])
     :~  ['at' (en-time:orr now)]
         ['events' (numb:enjs:format (lent events))]
@@ -5740,6 +5746,7 @@
         ['made' (numb:enjs:format made.plan)]
         ['rows' (numb:enjs:format rows.plan)]
         ['cancelled' (numb:enjs:format cancelled.plan)]
+        ['strays' (numb:enjs:format (lent strays))]
         ['ops' (numb:enjs:format n)]
     ==
   ::  what it wrote is work: the settle inside the filing took the

@@ -6059,6 +6059,75 @@
       tags
       (cadence-of (gs e 'kind') cat (gj e 'args'))
   ==
+::  +own-event: an event the executor placed: it carries the orrery tag
+::  (and the action id in its meta, which +events-in reads and the
+::  clammed event drops)
+::
+++  own-event
+  |=  ev=cal-event
+  ^-  ?
+  |(=('orrery-' (end [3 7] id.ev)) (lien tags.ev |=(t=@t =('orrery' (lower t)))))
+::  +plan-strays: the executor's own events that double another event
+::  of the same title within a day (a message read at the wrong hour,
+::  beside the organiser's own invite): a cancel proposal each, for
+::  the occurrence ahead, unless a calendar action already names that
+::  event in any status, so a dismissal sticks. The reader never reads
+::  the ship's own events back, so no second body exists for the
+::  merge pass to find; the double lives on the calendar
+::
+++  plan-strays
+  |=  [events=(list cal-event) order=cal-order acts=(list [id=@ta a=action]) all=(list loaded) now=@da]
+  ^-  (list json)
+  =/  own=(list cal-event)  (skim events own-event)
+  =/  other=(list cal-event)  (skip events own-event)
+  =/  named=(set @t)
+    %-  sy
+    %+  murn  acts
+    |=  [* a=action]
+    ^-  (unit @t)
+    ?.  =(%calendar kind.a)  ~
+    =/  e=@t  (gs payload.a 'event')
+    ?:(=('' e) ~ `e)
+  =/  idx=event-index  (index-events all)
+  %+  murn  own
+  |=  ev=cal-event
+  ^-  (unit json)
+  ?:  (~(has in named) id.ev)  ~
+  =/  title=@t  (normalize-title name.ev)
+  ?:  =('' title)  ~
+  =/  ahead=(list [idx=@ud l=@da r=@da])
+    (skim (occurrences id.ev order now (add now ~d90)) |=([* l=@da *] (gth l now)))
+  ?~  ahead  ~
+  =/  at=@da  l.i.ahead
+  =/  twin=(unit cal-event)
+    %-  find-first-event
+    :-  other
+    |=  o=cal-event
+    ?.  =(title (normalize-title name.o))  |
+    ?=(^ (occurrences id.o order (sub at ~d1) (add at ~d1)))
+  ?~  twin  ~
+  =/  about=(list json)
+    =/  b=(unit loaded)  (~(get by uids.idx) id.u.twin)
+    ?~(b ~ ~[s+id.u.b])
+  :-  ~
+  %-  pairs:enjs:format
+  :~  ['kind' s+'calendar']
+      ['title' s+(rap 3 'Take the duplicate ' name.ev ' off the calendar, ' (end [3 10] (en-iso at)) ~)]
+      ['about' a+about]
+      :-  'payload'
+      %-  pairs:enjs:format
+      :~  ['mode' s+'cancel']
+          ['event' s+id.ev]
+          ['title' s+name.ev]
+          ['starts' s+(en-iso at)]
+          ['why' s+(rap 3 'orrery placed this one from an action; the calendar also holds ' name.u.twin ' within a day of it, from ' cal.u.twin ~)]
+      ==
+  ==
+++  find-first-event
+  |=  [evs=(list cal-event) f=$-(cal-event ?)]
+  ^-  (unit cal-event)
+  ?~  evs  ~
+  ?:((f i.evs) `i.evs $(evs t.evs))
 ::  +cadence-of: the word a rule's kind gives an activity's cadence:
 ::  the kind itself, a dated event's yearly, an imported RRULE's FREQ
 ::  (weekly for "FREQ=WEEKLY;BYDAY=TU"), rrule when it has none

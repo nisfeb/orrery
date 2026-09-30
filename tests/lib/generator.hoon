@@ -1778,6 +1778,60 @@
 ::  the owner is in an event that names them or names nobody else; a
 ::  calendar row from before that says they are in one naming only
 ::  others is retracted, and a retracted one is left alone
+++  test-plan-strays
+  =/  store=json
+    %-  jo
+    %-  crip
+    %-  zing
+    :~  "\{\"events\": ["
+        "\{\"id\": \"o-dup\", \"cal\": \"default\", \"cat\": \"timed\", \"kind\": \"once\", "
+        "\"meta\": \{\"name\": \"~dalten\", \"orrery\": \"a9\", \"tags\": [\"orrery\"]}},"
+        "\{\"id\": \"u-real\", \"cal\": \"default\", \"cat\": \"timed\", \"kind\": \"once\", "
+        "\"meta\": \{\"name\": \"~dalten\", \"location\": \"gathertown\", \"tags\": []}},"
+        "\{\"id\": \"o-far\", \"cal\": \"default\", \"cat\": \"timed\", \"kind\": \"once\", "
+        "\"meta\": \{\"name\": \"Pottery\", \"tags\": [\"orrery\"]}},"
+        "\{\"id\": \"u-pot\", \"cal\": \"default\", \"cat\": \"timed\", \"kind\": \"once\", "
+        "\"meta\": \{\"name\": \"Pottery\", \"tags\": []}}"
+        "]}"
+    ==
+  =/  order=cal-order:orr
+    %+  gas:on-cal-order:orr  *cal-order:orr
+    ^-  (list [@da (set cal-ref:orr)])
+    :~  [~2026.9.30..17.00.00 (sy ~[`cal-ref:orr`['o-dup' 0 ~2026.9.30..17.00.00 ~2026.9.30..18.00.00]])]
+        [~2026.9.30..20.00.00 (sy ~[`cal-ref:orr`['u-real' 0 ~2026.9.30..20.00.00 ~2026.9.30..21.00.00]])]
+        [~2026.10.2..18.00.00 (sy ~[`cal-ref:orr`['o-far' 0 ~2026.10.2..18.00.00 ~2026.10.2..19.00.00]])]
+        [~2026.10.6..18.00.00 (sy ~[`cal-ref:orr`['u-pot' 0 ~2026.10.6..18.00.00 ~2026.10.6..19.00.00]])]
+    ==
+  =/  evs=(list cal-event:orr)  (events-in:orr store &)
+  =/  sit=loaded:orr
+    :+  'situation/2026-09-30-dalten'  [%situation '~dalten' ~ cal-now ~]
+    :_  ~
+    %-  row-of
+    (jo '{"subject": "situation/2026-09-30-dalten", "attr": "starts", "value": "2026-09-30T20:00:00Z", "at": "2026-09-18T12:00:00Z", "source": {"kind": "calendar", "id": "u-real"}, "by": "calendar"}')
+  =/  got=(list json)  (plan-strays:orr evs order ~ ~[sit] cal-now)
+  =/  a=json  (snag 0 got)
+  =/  pay=json  (gj:orr a 'payload')
+  =/  decided=(list [id=@ta a=action:orr])
+    :~  ['c1' [%calendar 'Take the duplicate ~dalten off the calendar, 2026-09-30' (pairs:enjs:format ~[['mode' s+'cancel'] ['event' s+'o-dup']]) ~ ~ 'calendar' cal-now %dismissed 'no' ~]]
+    ==
+  ;:  weld
+    ::  the own event beside the organiser's, within a day: one cancel
+    (expect-eq !>(1) !>((lent got)))
+    (expect-eq !>('calendar') !>((gs:orr a 'kind')))
+    (expect-eq !>('Take the duplicate ~dalten off the calendar, 2026-09-30') !>((gs:orr a 'title')))
+    (expect-eq !>(`(list @t)`~['situation/2026-09-30-dalten']) !>((strings:orr (ga:orr a 'about'))))
+    (expect-eq !>('cancel') !>((gs:orr pay 'mode')))
+    (expect-eq !>('o-dup') !>((gs:orr pay 'event')))
+    (expect-eq !>('2026-09-30T17:00:00Z') !>((gs:orr pay 'starts')))
+    ::  a dismissal sticks
+    (expect-eq !>(`(list json)`~) !>((plan-strays:orr evs order decided ~[sit] cal-now)))
+    ::  a double already behind is moot
+    (expect-eq !>(`(list json)`~) !>((plan-strays:orr evs order ~ ~[sit] ~2026.10.1)))
+    ::  the ship's own: the tag, or the id prefix an older executor gave
+    (expect !>((own-event:orr ['orrery-9' 'default' 'timed' 'x' '' '' ~ 'once'])))
+    (expect !>((own-event:orr ['u-9' 'default' 'timed' 'x' '' '' ~['Orrery'] 'once'])))
+    (expect !>(!(own-event:orr ['u-9' 'default' 'timed' 'x' '' '' ~['work'] 'once'])))
+  ==
 ++  test-plan-events-owner
   =/  store=json
     %-  jo
