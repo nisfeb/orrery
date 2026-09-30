@@ -4727,7 +4727,7 @@
       (cat 3 url.gen '/chat/completions')
       api-key.gen
       %^  chat-body-with:orr  gen  (rap 3 analyst-prompt:orr nl:orr nl:orr reply-rules:orr ~)
-      ~[(reader-prompt-with:orr rows ctx tz mail-kind:orr (tag-lines:orr tags acts))]
+      ~[(reader-prompt-with:orr rows ctx tz mail-kind:orr (tag-lines:orr tags acts 'Actions in the brief, by tag (tag | kind | title | about | due | status):'))]
       ~m5
       %reader
     ==
@@ -4739,7 +4739,7 @@
   ?~  parsed  (pure:m [(flop handled) (flop ['model: the reply\'s answer is not JSON' notes])])
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
   =/  moves=(list move:orr)  (moves-of:orr u.parsed tags known)
-  ;<  moved=(list @t)  bind:m  (apply-moves moves acts now)
+  ;<  moved=(list @t)  bind:m  (apply-moves moves acts now /mail 'brief')
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
   ;<  ~  bind:m  (tg-file facts now mail-kind:orr)
   %=  $
@@ -4756,7 +4756,7 @@
 ::  old one was only proposed)
 ::
 ++  apply-moves
-  |=  [moves=(list move:orr) acts=(list [id=@ta a=action:orr]) now=@da]
+  |=  [moves=(list move:orr) acts=(list [id=@ta a=action:orr]) now=@da road=path by=@t]
   =/  m  (fiber:fiber:nexus ,(list @t))
   ^-  form:m
   =|  said=(list @t)
@@ -4771,7 +4771,7 @@
   ?:  |(closing &(?=(~ due.mv) ?=(~ about.mv)))
     =/  steps=(list @t)  (brief-steps:orr status.u.cur status.mv)
     ;<  *  bind:m
-      (file-ops-on (turn steps |=(st=@t (set-action-op:orr id.mv st reason.mv 'brief'))) /mail)
+      (file-ops-on (turn steps |=(st=@t (set-action-op:orr id.mv st reason.mv by))) road)
     $(moves t.moves, said [(rap 3 tag.mv ': ' ?~(steps 'unchanged' (rear steps)) ~) said])
   ::  changed: the old one dismissed, a new one proposed as changed
   =/  fresh=json
@@ -4782,16 +4782,16 @@
         ['about' a+(turn ?~(about.mv ~(tap in about.u.cur) about.mv) |=(b=@t `json`s+b))]
         ['due' ?~(due.mv ?~(due.u.cur ~ s+(en-iso:orr u.due.u.cur)) s+(en-iso:orr u.due.mv))]
     ==
-  ;<  *  bind:m  (file-ops-on ~[(set-action-op:orr id.mv 'dismissed' 'replaced from the brief' 'brief')] /mail)
+  ;<  *  bind:m  (file-ops-on ~[(set-action-op:orr id.mv 'dismissed' 'replaced from the brief' by)] road)
   ;<  *  bind:m
-    (file-ops-on ~[(pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr fresh now 'brief')]])] /mail)
+    (file-ops-on ~[(pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr fresh now by)]])] road)
   ;<  after=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  made=(unit @ta)  (replacement:orr after id.mv title.u.cur now)
   ?~  made  $(moves t.moves, said [(rap 3 tag.mv ': the changed action was not filed' ~) said])
   =/  want=@t  ?:(!=('' status.mv) status.mv ?:(=(%proposed status.u.cur) '' 'approved'))
   =/  steps=(list @t)  (brief-steps:orr 'proposed' want)
   ;<  *  bind:m
-    (file-ops-on (turn steps |=(st=@t (set-action-op:orr u.made st reason.mv 'brief'))) /mail)
+    (file-ops-on (turn steps |=(st=@t (set-action-op:orr u.made st reason.mv by))) road)
   $(moves t.moves, said [(rap 3 tag.mv ': changed, now ' u.made ~) said])
 ::  +send-dm: an approved message as a Tlon DM, poked at the %chat
 ::  agent through the kernel's gall road (the kernel checks the noun
@@ -5057,8 +5057,11 @@
   =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
   ::  what the owner struck, and this reader's proposals they dismissed
   =.  lessons.ctx  (lesson-lines:orr (de-corrections:orr cs-j) own-acts by.kind)
+  ::  the open actions the conversation may close ("done", "fixed",
+  ::  "never mind"); a handed-in page closes nothing
+  =/  tags=(list [tag=@t id=@ta])  ?:(=('web' channel.kind) ~ (open-tags:orr own-acts))
   =/  rows=(list window-row:orr)  (run-rows:orr recent fresh kind)
-  ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx))
+  ;<  gate=(unit json)  bind:m  (ask-decider gen (gate-body:orr rows ctx (tag-titles:orr tags own-acts)))
   =/  verdict  (gate-verdict:orr gate gate.cfg)
   =/  gate-note=@t  note.verdict
   ?.  read.verdict  (pure:m [| | ~ ~ ~ ~[gate-note] ~])
@@ -5069,14 +5072,22 @@
     %:  post-json
       (cat 3 url.gen '/chat/completions')
       api-key.gen
-      (chat-body-with:orr small analyst-prompt:orr ~[(reader-prompt:orr rows ctx tz kind)])
+      %^    chat-body-with:orr  small
+          ?~(tags analyst-prompt:orr (rap 3 analyst-prompt:orr nl:orr nl:orr reader-move-rules:orr ~))
+      :_  ~
+      %:  reader-prompt-with:orr  rows  ctx  tz  kind
+        ?~(tags ~ (tag-lines:orr tags own-acts 'The ship\'s open actions, by tag (tag | kind | title | about | due | status):'))
+      ==
       ~m5
       %reader
     ==
   =/  answer  (reader-answer:orr status.got body.got)
   ?:  ?=(%| -.answer)  (pure:m [& down.p.answer ~ ~ ~ ~[gate-note why.p.answer] ~])
+  ::  what the conversation closed, signed by the reader, said in the record
+  =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
+  ;<  moved=(list @t)  bind:m  (apply-moves (reader-moves:orr p.answer tags known) own-acts now /tg by.kind)
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx)
-  =.  notes.facts  [gate-note notes.facts]
+  =.  notes.facts  (weld [gate-note moved] notes.facts)
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
   ;<  esc=(unit json)  bind:m
     ?:  =(~ obs.facts)  (pure:(fiber:fiber:nexus ,(unit json)) ~)

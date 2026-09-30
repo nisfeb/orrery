@@ -1052,7 +1052,7 @@
 ::  ==  the decider bodies
 ::
 ++  test-decider-bodies
-  =/  g=json  (gate-body:orr tg-rows tg-ctx)
+  =/  g=json  (gate-body:orr tg-rows tg-ctx ~)
   =/  st=json  (gj:orr g 'state')
   =/  e=json  (escalate-body:orr tg-rows tg-ctx ~[(jo '{"subject": "person/me", "attr": "status", "value": "stranded, waiting for a tow"}')])
   =/  s=json  (status-body:orr tg-rows ~[(jo '{"subject": "person/me", "attr": "status", "value": "on jury duty"}') (jo '{"subject": "thing/subaru", "attr": "status", "value": "broken"}') (jo '{"subject": "person/me", "attr": "status", "value": "fed up"}')])
@@ -1979,6 +1979,41 @@
         :-  'All day  Whole day'
         (turn (gulf 1 10) |=(i=@ud (crip "To do  Undated {(a-co:co i)}")))
     !>  got
+++  test-open-tags-and-reader-moves
+  =/  mk
+    |=  [id=@ta status=@tas at=@da]
+    ^-  [id=@ta a=action:orr]
+    [id [%task (cat 3 'do ' id) ~ ~ ~ 'telegram' at status '' ~]]
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  (mk 'old' %proposed (sub now ~d2))
+        (mk 'gone' %done now)
+        (mk 'new' %approved (sub now ~h1))
+        (mk 'no' %dismissed now)
+        (mk 'mid' %claimed (sub now ~d1))
+    ==
+  =/  tags  (open-tags:orr acts)
+  =/  answer=json
+    (jo '{"moves": [{"tag": "A1", "status": "done", "reason": "said done"}, {"tag": "A2", "status": "approved"}, {"tag": "A3", "due": "2026-09-26T13:00:00Z"}, {"tag": "A3", "status": "dismissed"}]}')
+  =/  moves  (reader-moves:orr answer tags (sy ~['person/me']))
+  =/  g=json  (gate-body:orr ~ *reader-ctx:orr (tag-titles:orr tags acts))
+  =/  bare=json  (gate-body:orr ~ *reader-ctx:orr ~)
+  ;:  weld
+    ::  open ones only, newest first
+    (expect-eq !>(`(list [@t @ta])`~[['A1' 'new'] ['A2' 'mid'] ['A3' 'old']]) !>(tags))
+    (expect-eq !>(`(list @t)`~['A1 do new' 'A2 do mid' 'A3 do old']) !>((tag-titles:orr tags acts)))
+    (expect-eq !>('Open:') !>((snag 0 (tag-lines:orr tags acts 'Open:'))))
+    (expect-eq !>(4) !>((lent (tag-lines:orr tags acts 'Open:'))))
+    ::  a conversation closes; it neither approves nor reschedules
+    (expect-eq !>(2) !>((lent moves)))
+    (expect-eq !>(`move:orr`['A1' 'new' 'done' ~ ~ 'said done']) !>((snag 0 moves)))
+    (expect-eq !>(`move:orr`['A3' 'old' 'dismissed' `~2026.9.26..13.00.00 ~ '']) !>((snag 1 moves)))
+    ::  the gate hears of them, and of nothing when there are none
+    (expect-eq !>(3) !>((lent (ga:orr (gj:orr g 'state') 'open_actions'))))
+    (expect !>((has-sub (gs:orr (gj:orr (gj:orr (gj:orr g 'questions') 'worth_reading') 'criteria') 'true') 'open actions listed')))
+    (expect !>(!(has-key:orr (gj:orr bare 'state') 'open_actions')))
+    (expect !>(!(has-sub (gs:orr (gj:orr (gj:orr (gj:orr bare 'questions') 'worth_reading') 'criteria') 'true') 'open actions')))
+    (expect !>((has-sub reader-move-rules:orr '"moves"')))
+  ==
 ++  test-own-words-and-moves
   =/  brief=@t  'Today, Wednesday\0a\0a[A1] Tell Mira\0a     message\0a\0aSuggestions\0aNothing to add.'
   =/  reply=@t  'approve A1, and we got the car back\0a\0aSuggestions\0a> Today, Wednesday\0aOn Wed, Sep 23, orrery wrote:\0a> [A1] Tell Mira'

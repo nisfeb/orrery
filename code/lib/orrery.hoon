@@ -5436,17 +5436,22 @@
 ::  newest message carries a fact the analyst should read
 ::
 ++  gate-body
-  |=  [rows=(list window-row) ctx=reader-ctx]
+  |=  [rows=(list window-row) ctx=reader-ctx open=(list @t)]
   ^-  json
+  =/  st=json  (gate-state rows ctx)
+  =?  st  ?=(^ open)  (set-key st 'open_actions' a+(turn open |=(t=@t `json`s+t)))
   %-  pairs:enjs:format
-  :~  ['state' (gate-state rows ctx)]
+  :~  ['state' st]
       :-  'questions'
       %-  pairs:enjs:format
       :_  ~
       :-  'worth_reading'
       %^  noul-question
         'Does the new message state a fact worth recording about a person, thing, place, or a plan, that the analyst should read?'
-        'it says where someone is, what they are dealing with, what happened, or what will happen, to whom and when'
+        %+  rap  3
+        :~  'it says where someone is, what they are dealing with, what happened, or what will happen, to whom and when'
+            ?~(open '' '; or it says, even in one word, that one of the open actions listed has been done or is no longer needed')
+        ==
       'chatter, greetings, feelings, jokes, a question, or a request that carries no fact about anyone'
   ==
 ::  +escalate-body: analyze.ESCALATE_QUESTION over the gate state and the
@@ -6806,9 +6811,9 @@
 ::  +tag-lines: the brief's actions by tag, for the reply's prompt
 ::
 ++  tag-lines
-  |=  [tags=(list [tag=@t id=@ta]) acts=(list [id=@ta a=action])]
+  |=  [tags=(list [tag=@t id=@ta]) acts=(list [id=@ta a=action]) head=@t]
   ^-  (list @t)
-  :-  'Actions in the brief, by tag (tag | kind | title | about | due | status):'
+  :-  head
   %+  murn  tags
   |=  [tag=@t id=@ta]
   ^-  (unit @t)
@@ -6817,6 +6822,53 @@
   =/  about=@t  (join-cords ', ' ~(tap in about.u.a))
   =/  due=@t  ?~(due.u.a '' (en-iso u.due.u.a))
   `(rap 3 '  ' tag ' | ' kind.u.a ' | ' title.u.a ' | ' about ' | ' due ' | ' status.u.a ~)
+::  +open-tags: the open actions under tags, A1 on, newest first, for
+::  a conversation to close ("done", "fixed", "never mind")
+::
+++  open-tags
+  |=  acts=(list [id=@ta a=action])
+  ^-  (list [tag=@t id=@ta])
+  =/  open=(list [id=@ta a=action])
+    %+  sort  (skim acts |=([* a=action] (is-open a)))
+    |=([x=[id=@ta a=action] y=[id=@ta a=action]] (gth proposed.a.x proposed.a.y))
+  ::  ponytail: forty is a prompt's worth, and what a conversation
+  ::  closes is recent; page through them if an inbox outgrows it
+  =/  kept=(list [id=@ta a=action])  (scag 40 open)
+  =/  n=@ud  1
+  |-  ^-  (list [tag=@t id=@ta])
+  ?~  kept  ~
+  :-  [(cat 3 'A' (crip (a-co:co n))) id.i.kept]
+  $(kept t.kept, n +(n))
+::  +tag-titles: "A1 Fix the garage door", one per tag, for the gate
+::
+++  tag-titles
+  |=  [tags=(list [tag=@t id=@ta]) acts=(list [id=@ta a=action])]
+  ^-  (list @t)
+  %+  murn  tags
+  |=  [tag=@t id=@ta]
+  ^-  (unit @t)
+  =/  a=(unit action)  (act-by acts id)
+  ?~(a ~ `(rap 3 tag ' ' title.u.a ~))
+::  +reader-moves: what a conversation may do to a tagged action: close
+::  it, done or dismissed. A due, a subject or an approval is the
+::  owner's to give, from the brief or the page
+::
+++  reader-moves
+  |=  [answer=json tags=(list [tag=@t id=@ta]) known=(set @t)]
+  ^-  (list move)
+  %+  skim  (moves-of answer tags known)
+  |=(m=move ?=(?(%done %dismissed) status.m))
+::  +reader-move-rules: what a conversation may do to the ship's open
+::  actions, added to the analyst's prompt when there are any
+::
+++  reader-move-rules
+  ^-  @t
+  '''
+  The ship's open actions are listed below, each under a tag such as A1. When the new messages say one of them has been carried out (the owner answers "done", "fixed", "sent", "handled", "took care of it"; the person who asked says it is sorted or thanks the owner for it), answer it under "moves": {"tag": "A1", "status": "done", "reason": "the owner said done"}. When one is no longer wanted ("never mind", "I sorted it myself", "forget it"), its status is "dismissed". A move is about the action the messages name or plainly mean; the earlier messages say what a bare "done" answers. Move nothing on a guess, and never approve or change an action from here.
+  Everything else is facts and actions by the rules above; a reply that only closes an action states no fact.
+  Answer with one JSON object and nothing else:
+  {"moves": [...], "bodies": [...], "observations": [...], "actions": [...]}
+  '''
 ++  act-by
   |=  [acts=(list [id=@ta a=action]) id=@ta]
   ^-  (unit action)
