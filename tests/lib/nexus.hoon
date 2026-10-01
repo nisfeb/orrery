@@ -948,6 +948,13 @@
     %+  expect-eq  !>([3 (add now ~m4)])
     !>((rise-plan:orr (rise-row:orr [3 (add now ~m4)] now) | now))
   ==
+++  test-del-key
+  =/  o=json  (jo '{"a": 1, "parked": "x"}')
+  ;:  weld
+    (expect-eq !>((jo '{"a": 1}')) !>((del-key:orr o 'parked')))
+    (expect-eq !>(o) !>((del-key:orr o 'nope')))
+    (expect-eq !>(`json`s+'t') !>((del-key:orr s+'t' 'a')))
+  ==
 ++  test-mail-threads
   =/  segs=(list @ta)  ~[(scot %uv 0v1) (scot %uv 0v2) (scot %uv 0v3)]
   =/  many=(list @uv)  (turn (gulf 1 250) |=(i=@ud `@uv`i))

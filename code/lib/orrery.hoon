@@ -299,6 +299,11 @@
   ^-  ?
   ?.  ?=([%o *] jon)  |
   (~(has by p.jon) k)
+++  del-key                                     ::  a key gone from an object
+  |=  [jon=json k=@t]
+  ^-  json
+  ?.  ?=([%o *] jon)  jon
+  [%o (~(del by p.jon) k)]
 ++  set-key                                     ::  a key set on an object
   |=  [jon=json k=@t v=json]
   ^-  json

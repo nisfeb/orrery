@@ -385,7 +385,9 @@
         ::  first, or a late answer queued before it would crash the
         ::  request's first step at a reload
         ;<  ~  bind:m  take-kick
-        ?^  prod  ((slog leaf+"%orrery request: failed" u.prod) (pure:m ~))
+        ?^  prod
+          ;<  ~  bind:m  request-crashed
+          (pure:m ~)
         (handle-request name.rail)
       ==
     --
@@ -419,6 +421,14 @@
 ::  a row can be lost and that fiber's count starts again at 1; it
 ::  still waits. A grub per fiber would end it.
 ::
+::  What it prints follows docs/logging.md. The kernel already prints
+::  %fiber-crash and the trace for every crash, so orrery prints one
+::  line at >> with the retry plan and never the trace. A weir that
+::  refuses the clock or the timer is one fault across every fiber:
+::  rise.json records it once under parked, the fiber that records it
+::  prints one line at >>> with the remedy, the rest stay silent, and
+::  a clean start clears the record.
+::
 ++  rise-later
   |=  [=prod:fiber:nexus msg=tape]
   =/  m  (fiber:fiber:nexus ,~)
@@ -428,6 +438,11 @@
   ::  would come to a fiber no longer waiting for it
   ?~  prod
     ;<  *  bind:m  (soft-behn /rise/rest [[/ %timer-rest] `wire`/rise])
+    ::  the weir answers again: a recorded park is over
+    ;<  log=json  bind:m  (read-json (rf 0 / %'rise.json'))
+    ?.  (has-key:orr log 'parked')  (pure:m ~)
+    ;<  *  bind:m
+      (over-as-soft:io (rf 0 / %'rise.json') [[/ %json] (del-key:orr log 'parked')] [/ %json])
     (pure:m ~)
   =/  key=@t  (crip msg)
   ::  what a refused poke fails with; the restart that follows is not a crash
@@ -435,7 +450,7 @@
   =/  crash=?  !=(note u.prod)
   ;<  clock=(unit @da)  bind:m  soft-now
   ?~  clock
-    %-  ?.(crash same (slog [leaf+"{msg}: no clock (weir?); waiting for a poke" u.prod]))
+    ;<  ~  bind:m  (record-park msg "the clock (/sys/bowl.sig)")
     (rise-park note)
   =/  now=@da  u.clock
   ;<  log=json  bind:m  (read-json (rf 0 / %'rise.json'))
@@ -444,9 +459,8 @@
   ;<  ~  bind:m
     =/  m  (fiber:fiber:nexus ,~)
     ?.  crash  (pure:m ~)
-    %-  %-  slog
-        ?:  (lte n.plan 2)  [leaf+msg u.prod]
-        ~[leaf+"{msg} again ({(a-co:co n.plan)} times running); next try in {(a-co:co (div (sub until.plan now) ~m1))} min"]
+    =/  mins=tape  (a-co:co (div (sub until.plan now) ~m1))
+    ~>  %slog.[2 leaf+?:(=(1 n.plan) "{msg}: crashed; it comes back by itself in {mins} min; the trace is above, file it if it crashes again" "{msg}: crashed again ({(a-co:co n.plan)} times running); next try in {mins} min")]
     ;<  *  bind:m
       %^  over-as-soft:io  (rf 0 / %'rise.json')
         [[/ %json] (set-key:orr log key (rise-row:orr plan now))]
@@ -454,8 +468,42 @@
     (pure:m ~)
   ;<  set=?  bind:m
     (soft-behn /rise/set [[/ %timer-set] `[wire @da]`[/rise until.plan]])
-  %-  ?:(|(set !crash) same (slog leaf+"{msg}: no timer (weir?); waiting for a poke" ~))
+  ;<  ~  bind:m
+    ?:  |(set !crash)  (pure:(fiber:fiber:nexus ,~) ~)
+    (record-park msg "the timer (/sys/behn)")
   (rise-park note)
+::  +record-park: a weir that refuses a road every fiber needs, kept
+::  once in rise.json under parked and said once, at >>>, with the
+::  remedy; a park already recorded is not news (docs/logging.md)
+::
+++  record-park
+  |=  [msg=tape why=tape]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  log=json  bind:m  (read-json (rf 0 / %'rise.json'))
+  ?:  =((crip why) (gs:orr log 'parked'))  (pure:m ~)
+  ;<  *  bind:m
+    (over-as-soft:io (rf 0 / %'rise.json') [[/ %json] (set-key:orr log 'parked' s+(crip why))] [/ %json])
+  ~>  %slog.[3 leaf+"{msg}: parked, the weir refuses {why}; grant it on /apps/grubbery/permits, then reload"]
+  (pure:m ~)
+::  +request-crashed: a request fiber that crashed. The kernel printed
+::  the trace; here the count goes into rise.json under %orrery request
+::  (+rise-plan's count, which starts over after two quiet hours) and
+::  one line at >> says so the first time (docs/logging.md)
+::
+++  request-crashed
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  clock=(unit @da)  bind:m  soft-now
+  ?~  clock  (pure:m ~)
+  =/  key=@t  '%orrery request'
+  ;<  log=json  bind:m  (read-json (rf 0 / %'rise.json'))
+  =/  plan  (rise-plan:orr (gj:orr log key) & u.clock)
+  ;<  *  bind:m
+    (over-as-soft:io (rf 0 / %'rise.json') [[/ %json] (set-key:orr log key (rise-row:orr plan u.clock))] [/ %json])
+  ?.  =(1 n.plan)  (pure:m ~)
+  ~>  %slog.[2 leaf+"%orrery request: a request crashed; the trace is above, file it; the count is in rise.json under %orrery request"]
+  (pure:m ~)
 ::  +take-kick: the start's kick, taken before anything is sent (rule 9
 ::  of the crash-loop rules; calendar's +take-kick). A reload or a
 ::  restart queues a null kick behind the inputs already waiting (a
@@ -5704,8 +5752,15 @@
   =/  cache=(unit cal-cache:orr)
     ?.  ?=([~ %file *] vw)  ~
     (mole |.(;;(cal-cache:orr (sang-noun:tarball sang.u.vw))))
-  ?~  cache  (pure:m |)
   ;<  now=@da  bind:m  get-time:io
+  ?~  cache
+    ::  silence must be true: the record says the index was not read
+    ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
+    =/  said=@t  'the calendar\'s order index could not be read: the peek was refused or its shape is not the one orrery clams'
+    ?:  =(said (gs:orr last 'note'))  (pure:m |)
+    ;<  ~  bind:m
+      (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] (set-key:orr (set-key:orr last 'at' (en-time:orr now)) 'note' s+said)])
+    (pure:m |)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  seen-json=json  bind:m  (read-json (rf 0 / %'calendar-seen.json'))
@@ -5728,6 +5783,7 @@
     ?:  =(seen seen.plan)  (pure:(fiber:fiber:nexus ,~) ~)
     (over:io (rf 0 / %'calendar-seen.json') [[/ %json] [%o (~(run by (prune-seen:orr seen.plan now)) |=(v=@t `json`s+v))]])
   ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
+  =.  last  (del-key:orr last 'note')
   =/  active=?  |(!=(0 rows.plan) !=(0 made.plan) ?=(^ strays))
   =/  saw=(list [@t json])
     :~  ['at' (en-time:orr now)]
