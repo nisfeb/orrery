@@ -201,9 +201,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 9. `python3 scripts/mcp-matrix.py $SHIP $JAR` prints `ALL OK`.
 10. `python3 scripts/page-smoke.py $SHIP $JAR` prints `ALL OK`.
 11. `python3 scripts/ship-share-matrix.py $SHIP $JAR $SHIP2 $JAR2` prints `ALL OK`.
-12. Open `/apps/orrery` on the dev ship in a browser with the owner cookie: the views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
-13. `git push origin main`, then on the dev ship's forge: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-14. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
+12. `python3 scripts/quiet-gate.py <tmux target> $SHIP $JAR` prints no finding: a reload of the instance leaves the ship's console as it was, bar the known-noise register in `docs/logging.md`. The rest of the quiet gate there, a refused road printing one line and recording `parked`, is the owner's, by hand.
+13. Open `/apps/orrery` on the dev ship in a browser with the owner cookie: the views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
+14. `git push origin main`, then on the dev ship's forge: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
+15. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
