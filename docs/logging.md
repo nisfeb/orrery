@@ -31,7 +31,12 @@ would end it.
 The crash trace is never orrery's to print: the kernel prints
 `%fiber-crash <path>` and the whole trace for every fiber crash,
 ungated, so orrery's line adds only the retry plan and the record's
-name. The trace is the one thing on the console that could carry a
+name. The two faults split the other way: a road orrery refuses softly
+(the clock and the timer in `+rise-later`) prints nothing from the
+kernel, so orrery's `>>>` line is the only one; a road whose refusal
+crashes a fiber bangs it, the kernel prints its one parked line with
+the same remedy, and orrery, which never runs again until the reload,
+prints nothing. The trace is the one thing on the console that could carry a
 user's words; that is the kernel's to gate, and is on the register
 below.
 
@@ -89,7 +94,9 @@ the ones marked.
 | `%fiber-crash <path> in=<tag>` and the trace that follows | grubbery, on every fiber crash, ungated | a finding when orrery's own fiber crashed |
 | `fiber parked: a dart was refused by the weir` / `fiber parked: restarted over N times in one event` | grubbery, the bang on a parked fiber | a finding |
 | `BANG nexus <path>` and the compile error | grubbery, when a nexus does not build | a finding |
-| `>>  [%veto-received-from ...]`, `>>>  [%process-dart-vetoed ...]` | grubbery, on a refused dart | a finding when orrery's road was refused |
+| `>>  [%veto-received-from ...]` | grubbery, a remote host refusing one of ours | a finding when orrery's share was refused |
+| `>>> grubbery: <app> is parked: it may not <poke, peek or make> <road>; grant it at /apps/grubbery/permits, then reload` | grubbery, once per app while one of its fibers is banged by a refusal it did not handle | a finding |
+| `[%process-dart-vetoed ...]`, `[%weir-veto-at ...]` | grubbery, behind its debug flag since its quiet-console branch; a release prints neither | debug only |
 | `grubbery: migrating state ...` | grubbery, on a kernel upgrade | ignored during a kernel deploy |
 | `newt: ...`, `loom: ...`, `conn: ...` | vere | not orrery's; see the test kit's reference on conn.sock |
 
