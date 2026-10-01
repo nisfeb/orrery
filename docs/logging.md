@@ -98,6 +98,8 @@ the ones marked.
 | `>>> grubbery: <app> is parked: it may not <poke, peek or make> <road>; grant it at /apps/grubbery/permits, then reload` | grubbery, once per app while one of its fibers is banged by a refusal it did not handle | a finding |
 | `[%process-dart-vetoed ...]`, `[%weir-veto-at ...]` | grubbery, behind its debug flag since its quiet-console branch; a release prints neither | debug only |
 | `grubbery: migrating state ...` | grubbery, on a kernel upgrade | ignored during a kernel deploy |
+| `eyre: replacing existing binding at /apps/orrery` | eyre, each time the instance starts and binds its path again: every reload, every release | ignored |
+| `http: fail (<n>, <status>): connection failure` | vere's HTTP client, once per outbound request that could not connect (the model, Telegram); orrery records the same failure on the pass's record | ignored |
 | `newt: ...`, `loom: ...`, `conn: ...` | vere | not orrery's; see the test kit's reference on conn.sock |
 
 ## The quiet gate
@@ -108,7 +110,10 @@ runs the two steps a script can run; the rest are the operator's.
 1. `python3 scripts/quiet-gate.py <tmux target> $SHIP $JAR`: the ship's
    console is captured from its tmux pane, the instance is reloaded
    through the explorer, and once the bang is `null` again every new
-   console line not on the register is a finding. Exit 0 is a pass.
+   console line not on the register is a finding. Each new line is
+   printed, as a finding or as ignored, so a pass shows what it
+   ignored. Exit 0 is a pass; exit 2 means the console could not be
+   matched before and after, and nothing can be said.
 2. Install the release on a ship that has data and grant its
    permissions. After start-up, nothing new on the console.
 3. Refuse a road orrery needs on `/apps/grubbery/permits`. Exactly one

@@ -17,13 +17,18 @@ INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/o
 #  and listed in docs/logging.md so an old line can be told from a new one
 KNOWN_NOISE = [
     r'%desk-source-unreachable',
-    r'^\s*~[a-z-]+:dojo>',
+    r'^eyre: replacing existing binding at /apps/orrery$',
+    r'^http: fail \(\d+, \d+\): ',
 ]
+PROMPT = re.compile(r'^\s*~[a-z-]+:dojo>')
 
 
 def console():
-    out = subprocess.run(['tmux', 'capture-pane', '-p', '-S', '-', '-t', TARGET], capture_output=True, text=True).stdout
-    return [re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', l) for l in out.splitlines() if l.strip()]
+    #  -J joins the lines the pane wrapped; the prompt is redrawn at the
+    #  bottom after every print, so it is no part of what the ship said
+    out = subprocess.run(['tmux', 'capture-pane', '-p', '-J', '-S', '-', '-t', TARGET], capture_output=True, text=True).stdout
+    lines = [re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', l).rstrip() for l in out.splitlines()]
+    return [l for l in lines if l.strip() and not PROMPT.match(l)]
 
 
 def cookie():
@@ -55,11 +60,21 @@ while time.time() < deadline:
         pass
 time.sleep(10)
 after = console()
-#  what the pane gained: the tail past the old length, re-anchored on the
-#  last old line in case the scrollback was trimmed
-new = after[len(before):] if after[:len(before)] == before else after[after.index(before[-1]) + 1:] if before and before[-1] in after else after
+#  what the pane gained: everything after the last place the old tail
+#  ends in the new capture (the scrollback may have dropped old lines off
+#  its top, so the two are matched from the end, on a run of lines)
+tail = before[-30:]
+at = None
+for i in range(len(after) - len(tail), -1, -1):
+    if after[i:i + len(tail)] == tail:
+        at = i + len(tail)
+        break
+if at is None:
+    print('FAIL the console before the reload is not found in the console after it: nothing can be said')
+    sys.exit(2)
+new = after[at:]
 findings = [l for l in new if not any(re.search(p, l) for p in KNOWN_NOISE)]
-for l in findings:
-    print('FINDING ' + l)
+for l in new:
+    print(('FINDING ' if l in findings else 'ignored ') + l)
 print(('instance back' if back else 'FAIL instance did not come back') + ', %d new console line(s), %d finding(s)' % (len(new), len(findings)))
 sys.exit(0 if back and not findings else 1)
