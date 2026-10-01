@@ -767,6 +767,19 @@ check('an update seen under the old token is handled again under the new one', h
 # wake route is how the gate hurries it
 def inbox():
     return [c.get('name') for c in dictish(curl('GET', INSTANCE + '/telegram-inbox')[1]).get('children', [])]
+
+
+def culled(*ids, secs=30):
+    """whether these updates leave the inbox: the reader records a run and
+    then culls its updates, so the cull is a beat behind the record"""
+    deadline = time.time() + secs
+    while time.time() < deadline:
+        if not any('%012d' % i in inbox() for i in ids):
+            return True
+        time.sleep(1)
+    return False
+
+
 DOWN = True
 before = dictish(curl('GET', API + '/telegram/last')[1])
 check('the hook takes an update the model is down for', hook(update(U0 + 7, MID + 6, 'the tow truck is here')) == 200, None)
@@ -777,7 +790,7 @@ DOWN = False
 code, d = curl('POST', API + '/telegram/wake')
 check('the owner wakes the reader', code == 200 and dictish(d).get('ok') is True, (code, d))
 woken = dictish(tg_last(U0 + 7))
-check('the woken reader handled the kept update and culled it', woken.get('update_id') == U0 + 7 and woken.get('outcome') in ('facts', 'nothing') and '%012d' % (U0 + 7) not in inbox(), (woken, inbox()))
+check('the woken reader handled the kept update and culled it', woken.get('update_id') == U0 + 7 and woken.get('outcome') in ('facts', 'nothing') and culled(U0 + 7), (woken, inbox()))
 # three updates in one chat that wait together (the model down while they
 # land) are read as one run: one analyst call that sees all three, three
 # messages counted, the record at the last of them
@@ -793,7 +806,7 @@ run = dictish(tg_last(U0 + 10))
 asked = [b for p, _, b in seen if p.endswith('/chat/completions')][calls_before:]
 prompt = ' '.join(((b.get('messages') or [{}])[-1].get('content') or [{}])[0].get('text', '') for b in asked)
 check('three updates in one chat are read as one run', run.get('update_id') == U0 + 10 and run.get('read_today') == (before.get('read_today') or 0) + 3 and len(asked) == 1 and 'making a noise' in prompt and 'it was the cat' in prompt and 'all good now' in prompt, (run.get('update_id'), before.get('read_today'), run.get('read_today'), len(asked)))
-check('and every one of them was culled', not any('%012d' % (U0 + 8 + i) in inbox() for i in range(3)), inbox())
+check('and every one of them was culled', culled(U0 + 8, U0 + 9, U0 + 10), inbox())
 code, d = curl('POST', API + '/telegram/webhook')
 check('the ship registers its webhook with telegram', code == 200 and dictish(d).get('ok') is True, (code, d))
 sw = [b for p, _, b in seen if p.endswith('/setWebhook')]
