@@ -38,7 +38,12 @@ the file and a fixture in one expression and pipe it in:
 ```
 
 That is a compile and a run, not the suite; the `/+ test` arms need the
-desk.
+desk. `scripts/eval-tests.sh <suite>` runs a suite's arms the same way,
+with the test lib's two gates stood in for by ones that compare nouns:
+`scripts/eval-tests.sh nexus` answers `[ran=55 failed=~]` in about half
+a minute, or each failing arm with what it expected and got. It is for
+when the test ship is busy or down; the kit on `~nec` stays the
+authority, since its `expect-eq` also holds the types.
 
 The mutation runner takes about 16 s a mutant here, since each one
 rebuilds the whole 6,200-line lib. The whole menu is about 1,400 mutants,
