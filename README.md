@@ -225,7 +225,8 @@ A message with no address (no `telegram` attribute and not in `people`, no `ship
 A task is placed without a claim and stays `approved` until it is done, and the mirror runs both ways:
 
 - Ticked in the calendar, its action goes `done` by `calendar` with `ticked in the calendar`.
-- Marked done on the page, its todo is ticked.
+- Marked done on the page, its todo is ticked, once, with a mark in the todo's meta (`ticked`, the action's id) saying the ship ticked it for that action.
+- Unticked in the calendar after either tick, it stays unticked (version 65; until then the ship ticked it back every pass). Done stays done: the todo is taken up afresh as an approved task filed `by` `calendar`, about what the old one was about, and ticking it again closes that one.
 - Dismissed or failed on the page, its todo is deleted.
 - A todo you type into the calendar by hand becomes an approved task filed `by` `calendar` and gains the mark in the same pass, so it is adopted once.
 

@@ -1114,6 +1114,13 @@ def passed(before=None, bound=20):
     return dictish(curl('GET', API + '/exec/last')[1])
 
 
+def until(fn, bound=30):
+    deadline = time.time() + bound
+    while not fn() and time.time() < deadline:
+        time.sleep(1)
+    return fn()
+
+
 def exec_last(**want):
     #  the record, waited for (ten seconds at most) until it carries the
     #  counts asked for: the pass writes the action or the todo first and
@@ -1480,9 +1487,60 @@ a = settled(TASKID)
 check('ticked in the calendar, the task is done by the calendar', a.get('status') == 'done' and a.get('note') == 'ticked in the calendar' and steps(a)[-1] == ('done', 'calendar'), (code, a.get('status'), a.get('note'), steps(a)))
 last = exec_last(closed=1)
 check('the record counts the close', last.get('closed') == 1, last)
-# a task the owner marks done on the page: section 6's task, ticked by the mirror
+
+
+def todo_by_id(eid):
+    hits = [x for x in todos() if x.get('id') == eid]
+    return hits[0] if hits else {}
+
+
+def reopened(eid, was):
+    #  the todo once it has moved to another action than `was`, or as it stands at the bound
+    until(lambda: dictish(todo_by_id(eid).get('meta')).get('orrery') not in (None, '', was), 60)
+    return todo_by_id(eid)
+
+
+# unticked in the calendar (version 65): the ship never ticks it back. Done stays done; the todo is
+# taken up afresh as a task of the owner's, and ticking it again closes that one
+TID = t['id'] if t else 'none'
+cal_poke({'action': 'done-event', 'id': TID, 'done': False})
+tt = reopened(TID, TASKID)
+REID = dictish(tt.get('meta')).get('orrery', '')
+MADE.append(REID)
+check('unticked after the owner\'s tick, the todo stays unticked and moves to a new task', tt.get('done') is False and REID not in ('', TASKID), tt)
+ra = action(REID)
+check('the new task is the owner\'s, approved, for that todo, and the old one stays done',
+      ra.get('status') == 'approved' and ra.get('by') == 'calendar' and dictish(ra.get('payload')).get('todo') == TID
+      and action(TASKID).get('status') == 'done', (ra, action(TASKID).get('status')))
+before = exec_last()
+curl('POST', API + '/exec/wake', {})
+passed(before)
+check('a later pass leaves it unticked, with one todo and no second task',
+      todo_by_id(TID).get('done') is False and dictish(todo_by_id(TID).get('meta')).get('orrery') == REID
+      and len([x for x in todos() if dictish(x.get('meta')).get('name') == 'Gate task %s' % XRUN]) == 1, todo_by_id(TID))
+cal_poke({'action': 'done-event', 'id': TID})
+a = settled(REID)
+check('ticked again, the new task is done by the calendar', a.get('status') == 'done' and steps(a)[-1] == ('done', 'calendar'), (a.get('status'), steps(a)))
+# a task the owner marks done on the page: section 6's task, ticked by the mirror, with the mark that
+# says the ship ticked it for that action
+t = todo_for(AID)
+until(lambda: dictish(todo_for(AID, bound=1) or {}).get('done') is True, 30)
 t = todo_for(AID)
 check('the task done on the page has its todo ticked', t is not None and t.get('done') is True, t)
+check('the ship\'s tick leaves its mark and keeps the due', dictish(dictish(t).get('meta')).get('ticked') == AID, t)
+PTID = t['id'] if t else 'none'
+cal_poke({'action': 'done-event', 'id': PTID, 'done': False})
+pt = reopened(PTID, AID)
+PREID = dictish(pt.get('meta')).get('orrery', '')
+MADE.append(PREID)
+check('unticked after the ship\'s tick, it stays unticked and is taken up, the mark gone',
+      pt.get('done') is False and PREID not in ('', AID) and 'ticked' not in dictish(pt.get('meta')), pt)
+check('the new task is about what the old one was about', action(PREID).get('status') == 'approved' and sorted(action(PREID).get('about') or []) == sorted(action(AID).get('about') or []),
+      (action(PREID).get('about'), action(AID).get('about')))
+before = exec_last()
+curl('POST', API + '/exec/wake', {})
+passed(before)
+check('and a later pass does not tick it back', todo_by_id(PTID).get('done') is False, todo_by_id(PTID))
 # a task dismissed on the page: its todo goes
 DISID = propose('task', 'Gate dismissed task %s' % XRUN, payload={'notes': 'to be dismissed'})
 MADE.append(DISID)
@@ -1540,11 +1598,6 @@ STRUCK = 'person/gate-struck'
 PARIS, ROME, EMP = 'Gate Paris %s' % XRUN, 'Gate Rome %s' % XRUN, 'Gate Co %s' % XRUN
 def live(attr):
     return [dictish(o).get('value') for o in dictish(curl('GET', API + '/body/' + STRUCK)[1]).get('observations') or [] if dictish(o).get('attr') == attr and dictish(o).get('status') == 'live']
-def until(fn, bound=30):
-    deadline = time.time() + bound
-    while not fn() and time.time() < deadline:
-        time.sleep(1)
-    return fn()
 now = datetime.now(timezone.utc)
 observe([{'id': STRUCK, 'name': 'Gate Struck'}], [obs(STRUCK, 'city', PARIS, now - timedelta(minutes=2), src('struck-a')),
                                                   obs(STRUCK, 'city', PARIS, now - timedelta(minutes=1), src('struck-b'))])

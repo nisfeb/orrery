@@ -1354,6 +1354,21 @@
         ['a3' [%task 'Ticked in the calendar' ~ ~ ~ 'generator' now %approved '' ~]]
         ['a4' [%task 'Due moved on the ship' ~ ~ `~2026.10.5 'generator' now %approved '' ~]]
         ['a5' [%task 'In step' ~ ~ ~ 'generator' now %approved '' ~]]
+        ::  unticked by the owner: a6 was ticked in the calendar, a7 by
+        ::  the ship (its mark is on e9); a8 too, but the task filed for
+        ::  its todo stands already (a9), the edit never having landed
+        ['a6' [%task 'Unticked after my tick' ~ (sy ~['situation/boiler']) ~ 'generator' now %done 'ticked in the calendar' ~[[now %approved 'policy'] [now %done 'calendar']]]]
+        ['a7' [%task 'Unticked after the ship\'s tick' ~ ~ ~ 'generator' now %done '' ~[[now %done 'user']]]]
+        ['a8' [%task 'Unticked, taken up already' ~ ~ ~ 'generator' now %done '' ~[[now %done 'calendar']]]]
+        ['a9' [%task 'Unticked, taken up already' (jo '{"todo": "e10"}') ~ ~ 'calendar' now %approved '' ~]]
+        ::  unticked a second time: both tasks filed for e12 are done,
+        ::  so neither stands in the way of a third
+        ['b1' [%task 'Unticked twice' (jo '{"todo": "e12"}') ~ ~ 'calendar' now %done '' ~[[now %done 'calendar']]]]
+        ['b2' [%task 'Unticked twice' (jo '{"todo": "e12"}') ~ ~ 'calendar' now %done '' ~[[now %done 'calendar']]]]
+        ::  failed on the ship; claimed and ticked; adopted, the mark never landed
+        ['b3' [%task 'Failed on the ship' ~ ~ ~ 'generator' now %failed '' ~]]
+        ['b4' [%task 'Claimed and ticked' ~ ~ ~ 'generator' now %claimed '' ~]]
+        ['b5' [%task 'Adopted, mark never landed' (jo '{"todo": "e15"}') ~ ~ 'calendar' now %done '' ~]]
     ==
   ::  e6 carries a color and a tag of the owner's, which the adoption
   ::  must keep; e4's meta is what the ship placed
@@ -1365,18 +1380,55 @@
         ['e5' 'In step' 'a5' | ~ '' [%o ~]]
         ['e6' 'Buy milk' '' | `~2026.10.2 'two litres' (jo '{"name": "Buy milk", "note": "two litres", "color": "red", "tags": ["home"]}')]
         ['e7' 'Already done by hand' '' & ~ '' [%o ~]]
+        ['e8' 'Unticked after my tick' 'a6' | ~ '' (jo '{"name": "Unticked after my tick", "orrery": "a6"}')]
+        ['e9' 'Unticked after the ship\'s tick' 'a7' | ~ '' (jo '{"name": "Unticked after the ship\'s tick", "orrery": "a7", "ticked": "a7"}')]
+        ['e10' 'Unticked, taken up already' 'a8' | ~ '' [%o ~]]
+        ::  the mark of another action's tick is not this one's: ticked
+        ['e11' 'Ticked on the ship' 'a1' | `~2026.10.3 '' (jo '{"name": "Ticked on the ship", "orrery": "a1", "ticked": "a0", "color": "red"}')]
+        ['e12' 'Unticked twice' 'b2' | ~ '' [%o ~]]
+        ['e13' 'Failed on the ship' 'b3' | ~ '' [%o ~]]
+        ['e14' 'Claimed and ticked' 'b4' & ~ '' [%o ~]]
+        ['e15' 'Adopted, mark never landed' '' | ~ '' [%o ~]]
     ==
   =/  ops=(list mirror-op:orr)  (plan-mirror:orr todos acts now)
   =/  cal=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%calendar -.o) `+.o ~)))
   =/  wr=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%writer -.o) `+.o ~)))
   =/  cal-act  (turn cal |=(j=json [(gs:orr j 'action') (gs:orr j 'id')]))
+  =/  e1=json  (fall (find-by cal 'e1') ~)
+  =/  e9=json  (fall (find-by cal 'e9') ~)
+  =/  e11=json  (fall (find-by cal 'e11') ~)
+  =/  find-title
+    |=  [ops=(list json) title=@t]
+    ^-  (unit json)
+    =/  hits=(list json)  (skim ops |=(j=json =(title (gs:orr (gj:orr j 'action') 'title'))))
+    ?~(hits ~ `i.hits)
   =/  e4=json  (fall (find-by cal 'e4') ~)
   =/  e6=json  (fall (find-by cal 'e6') ~)
   =/  adopted=json  (fall (find-op wr 'act') ~)
   ::  the id the writer will give the adopted action
   =/  want=@ta  (fall (bind (lift-act (gj:orr adopted 'action')) act-id:orr) '')
   ;:  weld
-    (expect !>((lien cal-act |=([a=@t i=@t] &(=('done-event' a) =('e1' i))))))
+    ::  e1: done on the ship and never ticked for it, the ship ticks
+    ::  it with an edit that carries the done, the mark and the due
+    (expect !>(!(lien cal-act |=([a=@t i=@t] =('done-event' a)))))
+    (expect-eq !>(['edit-event' 'a1' 'a1']) !>([(gs:orr e1 'action') (gs:orr (gj:orr e1 'meta') 'ticked') (gs:orr (gj:orr e1 'meta') 'orrery')]))
+    (expect-eq !>(`(unit @ud)`[~ (ms-of:orr now)]) !>((gn:orr e1 'done_ms')))
+    (expect-eq !>([`(unit @ud)`[~ (ms-of:orr ~2026.10.3)] 'a1' 'red']) !>([(gn:orr e11 'due_ms') (gs:orr (gj:orr e11 'meta') 'ticked') (gs:orr (gj:orr e11 'meta') 'color')]))
+    ::  e8, e9: unticked by the owner, never ticked again; each is
+    ::  taken up as a task of theirs, about what the old one was about,
+    ::  and the todo moves to it with the mark gone
+    ::  e12 too, a second time; e15, adopted before, is not adopted again
+    (expect-eq !>(`(list @t)`~['Buy milk' 'Unticked after my tick' 'Unticked after the ship\'s tick' 'Unticked twice']) !>((turn (skim wr |=(j=json =('act' (gs:orr j 'op')))) |=(j=json (gs:orr (gj:orr j 'action') 'title')))))
+    (expect !>(!(lien cal-act |=([a=@t i=@t] =('e15' i)))))
+    ::  e13: failed on the ship, its todo goes; e14: ticked while claimed, done
+    (expect !>((lien cal-act |=([a=@t i=@t] &(=('del-event' a) =('e13' i))))))
+    (expect !>((lien wr |=(j=json &(=('set-action' (gs:orr j 'op')) =('b4' (gs:orr j 'id')) =('done' (gs:orr j 'status')))))))
+    (expect-eq !>(`(list @t)`~['situation/boiler']) !>((strings:orr (ga:orr (gj:orr (fall (find-title wr 'Unticked after my tick') ~) 'action') 'about'))))
+    (expect-eq !>('e8') !>((gs:orr (gj:orr (gj:orr (fall (find-title wr 'Unticked after my tick') ~) 'action') 'payload') 'todo')))
+    (expect-eq !>(['edit-event' ~ |]) !>([(gs:orr e9 'action') (gn:orr e9 'done_ms') (has-key:orr (gj:orr e9 'meta') 'ticked')]))
+    (expect !>(&(!=('a7' (gs:orr (gj:orr e9 'meta') 'orrery')) !=('' (gs:orr (gj:orr e9 'meta') 'orrery')))))
+    ::  e10: the task filed for it stands, so nothing more
+    (expect !>(!(lien cal-act |=([a=@t i=@t] =('e10' i)))))
     (expect !>((lien cal-act |=([a=@t i=@t] &(=('del-event' a) =('e2' i))))))
     (expect !>((lien cal-act |=([a=@t i=@t] &(=('edit-event' a) =('e4' i))))))
     (expect !>(!(lien cal-act |=([a=@t i=@t] =('e5' i)))))
@@ -1386,7 +1438,7 @@
     (expect !>((lien wr |=(j=json &(=('act' (gs:orr j 'op')) =('Buy milk' (gs:orr (gj:orr j 'action') 'title')))))))
     (expect !>((lien wr |=(j=json &(=('set-action' (gs:orr j 'op')) =('approved' (gs:orr j 'status')) =('calendar' (gs:orr j 'by')))))))
     (expect !>((lien cal-act |=([a=@t i=@t] &(=('edit-event' a) =('e6' i))))))
-    (expect-eq !>(1) !>((lent (skim wr |=(j=json =('act' (gs:orr j 'op')))))))
+    (expect-eq !>(4) !>((lent (skim wr |=(j=json =('act' (gs:orr j 'op')))))))
     ::  the adopted action: a task by calendar, its note and due, stamped
     (expect-eq !>('task') !>((gs:orr (gj:orr adopted 'action') 'kind')))
     (expect-eq !>('calendar') !>((gs:orr (gj:orr adopted 'action') 'by')))
@@ -1411,8 +1463,6 @@
     (expect-eq !>('a4') !>((gs:orr (gj:orr e4 'meta') 'orrery')))
     (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr (gj:orr e4 'meta') 'tags'))))
     (expect !>(!(has-key:orr (gj:orr e4 'meta') 'note')))
-    ::  e1's tick carries now
-    (expect-eq !>((ms-of:orr now)) !>((need (gn:orr (fall (find-by cal 'e1') ~) 'done'))))
   ==
 ::  ==  clean-text
 ::

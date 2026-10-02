@@ -6095,7 +6095,8 @@
 ::  whole through the calendar's parse-event (meta verbatim, only the
 ::  exceptions survive): the meta it had, with the name and note, the
 ::  action id and the orrery tag laid over it, so a color, a CalDAV
-::  category or a tag the owner set survives the edit.
+::  category or a tag the owner set survives the edit. The mark of the
+::  ship's tick (+tick-todo-op) goes: only that op lays it.
 ::
 ++  todo-meta
   |=  [t=todo act=@t]
@@ -6105,11 +6106,13 @@
   =?  tags  !(lien tags |=(x=@t =('orrery' x)))  (snoc tags 'orrery')
   =.  own  (~(put by own) 'name' s+name.t)
   =.  own  (~(put by own) 'orrery' s+act)
+  =.  own  (~(del by own) 'ticked')
   =.  own  (~(put by own) 'tags' a+(turn tags |=(x=@t ^-(json s+x))))
   =.  own  ?:(=('' note.t) (~(del by own) 'note') (~(put by own) 'note' s+note.t))
   [%o own]
 ::  +edit-todo-op: the calendar poke that rewrites a todo with its
-::  action id and a due
+::  action id and a due. An edit replaces the todo whole and this one
+::  carries no done, so it unticks: it is only for a todo not ticked
 ::
 ++  edit-todo-op
   |=  [t=todo act=@t due=(unit @da)]
@@ -6124,6 +6127,18 @@
     ==
   ^-  (list [@t json])
   ?~(due ~ ~[['due_ms' (numb:enjs:format (ms-of u.due))]])
+::  +tick-todo-op: the calendar poke that ticks the todo of an action
+::  done on the ship, and leaves the mark saying the ship ticked it
+::  for that action. An edit, since one poke must carry the tick and
+::  the mark together; the due goes with it, the edit replacing the
+::  todo whole
+::
+++  tick-todo-op
+  |=  [t=todo now=@da]
+  ^-  json
+  =/  edit=json  (edit-todo-op t orrery.t due.t)
+  =.  edit  (set-key edit 'meta' (set-key (todo-meta t orrery.t) 'ticked' s+orrery.t))
+  (set-key edit 'done_ms' (numb:enjs:format (ms-of now)))
 ::  +calendar-set-action: a status the calendar sets on an action
 ::
 ++  calendar-set-action
@@ -6146,16 +6161,18 @@
 ::  on the id the writer will assign (act-id of the stamped action, as
 ::  gen-pass computes it after filing); then the todo is rewritten with
 ::  that id, so the next pass reads it as the ship's own. A todo the
-::  writer would refuse (a title over the cap) yields nothing.
+::  writer would refuse (a title over the cap) yields nothing. The
+::  task is about what the caller says: nothing for a todo typed by
+::  hand, what the old task was about for one reopened.
 ::
 ++  adopt-ops
-  |=  [t=todo now=@da]
+  |=  [t=todo about=(set @t) now=@da]
   ^-  (list mirror-op)
   =/  raw=json
     %-  pairs:enjs:format
     %+  weld
       ^-  (list [@t json])
-      ~[['kind' s+'task'] ['title' s+name.t] ['about' a+~]]
+      ~[['kind' s+'task'] ['title' s+name.t] ['about' a+(turn ~(tap in about) |=(b=@t `json`s+b))]]
     %+  weld
       ^-  (list [@t json])
       ~[['payload' (pairs:enjs:format (weld `(list [@t json])`~[['todo' s+id.t]] `(list [@t json])`?:(=('' note.t) ~ ~[['notes' s+note.t]])))]]
@@ -6178,6 +6195,17 @@
 ::  A done todo nobody claims, and a todo whose action is not in the
 ::  list, are left alone.
 ::
+::  A done action's todo found unticked is one of two things. Never
+::  ticked for it yet, the ship ticks it (+tick-todo-op, with its
+::  mark). Ticked for it before, by the owner (the done step is the
+::  calendar's) or by the ship (the mark), the owner has unticked it:
+::  the ship ticked it again every pass until version 65. Done stays
+::  done; the todo is taken up afresh as a task of the owner's, about
+::  what the old one was about, unless an open task filed for it
+::  stands already (the edit that moves the todo to it never landed).
+::  ponytail: a todo the ship ticked before 65 has no mark, so its
+::  first untick is ticked once more, and that tick lays the mark
+::
 ++  plan-mirror
   |=  [todos=(list todo) acts=(list [id=@ta a=action]) now=@da]
   ^-  (list mirror-op)
@@ -6192,7 +6220,7 @@
     ::  a todo adopted before whose mark never landed (a read-only
     ::  shared calendar drops the edit) is not adopted again
     ?:  |(done.t (~(has in adopted) id.t))  ~
-    (adopt-ops t now)
+    (adopt-ops t ~ now)
   =/  hit=(unit action)  (~(get by by-id) `@ta`orrery.t)
   ?~  hit  ~
   =/  a=action  u.hit
@@ -6201,9 +6229,11 @@
     ?.  live  ~
     [%writer (calendar-set-action orrery.t 'done' 'ticked in the calendar')]~
   ?:  =(%done status.a)
-    :_  ~
-    :-  %calendar
-    (pairs:enjs:format ~[['action' s+'done-event'] ['id' s+id.t] ['done' (numb:enjs:format (ms-of now))]])
+    =/  theirs=?  ?~(history.a | =('calendar' by:(rear history.a)))
+    ?.  |(theirs =(orrery.t (gs meta.t 'ticked')))
+      [%calendar (tick-todo-op t now)]~
+    ?:  (lien acts |=([* b=action] &((is-open b) =(id.t (gs payload.b 'todo')))))  ~
+    (adopt-ops t about.a now)
   ?:  |(=(%dismissed status.a) =(%failed status.a))
     [%calendar (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+id.t]])]~
   ?.  live  ~

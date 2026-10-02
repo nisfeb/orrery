@@ -208,6 +208,14 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 65's owner steps
+
+No new road, no schema change, and nothing for an owner to do. What an owner sees:
+
+- A task unticked in the calendar stays unticked. Until now the ship ticked it back within a pass, because a done action's todo found unticked looked the same whether the ship had yet to tick it or the owner had just unticked it. The ship's own tick now leaves a mark on the todo (`ticked` in its meta), and the owner's tick is already the action's last step, so the two are told apart.
+- The unticked todo is taken up again as an open task: a new approved action filed `by` `calendar`, about what the old one was about. The old action stays done, so the inbox shows both.
+- One leftover: a todo the ship ticked before version 65 carries no mark. Its first untick is ticked once more, and that tick lays the mark; the second untick holds. A todo the owner ticked themselves has no such step.
+
 ### Version 64's owner steps
 
 No new road, so no consent prompt, and nothing for an owner to do. What an owner sees:

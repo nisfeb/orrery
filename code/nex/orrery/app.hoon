@@ -5968,12 +5968,14 @@
       =/  why=@t  (cat 3 'the calendar refused a poke: ' (tang-head u.err))
       $(ops t.ops, adopting rest, tally (note-once tally why))
     =/  act=@t  (gs:orr +.i.ops 'action')
+    ::  the ship's tick is an edit carrying the done (+tick-todo-op)
+    =/  tick=?  &(=('edit-event' act) ?=(^ (gn:orr +.i.ops 'done_ms')))
     %=  $
       ops  t.ops
       adopting  rest
-      ticked.tally  ?:(=('done-event' act) +(ticked.tally) ticked.tally)
+      ticked.tally  ?:(tick +(ticked.tally) ticked.tally)
       deleted.tally  ?:(=('del-event' act) +(deleted.tally) deleted.tally)
-      moved.tally  ?:(&(=('edit-event' act) =(0 adopting)) +(moved.tally) moved.tally)
+      moved.tally  ?:(&(=('edit-event' act) !tick =(0 adopting)) +(moved.tally) moved.tally)
     ==
   ==
 ::  +exec-record: what the pass did, for the page and the owner's eye.
