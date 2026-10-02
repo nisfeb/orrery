@@ -261,7 +261,7 @@ The Inbox, each body page and each proposed note carry a box for the owner's own
 - `fact` `{subject, attr, value}` states one, signed `owner`.
 - `merge` `{from, into}` folds two bodies.
 - `preference` `{text}` adds a standing preference.
-- `resolve` `{situation, outcome, evidence}` closes a situation with how it ended, both rows signed `owner`. What was only proposed about that situation is then dismissed by the ship with the outcome as its note, since a resolved situation needs no reminders; what you approved stays yours. A dismissal the ship made is no taste of yours, so the tallies, the reasons list and the prompts' lessons leave it out.
+- `resolve` `{situation, outcome, evidence}` closes a situation with how it ended, both rows signed `owner`. What was only proposed about that situation is then dismissed by the ship with the outcome as its note, since a resolved situation needs no reminders; what you approved stays yours. A situation a reader closed, or the clock, loses its proposed reminders the same way at reconcile's next pass, and one that is also about a situation still open is left alone. A dismissal the ship made is no taste of yours, so the tallies, the reasons list, the decisions the generator is shown and the prompts' lessons leave it out.
 
 They are filed as proposals, or approved at once with `apply` (the page's "do it"). `action` names the proposal being answered, so a client can send a reply to a note, such as "remove her", here. The owner, or a key with `write`, may call it.
 
@@ -505,7 +505,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /brief/wake` | send a brief now, whatever the hour; owner only |
 | `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took; `at` is when it last looked, `acted_at` when those counts happened; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
-| `GET /reconcile/last` | what the last run did: of the situations closed in the last thirty days how many were `resolved` (they carry an outcome) and how many only `presumed` over (the clock closed them); then time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
+| `GET /reconcile/last` | what the last run did: of the situations closed in the last thirty days how many were `resolved` (they carry an outcome) and how many only `presumed` over (the clock closed them), and how many proposals about situations now over it `quieted`; then time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
