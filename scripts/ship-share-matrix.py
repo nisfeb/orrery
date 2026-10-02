@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ship-share-matrix.py HOST HJAR PEER PJAR
 The sharing gate for orrery (spec section 11) against two fake ships:
-HOST (~wex) shares person/sarah with PEER (~feb), whose person/me it is.
+HOST shares person/sarah with PEER, whose person/me it is; each ship's
+name is read from its own /~/host.
 Read mode mirrors the host's observations and retractions; edit mode
 carries the peer's back; revoke keeps the data; a re-share works.
 HOST and PEER like http://localhost:8080; the jars from POST /~/login.
@@ -13,7 +14,7 @@ import gate
 from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
-HOSTNAME, PEERNAME = '~wex', '~feb'
+HOSTNAME, PEERNAME = (str(gate.curl('GET', b + '/~/host')[1]).strip() for b in (HOST, PEER))
 GROUP = '/grubbery/ball/sys/ames/usergroups/orrery-person.sarah.grp?info=1'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
 PEER_POLICY = [None]
@@ -108,6 +109,10 @@ def clean():
                 retract(side, row)
     host('DELETE', '/body/person/john')
     peer('DELETE', '/body/person/john')
+    #  a run with the ships the other way round leaves the peer a
+    #  person/sarah that carries the host's ship, and an accept of the
+    #  host's own self would land there instead of on person/<host>
+    peer('DELETE', '/body/person/sarah')
     if PEER_POLICY[0] is not None:
         peer('PUT', '/policy', PEER_POLICY[0])
 
@@ -174,8 +179,20 @@ code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/sarah'})
 check('accept the edit share', code == 200 and dictish(d).get('target') == 'person/me', d)
 s = dictish(shares(peer))
 check('the row turns to edit and the offer is gone', dictish(dictish(s.get('accepted')).get(KEY)).get('mode') == 'edit' and KEY not in dictish(s.get('offers')), s)
-peer('POST', '/sync')
-hrow = dictish(wait('the mood reaches the host', lambda: attr(host, 'person/sarah', 'mood'), 90))
+#  the first push carries the body's whole own history, oldest first,
+#  two hundred rows a pass: on a peer that has run many gates the new
+#  row is in a later pass, so each look prods another one
+PRODDED = [time.time()]
+
+
+def mood_on_host():
+    if time.time() - PRODDED[0] > 20:
+        PRODDED[0] = time.time()
+        peer('POST', '/sync')
+    return attr(host, 'person/sarah', 'mood')
+
+
+hrow = dictish(wait('the mood reaches the host', mood_on_host, 300))
 check('the host row is the peer claim', hrow.get('by') == PEERNAME and dictish(hrow.get('source')).get('kind') == 'ship' and source_id(hrow).startswith(PEERNAME + '/') and hrow.get('value') == 'tired', hrow)
 prow = dictish(attr(peer, 'person/me', 'mood'))
 check('the host source names the peer grub', source_id(hrow) == PEERNAME + '/' + str(prow.get('obs')), (hrow, prow))
