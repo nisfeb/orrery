@@ -1624,7 +1624,7 @@ check('a resolve waits for the owner, as the reminder about its situation does',
 approve(RES)
 curl('POST', API + '/exec/wake', {})
 check('approved, the executor closes the situation', until(lambda: action(RES).get('status') == 'done', 90), action(RES))
-rb = dictish(body(RSIT)[1])
+rb = dictish(curl('GET', API + '/body/' + RSIT)[1])
 ra = dictish(rb.get('attrs'))
 check('the situation is closed with how it ended, both rows the owner\'s',
       dictish(ra.get('status')).get('value') == 'closed' and dictish(ra.get('outcome')).get('value') == OUT
