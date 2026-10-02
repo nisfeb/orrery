@@ -1027,6 +1027,46 @@
     ::  nor is it among the decisions the generator is shown
     (expect-eq !>(`(list @t)`~['head' '  dismissed | task | Chase the plumber | not now']) !>((decision-lines:orr 'head' acts)))
   ==
+++  test-schema-upgrade
+  =/  old=json
+    %-  jo
+    '{"kinds": {"person": {"attrs": ["status"], "notes": {"status": "mine"}}, "situation": {"attrs": ["status", "transcript", "needs"], "notes": {"needs": "my own words"}}}, "actions": ["task", "note", "fact"], "payloads": {"fact": {"mine": "kept"}}, "multi": ["participants"], "style": "plain", "preferences": ["never calls"]}'
+  =/  new=json  (schema-upgrade:orr old)
+  =/  sit=json  (gj:orr (gj:orr new 'kinds') 'situation')
+  =/  starter-note
+    |=  [kind=@t attr=@t]
+    ^-  @t
+    (gs:orr (gj:orr (gj:orr (gj:orr starter-schema:orr 'kinds') kind) 'notes') attr)
+  ::  a document that took version 60's keys by hand gains only 64's
+  =/  at60=json  (schema-upgrade:orr (set-key:orr old 'schema_version' (numb:enjs:format 60)))
+  ::  a kind the document does not have is not made
+  =/  bare=json  (schema-upgrade:orr (jo '{"kinds": {"person": {"attrs": ["status"]}}, "actions": ["task"]}'))
+  ;:  weld
+    ::  the kinds and their shapes are added after the owner's own
+    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'correct' 'merge' 'preference' 'resolve']) !>((strings:orr (ga:orr new 'actions'))))
+    (expect-eq !>((jo '{"mine": "kept"}')) !>((gj:orr (gj:orr new 'payloads') 'fact')))
+    (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
+    (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
+    ::  the attributes go on the end, the owner's own and their order kept
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
+    ::  a note in the owner's words stays; a missing one is the starter's
+    (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
+    (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
+    (expect-eq !>('mine') !>((gs:orr (gj:orr (gj:orr (gj:orr new 'kinds') 'person') 'notes') 'status')))
+    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
+    ::  nothing else moves, and the mark says where it stands
+    (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
+    (expect-eq !>(`(unit @ud)`[~ 64]) !>((gn:orr new 'schema_version')))
+    ::  once: a second pass, and a new ship's starter, come back as they are
+    (expect-eq !>(new) !>((schema-upgrade:orr new)))
+    (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
+    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
+    (expect-eq !>(`(list @t)`~['status']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
+    (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
+    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings']) !>((strings:orr (ga:orr bare 'multi'))))
+    (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
+  ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')
   ;:  weld

@@ -78,6 +78,9 @@
           [%fall %| /tr empty-dir:loader]
           [%fall %| /beacon empty-dir:loader]
           [%fall %& [/ %'schema.json'] [[/ %json] starter-schema:orr]]
+          ::  the schema as it was before the ship last added a
+          ::  release's keys to it (+upgrade-schema, version 64)
+          [%fall %& [/ %'schema-before.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'policy.json'] [[/ %json] starter-policy:orr]]
           [%fall %& [/beacon %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/tr %last] [[/ %json] [%o ~]]]
@@ -174,6 +177,7 @@
           ::  is laid by the first request instead.
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery writer: failed")
+        ;<  ~  bind:m  upgrade-schema
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         ;<  changed=?  bind:m  (apply from sage)
@@ -476,6 +480,22 @@
     ?:  |(set !crash)  (pure:(fiber:fiber:nexus ,~) ~)
     (record-park msg "the timer (/sys/behn)")
   (rise-park note)
+::  +upgrade-schema: the stored schema gains what the releases since
+::  it was written added (+schema-upgrade:orr), at the writer's rise,
+::  which is every start and so every release. The document as it was
+::  is kept beside it first. Nothing when it is already at the newest.
+::  Soft, and with no clock: this runs before the writer's first wait,
+::  where a failure would start it again in the same event
+::
+++  upgrade-schema
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  next=json  (schema-upgrade:orr cur)
+  ?:  =(cur next)  (pure:m ~)
+  ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema-before.json') [[/ %json] cur] [/ %json])
+  ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema.json') [[/ %json] next] [/ %json])
+  (pure:m ~)
 ::  +record-park: a weir that refuses a road every fiber needs, kept
 ::  once in rise.json under parked and said once, at >>>, with the
 ::  remedy; a park already recorded is not news (docs/logging.md)

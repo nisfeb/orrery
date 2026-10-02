@@ -1063,6 +1063,88 @@
           ['evidence' 'optional: the fact that shows it, short']
       ==
   ==
+::  ==  the schema grows with the releases (version 64)
+::
+::  +schema-adds: what a release added to the starter schema that a
+::  ship already holding a schema needs too: action kinds, attributes
+::  by kind, multi-valued attributes. A stored schema is its owner's
+::  document and no release may replace it, so until now each addition
+::  was an owner's step by hand, which no owner but the author took.
+::  Each row is added, once, the first time a ship runs a version at
+::  or past it; the shapes and the notes are the starter's own.
+::
++$  schema-add  [v=@ud actions=(list @t) kinds=(list [kind=@t attrs=(list @t)]) multi=(list @t)]
+++  schema-adds
+  ^-  (list schema-add)
+  :~  :*  60
+          ~['correct' 'fact' 'merge' 'preference']
+          ~[['person' ~['spouse' 'children' 'parents' 'siblings']]]
+          ~['children' 'parents' 'siblings']
+      ==
+      [64 ~['resolve'] ~[['situation' ~['needs' 'waiting-on' 'outcome']]] ~]
+  ==
+++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
+::  +schema-upgrade: a stored schema with what the releases since its
+::  schema_version added, and the mark moved to the newest. An action
+::  kind comes with its payload shape, an attribute with its note, and
+::  an attribute goes only onto a kind the document has. Nothing the
+::  owner has is replaced, reordered or removed, so a note in their
+::  own words stays theirs. A document at the newest comes back as it
+::  is
+::
+++  schema-upgrade
+  |=  doc=json
+  ^-  json
+  ?.  ?=([%o *] doc)  doc
+  =/  from=@ud  (fall (gn doc 'schema_version') 0)
+  =/  todo=(list schema-add)  (skim schema-adds |=(a=schema-add (gth v.a from)))
+  ?~  todo  doc
+  ::  a list with the names it lacks added at its end
+  =/  more
+    |=  [items=(list json) names=(list @t)]
+    ^-  json
+    =/  have=(set @t)  (sy (strings items))
+    a+(weld items (turn (skip names |=(t=@t (~(has in have) t))) |=(t=@t `json`s+t)))
+  ::  a key set only when its value moved, so nothing absent turns null
+  =/  put
+    |=  [d=json k=@t v=json]
+    ^-  json
+    ?:(=(v (gj d k)) d (set-key d k v))
+  =/  start=json  doc
+  =/  new=json
+    %+  roll  `(list schema-add)`todo
+    |=  [a=schema-add acc=_start]
+    ^-  json
+    =.  acc  (put acc 'actions' (more (ga acc 'actions') actions.a))
+    =/  shapes=json  (gj acc 'payloads')
+    =.  acc
+      %^  put  acc  'payloads'
+      %+  roll  actions.a
+      |=  [k=@t p=_shapes]
+      ^-  json
+      =/  shape=json  (gj (gj starter-schema 'payloads') k)
+      ?:  |(?=(~ shape) (has-key p k))  p
+      (set-key p k shape)
+    =/  specs=json  (gj acc 'kinds')
+    =.  acc
+      %^  put  acc  'kinds'
+      %+  roll  kinds.a
+      |=  [[kind=@t attrs=(list @t)] ks=_specs]
+      ^-  json
+      =/  spec=json  (gj ks kind)
+      ?.  ?=([%o *] spec)  ks
+      =/  had=json  (gj spec 'notes')
+      =/  notes=json
+        %+  roll  attrs
+        |=  [n=@t ns=_had]
+        ^-  json
+        =/  said=json  (gj (gj (gj (gj starter-schema 'kinds') kind) 'notes') n)
+        ?:  |(?=(~ said) (has-key ns n))  ns
+        (set-key ns n said)
+      (set-key ks kind (put (put spec 'attrs' (more (ga spec 'attrs') attrs)) 'notes' notes))
+    ?~  multi.a  acc
+    (put acc 'multi' (more (ga acc 'multi') multi.a))
+  (set-key new 'schema_version' (numb:enjs:format schema-newest))
 ++  starter-schema
   ^-  json
   =/  kind
@@ -1130,6 +1212,7 @@
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference' 'resolve'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
+      ['schema_version' (numb:enjs:format schema-newest)]
       :-  'payloads'
       =/  shape
         |=  keys=(list [@t @t])
