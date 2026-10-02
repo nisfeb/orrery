@@ -97,6 +97,9 @@ the ones marked.
 | `>>  [%veto-received-from ...]` | grubbery, a remote host refusing one of ours | a finding when orrery's share was refused |
 | `>>> grubbery: <app> is parked: it may not <poke, peek or make> <road>; grant it at /apps/grubbery/permits, then reload` | grubbery, once per app while one of its fibers is banged by a refusal it did not handle | a finding |
 | `[%process-dart-vetoed ...]`, `[%weir-veto-at ...]` | grubbery, behind its debug flag since its quiet-console branch; a release prints neither | debug only |
+| `>   [%sand-applied dest=<app>]` | grubbery, when the owner approves an app's permits | the operator's own act; not a finding |
+| `>>  [%how-rejected-not-registered path=<app> name=<fiber>]` | grubbery's registry, refusing a grant from a fiber that did not register | a finding: orrery's follower caused it on every fresh install until the inbox alone laid the road |
+| `>   [%indexing-objects "n/m"]` | grubbery's forge, while it pulls a repository | the forge's progress; seen on a pull, never on a reload |
 | `grubbery: migrating state ...` | grubbery, on a kernel upgrade | ignored during a kernel deploy |
 | `eyre: replacing existing binding at /apps/orrery` | eyre, each time the instance starts and binds its path again: every reload, every release | ignored |
 | `http: fail (<n>, <status>): connection failure` | vere's HTTP client, once per outbound request that could not connect (the model, Telegram); orrery records the same failure on the pass's record | ignored |
@@ -115,7 +118,10 @@ runs the two steps a script can run; the rest are the operator's.
    ignored. Exit 0 is a pass; exit 2 means the console could not be
    matched before and after, and nothing can be said.
 2. Install the release on a ship that has data and grant its
-   permissions. After start-up, nothing new on the console.
+   permissions. After start-up, nothing new on the console. On a ship
+   that never had orrery the kernel says the app is parked until its
+   permits are granted, once and with the remedy, and
+   `[%sand-applied ...]` when they are; orrery says nothing.
 3. Refuse a road orrery needs on `/apps/grubbery/permits`. Exactly one
    `>>>` line names the road and says to grant it and reload, and
    `rise.json` reads `parked`.

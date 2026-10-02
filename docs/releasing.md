@@ -200,13 +200,21 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 8. `python3 scripts/key-matrix.py $SHIP $JAR` prints `ALL OK`.
 9. `python3 scripts/mcp-matrix.py $SHIP $JAR` prints `ALL OK`.
 10. `python3 scripts/page-smoke.py $SHIP $JAR` prints `ALL OK`.
-11. `python3 scripts/ship-share-matrix.py $SHIP $JAR $SHIP2 $JAR2` prints `ALL OK`.
+11. `python3 scripts/ship-share-matrix.py $SHIP $JAR $SHIP2 $JAR2` prints `ALL OK`, then again with the two ships swapped. The second ship takes orrery the way a user does, as a subscriber of the first: on the first, `POST /grubbery/desk/orrery/share {"add":"/public"}`; on the second, `POST /apps/grubbery/desks/add {"name":"orrery","code":"<first ship>/apps/shell.shell/desks/orrery.desk/desk/code"}`, then approve the instance's ask (`POST /apps/grubbery/permits` with `action: approve-weir`, the instance path as `app` and its own `weir.json` as `granted`) and reload it (`POST /apps/grubbery/permits/reload`). A change staged on the first ship reaches the second by `POST /grubbery/desk/orrery/fetch-latest` there.
 12. `python3 scripts/quiet-gate.py <tmux target> $SHIP $JAR` prints no finding: a reload of the instance leaves the ship's console as it was, bar the known-noise register in `docs/logging.md`. The rest of the quiet gate there, a refused road printing one line and recording `parked`, is the owner's, by hand.
 13. Open `/apps/orrery` on the dev ship in a browser with the owner cookie: the views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
 14. `git push origin main`, then on the dev ship's forge: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
 15. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
+
+### Version 63's owner steps
+
+No new road, so no consent prompt, and no schema change. Nothing for an owner to do. What an owner sees:
+
+- The console follows the logging policy (`docs/logging.md`): a healthy orrery prints nothing. A crashed part prints one line with when it comes back, a refused clock or timer prints one line with the road to grant, and both are kept in `rise.json`. The kernel's trace for a crash is unchanged.
+- A new install no longer draws a registry warning from the kernel at its first start, and the inbox road other ships poke is laid even when the permits are granted after the first start.
+- A calendar whose order index cannot be read says so on the calendar events record instead of the pass falling silent.
 
 ### Version 62's owner steps
 
