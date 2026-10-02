@@ -193,31 +193,35 @@
           ::  the inbox: other ships poke offers, revokes, and observations
           ::  on bodies shared with them in edit mode. The sender is the
           ::  transport's; the payload is data; nothing reaches the writer
-          ::  without by and source rewritten here. A local poke is ignored.
+          ::  without by and source rewritten here. A local poke carries
+          ::  nothing: it is the follower saying the inbox road is not laid.
           [~ %'shares.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery inbox: failed")
-        ::  the road any ship pokes is laid from here: the registry keys a
-        ::  grant to the poking fiber's own rail and scopes it to that
-        ::  fiber's directory, so only a fiber at the root can grant a
-        ::  road at the root. A request fiber's grant is refused.
+        ::  the road any ship pokes is laid from here, and only from here:
+        ::  the registry takes a grant from the fiber that registered and
+        ::  no other, and scopes it to that fiber's directory, so only a
+        ::  fiber at the root can grant a road at the root. A request
+        ::  fiber's grant is refused, and so was the follower's, with a
+        ::  kernel warning on the console each time it tried.
         ;<  ~  bind:m  lay-inbox-road
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         =/  src=(unit @p)  (get-poke-src:io from)
         ;<  our=@p  bind:m  get-our:io
         ;<  ~  bind:m
-          ?:  |(?=(~ src) =(our (fall src our)))  (pure:m ~)
+          ?:  |(?=(~ src) =(our (fall src our)))  lay-inbox-road
           (take-inbox (fall src our) sage)
         $
           ::  the follower: every five minutes, and whenever prodded (an
           ::  accept, a sync request), pull every body another ship shared
           ::  with us and push our own observations back on the ones shared
-          ::  in edit mode. A grant approved after the rise lands the inbox
-          ::  road here too.
+          ::  in edit mode. When the inbox road is not laid (a grant
+          ::  approved after the rise, a group rewritten) it prods the
+          ::  inbox, which lays it: the follower's own grant is refused.
           [~ %'sync.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery sync: failed")
         |-
-        ;<  ~  bind:m  lay-inbox-road
+        ;<  ~  bind:m  prod-inbox-road
         ;<  ~  bind:m  sync-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /tick (add now ~m5))
@@ -2729,6 +2733,20 @@
   ;<  reg=(unit tang)  bind:m  (reg-register-at-soft:io [u.base %'shares.sig'])
   ?^  reg  (pure:m ~)
   ;<  err=(unit tang)  bind:m  (reg-how-soft:io /public [~ (sy road ~) ~])
+  (pure:m ~)
+::  +prod-inbox-road: the follower's part in the inbox road: when the
+::  /public group's weir lacks it, a local poke at the inbox, which is
+::  the registrant and lays it (+lay-inbox-road). Quiet when the roads
+::  are refused or the inbox is down: the next pass asks again.
+::
+++  prod-inbox-road
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (pure:m ~)
+  ;<  old=weir:nexus  bind:m  (ug-read-weir public-grp)
+  ?:  (~(has in poke.old) `road:tarball`[%& %& u.base %'shares.sig'])  (pure:m ~)
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'shares.sig') [[/ %sig] ~])
   (pure:m ~)
 ::  +remote-poke-wait: a poke to another ship's grubbery, answered or
 ::  timed out (a peer that is down must not park the fiber). A timer
