@@ -208,6 +208,22 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 64's owner steps
+
+No new road, so no consent prompt. What an owner sees:
+
+- A situation can say what it needs to be over, who has the next move, and how it ended. The generator proposes your step when the move is yours, a nudge when someone else has sat on theirs, and a `resolve` when the need is met.
+- Approving a `resolve` closes the situation with its outcome and dismisses what was only proposed about it.
+- `GET /api/reconcile/last` counts situations resolved apart from those the clock closed.
+
+1. After the pull, merge the new keys into the ship's stored schema: `GET /api/schema`, change the keys below, `PUT /api/schema` with the bare document. Keep a copy of the stored document first. Until these keys are there the readers drop the three facts (an observation on an attribute the kind does not list is dropped) and the generator never proposes a `resolve`. Word for word:
+   - `actions` gains `resolve`. Leave it out of the policy's `auto` list while you want to see each close.
+   - `payloads.resolve`: `situation` `required: the id of the situation that is over`, `outcome` `required: how it ended, a few plain words`, `evidence` `optional: the fact that shows it, short`.
+   - `kinds.situation.attrs` gains `needs`, `waiting-on` and `outcome`. The notes:
+     - `kinds.situation.notes.needs`: `what has to happen for this to be over, one short clause in the messages' own terms; written when a message says it and written again when it changes`
+     - `kinds.situation.notes.waiting-on`: `who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else`
+     - `kinds.situation.notes.outcome`: `how it ended, a few plain words, written with status closed once a message says it is over`
+
 ### Version 63's owner steps
 
 No new road, so no consent prompt, and no schema change. Nothing for an owner to do. What an owner sees:

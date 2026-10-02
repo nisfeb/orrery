@@ -124,6 +124,8 @@ post observe '{
 
 `participants` is multi-valued: each observation adds a value instead of replacing the last one. The schema says which attributes work that way. A situation's schedule is `starts` and `ends`; `started` and `ended` are written once it has happened; its `status` is only ever `open`, `closed` or `cancelled`, and the page reads upcoming, under way or over off the times. Set `status` to `closed` when it is over and it leaves everyone's `involved` list.
 
+A situation can also say where it stands: `needs` is what has to happen for it to be over, `waiting-on` is who has the next move (a ref, to you when it is yours), and `outcome` is how it ended. The readers write the first two when a message says them and again when things move on, and `outcome` with `closed` when a message says it is over; a situation the ship already holds counts as named when the message uses a distinctive word of its name. The generator reads them as whose move it is: yours, it proposes the step; someone else's, it waits and proposes the nudge once the wait has run long; met, it proposes a `resolve`. A situation closed with an outcome was resolved; one the clock closed (signed `retire`) is only presumed over, and `GET /reconcile/last` counts the two apart.
+
 A situation happens once. Something that keeps happening is an `activity`: the weekly game night, the standing Tuesday call, the gym. It carries a `schedule` and a `cadence` alongside the `participants`, so a repeating event is one body with a `next`, not one situation per occurrence.
 
 Two bodies that turn out to be the same person are folded with `POST /api/merge`, `{"from": "org/sarah-connor", "into": "person/sarah"}`: every observation moves onto `into` keeping its own time and source, every reference to `from` is repointed at `into` and the old one retracted, the aliases union, and `from` is deleted. `person/me` can be merged into but never away, and never deleted. A merge keeps `from`'s ship when `into` has none, sends open messages addressed to `from` to `into`, and repoints the Telegram and chat readers' people maps. Deleting a body drops it from open actions' `about`.
@@ -259,6 +261,7 @@ The Inbox, each body page and each proposed note carry a box for the owner's own
 - `fact` `{subject, attr, value}` states one, signed `owner`.
 - `merge` `{from, into}` folds two bodies.
 - `preference` `{text}` adds a standing preference.
+- `resolve` `{situation, outcome, evidence}` closes a situation with how it ended, both rows signed `owner`. What was only proposed about that situation is then dismissed by the ship with the outcome as its note, since a resolved situation needs no reminders; what you approved stays yours. A dismissal the ship made is no taste of yours, so the tallies, the reasons list and the prompts' lessons leave it out.
 
 They are filed as proposals, or approved at once with `apply` (the page's "do it"). `action` names the proposal being answered, so a client can send a reply to a note, such as "remove her", here. The owner, or a key with `write`, may call it.
 
@@ -502,7 +505,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /brief/wake` | send a brief now, whatever the hour; owner only |
 | `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took; `at` is when it last looked, `acted_at` when those counts happened; owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
-| `GET /reconcile/last` | what the last run did: time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
+| `GET /reconcile/last` | what the last run did: of the situations closed in the last thirty days how many were `resolved` (they carry an outcome) and how many only `presumed` over (the clock closed them); then time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
 | `POST /act` | propose; answers `{"id", "status", "existing"}` |
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
