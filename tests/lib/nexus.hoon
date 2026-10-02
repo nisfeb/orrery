@@ -1066,6 +1066,18 @@
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
     (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings']) !>((strings:orr (ga:orr bare 'multi'))))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
+    ::  the ledger names nothing the starter lacks: a release that adds
+    ::  a row without the starter's shape or note fails here
+    (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr (del-key:orr starter-schema:orr 'schema_version'))))
+    %-  expect  !>
+    %+  levy  schema-adds:orr
+    |=  a=schema-add:orr
+    ?&  (levy actions.a |=(k=@t (has-key:orr (gj:orr starter-schema:orr 'payloads') k)))
+        %+  levy  kinds.a
+        |=  [kind=@t attrs=(list @t)]
+        =/  notes=json  (gj:orr (gj:orr (gj:orr starter-schema:orr 'kinds') kind) 'notes')
+        (levy attrs |=(n=@t (has-key:orr notes n)))
+    ==
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')
