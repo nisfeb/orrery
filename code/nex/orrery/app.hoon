@@ -2456,9 +2456,13 @@
   =/  prune=(list bid:orr)  (plan-prune:orr all multi now prune.cfg)
   ;<  *  bind:m  (file-ops (turn prune delete-op:orr))
   ;<  ~  bind:m  (drop-shares-in (turn prune delete-op:orr))
+  ::  how the situations closed in the last thirty days ended
+  =/  closes  (close-counts:orr all multi now)
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]
+        ['resolved' (numb:enjs:format resolved.closes)]
+        ['presumed' (numb:enjs:format presumed.closes)]
         ['times' (numb:enjs:format (lent times))]
         ['activities' a+(turn made.activities |=(b=@t `json`s+b))]
         ['people_made' (numb:enjs:format made.parts)]
@@ -5527,6 +5531,13 @@
   =.  claimed.tally  +(claimed.tally)
   ;<  [ok=? note=@t]  bind:m  (exec-one p tg p.desk)
   ;<  *  bind:m  (file-ops-on ~[(ship-set-action id.p ?:(ok 'done' 'failed') (end [3 500] note))] /exec)
+  ::  a situation resolved needs its reminders no more: what was only
+  ::  proposed about it is dismissed, by the ship, with the outcome
+  ;<  *  bind:m
+    ?.  &(ok =(%resolve kind.p))  (pure:(fiber:fiber:nexus ,@ud) 0)
+    %+  file-ops-on
+      (resolve-quiets:orr after id.p (gs:orr payload.u.was 'situation') (gs:orr payload.u.was 'outcome'))
+    /exec
   =?  tally  !ok
     =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
     tally(failed (scag 20 f))

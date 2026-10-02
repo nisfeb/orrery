@@ -591,6 +591,71 @@
     (expect-eq !>(`[@t @t @t]`['person/d-quill' 'person/me' 'same me@x.org']) !>((snag 0 got)))
     (expect-eq !>(`[@t @t @t]`['org/dana-quill' 'person/dana' 'the names match: dana and Dana Quill']) !>((snag 1 got)))
   ==
+++  test-close-counts
+  =/  sit
+    |=  [id=@t at=@da by=@t outcome=@t]
+    ^-  loaded:orr
+    :+  id  [%situation id ~ at ~]
+    %+  weld
+      ^-  (list row:orr)
+      ~[[(cat 3 id '/s') [id 'status' s+'closed' at ~ 100 ['t' 'x'] by at | '']]]
+    ^-  (list row:orr)
+    ?:(=('' outcome) ~ ~[[(cat 3 id '/o') [id 'outcome' s+outcome at ~ 100 ['t' 'x'] by at | '']]])
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/fixed' (sub now ~d2) 'owner' 'fixed and collected')
+        (sit 'situation/told' (sub now ~d3) 'telegram' 'paid')
+        (sit 'situation/timed-out' (sub now ~d4) 'retire' '')
+        (sit 'situation/closed-bare' (sub now ~d5) 'telegram' '')
+        (sit 'situation/long-ago' (sub now ~d40) 'owner' 'done')
+        (sit 'situation/thirty-days' (sub now ~d30) 'owner' 'done')
+        (mkb 'situation/open' %situation 'Open' ~ ~[['status' s+'open']] now)
+        (mkb 'situation/open-again' %situation 'Open again' ~ ~[['status' s+'open'] ['outcome' s+'was fixed once']] now)
+        (mkb 'person/me' %person 'me' ~ ~[['status' s+'closed']] now)
+    ==
+  ::  three carry an outcome, the one closed thirty days ago to the
+  ::  instant among them, and one the clock closed; a bare close by a
+  ::  reader is neither, one closed longer ago is not counted, and an
+  ::  open one is not resolved whatever outcome it once had
+  (expect-eq !>([3 1]) !>((close-counts:orr all ~ now)))
+++  test-plan-exec-resolve
+  =/  a=action:orr
+    [%resolve 'Close the breakdown' (jo '{"situation": "situation/2026-09-16-breakdown", "outcome": "fixed"}') ~ ~ 'generator' now %approved '' ~]
+  =/  held=(list loaded:orr)  ~[(mkb 'situation/2026-09-16-breakdown' %situation 'The breakdown' ~ ~ now)]
+  =/  with  (plan-exec:orr ~[['r1' a]] held ~ ~ now '' ['' ''])
+  =/  without  (plan-exec:orr ~[['r1' a]] ~ ~ ~ now '' ['' ''])
+  ;:  weld
+    (expect-eq !>([%writer '']) !>(=/(p (snag 0 with) [target.p note.p])))
+    (expect-eq !>(2) !>((lent (ga:orr body:(snag 0 with) 'observations'))))
+    ::  a situation the ship does not hold: the action waits and says why
+    (expect-eq !>('situation: the ship holds no such body') !>(note:(snag 0 without)))
+  ==
+++  test-ground-needs
+  =/  schema=json
+    (jo '{"kinds": {"person": {"attrs": ["status"]}, "situation": {"attrs": ["status", "location", "needs", "waiting-on", "outcome"]}}, "actions": ["task"]}')
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~ ~ now)
+        (mkb 'situation/2026-09-16-breakdown' %situation 'The breakdown' ~ ~[['status' s+'open']] now)
+    ==
+  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  =/  rows=(list window-row:orr)
+    ~[['telegram/1/7' '2026-09-18T11:00:00Z' 'person/me' 'breakdown update: the shop is waiting on a new alternator' |]]
+  =/  answer=json
+    %-  jo
+    '{"bodies": [], "observations": [{"subject": "situation/2026-09-16-breakdown", "attr": "needs", "value": "the alternator is fitted and the car is back", "message": "telegram/1/7"}, {"subject": "situation/2026-09-16-breakdown", "attr": "location", "value": "Springfield", "message": "telegram/1/7"}], "actions": []}'
+  =/  got=tg-facts:orr  (ground:orr (validate-reader:orr answer rows ctx) rows ctx)
+  ::  the same facts under a message that says nothing of the breakdown
+  =/  off=(list window-row:orr)
+    ~[['telegram/1/7' '2026-09-18T11:00:00Z' 'person/me' 'the shop is waiting on a new alternator' |]]
+  =/  lost=tg-facts:orr  (ground:orr (validate-reader:orr answer off ctx) off ctx)
+  ;:  weld
+    ::  a situation the ship holds is named by a distinctive word of its
+    ::  name; what it needs is said in the reader's words, where a place
+    ::  is the message's or nothing
+    (expect-eq !>(`(list @t)`~['needs']) !>((turn obs.got |=(o=json (gs:orr o 'attr')))))
+    (expect !>((lien notes.got |=(n=@t =(n 'dropped situation/2026-09-16-breakdown.location: the value is not in the message')))))
+    (expect-eq !>(`(list json)`~) !>(obs.lost))
+    (expect !>((lien notes.lost |=(n=@t =(n 'dropped situation/2026-09-16-breakdown.needs: not the author and not named in the message')))))
+  ==
 ++  test-plan-twins
   =/  all=(list loaded:orr)
     :~  (mkb 'activity/ballet' %activity 'Ballet' ~ ~[['schedule' s+'weekly, TU']] (sub now ~d9))

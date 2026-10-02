@@ -1602,6 +1602,39 @@ for c in cs if isinstance(cs, list) else []:
     if dictish(c).get('subject') == STRUCK:
         curl('DELETE', API + '/corrections/' + dictish(c)['id'])
 curl('DELETE', API + '/body/' + STRUCK)
+
+# a situation resolved (version 64): an approved resolve closes it with how it ended, the rows the
+# owner's; what was only proposed about it is dismissed by the ship, what the owner approved stays
+print('== a situation resolved')
+RSIT = 'situation/gate-boiler-' + XRUN
+OUT = 'fixed, the hot water is back ' + XRUN
+observe([{'id': RSIT, 'name': 'Gate boiler ' + XRUN}], [obs(RSIT, 'status', 'open', now - timedelta(minutes=3), src('boiler-a')),
+                                                         obs(RSIT, 'needs', 'a plumber comes and the hot water works', now - timedelta(minutes=3), src('boiler-b'))])
+NAG = propose('message', 'Gate nudge the plumber ' + XRUN, about=[RSIT], payload={'via': 'telegram', 'to': 'person/gate-tg', 'text': 'any news on the plumber?'})
+KEPT = propose('task', 'Gate pay the plumber ' + XRUN, about=[RSIT])
+MADE.append(KEPT)
+RES = propose('resolve', 'Gate boiler fixed ' + XRUN, about=[RSIT], payload={'situation': RSIT, 'outcome': OUT})
+check('a resolve waits for the owner, as the reminder about its situation does',
+      action(RES).get('status') == 'proposed' and action(NAG).get('status') == 'proposed' and action(KEPT).get('status') == 'approved',
+      [action(i).get('status') for i in (RES, NAG, KEPT)])
+approve(RES)
+curl('POST', API + '/exec/wake', {})
+check('approved, the executor closes the situation', until(lambda: action(RES).get('status') == 'done', 90), action(RES))
+rb = dictish(body(RSIT)[1])
+ra = dictish(rb.get('attrs'))
+check('the situation is closed with how it ended, both rows the owner\'s',
+      dictish(ra.get('status')).get('value') == 'closed' and dictish(ra.get('outcome')).get('value') == OUT
+      and dictish(ra.get('status')).get('by') == 'owner' and dictish(ra.get('outcome')).get('by') == 'owner', ra)
+nag = action(NAG)
+check('the reminder that was only proposed is dismissed by the ship, with the outcome',
+      until(lambda: action(NAG).get('status') == 'dismissed', 30) and action(NAG).get('note') == 'resolved: ' + OUT
+      and steps(action(NAG))[-1] == ('dismissed', 'ship'), action(NAG))
+check('the task the owner had approved stays', action(KEPT).get('status') == 'approved', action(KEPT))
+code, d = curl('POST', API + '/reconcile', {})
+rl = until(lambda: (lambda l: l if isinstance(l.get('resolved'), int) and l.get('resolved') >= 1 else None)(dictish(curl('GET', API + '/reconcile/last')[1])), 60)
+check('reconcile counts it resolved, apart from what the clock closed', bool(rl) and isinstance(dictish(rl).get('presumed'), int), rl)
+curl('POST', API + '/actions/' + KEPT, {'status': 'dismissed', 'note': 'gate'})
+curl('DELETE', API + '/body/' + RSIT)
 # teardown: the events and the todos this run made, and the three people
 for e in [EVENT_ID, ONCE_ID, REPEAT_ID]:
     if e:

@@ -948,6 +948,52 @@
     %+  expect-eq  !>([3 (add now ~m4)])
     !>((rise-plan:orr (rise-row:orr [3 (add now ~m4)] now) | now))
   ==
+::  ==  a situation resolved (version 64)
+::
+++  test-resolve
+  =/  sit=@t  'situation/2026-09-24-boiler'
+  =/  res=action:orr
+    [%resolve 'Close the boiler' (jo '{"situation": "situation/2026-09-24-boiler", "outcome": " fixed, hot water back "}') ~ ~ 'generator' now %approved '' ~]
+  =/  w  (writer-op-of:orr 'a1' res now)
+  =/  rows=(list json)  ?:(?=(%& -.w) (ga:orr p.w 'observations') ~)
+  =/  nag=action:orr  [%task 'Chase the plumber' ~ (sy ~[sit]) ~ 'generator' now %proposed '' ~]
+  =/  quiets
+    %:  resolve-quiets:orr
+      :~  ['r' res]  ['n' nag]
+          ['k' nag(title 'Pay the plumber', status %approved)]
+          ['e' nag(title 'Other', about (sy ~['situation/other']))]
+      ==
+      'r'  sit  'fixed'
+    ==
+  ;:  weld
+    ::  closed with how it ended, both rows the owner's, sourced to the action
+    (expect-eq !>(`(list [@t @t])`~[['status' 'closed'] ['outcome' 'fixed, hot water back']]) !>((turn rows |=(r=json [(gs:orr r 'attr') (gs:orr r 'value')]))))
+    (expect !>((levy rows |=(r=json &(=(sit (gs:orr r 'subject')) =('owner' (gs:orr r 'by')) =('a1' (gs:orr (gj:orr r 'source') 'id')) =('owner' (gs:orr (gj:orr r 'source') 'kind')))))))
+    ::  only a situation, and only with an outcome
+    (expect-eq !>(`(each json @t)`[%| 'situation: expected situation/<slug>']) !>((writer-op-of:orr 'a1' res(payload (jo '{"situation": "person/me", "outcome": "x"}')) now)))
+    (expect-eq !>(`(each json @t)`[%| 'outcome: 1 to 200 bytes']) !>((writer-op-of:orr 'a1' res(payload (jo '{"situation": "situation/x", "outcome": " "}')) now)))
+    ::  what was only proposed about it is dismissed by the ship; what the
+    ::  owner approved, what is about something else and the resolve stay
+    (expect-eq !>(1) !>((lent quiets)))
+    (expect-eq !>(['n' 'dismissed' 'resolved: fixed' 'ship']) !>(=/(q (snag 0 quiets) [(gs:orr q 'id') (gs:orr q 'status') (gs:orr q 'note') (gs:orr q 'by')])))
+  ==
+++  test-moot
+  =/  a=action:orr  [%task 'Chase the plumber' ~ ~ ~ 'generator' now %dismissed 'resolved: fixed' ~[[now %proposed 'generator'] [now %dismissed 'ship']]]
+  =/  said=action:orr  a(note 'not now', history ~[[now %proposed 'generator'] [now %dismissed 'user']])
+  =/  acts=(list [id=@ta a=action:orr])  ~[['a' a] ['s' said]]
+  ;:  weld
+    (expect !>((moot:orr a)))
+    (expect !>((moot:orr a(history ~[[now %dismissed 'reconcile']]))))
+    (expect !>(!(moot:orr said)))
+    (expect !>(!(moot:orr a(status %proposed))))
+    (expect !>(!(moot:orr a(history ~))))
+    ::  the ship's own dismissal is no taste of the owner's: it is in no
+    ::  tally, among no reasons, and no reader is told of it
+    (expect-eq !>(`(list [@t @ud])`~[['not now' 1]]) !>((turn (reason-counts:orr acts) |=([r=@t c=@ud *] [r c]))))
+    (expect-eq !>(`(list @ud)`~[1]) !>((turn (proposal-tally:orr acts) |=(t=tally-row:orr dismissed.t))))
+    (expect-eq !>(0) !>((lent (lesson-lines:orr ~ ~[['a' a]] 'generator'))))
+    (expect-eq !>(2) !>((lent (lesson-lines:orr ~ acts 'generator'))))
+  ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')
   ;:  weld

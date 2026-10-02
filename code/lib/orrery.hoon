@@ -1032,7 +1032,8 @@
   ==
 ::  +writer-shapes: the payloads of the action kinds the ship carries out
 ::  itself, through its own writer, once the owner approves: a fact struck,
-::  a fact stated, two bodies merged, a standing preference kept
+::  a fact stated, two bodies merged, a standing preference kept, a
+::  situation closed with how it ended
 ::
 ++  writer-shapes
   ^-  (list [@t json])
@@ -1055,6 +1056,12 @@
       ==
       ['merge' (shape ~[['from' 'required: the body id folded away'] ['into' 'required: the body id kept']])]
       ['preference' (shape ~[['text' 'required: the standing rule, in the owner\'s words, at most 300 bytes']])]
+      :-  'resolve'
+      %-  shape
+      :~  ['situation' 'required: the id of the situation that is over']
+          ['outcome' 'required: how it ended, a few plain words']
+          ['evidence' 'optional: the fact that shows it, short']
+      ==
   ==
 ++  starter-schema
   ^-  json
@@ -1096,8 +1103,11 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome']
           :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+              ['needs' 'what has to happen for this to be over, one short clause in the messages\' own terms; written when a message says it and written again when it changes']
+              ['waiting-on' 'who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else']
+              ['outcome' 'how it ended, a few plain words, written with status closed once a message says it is over']
               ['starts' 'when it is scheduled to begin, ISO 8601 UTC; may be in the future']
               ['ends' 'when it is scheduled to end, ISO 8601 UTC; may be in the future']
               ['started' 'when it actually began, ISO 8601 UTC, written once it has']
@@ -1117,7 +1127,7 @@
           ['note' (kind ~['text'] ~)]
       ==
       ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
-      ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference'] |=(t=@t `json`s+t))]
+      ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference' 'resolve'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
       :-  'payloads'
@@ -1734,7 +1744,7 @@
     =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
     ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
   =/  older=(list [id=@ta a=action])
-    (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a))))
+    (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a) !(moot a))))
   =/  kept=(list @t)
     (turn (slag (sub (lent older) (min reasons-kept (lent older))) older) one)
   %+  weld  `(list @t)`[head (turn (slag cut decided) one)]
@@ -1752,6 +1762,7 @@
     %+  roll  acts
     |=  [[id=@ta a=action] acc=(map @t [reason=@t count=@ud last=@da])]
     ?.  ?=(%dismissed status.a)  acc
+    ?:  (moot a)  acc
     =/  said=@t  (trim-cord (squeeze note.a))
     ?:  =('' said)  acc
     =/  key=@t  (lower said)
@@ -1774,6 +1785,7 @@
   =/  fared=(map [@t @t] tally-row)
     %+  roll  acts
     |=  [[id=@ta a=action] acc=(map [@t @t] tally-row)]
+    ?:  (moot a)  acc
     =/  k=[@t @t]  [by.a `@t`kind.a]
     =/  t=tally-row  (fall (~(get by acc) k) [by.a `@t`kind.a 0 0 0 0 0])
     =.  t
@@ -1910,7 +1922,7 @@
     (rap 3 '  ' subject.c ' ' attr.c ' = ' value.c ?:(=('' why.c) '' (rap 3 ' (' (end [3 200] (squeeze why.c)) ')' ~)) ~)
   =/  mine=(list [id=@ta a=action])
     %+  sort
-      (skim acts |=([* a=action] &(=(by by.a) ?=(%dismissed status.a) !=('' (trim-cord note.a)))))
+      (skim acts |=([* a=action] &(=(by by.a) ?=(%dismissed status.a) !=('' (trim-cord note.a)) !(moot a))))
     |=([[* x=action] [* y=action]] (gth proposed.x proposed.y))
   =/  said=(list @t)
     %+  turn  (scag 20 mine)
@@ -2392,7 +2404,7 @@
   You are the analyst for orrery, a model of one person's world kept on their own ship. You read the state and propose what should be done about it. You never write facts; other clients do that. You propose actions, and the owner approves or dismisses each one.
 
   What you are given.
-  The state: every body with its current attributes (people with status, location and relationships; things; places; orgs; situations with their times and participants; activities with their schedule, last and next occurrence), the open situations, the open actions, and the schema with its notes and the payload shapes for each action kind.
+  The state: every body with its current attributes (people with status, location and relationships; things; places; orgs; situations with their times and participants and, when the ship knows them, what each needs to be over ("needs") and who has the next move ("waiting-on"); activities with their schedule, last and next occurrence), the open situations, the open actions, and the schema with its notes and the payload shapes for each action kind.
   The recent decisions: actions done, dismissed or failed lately, with their titles. Do not propose these again, or a rewording of them. A dismissal is the owner saying no. Older dismissals that carry the owner's reason follow them.
   The owner's style and standing preferences, when they have written any.
   The proposals the owner kept lately, as examples of what helps; how each proposer's kinds of proposal have fared; and the facts the owner struck as wrong.
@@ -2400,6 +2412,7 @@
 
   What to propose.
   Only what the owner would want done and has not done: a call to make, a thing to buy or bring, a message to send someone, a reminder ahead of a deadline, a follow-up on something that stalled. An open situation with nothing being done about it, a person who asked the owner something and is still waiting, a delivery that never arrived. Someone telling the owner about their own day, trip or trouble is sharing news, not asking for anything, and needs no reply unless the state shows they asked or are waiting.
+  A situation that says what it needs and who it waits on tells you whose move it is. When the next move is the owner's, propose it. When it is someone else's, propose nothing while the wait is ordinary, and propose the nudge once it has run well past what was promised or what is usual. When the state shows the need has been met, propose closing it: an action of kind "resolve", titled with what is over, its payload naming the situation and saying how it ended in a few plain words. A resolve takes the place of any reminder about that situation; do not propose both. Whatever you propose for a situation names that situation in "about", the resolve included.
   An event on the calendar is already known: never propose a task for attending it, and never restate it as a todo. Propose what an event needs beyond showing up, and only when the state gives a reason: a birthday with no gift task, an appointment with a form to bring, a rehearsal with no ride. A first occurrence is not a fifth: something the state or a message says is new, a first lesson, a new team, a first visit, may call for something the owner does not yet have, equipment, paperwork, a plan, where a routine one calls for nothing; then one task with the likely list under payload "notes" is worth more than a reminder to attend. An activity with no last is new to the ship, not to the owner, who may have done it for years, and that alone makes nothing a first. Two events that overlap or leave no time between them matter only when one person must be in two places: the same participant at both, or the one person who can take both. There is no conflict when the events are at one place, when one is a call, when one is optional or tentative, or when another adult can take one. When there is one, propose one task to sort it out, naming both. A situation that is over or closed needs nothing.
   Few and good. Zero is a fine answer. Never propose more than the limit given.
   An action's kind is one of the kinds the schema lists. Its payload follows the shape the schema gives for that kind, exactly; a message names who it is for as a body id and says what to send in the owner's own voice, short and plain, in the owner's style when one is given. A home action names a Home Assistant service and entity. A task needs only a title and, when there is one, a due time.
@@ -3501,7 +3514,7 @@
   Use only the attribute names listed for that kind; an observation on any other name is dropped. When a kind has no attributes listed, use a short lowercase name. A health fact goes on "health" and a money fact on "income", never on a name of your own.
   Read the notes given with the attribute names: they say what each one means. A person's "status" is what they are doing or dealing with right now, in plain words, as an observer would put it: "on jury duty", "stranded, waiting for a tow", "travelling", "sick". It is never a feeling, a quote or a wish. A feeling goes under "mood", which the reader throws away, so that it never lands on status. A status is specific enough that someone who reads only it knows what is going on: "training for the Chicago marathon", not "on a strict regimen"; "in meetings", not "busy". When the messages do not say what it is, write no status. A status that ends at a stated time carries "until".
   Worked examples. "jury duty makes me want to scream", from Sarah: person/sarah.status = "on jury duty" (conf 80), person/sarah.mood = "frustrated" (conf 60, discarded). "car died on route 9, stranded waiting for a tow": status = "stranded, waiting for a tow", location = "Route 9", thing/subaru.status = "broken down". "stuck in meetings till 11:30", from Sarah at 2026-08-19T10:03:00-04:00: person/sarah.status = "in meetings", until = "2026-08-19T11:30:00-04:00". "ugh, Mondays": nothing.
-  A situation body carries participants (one observation per participant, value {"ref": ...}), location, and its times: "starts" and "ends" are the schedule (a meeting on December 5 has starts and ends on December 5, even today), "started" and "ended" are facts about what happened, written only once it has. Its status is "open" or "closed" (or "cancelled"), nothing else: never "upcoming", "under way" or "over", which are read off the times. A situation happens once: a breakdown, a birthday, a delivery.
+  A situation body carries participants (one observation per participant, value {"ref": ...}), location, and its times: "starts" and "ends" are the schedule (a meeting on December 5 has starts and ends on December 5, even today), "started" and "ended" are facts about what happened, written only once it has. Its status is "open" or "closed" (or "cancelled"), nothing else: never "upcoming", "under way" or "over", which are read off the times. A situation happens once: a breakdown, a birthday, a delivery. When the messages say what it will take for a situation to be over, write its "needs", and "waiting-on", who has the next move, as a ref; write them again when a message moves things on. When a message says it is over, write status "closed" and "outcome", how it ended in a few plain words.
   An activity is something that repeats: a class, a practice, a standing appointment, a weekly meeting. It is one body of kind activity, with schedule ("Mon/Wed 18:00"), cadence ("weekly"), location, participants and organizer. An occurrence of an activity is never a new body: write the activity's "last" = the start of that occurrence, with "at" = that start, and "next" = the start of the following one when the message says it. An occurrence that is called off is not a cancelled activity: write the activity's "skipped" = the start of that occurrence, one observation per occurrence, and never its "status", which means the whole series. A calendar reminder or notification for a repeating event is an occurrence of an activity, not a situation.
   Any part of an event can name a person: its title ("Mira- Ballet/Tap", "Theo and Juno- Opti Sail", "Felix Birthday"), its description ("bring Juno's helmet"), its attendee list, its organizer ("Coach Pat"), a note. Every person an event names is a participant of the activity or situation, and its organizer is its organizer. Resolve each name against the people listed; when nobody by that name exists, create the person, the first name (or the full name when the event gives it) as the body's name. A production, a team or a place is not a person: "Swan Lake rehearsal" and "Hornets practice" name no one.
   A person is never an org. A payment request, a reminder or a note from a person names a person body; reuse the existing person when the name or the address matches, even when only the first name is on record.
@@ -4747,7 +4760,7 @@
 ::  attributes whose value is a paraphrase by design, held to sharing a
 ::  word with what was said rather than to being quoted from it
 ::
-++  paraphrased  `(set @t)`(sy `(list @t)`~['status' 'health'])
+++  paraphrased  `(set @t)`(sy `(list @t)`~['status' 'health' 'needs' 'outcome'])
 ::  +word-list: the [a-z0-9']+ runs of a text, lower-cased
 ::
 ++  word-list
@@ -4923,9 +4936,19 @@
       ?.  &((gte n 2) =('\'s' (rsh [3 (sub n 2)] w)))  ~
       `(end [3 (sub n 2)] w)
     (~(gas in *(set @t)) (weld ws stems))
+  ::  a situation the ship holds is named as a new one is, by a
+  ::  distinctive word of its name: nobody repeats a title, and a
+  ::  message that had to say "the breakdown" whole could never move
+  ::  the breakdown on or say that it is over
   =/  named=(set @t)
-    %-  ~(gas in (named-in text pool))
-    (murn made |=([id=@t name=@t] ?:((distinct-word name said) `id ~)))
+    %-  %~  gas  in
+        %-  ~(gas in (named-in text pool))
+        (murn made |=([id=@t name=@t] ?:((distinct-word name said) `id ~)))
+    %+  murn  bodies.ctx
+    |=  b=ctx-body
+    ^-  (unit @t)
+    ?.  =('situation' (kind-of id.b))  ~
+    ?:((distinct-word name.b said) `id.b ~)
   =/  persons=(list @t)
     (skim `(list @t)`~(tap in named) |=(n=@t =('person/' (end [3 7] n))))
   =/  others=(set @t)  (~(del in (~(gas in *(set @t)) persons)) who.m)
@@ -5024,7 +5047,7 @@
 ::  ==  instructions (version 60): the owner says what to change or keep
 ::  in words, and the ship proposes the actions that do it
 ::
-++  instruct-kinds  `(list @t)`~['correct' 'fact' 'merge' 'preference' 'task' 'message' 'calendar']
+++  instruct-kinds  `(list @t)`~['correct' 'fact' 'merge' 'preference' 'resolve' 'task' 'message' 'calendar']
 ::  +instruct-prompt: the system prompt of an instruction, the same for
 ::  every owner
 ::
@@ -5039,6 +5062,7 @@
   - "correct" strikes a fact that is wrong. It is removed from every source and never written again. The value is the wrong value exactly as the ship holds it: a string, or {"ref": "kind/slug"}.
   - "fact" states something true, on an attribute the kind's list names.
   - "merge" folds one body into another that is the same person, place or thing.
+  - "resolve" closes a situation that is over, with how it ended in a few plain words.
   - "preference" keeps a standing rule every future proposal follows, in the owner's own words, short. Use it when the instruction says how things should be from now on ("never", "always", "stop").
   - "task", "message" and "calendar" are things to do, in their payload shapes.
   When the owner answers an action ("remove her", "that's wrong", "not him"), read the instruction against that action and the facts of the bodies it is about.
@@ -5138,7 +5162,7 @@
   =/  d  (de-action j now who)
   ?:  ?=(%| -.d)  $(raw t.raw, notes [(cat 3 'dropped an action: ' p.d) notes])
   =/  why=(each json @t)
-    ?.  ?=(?(%correct %fact %merge %preference) kind.p.d)  [%& ~]
+    ?.  ?=(?(%correct %fact %merge %preference %resolve) kind.p.d)  [%& ~]
     (writer-op-of 'x' p.d now)
   ?:  ?=(%| -.why)
     $(raw t.raw, notes [(rap 3 'dropped ' title.p.d ': ' p.why ~) notes])
@@ -5709,7 +5733,67 @@
     =/  t=@t  (trim-cord (gs p 'text'))
     ?:  |(=('' t) (gth (met 3 t) 300))  [%| 'text: 1 to 300 bytes']
     [%& (pairs:enjs:format ~[['op' s+'add-preference'] ['text' s+t] ['by' s+'owner']])]
+      ::  a situation closed with how it ended. Both rows are the
+      ::  owner's, as a fact is: a close the clock makes is retire's,
+      ::  which is how resolved is told from presumed over
+      %resolve
+    =/  sit=@t  (gs p 'situation')
+    ?.  &(?=(^ (parse-bid sit)) =('situation' (kind-of sit)))  [%| 'situation: expected situation/<slug>']
+    =/  out=@t  (trim-cord (gs p 'outcome'))
+    ?:  |(=('' out) (gth (met 3 out) 200))  [%| 'outcome: 1 to 200 bytes']
+    :-  %&
+    %+  snag  0
+    %+  observe-ops  ~
+    :~  (obs-row sit 'status' s+'closed' now ~ 100 ['owner' id] 'owner')
+        (obs-row sit 'outcome' s+out now ~ 100 ['owner' id] 'owner')
+    ==
   ==
+::  +resolve-quiets: the proposals a resolved situation no longer needs:
+::  every action still only proposed whose about names it, dismissed by
+::  the ship with the outcome as its note. What the owner approved is
+::  theirs and stays. The resolve itself is not among them
+::
+++  resolve-quiets
+  |=  [acts=(list [id=@ta a=action]) rid=@ta sit=bid outcome=@t]
+  ^-  (list json)
+  %+  murn  acts
+  |=  [id=@ta a=action]
+  ^-  (unit json)
+  ?:  =(id rid)  ~
+  ?.  =(%proposed status.a)  ~
+  ?.  (~(has in about.a) sit)  ~
+  `(set-action-op id 'dismissed' (cat 3 'resolved: ' outcome) 'ship')
+::  +moot: a dismissal the ship made itself, not the owner. The action
+::  was not unwanted, it stopped mattering: its situation was resolved,
+::  or a body in its pair is gone. It says nothing of the owner's
+::  taste, so the tallies and the reasons leave it out
+::
+++  moot
+  |=  a=action
+  ^-  ?
+  ?.  =(%dismissed status.a)  |
+  ?~  history.a  |
+  =/  who=@t  by:(rear history.a)
+  |(=('ship' who) =('reconcile' who))
+::  +close-counts: of the situations closed in the last thirty days, how
+::  many were resolved (they carry an outcome) and how many were only
+::  presumed over (the clock closed them: the status row is retire's)
+::
+++  close-counts
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  [resolved=@ud presumed=@ud]
+  =/  cut=@da  (sub now ~d30)
+  %+  roll  all
+  |=  [l=loaded acc=[resolved=@ud presumed=@ud]]
+  ?.  =(%situation kind.body.l)  acc
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  st=(list row)  (fall (~(get by w) 'status') ~)
+  ?~  st  acc
+  =/  top=row  i.st
+  ?.  &(=(`json`s+'closed' value.obs.top) (gte at.obs.top cut))  acc
+  ?.  =('' (winner-text w 'outcome'))  acc(resolved +(resolved.acc))
+  ?:  =('retire' by.obs.top)  acc(presumed +(presumed.acc))
+  acc
 ::  +exec-cals: the calendars the owner named in policy.json for tasks'
 ::  todos and for calendar events, '' for the calendar's default
 ::
@@ -5737,10 +5821,14 @@
   |=  [id=@ta a=action]
   ^-  (unit exec-plan)
   ?.  =(%approved status.a)  ~
-  ::  a correction, a fact or a preference is the writer's: the body is
-  ::  the op, or the note says why it waits. A merge is run-merges'.
-  ?:  ?=(?(%correct %fact %preference) kind.a)
+  ::  a correction, a fact, a preference or a resolve is the writer's:
+  ::  the body is the op, or the note says why it waits. A merge is
+  ::  run-merges'. A resolve of a situation the ship does not hold waits
+  ::  with a note, since the writer would skip its rows and call it done
+  ?:  ?=(?(%correct %fact %preference %resolve) kind.a)
     =/  w=(each json @t)  (writer-op-of id a now)
+    =?  w  &(?=(%& -.w) =(%resolve kind.a) ?=(~ (loaded-of all (gs payload.a 'situation'))))
+      [%| 'situation: the ship holds no such body']
     ?:  ?=(%| -.w)  `[id kind.a %writer '' ~ p.w]
     `[id kind.a %writer '' p.w '']
   ?:  =(%message kind.a)
