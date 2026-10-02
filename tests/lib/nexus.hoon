@@ -956,14 +956,30 @@
     [%resolve 'Close the boiler' (jo '{"situation": "situation/2026-09-24-boiler", "outcome": " fixed, hot water back "}') ~ ~ 'generator' now %approved '' ~]
   =/  w  (writer-op-of:orr 'a1' res now)
   =/  rows=(list json)  ?:(?=(%& -.w) (ga:orr p.w 'observations') ~)
-  =/  nag=action:orr  [%task 'Chase the plumber' ~ (sy ~[sit]) ~ 'generator' now %proposed '' ~]
-  =/  quiets
-    %:  resolve-quiets:orr
-      :~  ['r' res]  ['n' nag]
-          ['k' nag(title 'Pay the plumber', status %approved)]
-          ['e' nag(title 'Other', about (sy ~['situation/other']))]
+  =/  nag=action:orr  [%task 'Chase the plumber' ~ (sy ~[sit 'person/me']) ~ 'generator' now %proposed '' ~]
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['r' res(status %done)]  ['n' nag]
+        ['k' nag(title 'Pay the plumber', status %approved)]
+        ['e' nag(title 'Other', about (sy ~['situation/other']))]
+        ['b' nag(title 'Both', about (sy ~[sit 'situation/other']))]
+        ['p' nag(title 'No situation', about (sy ~['person/me']))]
+    ==
+  =/  quiets  (quiets:orr acts (my ~[[sit 'resolved: fixed']]) 'ship')
+  ::  as reconcile finds them: closed with an outcome, closed by the
+  ::  clock with none, cancelled, and one still open
+  =/  cl
+    |=  [id=@t kvs=(list [@t @t])]
+    ^-  loaded:orr
+    [id [%situation id ~ now ~] (turn kvs |=([k=@t v=@t] (r (cat 3 id k) (ob id k s+v now))))]
+  =/  over
+    %:  over-situations:orr
+      :~  (cl 'situation/a' ~[['status' 'closed'] ['outcome' 'paid']])
+          (cl 'situation/b' ~[['status' 'closed']])
+          (cl 'situation/c' ~[['status' 'cancelled']])
+          (cl 'situation/d' ~[['status' 'open'] ['outcome' 'was fixed once']])
+          ['person/me' [%person 'me' ~ now ~] ~[(r 'me-status' (ob 'person/me' 'status' s+'closed' now))]]
       ==
-      'r'  sit  'fixed'
+      ~  now
     ==
   ;:  weld
     ::  closed with how it ended, both rows the owner's, sourced to the action
@@ -972,10 +988,15 @@
     ::  only a situation, and only with an outcome
     (expect-eq !>(`(each json @t)`[%| 'situation: expected situation/<slug>']) !>((writer-op-of:orr 'a1' res(payload (jo '{"situation": "person/me", "outcome": "x"}')) now)))
     (expect-eq !>(`(each json @t)`[%| 'outcome: 1 to 200 bytes']) !>((writer-op-of:orr 'a1' res(payload (jo '{"situation": "situation/x", "outcome": " "}')) now)))
-    ::  what was only proposed about it is dismissed by the ship; what the
-    ::  owner approved, what is about something else and the resolve stay
+    ::  what was only proposed about it is dismissed; what the owner
+    ::  approved, what is about another situation, what is also about one
+    ::  still open, what is about no situation and the resolve itself stay
     (expect-eq !>(1) !>((lent quiets)))
     (expect-eq !>(['n' 'dismissed' 'resolved: fixed' 'ship']) !>(=/(q (snag 0 quiets) [(gs:orr q 'id') (gs:orr q 'status') (gs:orr q 'note') (gs:orr q 'by')])))
+    ::  with the other situation over too, both of them go
+    (expect-eq !>(`(list @t)`~['n' 'e' 'b']) !>((turn (quiets:orr acts (my ~[[sit 'resolved: fixed'] ['situation/other' 'closed']]) 'reconcile') |=(q=json (gs:orr q 'id')))))
+    ::  what is over, and what a dismissal says of each
+    (expect-eq !>(`(map @t @t)`(my ~[['situation/a' 'resolved: paid'] ['situation/b' 'closed'] ['situation/c' 'cancelled']])) !>(over))
   ==
 ++  test-moot
   =/  a=action:orr  [%task 'Chase the plumber' ~ ~ ~ 'generator' now %dismissed 'resolved: fixed' ~[[now %proposed 'generator'] [now %dismissed 'ship']]]
@@ -993,6 +1014,8 @@
     (expect-eq !>(`(list @ud)`~[1]) !>((turn (proposal-tally:orr acts) |=(t=tally-row:orr dismissed.t))))
     (expect-eq !>(0) !>((lent (lesson-lines:orr ~ ~[['a' a]] 'generator'))))
     (expect-eq !>(2) !>((lent (lesson-lines:orr ~ acts 'generator'))))
+    ::  nor is it among the decisions the generator is shown
+    (expect-eq !>(`(list @t)`~['head' '  dismissed | task | Chase the plumber | not now']) !>((decision-lines:orr 'head' acts)))
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')

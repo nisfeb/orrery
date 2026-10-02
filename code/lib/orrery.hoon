@@ -1737,6 +1737,7 @@
 ++  decision-lines
   |=  [head=@t decided=(list [id=@ta a=action])]
   ^-  (list @t)
+  =.  decided  (skip decided |=([* a=action] (moot a)))
   =/  cut=@ud  (sub (lent decided) (min recent (lent decided)))
   =/  one
     |=  [id=@ta a=action]
@@ -1744,7 +1745,7 @@
     =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
     ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
   =/  older=(list [id=@ta a=action])
-    (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a) !(moot a))))
+    (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a))))
   =/  kept=(list @t)
     (turn (slag (sub (lent older) (min reasons-kept (lent older))) older) one)
   %+  weld  `(list @t)`[head (turn (slag cut decided) one)]
@@ -2503,6 +2504,14 @@
   ?:  ?=([%| *] held)
     $(todo t.todo, notes [(rap 3 'dropped ' title ': ' p.held ~) notes])
   =.  payload  p.held
+  ::  a resolve is of a situation the ship holds, and is about it: the
+  ::  page shows it there and a later close finds it
+  =/  sit=@t
+    =/  j=(unit json)  (~(get by payload) 'situation')
+    ?~(j '' ?:(?=([%s *] u.j) p.u.j ''))
+  ?:  &(=('resolve' kind) !&(=('situation' (kind-of sit)) (~(has in known) sit)))
+    $(todo t.todo, notes [(rap 3 'dropped ' title ': the ship holds no such situation' ~) notes])
+  =?  about  &(=('resolve' kind) !(lien about |=(b=@t =(b sit))))  [sit about]
   =/  why=@t  (end [3 300] (gs a 'why'))
   =?  payload  !=('' why)  (~(put by payload) 'why' s+why)
   =/  due=(unit @da)  (de-iso-any (gs a 'due'))
@@ -5748,21 +5757,42 @@
         (obs-row sit 'outcome' s+out now ~ 100 ['owner' id] 'owner')
     ==
   ==
-::  +resolve-quiets: the proposals a resolved situation no longer needs:
-::  every action still only proposed whose about names it, dismissed by
-::  the ship with the outcome as its note. What the owner approved is
-::  theirs and stays. The resolve itself is not among them
+::  +over-situations: the situations that are closed or cancelled, each
+::  with what a dismissal on its account says: how it ended when it
+::  carries an outcome, else its status
 ::
-++  resolve-quiets
-  |=  [acts=(list [id=@ta a=action]) rid=@ta sit=bid outcome=@t]
+++  over-situations
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (map @t @t)
+  %-  ~(gas by *(map @t @t))
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [@t @t])
+  ?.  =(%situation kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  st=@t  (winner-text w 'status')
+  ?.  |(=('closed' st) =('cancelled' st))  ~
+  =/  out=@t  (winner-text w 'outcome')
+  `[id.l ?:(=('' out) st (cat 3 'resolved: ' out))]
+::  +quiets: the proposals that situations now over no longer need,
+::  whoever closed them (the owner's resolve, a reader, the clock):
+::  every action still only proposed whose about names a situation and
+::  names none still open, dismissed with how the first of them ended.
+::  What the owner approved is theirs and stays. The executor files
+::  these as it carries a resolve out, reconcile on its pass
+::
+++  quiets
+  |=  [acts=(list [id=@ta a=action]) over=(map @t @t) who=@t]
   ^-  (list json)
   %+  murn  acts
   |=  [id=@ta a=action]
   ^-  (unit json)
-  ?:  =(id rid)  ~
   ?.  =(%proposed status.a)  ~
-  ?.  (~(has in about.a) sit)  ~
-  `(set-action-op id 'dismissed' (cat 3 'resolved: ' outcome) 'ship')
+  =/  sits=(list @t)
+    (sort (skim ~(tap in about.a) |=(b=@t =('situation' (kind-of b)))) aor)
+  ?~  sits  ~
+  ?.  (levy `(list @t)`sits |=(s=@t (~(has by over) s)))  ~
+  `(set-action-op id 'dismissed' (~(got by over) i.sits) who)
 ::  +moot: a dismissal the ship made itself, not the owner. The action
 ::  was not unwanted, it stopped mattering: its situation was resolved,
 ::  or a body in its pair is gone. It says nothing of the owner's

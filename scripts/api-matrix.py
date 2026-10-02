@@ -1633,8 +1633,19 @@ check('the task the owner had approved stays', action(KEPT).get('status') == 'ap
 code, d = curl('POST', API + '/reconcile', {})
 rl = until(lambda: (lambda l: l if isinstance(l.get('resolved'), int) and l.get('resolved') >= 1 else None)(dictish(curl('GET', API + '/reconcile/last')[1])), 60)
 check('reconcile counts it resolved, apart from what the clock closed', bool(rl) and isinstance(dictish(rl).get('presumed'), int), rl)
+check('nothing was left to quiet: the executor had done it', dictish(rl).get('quieted') == 0, rl)
+# a situation closed with no resolve (a reader's close, the clock's) loses what was only proposed about
+# it at reconcile's pass, signed reconcile
+CSIT = 'situation/gate-closed-' + XRUN
+observe([{'id': CSIT, 'name': 'Gate closed ' + XRUN}], [obs(CSIT, 'status', 'open', now - timedelta(minutes=3), src('closed-a'))])
+CNAG = propose('message', 'Gate ask about the closed one ' + XRUN, about=[CSIT], payload={'via': 'telegram', 'to': 'person/gate-tg', 'text': 'any news?'})
+observe([], [obs(CSIT, 'status', 'closed', now, src('closed-b'))])
+curl('POST', API + '/reconcile', {})
+check('reconcile dismisses what was only proposed about a situation closed without a resolve',
+      until(lambda: action(CNAG).get('status') == 'dismissed', 60) and action(CNAG).get('note') == 'closed' and steps(action(CNAG))[-1] == ('dismissed', 'reconcile'), action(CNAG))
 curl('POST', API + '/actions/' + KEPT, {'status': 'dismissed', 'note': 'gate'})
 curl('DELETE', API + '/body/' + RSIT)
+curl('DELETE', API + '/body/' + CSIT)
 # teardown: the events and the todos this run made, and the three people
 for e in [EVENT_ID, ONCE_ID, REPEAT_ID]:
     if e:

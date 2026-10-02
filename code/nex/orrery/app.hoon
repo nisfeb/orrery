@@ -2456,6 +2456,13 @@
   =/  prune=(list bid:orr)  (plan-prune:orr all multi now prune.cfg)
   ;<  *  bind:m  (file-ops (turn prune delete-op:orr))
   ;<  ~  bind:m  (drop-shares-in (turn prune delete-op:orr))
+  ::  what was only proposed about a situation now over, whoever closed
+  ::  it, is dismissed: a reader's close and the clock's leave their
+  ::  reminders standing otherwise
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  quiet=(list json)  (quiets:orr acts (over-situations:orr all multi now) 'reconcile')
+  ;<  *  bind:m  (file-ops quiet)
   ::  how the situations closed in the last thirty days ended
   =/  closes  (close-counts:orr all multi now)
   =/  doc=json
@@ -2463,6 +2470,7 @@
     :~  ['at' s+(en-iso:orr now)]
         ['resolved' (numb:enjs:format resolved.closes)]
         ['presumed' (numb:enjs:format presumed.closes)]
+        ['quieted' (numb:enjs:format (lent quiet))]
         ['times' (numb:enjs:format (lent times))]
         ['activities' a+(turn made.activities |=(b=@t `json`s+b))]
         ['people_made' (numb:enjs:format made.parts)]
@@ -5535,9 +5543,11 @@
   ::  proposed about it is dismissed, by the ship, with the outcome
   ;<  *  bind:m
     ?.  &(ok =(%resolve kind.p))  (pure:(fiber:fiber:nexus ,@ud) 0)
-    %+  file-ops-on
-      (resolve-quiets:orr after id.p (gs:orr payload.u.was 'situation') (gs:orr payload.u.was 'outcome'))
-    /exec
+    =/  over=(map @t @t)
+      %+  ~(put by (over-situations:orr all (multi-of:orr schema) now))
+        (gs:orr payload.u.was 'situation')
+      (cat 3 'resolved: ' (trim-cord:orr (gs:orr payload.u.was 'outcome')))
+    (file-ops-on (quiets:orr after over 'ship') /exec)
   =?  tally  !ok
     =/  f=(list [id=@t title=@t note=@t])  [[id.p title note] failed.tally]
     tally(failed (scag 20 f))

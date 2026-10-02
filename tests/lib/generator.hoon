@@ -629,6 +629,25 @@
     ::  a situation the ship does not hold: the action waits and says why
     (expect-eq !>('situation: the ship holds no such body') !>(note:(snag 0 without)))
   ==
+++  test-validate-resolve
+  =/  answer=json
+    %-  jo
+    '{"actions": [{"kind": "resolve", "title": "Deck permit approved", "about": ["thing/deck-permit"], "payload": {"situation": "situation/2026-09-18-deck-permit", "outcome": "approved on Oct 2"}, "why": "it came through"}, {"kind": "resolve", "title": "Close the application", "about": [], "payload": {"outcome": "approved"}}, {"kind": "resolve", "title": "Boiler fixed", "about": [], "payload": {"situation": "situation/nope", "outcome": "fixed"}}, {"kind": "resolve", "title": "Permit card", "about": [], "payload": {"situation": "thing/deck-permit", "outcome": "collected"}}]}'
+  =/  known=(set @t)  (sy ~['situation/2026-09-18-deck-permit' 'thing/deck-permit'])
+  =/  v  (validate:orr answer known ~ ~['Deck permit application'] starter-schema:orr 5)
+  ;:  weld
+    ::  a resolve of a situation the ship holds is kept, its title no
+    ::  restating of the event, and is about that situation whether or
+    ::  not the model said so
+    (expect-eq !>(1) !>((lent acts.v)))
+    (expect-eq !>('Deck permit approved') !>((gs:orr (snag 0 acts.v) 'title')))
+    (expect-eq !>(`(list @t)`~['situation/2026-09-18-deck-permit' 'thing/deck-permit']) !>((strings:orr (ga:orr (snag 0 acts.v) 'about'))))
+    (expect-eq !>('approved on Oct 2') !>((gs:orr (gj:orr (snag 0 acts.v) 'payload') 'outcome')))
+    ::  none without its situation, of one the ship lacks, or of a thing
+    (expect !>((lien notes.v |=(n=@t =(n 'dropped Close the application: payload lacks situation')))))
+    (expect !>((lien notes.v |=(n=@t =(n 'dropped Boiler fixed: the ship holds no such situation')))))
+    (expect !>((lien notes.v |=(n=@t =(n 'dropped Permit card: the ship holds no such situation')))))
+  ==
 ++  test-ground-needs
   =/  schema=json
     (jo '{"kinds": {"person": {"attrs": ["status"]}, "situation": {"attrs": ["status", "location", "needs", "waiting-on", "outcome"]}}, "actions": ["task"]}')
