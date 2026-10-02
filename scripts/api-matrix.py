@@ -1493,7 +1493,10 @@ t = todo_for(DISID, gone=True)
 check('dismissed on the page, its todo is deleted', t is None, t)
 last = exec_last(deleted=1)
 check('the record counts the deletion', last.get('deleted') == 1, last)
-# a todo the owner typed in the calendar is adopted as an approved task, and the todo gains the mark
+# a todo the owner typed in the calendar is adopted as an approved task, and the todo gains the mark.
+# The policy approves no task here, as on a ship whose owner approves each one: the owner's own todo
+# is approved as it is filed all the same, so it is never seen standing as a proposal
+curl('PUT', API + '/policy', {'auto': ['note'], 'push': 'proposed', 'retention_days': 365})
 HAND_DUE = (now + timedelta(days=5)).replace(hour=12, minute=0, second=0)
 code, d = cal_poke({'action': 'add-event', 'cat': 'todo', 'meta': {'name': 'Gate hand-typed todo %s' % XRUN, 'note': 'typed by hand'}, 'due_ms': int(HAND_DUE.timestamp() * 1000)})
 check('a todo typed through the calendar is taken', code == 200, (code, d))
@@ -1507,7 +1510,8 @@ HANDID = a.get('id', '')
 MADE.append(HANDID)
 check('it appears as an approved task filed by the calendar, with its note and due',
       a.get('kind') == 'task' and a.get('status') == 'approved' and a.get('by') == 'calendar' and a.get('due') == iso(HAND_DUE)
-      and dictish(a.get('payload')).get('notes') == 'typed by hand' and steps(a) == [('proposed', 'calendar'), ('approved', 'policy')], a)
+      and dictish(a.get('payload')).get('notes') == 'typed by hand' and steps(a) == [('proposed', 'calendar'), ('approved', 'calendar')], a)
+curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
 t = todo_for(HANDID)
 check('the todo gains the action id and the tag, and keeps its name, note and due',
       t is not None and dictish(t.get('meta')) == {'name': 'Gate hand-typed todo %s' % XRUN, 'orrery': HANDID, 'tags': ['orrery'], 'note': 'typed by hand'} and t.get('due_ms') == int(HAND_DUE.timestamp() * 1000), t)

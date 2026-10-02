@@ -6047,6 +6047,17 @@
   |=  [id=@t status=@t why=@t]
   ^-  json
   (set-action-op `@ta`id status why 'calendar')
+::  +own-todo: the task the calendar mirror files for a todo the owner
+::  typed. It is theirs already, so the writer approves it as it files
+::  it, whatever the policy's auto list says. Filed proposed, it stood
+::  in the inbox as a proposal of the owner's own words until the
+::  mirror's second op approved it, minutes later on a busy ship, and
+::  the owner was asked to approve each todo they had just typed
+::
+++  own-todo
+  |=  a=action
+  ^-  ?
+  &(=('calendar' by.a) =(%task kind.a) !=('' (gs payload.a 'todo')))
 ::  +adopt-ops: a todo the owner typed becomes a task on the ship. The
 ::  writer's act op files a proposal, so the approval is a second op
 ::  on the id the writer will assign (act-id of the stamped action, as

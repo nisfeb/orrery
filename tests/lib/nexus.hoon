@@ -948,6 +948,16 @@
     %+  expect-eq  !>([3 (add now ~m4)])
     !>((rise-plan:orr (rise-row:orr [3 (add now ~m4)] now) | now))
   ==
+++  test-own-todo
+  =/  todo=json  (jo '{"todo": "0v1.abc"}')
+  ;:  weld
+    (expect !>((own-todo:orr [%task 'Pay the mortgage' todo ~ ~ 'calendar' now %proposed '' ~])))
+    ::  only the calendar's own filing, only a task, only with its todo
+    (expect !>(!(own-todo:orr [%task 'Pay the mortgage' todo ~ ~ 'generator' now %proposed '' ~])))
+    (expect !>(!(own-todo:orr [%calendar 'Pay the mortgage' todo ~ ~ 'calendar' now %proposed '' ~])))
+    (expect !>(!(own-todo:orr [%task 'Pay the mortgage' ~ ~ ~ 'calendar' now %proposed '' ~])))
+    (expect !>(!(own-todo:orr [%task 'Pay the mortgage' (jo '{"todo": ""}') ~ ~ 'calendar' now %proposed '' ~])))
+  ==
 ::  ==  a situation resolved (version 64)
 ::
 ++  test-resolve

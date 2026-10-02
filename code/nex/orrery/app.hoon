@@ -1627,8 +1627,13 @@
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
-  =/  auto=?  =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))
-  =/  a=action:orr  ?.(auto p.got (transition:orr p.got %approved 'policy' '' now))
+  ::  a todo the owner typed is approved as it is filed (+own-todo)
+  =/  own=?  (own-todo:orr p.got)
+  =/  auto=?  |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy))))
+  =/  a=action:orr
+    ?.  auto  p.got
+    ?:  own  (transition:orr p.got %approved 'calendar' 'typed in the calendar' now)
+    (transition:orr p.got %approved 'policy' '' now)
   ;<  routed=[a=action:orr note=@t]  bind:m  (route-to 0 a)
   =.  a  a.routed
   ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'act' & note.routed))
