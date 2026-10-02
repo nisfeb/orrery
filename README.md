@@ -317,7 +317,7 @@ The writer keeps a trail of its last 500 outcomes: the op, whether it applied, w
 
 ### The vocabulary
 
-`GET` and `PUT /schema` hold the vocabulary the models are advised to use: the kinds, the attributes each kind commonly has, notes saying what an attribute means where the name alone misleads, the action kinds with the payload shape each takes (`payloads`: a message's `via` is one of the channels listed there, `to` a body id; a calendar event's `starts`), and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted; adding a new kind of fact never changes a type.
+A release that adds to that vocabulary reaches a ship that already has a schema by itself (version 64): at its first start on the version the ship adds the new action kinds, shapes, attributes and notes to its stored schema, replaces nothing the owner has, keeps the document as it was in `schema-before.json`, and marks how far it has come under `schema_version`. `GET` and `PUT /schema` hold the vocabulary the models are advised to use: the kinds, the attributes each kind commonly has, notes saying what an attribute means where the name alone misleads, the action kinds with the payload shape each takes (`payloads`: a message's `via` is one of the channels listed there, `to` a body id; a calendar event's `starts`), and the one thing the ship enforces, which attributes are multi-valued. Unknown kinds and attributes are accepted; adding a new kind of fact never changes a type.
 
 A person's family ties are refs, written on both people: `spouse`, `children`, `parents` and `siblings` (the last three multi-valued). `relationship` stays the text of how someone relates to the owner ("son"), and the bodies view draws it as a line too.
 

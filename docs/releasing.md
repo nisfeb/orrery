@@ -204,27 +204,27 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 12. `python3 scripts/quiet-gate.py <tmux target> $SHIP $JAR` prints no finding: a reload of the instance leaves the ship's console as it was, bar the known-noise register in `docs/logging.md`. The rest of the quiet gate there, a refused road printing one line and recording `parked`, is the owner's, by hand.
 13. Open `/apps/orrery` on the dev ship in a browser with the owner cookie: the views render, a retract and a move take effect, a settings save round-trips, and a write from a second client refreshes the page through the beacon.
 14. `git push origin main`, then on the dev ship's forge: `POST /grubbery/forge/api/run {"repo":"orrery.git_repo","command":"pull"}`, and within a minute the desk's root `version.json` reads the new number and the instance's `bang` is `null`.
-15. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that changes the starter schema or policy in the lib changes nothing on a ship that already has one: those files are seeded once, so a changed note is merged into the stored document by hand through `PUT /api/schema` or `PUT /api/policy`.
+15. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that adds to the starter schema (an action kind with its payload shape, an attribute with its note, a multi-valued attribute) names the addition in `+schema-adds` in the lib, and every ship adds it to its own stored schema at its first start on that version (`+schema-upgrade`, since version 64): nothing the owner has is replaced, the document as it was is kept in `schema-before.json` beside it, and `schema_version` in the document says how far it has come. A release that changes the wording of a note or a policy default still changes nothing on a ship that has one: those are the owner's, and a changed note is merged by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
 ### Version 64's owner steps
 
-No new road, so no consent prompt. What an owner sees:
+No new road, so no consent prompt, and nothing for an owner to do. What an owner sees:
 
+- The ship adds a release's new schema keys to its own stored schema, at its first start on the version. Until now that was an owner's step by hand after each such release. This start it adds version 64's keys below and, on a ship that never took them, version 60's (the `correct`, `fact`, `merge` and `preference` kinds, and the family ties on a person). Nothing the owner has is replaced, reordered or removed, a note in the owner's own words stays, and the document as it was is kept in `schema-before.json` under the instance. `schema_version` in the document says how far it has come.
 - A situation can say what it needs to be over, who has the next move, and how it ended. The generator proposes your step when the move is yours, a nudge when someone else has sat on theirs, and a `resolve` when the need is met.
-- Approving a `resolve` closes the situation with its outcome and dismisses what was only proposed about it.
-- `GET /api/reconcile/last` counts situations resolved apart from those the clock closed.
-- A change in what the readers keep, on every ship and whatever its schema: a situation the ship already holds now counts as named when a message uses a distinctive word of its name, where before only its whole name counted. Messages can move an existing situation on and close it, which they could not; watch the first days for a fact landing on the wrong situation, since "Boiler broken" is now named by "boiler" and by "broken".
+- Approving a `resolve` closes the situation with its outcome and dismisses what was only proposed about it. `resolve` is not in the policy's `auto` list unless the owner puts it there.
+- `GET /api/reconcile/last` counts situations resolved apart from those the clock closed, and what it quieted.
+- A todo you type into the calendar is approved as the ship takes it up, whatever the policy's `auto` list says. On a ship whose owner approves every task it used to stand in the inbox as a proposal first.
+- A change in what the readers keep, on every ship: a situation the ship already holds now counts as named when a message uses a distinctive word of its name, where before only its whole name counted. Messages can move an existing situation on and close it, which they could not; watch the first days for a fact landing on the wrong situation, since "Boiler broken" is now named by "boiler" and by "broken".
 - What is only proposed about a situation that is closed or cancelled is dismissed at reconcile's next pass, signed `reconcile`. That includes proposals already waiting when the release lands.
 
-1. In the same step as the pull, and before any `resolve` is approved, merge the new keys into the ship's stored schema: `GET /api/schema`, change the keys below, `PUT /api/schema` with the bare document. Keep a copy of the stored document first. Until these keys are there the readers drop the three facts (an observation on an attribute the kind does not list is dropped) and the generator never proposes a `resolve`. The instruction box offers `resolve` whatever the schema says, and a resolve approved before the merge closes the situation and loses its outcome. Word for word:
-   - `actions` gains `resolve`. Leave it out of the policy's `auto` list while you want to see each close.
-   - `payloads.resolve`: `situation` `required: the id of the situation that is over`, `outcome` `required: how it ended, a few plain words`, `evidence` `optional: the fact that shows it, short`.
-   - `kinds.situation.attrs` gains `needs`, `waiting-on` and `outcome`. The notes:
-     - `kinds.situation.notes.needs`: `what has to happen for this to be over, one short clause in the messages' own terms; written when a message says it and written again when it changes`
-     - `kinds.situation.notes.waiting-on`: `who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else`
-     - `kinds.situation.notes.outcome`: `how it ended, a few plain words, written with status closed once a message says it is over`
+What the ship adds to the schema for 64, for an owner who wants to see it or did it by hand:
+
+- `actions` gains `resolve`.
+- `payloads.resolve`: `situation` `required: the id of the situation that is over`, `outcome` `required: how it ended, a few plain words`, `evidence` `optional: the fact that shows it, short`.
+- `kinds.situation.attrs` gains `needs`, `waiting-on` and `outcome`, each with its note under `kinds.situation.notes`.
 
 ### Version 63's owner steps
 
