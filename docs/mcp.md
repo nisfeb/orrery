@@ -12,7 +12,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 
 | tool | parameters | answers |
 |---|---|---|
-| `orrery_state` | `at`, `kind` | the state view: bodies with attributes and involvements, open situations, open actions, the beacon, the schema |
+| `orrery_state` | `at`, `kind`, `brief` | the state view: bodies with attributes and involvements, open situations, open actions, the beacon, the schema. With `brief` true, the view an assistant should read first: values without provenance, the open situations with what each needs, the open actions small, the kinds' attribute names; a tenth the size |
 | `orrery_body` | `id`, `at` | one body: record, attributes, involved, open actions about it, the timeline |
 | `orrery_resolve` | `q` | bodies whose name or alias matches, exact first |
 | `orrery_observe` | `bodies`, `observations`, `by` | one result per item, with the observation id and whether it existed |

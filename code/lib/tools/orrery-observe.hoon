@@ -7,7 +7,7 @@
 |%
 ++  name  'orrery_observe'
 ++  description
-  'Submit observations, and the bodies they need, in one batch. Each observation: {subject, attr, value, at?, until?, conf?, source: {kind, id}}; each body: {id, name?, aliases?, ship?}. Answers one result per item, in order, with the observation id and whether it already existed. A batch is at most 50 bodies and 200 observations.'
+  'Submit observations, and the bodies they need, in one batch: every fact a message or a brief holds goes in one call, not one call per fact. Each observation: {subject, attr, value, at?, until?, conf?, source: {kind, id}}; each body: {id, name?, aliases?, ship?}. A situation holds what is going on: status, participants, starts and ends, a summary, what it needs to be over and who it is waiting on. Answers one result per item, in order, with the observation id and whether it already existed. A batch is at most 50 bodies and 200 observations.'
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))

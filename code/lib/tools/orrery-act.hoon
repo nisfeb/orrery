@@ -7,7 +7,7 @@
 |%
 ++  name  'orrery_act'
 ++  description
-  'Propose an action about the state: a task, a note, a message, or another kind. Policy decides whether it is approved at once or waits in the inbox. An open action with the same kind and title answers the existing one.'
+  'Propose an action about the state: a task, a note, a message, a calendar event, or another kind the schema lists; one call per action, about the bodies it concerns. Policy decides whether it is approved at once or waits in the inbox; when the owner\'s own words asked for it, approve it through orrery_actions in the same turn. An open action with the same kind and title answers the existing one.'
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))

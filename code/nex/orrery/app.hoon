@@ -1268,6 +1268,9 @@
     =/  hide=(set @t)  ?:(sensitive.u.scope.act ~ (hidden-for act policy))
     (scope-schema:orr schema u.scope.act hide)
   =/  multi=(set @t)  (multi-of:orr schema)
+  ::  brief: the values and what is open, a tenth the size (version 67)
+  =/  brief=?  =(`'1' (get-key:kv:html-utils 'brief' args))
+  ?:  brief  (send-json eyre-id 200 (brief-json:orr all acts multi u.when kind rev shown-schema))
   (send-json eyre-id 200 (state-json:orr all acts multi u.when kind rev shown-schema))
 ::  +serve-observe: decode, answer per item, hand the stamped request to
 ::  the writer. The ids reported here are the ids the writer makes,

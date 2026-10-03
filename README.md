@@ -521,6 +521,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /actions?status=` | `open` by default (proposed, approved and claimed), `all`, or one status |
 | `POST /actions/<id>` | `{"status", "note"}`: a transition |
 | `POST /actions/<id>/refine` | `{"text"}`: a note at approval revises a `proposed` action, owner or a key whose `actions` names the kind, with `write`; answers `{"ok", "action", "extras", "note"}`; 409 unless the action is `proposed` and a task, a calendar event or a message |
+| `GET /state?brief=1` | the state view for a reader that wants to know, not to audit: every body as id, kind, name, aliases, current values and the situations it is in; the open situations with what each needs and whose move it is; the open actions as id, kind, title, status, about and due; the kinds with their attribute names. A tenth the size of the full view |
 | `GET` and `PUT /schema`, `/policy` | the whole document; `PUT` answers it as stored once the write has landed; owner only |
 | `POST /share`, `GET /shares`, `POST /accept`, `POST /decline`, `DELETE /share/<id>/<ship>`, `POST /sync` | sharing; owner only. `/sync` prods the follower and answers 500 when that fiber refused the poke, as the telegram and executor wakes do |
 | `POST /clients`, `GET /clients`, `DELETE /clients/<id>` | keys; owner only |

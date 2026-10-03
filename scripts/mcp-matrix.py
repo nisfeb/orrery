@@ -89,6 +89,18 @@ ok, st2 = call('orrery-state', {'kind': 'person'})
 check('a kind filter narrows the state', ok and all(dictish(b).get('kind') == 'person' for b in listish(dictish(st2).get('bodies'))) and listish(dictish(st2).get('bodies')), st2)
 ok, err = call('orrery-state', {'at': 'yesterday'})
 check('a bad at is an error', not ok and 'at' in str(err), err)
+# the brief view (version 67): values and what is open, no provenance, the same over HTTP
+ok, bst = call('orrery-state', {'brief': True})
+code, hbst = http('GET', '/state?brief=1')
+check('the brief view answers, marked brief, with the kinds and no schema',
+      ok and dictish(bst).get('brief') is True and isinstance(dictish(bst).get('kinds'), dict) and 'schema' not in dictish(bst), sorted(dictish(bst).keys()))
+check('the brief view is the HTTP brief view, whole', code == 200 and dictish(bst).get('bodies') == dictish(hbst).get('bodies') and dictish(bst).get('situations') == dictish(hbst).get('situations'), None)
+me_brief = next((b for b in listish(dictish(bst).get('bodies')) if dictish(b).get('id') == 'person/me'), {})
+me_full = next((b for b in listish(dictish(st).get('bodies')) if dictish(b).get('id') == 'person/me'), {})
+check('a brief body carries values where the full view carries rows',
+      all(not isinstance(v, dict) or 'ref' in v for v in dictish(me_brief.get('attrs')).values())
+      and set(dictish(me_brief.get('attrs')).keys()) == set(dictish(me_full.get('attrs')).keys()), (me_brief.get('attrs'), list(dictish(me_full.get('attrs')).keys())))
+check('the brief view is well under the full one', len(json.dumps(bst)) * 3 < len(json.dumps(st)), (len(json.dumps(bst)), len(json.dumps(st))))
 
 print('== writes carry by and answer like the HTTP route')
 ok, d = call('orrery-observe', {

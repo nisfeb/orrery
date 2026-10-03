@@ -961,6 +961,10 @@ code, d = curl('PUT', API + '/chat', {'enabled': False})
 check('the reader is switched off again', code == 200, (code, d))
 
 # ---- version 57: the version route, both chat lists in one pass ----
+code, d = curl('GET', API + '/state?brief=1')
+check('the brief state view answers with values, open situations and the kinds, no provenance',
+      code == 200 and dictish(d).get('brief') is True and 'source' not in json.dumps(d) and 'history' not in json.dumps(d)
+      and isinstance(dictish(d).get('kinds'), dict) and all('needs' in dictish(s) for s in listish(dictish(d).get('situations'))), (code, sorted(dictish(d).keys())))
 code, d = curl('GET', API + '/version', jar=None, token=dictish(curl('POST', API + '/clients', {'name': 'gate version', 'by': 'gate-v', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})[1]).get('token'))
 check('any key reads the version, the desk\'s', code == 200 and dictish(d).get('version') == json.load(open('code/version.json'))['version'], (code, d))
 code, d = gate.curl('POST', API + '/exec/wake', {}, jar=JAR, headers=['Sec-Fetch-Site: cross-site'])

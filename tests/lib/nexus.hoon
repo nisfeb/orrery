@@ -1157,6 +1157,56 @@
     ::  only a follow that stands reads resolved when its situation is over: one failed or queued stays so
     (expect-eq !>(['failed' 'queued']) !>([(gs:orr (follow-view:orr (jo '{"path": "p", "situation": "situation/lisbon", "status": "failed"}') ~[sit] ~ acts now) 'status') (gs:orr (follow-view:orr (jo '{"path": "p", "situation": "situation/lisbon", "status": "queued"}') ~[sit] ~ acts now) 'status')]))
   ==
+::  ==  the brief state view (version 67)
+::
+++  test-brief
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json]
+    ^-  row:orr
+    [(rap 3 id '/' a ~) [id a v now ~ 90 ['t' 'x'] 'owner' now | '']]
+  =/  all=(list loaded:orr)
+    :~  (mk 'person/rose' %person 'Rose' ~[['relationship' s+'daughter'] ['likes' s+'ballet'] ['likes' s+'sailing']])
+        (mk 'situation/trip' %situation 'Trip to Lisbon' ~[['status' s+'open'] ['needs' s+'a hotel'] ['waiting-on' s+'person/rose'] ['participants' o+(~(put by *(map @t json)) 'ref' s+'person/rose')] ['starts' s+'2026-12-12T17:00:00Z']])
+        (mk 'situation/done' %situation 'Over' ~[['status' s+'closed'] ['outcome' s+'fine']])
+    ==
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' [%task 'Book the hotel' (jo '{"notes": "near Alfama"}') (sy ~['situation/trip']) `~2026.12.11 'generator' now %approved '' ~[[now %approved 'policy']]]]
+        ['a2' [%task 'Old' ~ ~ ~ 'generator' now %done '' ~]]
+    ==
+  =/  multi=(set @t)  (sy ~['likes' 'participants'])
+  =/  schema=json  (jo '{"kinds": {"person": {"attrs": ["status", "likes"], "notes": {"likes": "x"}}, "situation": {"attrs": ["status", "needs"]}}, "multi": ["likes", "participants"], "style": "s"}')
+  =/  v=json  (brief-json:orr all acts multi now '' (numb:enjs:format 7) schema)
+  =/  rose=json  (snag 0 (ga:orr v 'bodies'))
+  =/  lisbon=json  (snag 1 (ga:orr v 'bodies'))
+  =/  text=@t  (en:json:html v)
+  ;:  weld
+    (expect !>(?=([%b %.y] (gj:orr v 'brief'))))
+    ::  values only: a single value as it is, a multi as the list, a ref as a ref
+    (expect-eq !>('daughter') !>((gs:orr (gj:orr rose 'attrs') 'relationship')))
+    (expect-eq !>(`(list @t)`~['ballet' 'sailing']) !>((sort (strings:orr (ga:orr (gj:orr rose 'attrs') 'likes')) aor)))
+    (expect-eq !>(`(list @t)`~['situation/trip']) !>((strings:orr (ga:orr rose 'involved'))))
+    (expect-eq !>((jo '{"ref": "person/rose"}')) !>((snag 0 (ga:orr (gj:orr lisbon 'attrs') 'participants'))))
+    ::  no provenance anywhere
+    (expect !>(?=(~ (find "\"source\"" (trip text)))))
+    (expect !>(?=(~ (find "\"conf\"" (trip text)))))
+    (expect !>(?=(~ (find "\"history\"" (trip text)))))
+    ::  the open situations with what they need; the closed one is not among them
+    (expect-eq !>(1) !>((lent (ga:orr v 'situations'))))
+    (expect-eq !>(['situation/trip' 'Trip to Lisbon' 'open' 'a hotel' 'person/rose' '2026-12-12T17:00:00Z']) !>(=/(s (snag 0 (ga:orr v 'situations')) [(gs:orr s 'id') (gs:orr s 'name') (gs:orr s 'status') (gs:orr s 'needs') (gs:orr s 'waiting_on') (gs:orr s 'starts')])))
+    ::  the open actions, small; the done one left out
+    (expect-eq !>(1) !>((lent (ga:orr v 'actions'))))
+    (expect-eq !>(['a1' 'task' 'Book the hotel' 'approved' '2026-12-11T00:00:00Z']) !>(=/(a (snag 0 (ga:orr v 'actions')) [(gs:orr a 'id') (gs:orr a 'kind') (gs:orr a 'title') (gs:orr a 'status') (gs:orr a 'due')])))
+    (expect !>(!(has-key:orr (snag 0 (ga:orr v 'actions')) 'payload')))
+    ::  the kinds with their attribute names, nothing else of the schema
+    (expect-eq !>((jo '{"person": ["status", "likes"], "situation": ["status", "needs"]}')) !>((gj:orr v 'kinds')))
+    (expect !>(!(has-key:orr v 'schema')))
+    ::  one kind
+    (expect-eq !>(1) !>((lent (ga:orr (brief-json:orr all acts multi now 'person' (numb:enjs:format 7) schema) 'bodies'))))
+  ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')
   ;:  weld

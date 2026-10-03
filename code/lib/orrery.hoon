@@ -1749,6 +1749,108 @@
       ['actions' a+(murn acts |=([id=@ta a=action] ?.((is-open a) ~ `(en-action id a))))]
       ['schema' schema]
   ==
+::  +brief-attrs: a body's current attributes as plain values: a
+::  single-valued attr its value, a multi-valued one the list of values,
+::  nothing of where each came from
+::
+++  brief-attrs
+  |=  [winners=(map @t (list row)) multi=(set @t)]
+  ^-  json
+  :-  %o
+  %-  ~(gas by *(map @t json))
+  %+  murn  ~(tap by winners)
+  |=  [attr=@t rs=(list row)]
+  ^-  (unit [@t json])
+  ?:  (~(has in multi) attr)  `[attr a+(turn rs |=(r=row value.obs.r))]
+  ?~  rs  ~
+  ?~  value.obs.i.rs  ~
+  `[attr value.obs.i.rs]
+::  +brief-json: the state view for a reader that wants to know, not to
+::  audit (version 67): every body as its record, its current values and
+::  the situations it is in; the open situations with what each needs
+::  and whose move it is; the open actions as id, kind, title, status,
+::  about and due; the kinds with their attribute names. A tenth the
+::  size of +state-json, which carries every value's source, time and
+::  confidence and every action's history and payload. An assistant
+::  that read the full view first ran out of room before its first
+::  write
+::
+++  brief-json
+  |=  $:  all=(list loaded)
+          acts=(list [id=@ta a=action])
+          multi=(set @t)
+          when=@da
+          kind=@t
+          rev=json
+          schema=json
+      ==
+  ^-  json
+  =/  sits=(list [id=bid winners=(map @t (list row))])  (situations all multi when)
+  =/  open-sits=(list [id=bid winners=(map @t (list row))])
+    (skim sits |=([* winners=(map @t (list row))] !(is-closed winners)))
+  =/  inv=(map bid (list bid))  (involvement sits)
+  =/  shown=(list loaded)
+    ?:  =('' kind)  all
+    (skim all |=(l=loaded =(kind `@t`kind.body.l)))
+  =/  bodies=(list json)
+    %+  turn  shown
+    |=  l=loaded
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['id' s+id.l]
+        ['kind' s+kind.body.l]
+        ['name' s+name.body.l]
+        ['aliases' a+(turn ~(tap in aliases.body.l) |=(t=@t `json`s+t))]
+        ['attrs' (brief-attrs (fold rows.l multi when) multi)]
+        ['involved' a+(turn (fall (~(get by inv) id.l) ~) |=(b=bid `json`s+b))]
+    ==
+  =/  situations=(list json)
+    %+  turn  open-sits
+    |=  [id=bid winners=(map @t (list row))]
+    ^-  json
+    =/  l=(unit loaded)  (loaded-of all id)
+    =/  waiting=@t  (winner-text winners 'waiting-on')
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['name' s+?~(l '' name.body.u.l)]
+        ['status' s+(winner-text winners 'status')]
+        ['needs' s+(winner-text winners 'needs')]
+        ['waiting_on' ?:(=('' waiting) ~ s+waiting)]
+        ['starts' s+(winner-text winners 'starts')]
+        ['ends' s+(winner-text winners 'ends')]
+    ==
+  =/  actions=(list json)
+    %+  murn  acts
+    |=  [id=@ta a=action]
+    ^-  (unit json)
+    ?.  (is-open a)  ~
+    :-  ~
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['kind' s+kind.a]
+        ['title' s+title.a]
+        ['status' s+status.a]
+        ['about' a+(turn ~(tap in about.a) |=(t=@t `json`s+t))]
+        ['due' (en-maybe-time due.a)]
+    ==
+  =/  kinds=json
+    =/  ks=json  (gj schema 'kinds')
+    ?.  ?=([%o *] ks)  [%o ~]
+    :-  %o
+    %-  ~(gas by *(map @t json))
+    %+  turn  ~(tap by p.ks)
+    |=  [k=@t spec=json]
+    [k (gj spec 'attrs')]
+  %-  pairs:enjs:format
+  :~  ['rev' rev]
+      ['at' (en-time when)]
+      ['me' s+'person/me']
+      ['brief' b+&]
+      ['bodies' a+bodies]
+      ['situations' a+situations]
+      ['actions' a+actions]
+      ['kinds' kinds]
+  ==
 ::
 ::  ==  the on-ship generator, the pure half (spec: docs/superpowers/plans/
 ::  2026-09-19-hoon-generator.md). The prompt from the state, the digest
