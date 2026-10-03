@@ -6056,6 +6056,127 @@
   =/  trimmed=tape  (skip-trailing-space out)
   ?:  ?=([%',' *] trimmed)  $(s rest, out (weld cs t.trimmed))
   $(s rest, out (weld cs trimmed))
+::  ==  a lattice page followed (version 66)
+::
+::  A page the owner sends from lattice is a situation handed to the
+::  ship: the page is read as the owner's own words, and read again at
+::  every edit until the situation it made is over. The follow lives in
+::  its own grub under /follows, named from the page's path; the app
+::  peeks the page where lattice keeps it. These are the pure parts.
+::
+::  +follow-name: the grub a page's follow lives in
+::
+++  follow-name
+  |=  page=@t
+  ^-  @ta
+  (crip ((x-co:co 8) (end [3 4] (sham page))))
+::  +page-segs: a lattice page path, "notes/brave/catch-all", as the
+::  path segments under lattice's /page; ~ when a segment is not a knot
+::
+++  page-segs
+  |=  page=@t
+  ^-  (unit path)
+  =/  segs=(list @t)  (turn (split-char '/' (trip page)) crip)
+  =/  bad=?  (lien segs |=(s=@t !((sane %ta) s)))
+  ?:  |(?=(~ segs) bad)  ~
+  `(turn segs |=(s=@t `@ta`s))
+::  +follow-cap: how much page the reader is handed, the read channel's
+::
+++  follow-cap  65.536
+::  +follow-text: what the reader is handed for a page: one line saying
+::  whose page it is and, once it has been read, which situation it is
+::  the record of, so the facts land on that situation and not on a
+::  twin; the page as written; each linked page under its path; cut at
+::  the read channel's cap
+::
+++  follow-text
+  |=  [page=@t title=@t text=@t linked=(list [page=@t text=@t]) sit=(unit [id=@t name=@t])]
+  ^-  @t
+  =/  head=@t
+    %+  rap  3
+    :~  'The owner\'s own page "'  ?:(=('' title) page title)  '" (lattice page '  page  ').'
+        ?~  sit  ''
+        (rap 3 ' It is their record of ' name.u.sit ' (' id.u.sit '), which the ship already holds: what it says moves that situation on.' ~)
+    ==
+  =/  more=(list @t)
+    %+  turn  linked
+    |=  [p=@t t=@t]
+    (rap 3 nl nl '--- linked page ' p ' ---' nl t ~)
+  (end [3 follow-cap] (rap 3 head nl nl text (rap 3 more) ~))
+::  +moved-to: where lattice says a page went: the newest move whose
+::  from is the page, or whose from/ prefixes it (a folder moved is one
+::  row); a page moved again is followed on, ten hops at most. ~ when no
+::  move names it, which with the page gone means it was deleted
+::
+++  moved-to
+  |=  [page=@t moves=json]
+  ^-  (unit @t)
+  =/  rows=(list json)  (ga moves 'moves')
+  =/  cur=@t  page
+  =/  hops=@ud  0
+  |-  ^-  (unit @t)
+  =/  next=(unit @t)
+    =/  rs=(list json)  rows
+    |-  ^-  (unit @t)
+    ?~  rs  ~
+    =/  from=@t  (gs i.rs 'from')
+    =/  to=@t  (gs i.rs 'to')
+    ?:  =(from cur)  `to
+    =/  dir=@t  (cat 3 from '/')
+    ?:  =(dir (end [3 (met 3 dir)] cur))
+      `(cat 3 to (rsh [3 (met 3 from)] cur))
+    $(rs t.rs)
+  ?~  next  ?:(=(cur page) ~ `cur)
+  ?:  (gte hops 10)  `cur
+  $(cur u.next, hops +(hops))
+::  +facts-situation: the situation a page's read made or moved on, the
+::  first the urgent pass would look at; ~ when the read made none
+::
+++  facts-situation
+  |=  facts=tg-facts
+  ^-  (unit @t)
+  =/  ids=(list @t)  (urgent-ids facts)
+  ?~  ids  ~
+  ?.(=('situation' (kind-of i.ids)) ~ `i.ids)
+::  +follow-over: whether the follow's situation is over: closed or
+::  cancelled as the ship holds it. A follow whose situation is gone
+::  from the ship is over too
+::
+++  follow-over
+  |=  [doc=json all=(list loaded) multi=(set @t) now=@da]
+  ^-  ?
+  =/  sit=@t  (gs doc 'situation')
+  ?:  =('' sit)  |
+  =/  l=(unit loaded)  (loaded-of all sit)
+  ?~  l  &
+  =/  st=@t  (winner-text (fold rows.u.l multi now) 'status')
+  |(=('closed' st) =('cancelled' st))
+::  +follow-view: what GET /api/follow answers for one follow: its
+::  record, and its situation as the ship holds it now, since lattice
+::  asks once a session and shows what it is told
+::
+++  follow-view
+  |=  [doc=json all=(list loaded) multi=(set @t) acts=(list [id=@ta a=action]) now=@da]
+  ^-  json
+  =/  sit=@t  (gs doc 'situation')
+  =/  status=@t  (gs doc 'status')
+  =/  l=(unit loaded)  ?:(=('' sit) ~ (loaded-of all sit))
+  =/  w=(map @t (list row))  ?~(l ~ (fold rows.u.l multi now))
+  =/  waiting=@t  (winner-text w 'waiting-on')
+  =/  open=@ud
+    (lent (skim acts |=([* a=action] &((is-open a) (~(has in about.a) sit)))))
+  %-  pairs:enjs:format
+  :~  ['path' s+(gs doc 'path')]
+      ['status' s+?:(&(=('following' status) (follow-over doc all multi now)) 'resolved' status)]
+      ['situation' ?:(=('' sit) ~ s+sit)]
+      ['title' s+?~(l '' name.body.u.l)]
+      ['open' (numb:enjs:format open)]
+      ['needs' s+(winner-text w 'needs')]
+      ['waiting_on' ?:(=('' waiting) ~ s+waiting)]
+      ['outcome' s+(winner-text w 'outcome')]
+      ['note' s+(gs doc 'note')]
+      ['read_at' s+(gs doc 'read_at')]
+  ==
 ::  ==  the mirror: the calendar's todo list and the task actions kept
 ::  in step both ways. The fiber reads the store, +plan-mirror says
 ::  what each todo needs, and the fiber files it.
@@ -7617,6 +7738,9 @@
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))           `[%get-chat-dms %own]
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))      `[%get-chat-channels %own]
   ?:  &(=('POST' meth) ?=([%api %read ~] suffix))               `[%post-read %writes]
+  ?:  &(=('POST' meth) ?=([%api %follow ~] suffix))             `[%post-follow %own]
+  ?:  &(=('GET' meth) ?=([%api %follow ~] suffix))              `[%get-follow %own]
+  ?:  &(=('POST' meth) ?=([%api %follow %wake ~] suffix))       `[%post-follow-wake %own]
   ?:  &(=('GET' meth) ?=([%api %read %settings ~] suffix))      `[%get-read-settings %writes]
   ?:  &(=('PUT' meth) ?=([%api %read %settings ~] suffix))      `[%put-read-settings %writes]
   ?:  &(=('GET' meth) ?=([%api %read %last ~] suffix))          `[%get-read-last %own]

@@ -8,10 +8,11 @@ fails = []
 count = [0]
 
 
-def curl(method, url, body=None, jar=None, token=None, timeout=60, headers=()):
+def curl(method, url, body=None, jar=None, token=None, timeout=60, headers=(), raw=None):
     """(status, parsed body): the JSON when it parses, else the text. A
     token is the request's whole identity, so a jar beside it is not
-    sent: a request carrying both would be the owner's."""
+    sent: a request carrying both would be the owner's. raw is a body
+    sent as it is, with whatever content-type headers names."""
     cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', url]
     if token:
         cmd += ['-H', 'Authorization: Bearer ' + token]
@@ -19,7 +20,9 @@ def curl(method, url, body=None, jar=None, token=None, timeout=60, headers=()):
         cmd += ['-b', jar]
     for h in headers:
         cmd += ['-H', h]
-    if body is not None:
+    if raw is not None:
+        cmd += ['--data-binary', raw]
+    elif body is not None:
         cmd += ['-H', 'content-type: application/json', '-d', json.dumps(body)]
     out = subprocess.run(cmd, capture_output=True, text=True).stdout
     text, _, code = out.rpartition('\n')

@@ -1079,6 +1079,84 @@
         (levy attrs |=(n=@t (has-key:orr notes n)))
     ==
   ==
+::  ==  a lattice page followed (version 66)
+::
+++  test-follow
+  =/  moves=json
+    %-  jo
+    '{"moves": [{"from": "trips/lisbon-2", "to": "trips/lisbon-3", "at_ms": 3}, {"from": "trips", "to": "travel", "at_ms": 2}, {"from": "notes/lisbon", "to": "trips/lisbon-2", "at_ms": 1}]}'
+  =/  mk
+    |=  [id=@t name=@t attrs=(list [a=@t v=@t])]
+    ^-  loaded:orr
+    :+  id  [%situation name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a ~) [id a s+v now ~ 100 ['t' 'x'] 'owner' now | '']]
+  =/  sit=loaded:orr  (mk 'situation/lisbon' 'Trip to Lisbon' ~[['status' 'closed'] ['outcome' 'flew home'] ['needs' 'a hotel']])
+  =/  off=loaded:orr  (mk 'situation/porto' 'Trip to Porto' ~[['status' 'cancelled']])
+  ::  a page moved twelve times: the follow goes ten hops and stops
+  =/  chain=json
+    :-  %o
+    %+  ~(put by *(map @t json))  'moves'
+    :-  %a
+    %+  turn  (gulf 0 11)
+    |=  i=@ud
+    ^-  json
+    (pairs:enjs:format ~[['from' s+(cat 3 'p' (scot %ud i))] ['to' s+(cat 3 'p' (scot %ud +(i)))]])
+  =/  open=loaded:orr  (mk 'situation/rome' 'Trip to Rome' ~[['status' 'open'] ['needs' 'a hotel'] ['waiting-on' 'person/sarah']])
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' [%task 'Book the hotel' ~ (sy ~['situation/rome']) ~ 'generator' now %approved '' ~]]
+        ['a2' [%task 'Pack' ~ (sy ~['situation/rome']) ~ 'generator' now %done '' ~]]
+        ['a3' [%task 'Other' ~ (sy ~['situation/lisbon']) ~ 'generator' now %proposed '' ~]]
+    ==
+  =/  doc=json  (jo '{"path": "trips/rome", "situation": "situation/rome", "status": "following", "note": "", "read_at": "2026-09-18T11:00:00Z"}')
+  =/  done=json  (jo '{"path": "trips/lisbon", "situation": "situation/lisbon", "status": "following", "note": ""}')
+  =/  view=json  (follow-view:orr doc ~[sit open] ~ acts now)
+  =/  facts=tg-facts:orr  [~[(jo '{"id": "thing/ticket", "kind": "thing", "name": "Ticket"}')] ~[(jo '{"subject": "situation/rome", "attr": "needs", "value": "a hotel"}')] ~ ~ ~]
+  =/  text  (follow-text:orr 'trips/rome' 'Rome' 'Fly Friday.' ~[['trips/flights' 'TAP 1234']] `['situation/rome' 'Trip to Rome'])
+  ;:  weld
+    ::  the grub's name is the page's; a page path is segments, or nothing
+    (expect-eq !>((follow-name:orr 'trips/rome')) !>((follow-name:orr 'trips/rome')))
+    (expect !>(!=((follow-name:orr 'trips/rome') (follow-name:orr 'trips/roma'))))
+    (expect-eq !>(`(unit path)`[~ /trips/rome]) !>((page-segs:orr 'trips/rome')))
+    ::  an empty segment is dropped, as lattice's own paths never carry one
+    (expect-eq !>(`(unit path)`[~ /trips/rome]) !>((page-segs:orr 'trips//rome')))
+    (expect-eq !>(`(unit path)`~) !>((page-segs:orr 'Trips/Rome')))
+    (expect-eq !>(`(unit path)`~) !>((page-segs:orr '')))
+    ::  the text names whose page it is, the situation it is the record
+    ::  of, the page, and each linked page under its path
+    (expect !>(?=([~ %0] (find "The owner's own page \"Rome\" (lattice page trips/rome). It is their record of Trip to Rome (situation/rome), which the ship already holds: what it says moves that situation on.\0a\0aFly Friday." (trip text)))))
+    (expect !>(?=(^ (find "\0aFly Friday.\0a\0a--- linked page trips/flights ---\0aTAP 1234" (trip text)))))
+    (expect !>(?=(~ (find "record of" (trip (follow-text:orr 'p' '' 'x' ~ ~))))))
+    (expect !>(?=(^ (find "page \"p\" (lattice page p)" (trip (follow-text:orr 'p' '' 'x' ~ ~))))))
+    (expect-eq !>(follow-cap:orr) !>((met 3 (follow-text:orr 'p' '' (crip (reap 70.000 'a')) ~ ~))))
+    ::  moves: a page moved, moved again, a folder moved over it; one never moved
+    (expect-eq !>(`(unit @t)`[~ 'travel/lisbon-3']) !>((moved-to:orr 'notes/lisbon' moves)))
+    (expect-eq !>(`(unit @t)`[~ 'travel/lisbon-3']) !>((moved-to:orr 'trips/lisbon-2' moves)))
+    (expect-eq !>(`(unit @t)`[~ 'travel/porto']) !>((moved-to:orr 'trips/porto' moves)))
+    (expect-eq !>(`(unit @t)`~) !>((moved-to:orr 'tripsy/porto' moves)))
+    (expect-eq !>(`(unit @t)`~) !>((moved-to:orr 'notes/other' moves)))
+    (expect-eq !>(`(unit @t)`~) !>((moved-to:orr 'notes/other' [%o ~])))
+    (expect-eq !>(`(unit @t)`[~ 'p10']) !>((moved-to:orr 'p0' chain)))
+    ::  the situation a read made: the first the urgent pass would look at
+    (expect-eq !>(`(unit @t)`[~ 'situation/rome']) !>((facts-situation:orr facts)))
+    (expect-eq !>(`(unit @t)`~) !>((facts-situation:orr [~[(jo '{"id": "thing/ticket", "kind": "thing", "name": "Ticket"}')] ~ ~ ~ ~])))
+    ::  over: closed or cancelled, or gone from the ship
+    (expect !>((follow-over:orr done ~[sit open] ~ now)))
+    (expect !>((follow-over:orr (jo '{"path": "p", "situation": "situation/porto", "status": "following"}') ~[off] ~ now)))
+    (expect !>(!(follow-over:orr doc ~[sit open] ~ now)))
+    (expect !>((follow-over:orr doc ~[sit] ~ now)))
+    (expect !>(!(follow-over:orr (jo '{"path": "p"}') ~[sit] ~ now)))
+    ::  the view: the record with the situation as it stands
+    (expect-eq !>(['following' 'situation/rome' 'Trip to Rome' 'a hotel']) !>([(gs:orr view 'status') (gs:orr view 'situation') (gs:orr view 'title') (gs:orr view 'needs')]))
+    (expect-eq !>([`(unit @ud)`[~ 1] 'person/sarah' '' '2026-09-18T11:00:00Z']) !>([(gn:orr view 'open') (gs:orr view 'waiting_on') (gs:orr view 'outcome') (gs:orr view 'read_at')]))
+    ::  what is still proposed about a resolved situation counts until reconcile quiets it
+    (expect-eq !>(['resolved' 'flew home' `(unit @ud)`[~ 1]]) !>(=/(v (follow-view:orr done ~[sit open] ~ acts now) [(gs:orr v 'status') (gs:orr v 'outcome') (gn:orr v 'open')])))
+    (expect-eq !>(['failed' ~]) !>(=/(v (follow-view:orr (jo '{"path": "p", "status": "failed", "note": "gone"}') ~[sit] ~ acts now) [(gs:orr v 'status') (gj:orr v 'situation')])))
+    ::  only a follow that stands reads resolved when its situation is over: one failed or queued stays so
+    (expect-eq !>(['failed' 'queued']) !>([(gs:orr (follow-view:orr (jo '{"path": "p", "situation": "situation/lisbon", "status": "failed"}') ~[sit] ~ acts now) 'status') (gs:orr (follow-view:orr (jo '{"path": "p", "situation": "situation/lisbon", "status": "queued"}') ~[sit] ~ acts now) 'status')]))
+  ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')
   ;:  weld

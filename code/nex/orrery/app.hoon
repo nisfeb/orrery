@@ -27,6 +27,7 @@
 ::    /mail.json  /mail-last.json  /mail-seen.json  /mail-recent.json  /mail.sig   the mail reader (version 52)
 ::    /brief-last.json  /brief.sig       the daily brief (version 52): the last one sent, its tags and text
 ::    /read.json  /read-last.json  /read-recent.json  /read-inbox/<id>  /read.sig   the read channel (version 59): text a client hands the ship
+::    /follows/<name>  /follow.sig      the lattice pages followed (version 66): each page sent, its situation, where it stands
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -152,6 +153,10 @@
           [%fall %| /read-inbox empty-dir:loader]
           [%fall %& [/read-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/ %'read.sig'] [[/ %sig] ~]]
+          ::  the lattice pages followed (version 66): one grub per page
+          ::  sent, and the fiber that looks at them
+          [%fall %| /follows empty-dir:loader]
+          [%fall %& [/ %'follow.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
           [%fall %& [/ %'rise.json'] [[/ %json] [%o ~]]]
@@ -334,6 +339,22 @@
         ;<  ~  bind:m  (cancel-timer:io /read-retry)
         ;<  ~  bind:m  ?.(again (pure:(fiber:fiber:nexus ,~) ~) (set-timer:io /read-retry (add now ~m5)))
         ;<  *  bind:m  (take-gen-in /rd)
+        $
+          ::  the lattice pages followed (version 66): every five minutes
+          ::  each page sent is looked at where lattice keeps it; one
+          ::  edited is read again, one moved is followed at its new
+          ::  path, one gone is noted, and one whose situation is over is
+          ::  left. ponytail: a poll, not a keep per page, so an edit
+          ::  reaches the ship within five minutes; a keep per page when
+          ::  that is too slow
+          [~ %'follow.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery follow: failed")
+        |-
+        ;<  ~  bind:m  follow-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (cancel-timer:io /follow-poll)
+        ;<  ~  bind:m  (set-timer:io /follow-poll (add now ~m5))
+        ;<  *  bind:m  (take-gen-in /fl)
         $
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
@@ -644,6 +665,7 @@
           (line '/sys/ames/usergroups/' 'read a share group before rewriting it')
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
           (line '/apps/shell.shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
+          (line '/apps/shell.shell/desks/lattice.desk/' 'read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over. Refuse this and a sent page is read once, as sent')
           (line '/apps/shell.shell/desks/auspex.desk/' 'read your mail, so what people write you becomes facts the ship knows, and read your replies to the daily brief. Refuse this and the ship reads no mail')
       ==
       :-  'make'
@@ -1194,6 +1216,9 @@
     %get-chat-dms           (serve-chat-dms eyre-id)
     %get-chat-channels      (serve-chat-channels eyre-id)
     %post-read              (serve-read eyre-id jon act)
+    %post-follow            (serve-follow eyre-id jon act)
+    %get-follow             (serve-follow-get eyre-id args)
+    %post-follow-wake       (serve-prod eyre-id %'follow.sig' 'follow')
     %get-read-settings      (serve-read-settings eyre-id)
     %put-read-settings      (serve-set-doc eyre-id 'set-read' jon)
     %get-read-last          (serve-doc eyre-id %'read-last.json')
@@ -4688,6 +4713,10 @@
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   =?  facts  ?=(^ sc.it)  (scope-facts:orr facts u.sc.it (key-hide:orr u.sc.it policy))
   ;<  ~  bind:m  (tg-file facts now kind)
+  ::  a lattice page's read says which situation its follow is of
+  ;<  ~  bind:m
+    ?.  =('lattice' (gs:orr (gj:orr item 'source') 'kind'))  (pure:(fiber:fiber:nexus ,~) ~)
+    (follow-read (gs:orr (gj:orr item 'source') 'id') (facts-situation:orr facts) now)
   =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
   =/  tally=chat-tally
     :*  ?:(read 1 0)  n  0  0  1  1  0  0
@@ -4697,6 +4726,278 @@
   ;<  *  bind:m  (cull-soft:io (rf 0 /read-inbox i.todo))
   ;<  all=(list loaded:orr)  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
   $(todo t.todo, all all)
+::  ==  a lattice page followed (version 66)
+::
+::  +serve-follow: POST /api/follow {path, title, text, links}: a page
+::  the owner sends from lattice, with the pages it links. The page is
+::  handed to the read channel as the owner's own words, with a line
+::  saying which situation it is the record of once it has one, and a
+::  follow grub is written or renewed, so the fiber looks at the page
+::  from now on. Answers 202 at once; the read is the read fiber's.
+::  Sending a page followed already reads it again now.
+::
+++  serve-follow
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  page=@t  (trim-cord:orr (gs:orr jon 'path'))
+  ?:  |(=('' page) ?=(~ (page-segs:orr page)))  (send-err eyre-id 400 'path: a lattice page path is required')
+  =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
+  ?:  =('' text)  (send-err eyre-id 400 'text: required')
+  ?:  (gth (met 3 text) follow-cap:orr)  (send-err eyre-id 413 'text: over 64 KB')
+  =/  title=@t  (trim-cord:orr (gs:orr jon 'title'))
+  =/  links=(list @t)  (scag 20 (strings:orr (ga:orr jon 'links')))
+  ;<  now=@da  bind:m  get-time:io
+  =/  name=@ta  (follow-name:orr page)
+  ;<  was=json  bind:m  (follow-doc 1 name)
+  ;<  sit=(unit [@t @t])  bind:m  (follow-situation 1 (gs:orr was 'situation'))
+  ;<  base=(unit path)  bind:m  (find-base %lattice)
+  ;<  linked=(list [@t @t])  bind:m  (linked-pages base links)
+  ;<  rev=@t  bind:m  (page-rev base page)
+  ;<  ~  bind:m  (follow-hand 1 page title text linked sit act now)
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['path' s+page]
+        ['title' s+title]
+        ['links' a+(turn links |=(l=@t `json`s+l))]
+        ['situation' ?:(=('' (gs:orr was 'situation')) ~ s+(gs:orr was 'situation'))]
+        ['status' s+?:(=('following' (gs:orr was 'status')) 'following' 'queued')]
+        ['note' s+'']
+        ['rev' s+rev]
+        ['sent_at' s+(en-iso:orr now)]
+        ['read_at' s+(gs:orr was 'read_at')]
+    ==
+  ;<  ~  bind:m  (put-follow 1 name doc)
+  (send-json eyre-id 202 (pairs:enjs:format ~[['ok' b+&] ['path' s+page] ['status' s+(gs:orr doc 'status')]]))
+::  +serve-follow-get: GET /api/follow?path=: the follow of one page as
+::  it stands, its situation read live; status none for a page never sent
+::
+++  serve-follow-get
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  page=@t  (fall (~(get by (~(gas by *(map @t @t)) args)) 'path') '')
+  ?:  =('' page)  (send-err eyre-id 400 'path: required')
+  ;<  doc=json  bind:m  (follow-doc 1 (follow-name:orr page))
+  ?:  =('' (gs:orr doc 'path'))
+    (send-json eyre-id 200 (pairs:enjs:format ~[['path' s+page] ['status' s+'none']]))
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  now=@da  bind:m  get-time:io
+  (send-json eyre-id 200 (follow-view:orr doc all (multi-of:orr schema) acts now))
+::  +follow-doc: a follow's grub as JSON, {} when there is none
+::
+++  follow-doc
+  |=  [up=@ud name=@ta]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (rf up /follows name) ~)
+  ?.  ?=([~ %file *] vw)  (pure:m [%o ~])
+  (pure:m (fall (mole |.(;;(json (sang-noun:tarball sang.u.vw)))) [%o ~]))
+::  +put-follow: a follow's grub written, made when there is none
+::
+++  put-follow
+  |=  [up=@ud name=@ta doc=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (rf up /follows name) ~)
+  ?:  ?=([~ %file *] vw)  (over:io (rf up /follows name) [[/ %json] doc])
+  ;<  *  bind:m  (make-soft:io (rf up /follows name) |+[[[/ %json] doc] ~])
+  (pure:m ~)
+::  +follow-situation: a situation's id and name as the ship holds it,
+::  for the line the reader is handed; ~ when the follow has none yet
+::
+++  follow-situation
+  |=  [up=@ud sit=@t]
+  =/  m  (fiber:fiber:nexus ,(unit [@t @t]))
+  ^-  form:m
+  ?:  =('' sit)  (pure:m ~)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies up)
+  =/  l=(unit loaded:orr)  (loaded-of:orr all sit)
+  ?~  l  (pure:m ~)
+  (pure:m `[sit name.body.u.l])
+::  +page-road: a grub of a page where lattice keeps it: R/page/<segments>/<name>
+::  for a page the editor holds, R/pub/vault/<segments>/gmi for one that
+::  only exists published (lattice's docs/orrery.md)
+::
+++  page-road
+  |=  [base=path page=@t name=@ta]
+  ^-  (unit road:tarball)
+  =/  segs=(unit path)  (page-segs:orr page)
+  ?~  segs  ~
+  ?:  =(%gmi name)  `[%& %& (weld base `path`[%pub %vault u.segs]) %gmi]
+  `[%& %& (weld base `path`[%page u.segs]) name]
+::  +page-view: a page's text grub where lattice keeps it: its data,
+::  else its published body; ~ without lattice, the road or the page
+::
+++  page-view
+  |=  [base=(unit path) page=@t]
+  =/  m  (fiber:fiber:nexus ,(unit view:nexus))
+  ^-  form:m
+  ?~  base  (pure:m ~)
+  =/  road=(unit road:tarball)  (page-road u.base page %data)
+  =/  pub=(unit road:tarball)  (page-road u.base page %gmi)
+  ?:  |(?=(~ road) ?=(~ pub))  (pure:m ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io u.road ~)
+  ?:  ?=([~ %file *] vw)  (pure:m vw)
+  ;<  pw=(unit view:nexus)  bind:m  (peek-soft:io u.pub ~)
+  ?.  ?=([~ %file *] pw)  (pure:m ~)
+  (pure:m pw)
+::  +page-rev: the revision of a page's data grub as a cord, '' when it
+::  cannot be read; the fiber reads the page again when it moves
+::
+++  page-rev
+  |=  [base=(unit path) page=@t]
+  =/  m  (fiber:fiber:nexus ,@t)
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (page-view base page)
+  ?.  ?=([~ %file *] vw)  (pure:m '')
+  (pure:m (scot %uv (sham cass.u.vw)))
+::  +page-text: a page's text where lattice keeps it: its data grub is
+::  the text as written for a content page; a computed page (show
+::  %noun) and a page that cannot be read give ~
+::
+++  page-text
+  |=  [base=(unit path) page=@t]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  ?~  base  (pure:m ~)
+  =/  show=(unit road:tarball)  (page-road u.base page %show)
+  ?~  show  (pure:m ~)
+  ;<  sv=(unit view:nexus)  bind:m  (peek-soft:io u.show ~)
+  ?:  &(?=([~ %file *] sv) =(%noun (fall (mole |.(;;(@tas (sang-noun:tarball sang.u.sv)))) %text)))
+    (pure:m ~)
+  ;<  vw=(unit view:nexus)  bind:m  (page-view base page)
+  ?.  ?=([~ %file *] vw)  (pure:m ~)
+  (pure:m (mole |.(;;(@t (sang-noun:tarball sang.u.vw)))))
+::  +linked-pages: the text of each page a sent page links, one hop,
+::  those that can be read
+::
+++  linked-pages
+  |=  [base=(unit path) links=(list @t)]
+  =/  m  (fiber:fiber:nexus ,(list [@t @t]))
+  ^-  form:m
+  ?~  links  (pure:m ~)
+  ;<  t=(unit @t)  bind:m  (page-text base i.links)
+  ;<  rest=(list [@t @t])  bind:m  $(links t.links)
+  (pure:m ?~(t rest [[i.links u.t] rest]))
+::  +follow-hand: a page handed to the read channel as the owner's own
+::  words, source lattice/<page>, the way +serve-read hands a text in.
+::  up is the caller's depth: 1 from a request fiber, 0 from the follow
+::  fiber; a road one level too high leaves the instance and parks it
+::
+++  follow-hand
+  |=  [up=@ud page=@t title=@t text=@t linked=(list [@t @t]) sit=(unit [@t @t]) act=actor now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  body=@t  (follow-text:orr page title text linked sit)
+  =/  id=@t  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (scot %ux (end [3 4] (sham body now))) ~)
+  =/  item=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['text' s+body]
+        ['title' s+?:(=('' title) page title)]
+        ['source' (pairs:enjs:format ~[['kind' s+'lattice'] ['id' s+page]])]
+        ['who' s+'person/me']
+        ['at' s+(en-iso:orr now)]
+        ['by' s+by.act]
+        ['scope' ~]
+    ==
+  ;<  *  bind:m  (make-soft:io (rf up /read-inbox `@ta`id) |+[[[/ %json] item] ~])
+  (over:io (rf up /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+::  +follow-read: the read fiber's word on a page it read: the follow
+::  gains the situation the read made or moved on, and stands following;
+::  a read that made no situation leaves the follow failed, saying so
+::
+++  follow-read
+  |=  [page=@t sit=(unit @t) now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  name=@ta  (follow-name:orr page)
+  ;<  doc=json  bind:m  (follow-doc 0 name)
+  ?:  =('' (gs:orr doc 'path'))  (pure:m ~)
+  =/  had=@t  (gs:orr doc 'situation')
+  =/  got=@t  ?^(sit u.sit had)
+  =.  doc  (set-key:orr doc 'read_at' s+(en-iso:orr now))
+  =.  doc  (set-key:orr doc 'situation' ?:(=('' got) ~ s+got))
+  =.  doc  (set-key:orr doc 'status' s+?:(=('' got) 'failed' 'following'))
+  =.  doc  (set-key:orr doc 'note' s+?:(=('' got) 'the page read made no situation; edit it to say what is going on and send it again' ''))
+  (put-follow 0 name doc)
+::  +follow-pass: each follow looked at: a page edited since it was last
+::  read is handed in again; one gone is looked for in lattice's
+::  moves.json and followed at its new path, or left failed when
+::  deleted; one whose situation is over is left resolved. Without
+::  lattice or its road, each follow says so and nothing else happens
+::
+++  follow-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /follows) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  =/  names=(list @ta)  (turn ~(tap by contents.u.fil.ball.vw) head)
+  ?~  names  (pure:m ~)
+  ;<  base=(unit path)  bind:m  (find-base %lattice)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  now=@da  bind:m  get-time:io
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  todo=(list @ta)  names
+  |-
+  ?~  todo  (pure:m ~)
+  ;<  doc=json  bind:m  (follow-doc 0 i.todo)
+  =/  page=@t  (gs:orr doc 'path')
+  =/  status=@t  (gs:orr doc 'status')
+  ?.  &(!=('' page) |(=('following' status) =('queued' status)))  $(todo t.todo)
+  ::  over: the situation closed or cancelled, by whoever
+  ?:  &(=('following' status) (follow-over:orr doc all multi now))
+    =/  l=(unit loaded:orr)  (loaded-of:orr all (gs:orr doc 'situation'))
+    =/  outcome=@t  ?~(l '' (winner-text:orr (fold:orr rows.u.l multi now) 'outcome'))
+    =.  doc  (set-key:orr doc 'status' s+'resolved')
+    =.  doc  (set-key:orr doc 'note' s+?:(=('' outcome) 'the situation is over' (cat 3 'resolved: ' outcome)))
+    ;<  ~  bind:m  (put-follow 0 i.todo doc)
+    $(todo t.todo)
+  ?~  base
+    ;<  ~  bind:m  (put-follow 0 i.todo (set-key:orr doc 'note' s+'lattice is not installed, so the page is not followed'))
+    $(todo t.todo)
+  ;<  rev=@t  bind:m  (page-rev base page)
+  ?:  =('' rev)
+    ::  gone, or the road refused: moves.json says which, when it answers
+    ;<  mv=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base %'moves.json'] ~)
+    ?.  ?=([~ %file *] mv)
+      =/  said=@t  'the page could not be read: lattice\'s road is refused, or the page is gone'
+      ;<  ~  bind:m  ?:(=(said (gs:orr doc 'note')) (pure:(fiber:fiber:nexus ,~) ~) (put-follow 0 i.todo (set-key:orr doc 'note' s+said)))
+      $(todo t.todo)
+    =/  moves=json  (fall (mole |.(;;(json (sang-noun:tarball sang.u.mv)))) [%o ~])
+    =/  to=(unit @t)  (moved-to:orr page moves)
+    ?~  to
+      =.  doc  (set-key:orr doc 'status' s+'failed')
+      =.  doc  (set-key:orr doc 'note' s+'the page was deleted')
+      ;<  ~  bind:m  (put-follow 0 i.todo doc)
+      $(todo t.todo)
+    ::  moved: the follow goes under its new path's name, the old grub goes
+    =.  doc  (set-key:orr doc 'path' s+u.to)
+    ;<  ~  bind:m  (put-follow 0 (follow-name:orr u.to) doc)
+    ;<  *  bind:m  (cull-soft:io (rf 0 /follows i.todo))
+    $(todo t.todo)
+  ?:  =(rev (gs:orr doc 'rev'))  $(todo t.todo)
+  ::  edited: read again, the situation named so the facts land on it
+  ;<  text=(unit @t)  bind:m  (page-text base page)
+  ?~  text
+    =.  doc  (set-key:orr doc 'rev' s+rev)
+    ;<  ~  bind:m  (put-follow 0 i.todo (set-key:orr doc 'note' s+'the page is not text, so it is not read'))
+    $(todo t.todo)
+  =/  sit=@t  (gs:orr doc 'situation')
+  =/  l=(unit loaded:orr)  ?:(=('' sit) ~ (loaded-of:orr all sit))
+  =/  named=(unit [@t @t])  ?~(l ~ `[sit name.body.u.l])
+  ;<  linked=(list [@t @t])  bind:m  (linked-pages base (strings:orr (ga:orr doc 'links')))
+  ;<  ~  bind:m  (follow-hand 0 page (gs:orr doc 'title') u.text linked named [| 'owner' ~] now)
+  =.  doc  (set-key:orr doc 'rev' s+rev)
+  =.  doc  (set-key:orr doc 'note' s+'')
+  ;<  ~  bind:m  (put-follow 0 i.todo doc)
+  $(todo t.todo)
 ::  ==  the daily brief (version 52)
 ::
 ::  +brief-send: today's brief, unless one went today already (forced

@@ -1004,6 +1004,89 @@ for a in curl('GET', API + '/actions?status=open')[1] or []:
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
 
 
+# ---- a lattice page followed (version 66): a page sent from lattice is read as the owner's own, its
+# situation made, read again when edited, and the follow ends when the situation is over. Needs lattice
+# on the ship (its link name) and orrery's road into it; without lattice the section is skipped
+LAT = (lambda d: d[0] if isinstance(d, list) and d else '')(curl('GET', HOST + '/grubbery/ball/sys/link/lattice/dest.lanes?raw=1')[1])
+if not LAT:
+    print('== a lattice page followed: skipped, lattice is not installed here')
+else:
+    print('== a lattice page followed')
+    srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
+    curl('PUT', API + '/read/settings', {'enabled': True, 'gate': 0})
+    FRUN = secrets.token_hex(3)
+    FSIT = 'situation/gate-lisbon-' + FRUN
+    FPAGE = 'trips/gate-lisbon-' + FRUN
+    FLINK = 'trips/gate-tickets-' + FRUN
+    was_canned = TG_CANNED
+    TG_CANNED = {'choices': [{'message': {'content': json.dumps({
+        'bodies': [{'id': FSIT, 'name': 'Trip to Lisbon ' + FRUN}],
+        'observations': [{'subject': FSIT, 'attr': 'status', 'value': 'open', 'conf': 90},
+                         {'subject': FSIT, 'attr': 'needs', 'value': 'a hotel for the third night', 'conf': 85}],
+        'actions': [{'kind': 'task', 'title': 'Book the Lisbon hotel %s' % FRUN, 'about': [FSIT]}]})}}],
+        'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+
+    def lattice_save(name, text):
+        return gate.curl('POST', HOST + '/apps/lattice/page-save?name=%s&type=md' % name, jar=JAR,
+                         headers=['content-type: text/markdown'], raw=text)
+    page1 = '# Trip to Lisbon %s\n\nFly TAP Friday; the third hotel night is not booked yet.\n\nTickets: [[%s]]\n' % (FRUN, FLINK)
+    code, d = lattice_save(FPAGE, page1)
+    check('lattice takes the page', code == 200, (code, d))
+    lattice_save(FLINK, 'TAP 1234 LIS. Booking ref GATE%s.\n' % FRUN)
+    code, d = curl('GET', API + '/follow?path=' + FPAGE)
+    check('a page never sent has no follow', code == 200 and dictish(d).get('status') == 'none', (code, d))
+    code, d = curl('POST', API + '/follow', {'path': FPAGE, 'title': 'Trip to Lisbon ' + FRUN, 'text': page1, 'links': [FLINK]})
+    check('the send is taken at once and queued', code == 202 and dictish(d).get('ok') is True and dictish(d).get('status') == 'queued', (code, d))
+    code, d = curl('POST', API + '/follow', {'path': 'Bad Path', 'text': 'x'})
+    check('a path that is not a lattice page path is refused', code == 400, (code, d))
+    code, d = curl('POST', API + '/follow', {'path': 'trips/x'})
+    check('text is required', code == 400 and dictish(d).get('error') == 'text: required', (code, d))
+    owner_only('the follow is the owner\'s, even to a writing key', 'GET', '/follow?path=' + FPAGE)
+    fv = gate.wait('the page is read and its situation made', lambda: (lambda v: v if v.get('status') == 'following' else None)(dictish(curl('GET', API + '/follow?path=' + FPAGE)[1])), 90) or {}
+    check('the follow names the situation, its title, what it needs and the one open task',
+          fv.get('situation') == FSIT and fv.get('title') == 'Trip to Lisbon ' + FRUN and fv.get('needs') == 'a hotel for the third night' and fv.get('open') == 1 and fv.get('note') == '', fv)
+    sit = dictish(curl('GET', API + '/body/' + FSIT)[1])
+    check('the facts are the owner\'s own, from the page', dictish(dictish(sit.get('attrs')).get('needs')).get('by') in ('web', 'owner') and dictish(dictish(dictish(sit.get('attrs')).get('needs')).get('source')).get('id') == FPAGE, dictish(sit.get('attrs')).get('needs'))
+    asked = [b for _, _, b in seen if 'lattice page %s' % FPAGE in json.dumps(b.get('messages', []))]
+    check('the model saw the page named as the owner\'s, with the linked page under its path', bool(asked) and 'linked page %s' % FLINK in json.dumps(asked[-1]) and 'GATE%s' % FRUN in json.dumps(asked[-1]), len(asked))
+    # edited: read again, onto the same situation, the line naming it
+    TG_CANNED = {'choices': [{'message': {'content': json.dumps({'bodies': [], 'observations': [{'subject': FSIT, 'attr': 'needs', 'value': 'nothing more: the hotel is booked', 'conf': 85}], 'actions': []})}}],
+                 'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+    lattice_save(FPAGE, '# Trip to Lisbon %s\n\nAll three hotel nights are booked now.\n' % FRUN)
+    time.sleep(3)
+    curl('POST', API + '/follow/wake', {})
+    fv = gate.wait('the edit is read again onto the same situation', lambda: (lambda v: v if v.get('needs') == 'nothing more: the hotel is booked' else None)(dictish(curl('GET', API + '/follow?path=' + FPAGE)[1])), 90) or {}
+    check('the follow stands on the same situation, read anew', fv.get('situation') == FSIT and fv.get('status') == 'following', fv)
+    asked = [b for _, _, b in seen if 'record of Trip to Lisbon %s (%s)' % (FRUN, FSIT) in json.dumps(b.get('messages', []))]
+    check('the re-read told the model which situation the page is the record of', bool(asked), len(asked))
+    # over: the owner closes it; the follow is resolved, live and after the pass
+    # the close is stamped now, not at the run's start: the fold's winner is the latest fact
+    fnow = datetime.now(timezone.utc)
+    observe([], [obs(FSIT, 'status', 'closed', fnow, src('lisbon-close')), obs(FSIT, 'outcome', 'flew, stayed, came home', fnow, src('lisbon-close'))])
+    # the view is live, so it reads resolved as soon as the close has landed, before any pass
+    fv = gate.wait('closed, the follow reads resolved, with the outcome', lambda: (lambda v: v if v.get('status') == 'resolved' else None)(dictish(curl('GET', API + '/follow?path=' + FPAGE)[1])), 30) or {}
+    check('closed, the follow reads resolved before any pass, with the outcome', fv.get('status') == 'resolved' and fv.get('outcome') == 'flew, stayed, came home', fv)
+    curl('POST', API + '/follow/wake', {})
+    fv = gate.wait('the pass records the resolve', lambda: (lambda v: v if v.get('note', '').startswith('resolved: ') else None)(dictish(curl('GET', API + '/follow?path=' + FPAGE)[1])), 60) or {}
+    check('the pass leaves the follow resolved and says how it ended', fv.get('note') == 'resolved: flew, stayed, came home', fv)
+    # sent again after the resolve: a fresh read, queued
+    code, d = curl('POST', API + '/follow', {'path': FPAGE, 'title': 'Trip to Lisbon ' + FRUN, 'text': 'again', 'links': []})
+    check('sent again, it is queued afresh', code == 202 and dictish(d).get('status') == 'queued', (code, d))
+    TG_CANNED = was_canned
+    curl('PUT', API + '/read/settings', {'enabled': False})
+    curl('PUT', API + '/generator', {'api_key': None})
+    srv.shutdown()
+    srv.server_close()
+    for a in curl('GET', API + '/actions?status=open')[1] or []:
+        if isinstance(a, dict) and FSIT in (a.get('about') or []):
+            curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
+    curl('DELETE', API + '/body/' + FSIT)
+    gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + FPAGE, jar=JAR)
+    gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + FLINK, jar=JAR)
+
+
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
 code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
 check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))
