@@ -393,20 +393,27 @@
         ;<  *  bind:m  (keep:io /exec (rf 0 /beacon %rev) ~)
         =/  kept=?  |
         =/  seen=(unit exec-seen)  ~
+        =/  force=?  &
         |-
         ;<  k=?  bind:m  ?:(kept (pure:(fiber:fiber:nexus ,?) &) keep-calendar)
-        ;<  [s=(unit exec-seen) busy=?]  bind:m  (exec-run seen)
+        ;<  [s=(unit exec-seen) busy=?]  bind:m  (exec-run seen force)
         ::  a pass that moved something runs again at once: the settles
         ::  inside it took the beacon's news, so an approval made while
         ::  it ran would otherwise wait for the next wake
-        ?:  busy  $(kept k, seen s)
+        ?:  busy  $(kept k, seen s, force &)
         ::  an hour with no news still wakes it: an occurrence crosses
         ::  now on its own, and the events reader must say so
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /exec-hour (add now ~h1))
-        ;<  *  bind:m  take-exec-in
+        ;<  in=gen-in  bind:m  take-exec-in
         ;<  ~  bind:m  (cancel-timer:io /exec-hour)
-        $(kept k, seen s)
+        ::  news comes in bursts: a sync writing a hundred events, an
+        ::  owner approving five actions. One pass once the burst has
+        ::  been still for three seconds, not a pass per change, each
+        ::  turning the store (version 67). The owner's wake and the
+        ::  hour's timer run at once
+        ;<  ~  bind:m  ?.(?=(%news -.in) (pure:(fiber:fiber:nexus ,~) ~) settle-exec)
+        $(kept k, seen s, force !?=(%news -.in))
           ::  one ephemeral fiber per in-flight request
           [[%requests ~] @]
         ::  a request that crashed ends: nothing would ever poke it
@@ -2434,6 +2441,24 @@
   ;<  now=@da  bind:m  get-time:io
   ;<  ~  bind:m  (set-timer:io /quiet (add now ~s2))
   $
+::  +settle-exec: wait until the executor's news, on the beacon and the
+::  calendar's store, has been still for three seconds. A poke while
+::  waiting (the owner's wake) is taken and dropped: the pass is about
+::  to run
+::
+++  settle-exec
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /exec-quiet (add now ~s3))
+  |-
+  ;<  in=gen-in  bind:m  take-exec-in
+  ?:  ?=(%wake -.in)  (pure:m ~)
+  ?:  ?=(%poke -.in)  $
+  ;<  ~  bind:m  (cancel-timer:io /exec-quiet)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (set-timer:io /exec-quiet (add now ~s3))
+  $
 ::  +run-merges: the approved merge actions, each claimed, merged and
 ::  reported: done when from is gone and into remains, failed otherwise.
 ::  A claim another executor holds is left alone. The executor runs it
@@ -2521,6 +2546,8 @@
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]
+        ['bodies' (numb:enjs:format (lent all))]
+        ['rows' (numb:enjs:format (roll (turn all |=(l=loaded:orr (lent rows.l))) add))]
         ['resolved' (numb:enjs:format resolved.closes)]
         ['presumed' (numb:enjs:format presumed.closes)]
         ['quieted' (numb:enjs:format (lent quiet))]
@@ -5683,13 +5710,18 @@
   ==
 ::  +exec-run: one pass: the calendar read once, the approved actions,
 ::  the mirror, then the record; and whether the pass moved anything,
-::  which is when another pass should follow at once
+::  which is when another pass should follow at once. A wake that
+::  neither the actions nor the store moved for (a fact written) plans
+::  nothing: what it could carry out it carried out last pass, and the
+::  bodies are not read for it (version 67). The owner's wake and the
+::  hour run the pass whole
 ::
 ++  exec-run
-  |=  seen=(unit exec-seen)
+  |=  [seen=(unit exec-seen) force=?]
   =/  m  (fiber:fiber:nexus ,[(unit exec-seen) busy=?])
   ^-  form:m
   ;<  cal=exec-cal  bind:m  (read-calendar seen)
+  ?:  &(!force !moved.cal)  (pure:m [seen.cal |])
   ;<  tally=exec-tally  bind:m  (exec-pass cal)
   ;<  tally=exec-tally  bind:m  (todo-pass cal tally)
   ;<  wrote=?  bind:m  (events-pass cal)
@@ -5702,6 +5734,13 @@
 ::  again an hour after the events reader last saw it even when
 ::  nothing moved, since an occurrence crosses now on its own.
 ::
+::  Turning the store is the dear step: its JSON is a few megabytes on
+::  a ship with a year of events, and the mark takes seconds to make
+::  it, during which the ship answers nothing. So it is made only when
+::  the store itself moved or the hour is up. When only the actions
+::  moved, the todos read last time still hold and the mirror runs on
+::  them (version 67); until then every approval turned the store again
+::
 ++  read-calendar
   |=  seen=(unit exec-seen)
   =/  m  (fiber:fiber:nexus ,exec-cal)
@@ -5713,13 +5752,22 @@
   ?.  ?=([~ %file *] vw)  (pure:m [base ~ seen | ~])
   ;<  now=@da  bind:m  get-time:io
   =/  acts-hash=@uvH  (sham acts)
-  =/  moved=?  !&(?=(^ seen) =(acts.u.seen acts-hash) =(store.u.seen cass.u.vw))
-  ?:  &(!moved ?=(^ seen) (lth now (add events.u.seen ~h1)))
+  ?~  seen
+    ;<  store=(unit json)  bind:m  (calendar-json u.base (sang-noun:tarball sang.u.vw))
+    ?~  store  (pure:m [base ~ ~ | ~])
+    =/  todos=(list todo:orr)  (todos-of:orr u.store)
+    (pure:m [base `todos `[acts-hash cass.u.vw todos now] & store])
+  =/  store-moved=?  !=(store.u.seen cass.u.vw)
+  =/  acts-moved=?  !=(acts.u.seen acts-hash)
+  =/  hour-up=?  (gte now (add events.u.seen ~h1))
+  ?:  &(!store-moved !acts-moved !hour-up)
     (pure:m [base `todos.u.seen seen | ~])
+  ?:  &(!store-moved !hour-up)
+    (pure:m [base `todos.u.seen `u.seen(acts acts-hash) & ~])
   ;<  store=(unit json)  bind:m  (calendar-json u.base (sang-noun:tarball sang.u.vw))
   ?~  store  (pure:m [base ~ seen | ~])
   =/  todos=(list todo:orr)  (todos-of:orr u.store)
-  (pure:m [base `todos `[acts-hash cass.u.vw todos now] moved store])
+  (pure:m [base `todos `[acts-hash cass.u.vw todos now] & store])
 ::  +keep-calendar: subscribe to the calendar's store on /cal, & when
 ::  the keep took. Its own taker, since +keep waits for ever on a veto
 ::  and +keep-soft leaves the veto in the queue for the next hard taker
