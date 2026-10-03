@@ -208,6 +208,18 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 66's owner steps
+
+One new road, so the consent prompt comes up once after the pull: **peek on `/apps/shell.shell/desks/lattice.desk/`**, "read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over". Grant it on the permits page and reload. Refused, a page sent from lattice is read once, as sent, and its follow says the road is refused. On a ship without lattice the follow fiber notes that lattice is not installed and nothing else happens.
+
+What an owner sees:
+
+- Lattice's "Send to orrery" button (lattice version 42 or later; 42 raises a consent prompt of its own, for sharing pages with ships, which is lattice's and not this one) hands a page to orrery as a situation to look after: read as the owner's own words, followed where lattice keeps it, read again on every edit, over when the situation is. `GET /api/follow?path=` is the badge's source.
+- The readers' prompt says that money has a direction: a bill that asks to be paid is a task; a receipt, a payment confirmation, a charge already made, a reimbursement or a refund is money that has moved, a fact and never a task to pay. The orrery-utils mail reader lost its rule that made a task of any mail saying "invoice" with an amount; money mail is the model's there now.
+- The read channel's `enabled` switch does not hold a sent page back: the owner's send is explicit.
+
+What the follow does not do yet: a keep per page (it polls every five minutes), read uploads (a linked PDF or image is listed, not read), or write anything back to the page.
+
 ### Version 65's owner steps
 
 No new road, no schema change, and nothing for an owner to do. What an owner sees:
