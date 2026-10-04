@@ -105,14 +105,26 @@
   // something to read; the shape of the connections is.
   var KIND_COLORS = { person: '#f9a804', place: '#3b82f6', thing: '#10b981', org: '#8b5cf6', situation: '#ef4444', activity: '#f97316', note: '#6b7280' };
   var EVENT_KINDS = { situation: true, activity: true };
-  // withEvents false is the relationship diagram: no situation or
-  // activity is a node, and two bodies that share events are one line
-  // saying how many, beside what else relates them ("son · 25 events")
-  function graphOf(state, showPast, withEvents) {
+  // hidden: the kinds the owner turned off (version 68), each a
+  // checkbox above the diagram. A hidden event kind (situation,
+  // activity) folds: two bodies that share one are a line saying how
+  // many, beside what else relates them ("son · 25 events"). Any other
+  // hidden kind is left off with its lines. The default hides only
+  // activities: an open situation is what the ship works on, and from
+  // 58 to 67 the default view hid every one. false is that default and
+  // true or nothing hides nothing, as the tests and the pane ask
+  var DEFAULT_HIDDEN = { activity: true };
+  function graphOf(state, showPast, hidden) {
+    if (hidden === false) hidden = DEFAULT_HIDDEN;
+    if (!hidden || hidden === true) hidden = {};
+    var FOLDED_KINDS = {};
+    Object.keys(EVENT_KINDS).forEach(function (k) { if (hidden[k]) FOLDED_KINDS[k] = true; });
+    var folding = Object.keys(FOLDED_KINDS).length > 0;
     var nodes = [], byId = Object.create(null), edges = [], seen = Object.create(null);
     (state.bodies || []).forEach(function (b) {
       var st = b.attrs && b.attrs.status, closed = !!(st && !Array.isArray(st) && (st.value === 'closed' || st.value === 'cancelled'));
       if (b.kind === 'situation' && closed && !showPast) return;
+      if (hidden[b.kind] && !EVENT_KINDS[b.kind]) return;
       var n = { id: b.id, kind: b.kind, name: b.name || b.id, body: b, closed: closed, degree: 0 };
       nodes.push(n); byId[b.id] = n;
     });
@@ -142,7 +154,7 @@
       r = Array.isArray(r) ? r[0] : r;
       if (r && typeof r.value === 'string' && r.value.trim()) edge(me, n.id, r.value.trim(), r.at || '');
     });
-    if (withEvents === false) {
+    if (folding) {
       var pairs = Object.create(null), order = [];
       var line = function (from, to) {
         var key = from < to ? from + '|' + to : to + '|' + from;
@@ -150,28 +162,29 @@
         return pairs[key];
       };
       edges.forEach(function (e) {
-        if (EVENT_KINDS[byId[e.from].kind] || EVENT_KINDS[byId[e.to].kind]) return;
+        if (FOLDED_KINDS[byId[e.from].kind] || FOLDED_KINDS[byId[e.to].kind]) return;
         var l = line(e.from, e.to);
         if (l.words.indexOf(e.attr) < 0) l.words.push(e.attr);
       });
       nodes.forEach(function (ev) {
-        if (!EVENT_KINDS[ev.kind]) return;
+        if (!FOLDED_KINDS[ev.kind]) return;
         var with_ = [];
         edges.forEach(function (e) {
           var other = e.from === ev.id ? e.to : e.to === ev.id ? e.from : null;
-          if (other && !EVENT_KINDS[byId[other].kind] && with_.indexOf(other) < 0) with_.push(other);
+          if (other && !FOLDED_KINDS[byId[other].kind] && with_.indexOf(other) < 0) with_.push(other);
         });
         for (var i = 0; i < with_.length; i++) for (var j = i + 1; j < with_.length; j++) line(with_[i], with_[j]).shared += 1;
       });
       nodes.forEach(function (n) { n.degree = 0; });
       edges = order.map(function (key) {
         var l = pairs[key];
-        var words = l.words.slice();
+        // involved is what participants says from the other end: one word
+        var words = l.words.length > 1 ? l.words.filter(function (w) { return w !== 'involved'; }) : l.words.slice();
         if (l.shared) words.push(l.shared + (l.shared === 1 ? ' event' : ' events'));
         byId[l.from].degree += 1; byId[l.to].degree += 1;
         return { from: l.from, to: l.to, attr: words.join(' \u00b7 '), at: l.at };
       });
-      nodes = nodes.filter(function (n) { return !EVENT_KINDS[n.kind]; });
+      nodes = nodes.filter(function (n) { return !FOLDED_KINDS[n.kind]; });
     }
     // a body with no line is off the diagram (scattered round the rest,
     // they read as an orbit); the finder and byId still reach it
@@ -184,7 +197,9 @@
     var n = (state.bodies || []).length;
     var out = '<h1>Bodies <span class="muted">' + n + '</span></h1>' +
       '<div class="graph-bar"><input id="graph-find" placeholder="find a body by name" aria-label="find a body">' +
-      '<label class="box"><input type="checkbox" id="graph-events"> events</label>' +
+      Object.keys(KIND_COLORS).map(function (k) {
+        return '<label class="box"><input type="checkbox" data-kind="' + k + '"' + (DEFAULT_HIDDEN[k] ? '' : ' checked') + '> <i class="dot" style="background:' + KIND_COLORS[k] + '"></i>' + esc(k) + '</label>';
+      }).join('') +
       '<label class="box"><input type="checkbox" id="graph-past"> past situations</label>' +
       '<span class="muted">tap a body to centre on it; drag to move, pinch or wheel to zoom</span>' +
       '<span class="muted" id="graph-alone"></span></div>' +
@@ -778,7 +793,7 @@
   // ponytail: the repulsion is every pair, fine to a thousand bodies;
   // a grid when it shows.
   var coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-  var graphPos = Object.create(null), graphView = { zoom: 1, px: 0, py: 0, picked: null, focus: null, past: false, events: false, touching: 0 }, graphTimer = null, graphState = null;
+  var graphPos = Object.create(null), graphView = { zoom: 1, px: 0, py: 0, picked: null, focus: null, past: false, hidden: Object.assign({}, DEFAULT_HIDDEN), touching: 0 }, graphTimer = null, graphState = null;
   function palette() {
     var cs = getComputedStyle(document.documentElement);
     function v(name, dflt) { return (cs.getPropertyValue(name) || '').trim() || dflt; }
@@ -788,11 +803,11 @@
     graphState = state;
     var canvas = document.getElementById('graph');
     if (!canvas) return;
-    var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past'), eventsBox = document.getElementById('graph-events'), aloneEl = document.getElementById('graph-alone');
+    var pane = document.getElementById('graph-pane'), find = document.getElementById('graph-find'), pastBox = document.getElementById('graph-past'), kindBoxes = document.querySelectorAll('[data-kind]'), aloneEl = document.getElementById('graph-alone');
     pastBox.checked = graphView.past;
-    eventsBox.checked = graphView.events;
+    Array.prototype.forEach.call(kindBoxes, function (b) { b.checked = !graphView.hidden[b.dataset.kind]; });
     // the pane lists every connection, events too, whatever the diagram shows
-    var g = graphOf(state, graphView.past, graphView.events), full = graphView.events ? g : graphOf(state, graphView.past), ctx = canvas.getContext('2d');
+    var g = graphOf(state, graphView.past, graphView.hidden), full = graphOf(state, graphView.past), ctx = canvas.getContext('2d');
     var alone = g.all.length - g.nodes.length;
     if (aloneEl) aloneEl.textContent = alone ? alone + ' with no connection: find them by name' : '';
     var at = Object.create(null), added = 0;
@@ -1039,7 +1054,12 @@
       if (n) pick(n);
     };
     pastBox.onchange = function () { graphView.past = pastBox.checked; unmountGraph(); mountGraph(graphState); };
-    eventsBox.onchange = function () { graphView.events = eventsBox.checked; unmountGraph(); mountGraph(graphState); };
+    Array.prototype.forEach.call(kindBoxes, function (b) {
+      b.onchange = function () {
+        if (b.checked) delete graphView.hidden[b.dataset.kind]; else graphView.hidden[b.dataset.kind] = true;
+        unmountGraph(); mountGraph(graphState);
+      };
+    });
     unmountGraph();
     if (graphView.picked) { var again = graphView.picked.attr ? null : full.byId[graphView.picked.id]; pick(again || null); }
     else pick(null);

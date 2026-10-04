@@ -46,7 +46,7 @@ let n = 0;
 function ok(label, cond, detail) { n += 1; assert.ok(cond, label + (detail === undefined ? '' : '   ' + JSON.stringify(detail))); console.log('  ok   ' + label); }
 
 const bodies = render.bodies(state);
-ok('the bodies view is a graph with a pane and a finder, the pane naming the colours', bodies.includes('<canvas id="graph"') && bodies.includes('id="graph-pane"') && bodies.includes('id="graph-find"') && bodies.includes('id="graph-past"') && bodies.includes('id="graph-events"')
+ok('the bodies view is a graph with a pane and a finder, the pane naming the colours', bodies.includes('<canvas id="graph"') && bodies.includes('id="graph-pane"') && bodies.includes('id="graph-find"') && bodies.includes('id="graph-past"') && bodies.includes('data-kind="situation"')
   && bodies.includes('class="legend"'));
 const g = render.graphOf(state, false), gp = render.graphOf(state, true);
 const tiny = render.graphOf({ bodies: [{ id: 'thing/x', kind: 'thing', name: 'x', attrs: { location: { value: { ref: 'place/y' } }, owners: [{ value: { ref: 'person/me' } }, { value: { ref: 'place/y' } }] }, involved: [] }, { id: 'place/y', kind: 'place', name: 'y', attrs: { things: [{ value: { ref: 'thing/x' } }] }, involved: [] }, { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] }] }, false);
@@ -314,10 +314,34 @@ const people = render.graphOf({ me: 'person/me', bodies: [
   { id: 'person/ann', kind: 'person', name: 'Ann', attrs: {}, involved: [] },
   { id: 'activity/sail', kind: 'activity', name: 'Sail', attrs: { participants: [{ value: { ref: 'person/me' } }, { value: { ref: 'person/lin' } }, { value: { ref: 'person/ann' } }] }, involved: [] },
   { id: 'situation/fair', kind: 'situation', name: 'Fair', attrs: { participants: [{ value: { ref: 'person/me' } }, { value: { ref: 'person/lin' } }] }, involved: [] }] }, false, false);
+const inv = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: ['situation/fair'] },
+  { id: 'situation/fair', kind: 'situation', name: 'Fair', attrs: { participants: [{ value: { ref: 'person/me' } }] }, involved: [] }] }, false, false);
 const said = function (a, b) { var e = people.edges.filter(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); })[0]; return e && e.attr; };
-ok('the relationship diagram has no event nodes: two bodies that share events are one line saying how many, beside what else relates them',
-  !people.nodes.some(function (n) { return n.kind === 'activity' || n.kind === 'situation'; }) && said('person/me', 'person/lin') === 'son \u00b7 2 events'
-  && said('person/me', 'person/ann') === '1 event' && said('person/lin', 'person/ann') === '1 event' && people.edges.length === 3);
+ok('the relationship diagram folds activities: two bodies that share them are one line saying how many, beside what else relates them',
+  !people.nodes.some(function (n) { return n.kind === 'activity'; }) && said('person/me', 'person/lin') === 'son \u00b7 1 event'
+  && said('person/me', 'person/ann') === '1 event' && said('person/lin', 'person/ann') === '1 event');
+ok('an open situation is a node in the relationship diagram, with a line to each participant',
+  !!people.byId['situation/fair'] && people.nodes.some(function (n) { return n.id === 'situation/fair'; })
+  && said('person/me', 'situation/fair') === 'participants' && said('person/lin', 'situation/fair') === 'participants' && people.edges.length === 5);
+ok('a participant\'s line to a situation says participants once, not involved beside it', inv.edges.length === 1 && inv.edges[0].attr === 'participants');
+const bar = render.bodies({ bodies: [], actions: [] });
+ok('each kind has a box in its colour, every one on but activities',
+  ['person', 'place', 'thing', 'org', 'situation', 'note'].every(function (k) { return bar.includes('data-kind="' + k + '" checked>'); })
+  && bar.includes('data-kind="activity">') && !bar.includes('data-kind="activity" checked') && bar.includes('<i class="dot" style="background:#ef4444"></i>situation'));
+const hidePeople = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] },
+  { id: 'thing/car', kind: 'thing', name: 'car', attrs: { owners: [{ value: { ref: 'person/me' } }], location: { value: { ref: 'place/shop' } } }, involved: [] },
+  { id: 'place/shop', kind: 'place', name: 'shop', attrs: {}, involved: [] }] }, false, { person: true });
+ok('a hidden kind that is not an event is off the diagram with its lines',
+  !hidePeople.byId['person/me'] && hidePeople.edges.length === 1 && hidePeople.edges[0].attr === 'location');
+const foldSits = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] },
+  { id: 'person/lin', kind: 'person', name: 'Lin', attrs: {}, involved: [] },
+  { id: 'situation/fair', kind: 'situation', name: 'Fair', attrs: { participants: [{ value: { ref: 'person/me' } }, { value: { ref: 'person/lin' } }] }, involved: [] }] }, false, { situation: true });
+ok('hidden situations fold into a count on the line between those they shared', !foldSits.nodes.some(function (n) { return n.kind === 'situation'; })
+  && foldSits.edges.length === 1 && foldSits.edges[0].attr === '1 event');
+ok('nothing hidden shows every kind as a node', render.graphOf({ bodies: [{ id: 'activity/a', kind: 'activity', name: 'a', attrs: { participants: [{ value: { ref: 'person/me' } }] }, involved: [] }, { id: 'person/me', kind: 'person', name: 'me', attrs: {}, involved: [] }] }, false, {}).nodes.length === 2);
 ok('a refresh holds while a form is dirty or focused, and only the owner\'s own moves force one',
   src.includes("if (editing() && !force) { say('not refreshed: a form holds unsaved changes'); return; }")
   && src.includes('if (dirty || graphView.touching) return true;')
