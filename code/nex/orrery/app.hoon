@@ -259,9 +259,11 @@
         ?.  |(force enabled:(de-config:orr cfg-json))  $
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /settle (add now ~s20))
-        ::  whatever ends the settle: the timer, more news, or a run-now,
-        ::  which keeps its force
-        ;<  second=gen-in  bind:m  (take-gen-in /gen)
+        ::  whatever ends the settle: twenty seconds with no news, two
+        ::  minutes in all, or a run-now, which keeps its force. Until
+        ::  version 67 the next news ended it, so a busy ship ran a pass,
+        ::  every body loaded for the digest, for every two writes
+        ;<  second=gen-in  bind:m  (settle-gen now)
         ;<  ~  bind:m  (cancel-timer:io /settle)
         =/  forced=?  |(force ?:(?=(%poke -.second) (force-of sage.second) |))
         =/  urg=(unit (list @t))
@@ -284,7 +286,7 @@
         ;<  ~  bind:m  reconcile-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /tick (add now ~h12))
-        ;<  *  bind:m  take-poke-from:io
+        ;<  ~  bind:m  (idle-until-poke /rec)
         ;<  ~  bind:m  (cancel-timer:io /tick)
         $
           ::  the telegram reader (version 29): wakes on the inbox, drains
@@ -2441,6 +2443,39 @@
   ;<  now=@da  bind:m  get-time:io
   ;<  ~  bind:m  (set-timer:io /quiet (add now ~s2))
   $
+::  +settle-gen: the generator's settle: news resets the twenty-second
+::  timer, up to two minutes from the first news; the timer's wake, a
+::  poke or another timer ends it and is what it answers
+::
+++  settle-gen
+  |=  start=@da
+  =/  m  (fiber:fiber:nexus ,gen-in)
+  ^-  form:m
+  |-
+  ;<  in=gen-in  bind:m  (take-gen-in /gen)
+  ?.  ?=(%news -.in)  (pure:m in)
+  ;<  now=@da  bind:m  get-time:io
+  ?:  (gte now (add start ~m2))  (pure:m [%wake /settle])
+  ;<  ~  bind:m  (cancel-timer:io /settle)
+  ;<  ~  bind:m  (set-timer:io /settle (add now ~s20))
+  $
+::  +idle-until-poke: wait for a poke or a timer, consuming the news on
+::  the wire meanwhile. A fiber that keeps the beacon for its passes
+::  and waits between them with +take-poke-from leaves every change it
+::  hears parked in its skip queue, and the kernel offers the whole
+::  queue to it again at every step it takes after. The reconcile
+::  fiber waited twelve hours that way: each pass replayed the day's
+::  writes at each of its steps, in one event, and the owner's ship
+::  answered nothing for ten minutes (2026-10-03, version 67)
+::
+++  idle-until-poke
+  |=  =wire
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  |-
+  ;<  in=gen-in  bind:m  (take-gen-in wire)
+  ?:  ?=(%news -.in)  $
+  (pure:m ~)
 ::  +settle-exec: wait until the executor's news, on the beacon and the
 ::  calendar's store, has been still for three seconds. A poke while
 ::  waiting (the owner's wake) is taken and dropped: the pass is about

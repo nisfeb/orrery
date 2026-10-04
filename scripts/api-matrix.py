@@ -1078,6 +1078,9 @@ else:
     # sent again after the resolve: a fresh read, queued
     code, d = curl('POST', API + '/follow', {'path': FPAGE, 'title': 'Trip to Lisbon ' + FRUN, 'text': 'again', 'links': []})
     check('sent again, it is queued afresh', code == 202 and dictish(d).get('status') == 'queued', (code, d))
+    # the fresh read must land while the stub still answers for this page: restored first, the stub
+    # answered the car section's canned facts and left a task of them for the next run to trip on
+    gate.wait('the fresh read lands', lambda: (lambda v: v if v.get('status') != 'queued' else None)(dictish(curl('GET', API + '/follow?path=' + FPAGE)[1])), 90)
     TG_CANNED = was_canned
     curl('PUT', API + '/read/settings', {'enabled': False})
     curl('PUT', API + '/generator', {'api_key': None})
