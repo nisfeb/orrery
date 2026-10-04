@@ -208,6 +208,20 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 69's owner steps
+
+No new road, so no consent prompt: the outbound-HTTPS road's description now says it also asks Mapbox for drive times, and the kernel compares roads, not their words. The ship adds `attending` and `leave-by` to situations and activities in its stored schema by itself (`+schema-adds` row 69).
+
+To turn time to leave on:
+
+1. Make a Mapbox account and an access token. Permanent geocoding, which this uses because it keeps each address's point, needs a card on file: $5 per 1,000 addresses, none free; routing with live traffic is free to 100,000 calls a month.
+2. On the settings page's Time to leave card, paste the token, tick on, save.
+3. Talon on the phone sends the position (Talon's own release; until then the ship routes from an appointment you are at, or home when `place/home` has an address or a `geo`).
+
+What an owner sees: a push "Leave in 10 min for …" ten minutes before they need to leave, once per occurrence, for appointments they go to; `leave-by` on the appointment; and in the morning brief a "When to leave" section listing the day's, with "going? Reply \"not me: …\"" under those the ship is not sure of.
+
+What it does not do yet: transit or walking, writing anything back to the calendar, or reading attendees from calendar invitations.
+
 ### Version 68's owner steps
 
 Nothing for an owner to do. The Bodies diagram shows the open situations again (versions 58 to 67 folded every one into the counts on its lines), and has a box for each kind of body, in its colour, to show or hide it. Activities start hidden and fold into counts as before.
