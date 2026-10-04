@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 68's owner steps
+
+Nothing for an owner to do. The Bodies diagram shows the open situations again (versions 58 to 67 folded every one into the counts on its lines), and has a box for each kind of body, in its colour, to show or hide it. Activities start hidden and fold into counts as before.
+
 ### Version 67's owner steps
 
 No new road, no schema change, and nothing for an owner to do. What changes:
