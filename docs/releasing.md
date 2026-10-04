@@ -208,6 +208,15 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 67's owner steps
+
+No new road, no schema change, and nothing for an owner to do. What changes:
+
+- The reconcile fiber no longer parks every change orrery makes while it waits between its passes; the queue grew without bound.
+- The generator waits for twenty quiet seconds, two minutes at most, before a pass, so a burst of writes is one pass rather than one for every two writes. A run-now still runs at once.
+
+The owner's ship going silent for ten minutes on 3 October was not orrery: a commit to `%grubbery` reloads the kernel's agent and restarts every fiber on the ship.
+
 ### Version 66's owner steps
 
 One new road, so the consent prompt comes up once after the pull: **peek on `/apps/shell.shell/desks/lattice.desk/`**, "read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over". Grant it on the permits page and reload. Refused, a page sent from lattice is read once, as sent, and its follow says the road is refused. On a ship without lattice the follow fiber notes that lattice is not installed and nothing else happens.
