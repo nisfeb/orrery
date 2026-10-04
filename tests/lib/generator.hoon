@@ -2095,7 +2095,7 @@
     ==
   =/  all=(list loaded:orr)  ~[(mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ cal-now)]
   =/  w  (brief-waiting:orr acts all 'America/New_York')
-  =/  text=@t  (brief-render:orr '2026-09-23' ~['09:30  Standup'] lines.w 'Nothing to add.')
+  =/  text=@t  (brief-render:orr '2026-09-23' ~['09:30  Standup'] ~ lines.w 'Nothing to add.')
   ;:  weld
     (expect-eq !>(`(list [@t @ta])`~[['A1' 'a1'] ['A2' 'a3']]) !>(tags.w))
     (expect-eq !>('[A1] Tell Mira the tow is booked') !>((snag 0 lines.w)))

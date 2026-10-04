@@ -28,6 +28,7 @@
 ::    /brief-last.json  /brief.sig       the daily brief (version 52): the last one sent, its tags and text
 ::    /read.json  /read-last.json  /read-recent.json  /read-inbox/<id>  /read.sig   the read channel (version 59): text a client hands the ship
 ::    /follows/<name>  /follow.sig      the lattice pages followed (version 66): each page sent, its situation, where it stands
+::    /travel.json  /position.json  /geocache.json  /leave-last.json  /leave.sig   time to leave (version 69)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -157,6 +158,14 @@
           ::  sent, and the fiber that looks at them
           [%fall %| /follows empty-dir:loader]
           [%fall %& [/ %'follow.sig'] [[/ %sig] ~]]
+          ::  time to leave (version 69): the settings, the owner's
+          ::  position (one grub, overwritten, never a history), the
+          ::  addresses Mapbox placed, the record, and the fiber
+          [%fall %& [/ %'travel.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'position.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'geocache.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'leave-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
           [%fall %& [/ %'rise.json'] [[/ %json] [%o ~]]]
@@ -357,6 +366,19 @@
         ;<  ~  bind:m  (cancel-timer:io /follow-poll)
         ;<  ~  bind:m  (set-timer:io /follow-poll (add now ~m5))
         ;<  *  bind:m  (take-gen-in /fl)
+        $
+          ::  time to leave (version 69): an hour's look at what is
+          ::  ahead, and a timer at each point a plan needs looking at
+          ::  again before its alert; a new position pokes it
+          [~ %'leave.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery leave: failed")
+        |-
+        ;<  next=(unit @da)  bind:m  leave-pass
+        ;<  now=@da  bind:m  get-time:io
+        =/  wake=@da  ?~(next (add now ~h1) (max (add now ~m1) (min u.next (add now ~h1))))
+        ;<  ~  bind:m  (set-timer:io /leave wake)
+        ;<  ~  bind:m  (idle-until-poke /leave)
+        ;<  ~  bind:m  (cancel-timer:io /leave)
         $
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
@@ -663,7 +685,7 @@
           (line '/sys/gall/' 'tell another ship you shared a body with it, revoke that, send it your observations on a body it shared with you in edit mode, and send an approved message as a Tlon DM. Refuse this and sharing with ships and DMs are unavailable; everything else works')
           (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
-          (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
+          (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions, and ask Mapbox how long the drive to your next appointment takes from where you are. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
           (line '/sys/scry/' 'read your Tlon messages, the DMs and the group channels you pick, so what people tell you on Urbit becomes facts the ship knows. Refuse this and the ship reads no chat')
           (line '/apps/shell.shell/desks/calendar.desk/' 'put an approved calendar action on your calendar, an approved task in its todo list, and keep the two in step. Refuse this and those actions wait for another executor')
           (line '/apps/shell.shell/desks/auspex.desk/' 'send an approved message by mail. Refuse this and mail actions wait for another executor')
@@ -721,6 +743,7 @@
   ?:  =('set-chat' op)  (do-set-chat jon)
   ?:  =('set-mail' op)  (do-set-mail jon)
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
+  ?:  =('set-travel' op)  (do-set-travel jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -1228,6 +1251,11 @@
     %post-follow            (serve-follow eyre-id jon act)
     %get-follow             (serve-follow-get eyre-id args)
     %post-follow-wake       (serve-prod eyre-id %'follow.sig' 'follow')
+    %get-travel             (serve-travel eyre-id)
+    %put-travel             (serve-set-doc eyre-id 'set-travel' jon)
+    %get-travel-last        (serve-doc eyre-id %'leave-last.json')
+    %post-travel-wake       (serve-prod eyre-id %'leave.sig' 'leave')
+    %post-position          (serve-position eyre-id jon)
     %get-read-settings      (serve-read-settings eyre-id)
     %put-read-settings      (serve-set-doc eyre-id 'set-read' jon)
     %get-read-last          (serve-doc eyre-id %'read-last.json')
@@ -2755,6 +2783,7 @@
       %'set-chat'       [%o (merge-settings:orr base p.jon ~)]
       %'set-mail'       [%o (merge-settings:orr base p.jon ~)]
       %'set-read'       [%o (merge-settings:orr base p.jon ~)]
+      %'set-travel'     [%o (merge-settings:orr base p.jon (sy ~['token']))]
     ==
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   %^  write-then  eyre-id  pk
@@ -3776,6 +3805,21 @@
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
   (pure:m |)
+::  +do-set-travel: merge the time-to-leave settings over the stored
+::  ones; a blank or missing token keeps the stored one, a null clears it
+::
+++  do-set-travel
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-travel' 'doc: expected an object')
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'travel.json'))
+  =/  merged=json  [%o (merge-settings:orr base p.doc (sy ~['token']))]
+  ;<  ~  bind:m  (over:io (rf 0 / %'travel.json') [[/ %json] merged])
+  ;<  ~  bind:m  (note-by 'set-travel' & '' 'http')
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'leave.sig') [[/ %sig] ~])
+  (pure:m |)
 ::  +do-set-telegram: merge the owner's reader settings over the stored
 ::  ones. A blank or missing token or webhook secret keeps the stored
 ::  one, so the page can save every other field without holding either
@@ -4153,6 +4197,9 @@
   ;<  read=json  bind:m  (doc %'read.json')
   ;<  read-last=json  bind:m  (doc %'read-last.json')
   ;<  corrections=json  bind:m  (doc %'corrections.json')
+  ;<  travel=json  bind:m  (doc %'travel.json')
+  ;<  leave-last=json  bind:m  (doc %'leave-last.json')
+  ;<  pos=json  bind:m  (doc %'position.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -4184,6 +4231,11 @@
       ['read' (en-mail-config:orr (de-mail-config:orr read))]
       ['read_last' read-last]
       ['corrections' a+(turn (de-corrections:orr corrections) en-correction:orr)]
+      :-  'travel'
+      %^  set-key:orr  (en-travel-config-masked:orr (de-travel-config:orr travel))
+        'position_at'
+      ?:(=('' (gs:orr pos 'at')) ~ s+(gs:orr pos 'at'))
+      ['travel_last' leave-last]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -5063,6 +5115,235 @@
   =.  doc  (set-key:orr doc 'note' s+'')
   ;<  ~  bind:m  (put-follow 0 i.todo doc)
   $(todo t.todo)
+::  ==  time to leave (version 69)
+::
+::  +serve-travel: the settings without the token, and when the ship
+::  last heard where the owner is (when, never where)
+::
+++  serve-travel
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'travel.json'))
+  ;<  pos=json  bind:m  (read-json (rf 1 / %'position.json'))
+  =/  view=json  (en-travel-config-masked:orr (de-travel-config:orr doc))
+  (send-json eyre-id 200 (set-key:orr view 'position_at' ?:(=('' (gs:orr pos 'at')) ~ s+(gs:orr pos 'at'))))
+::  +serve-position: POST /api/position {lat, lon, acc?, at?}: where the
+::  owner is now, from their phone. One grub, overwritten: never an
+::  observation, so never a history and never in a body shared with
+::  another ship. The leave fiber is poked to look again
+::
+++  serve-position
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  num  |=(k=@t =/(v (gj:orr jon k) ?:(?=([%n *] v) p.v ?:(?=([%s *] v) p.v ''))))
+  =/  lat=@t  (num 'lat')
+  =/  lon=@t  (num 'lon')
+  ?.  &((coordinate:orr lat 90) (coordinate:orr lon 180))
+    (send-err eyre-id 400 'lat, lon: decimal degrees are required')
+  ;<  now=@da  bind:m  get-time:io
+  =/  at=@da  (fall (de-iso:orr (gs:orr jon 'at')) now)
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['lat' s+lat]
+        ['lon' s+lon]
+        ['acc' s+(num 'acc')]
+        ['at' s+(en-iso:orr (min at now))]
+    ==
+  ;<  ~  bind:m  (over:io (rf 1 / %'position.json') [[/ %json] doc])
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'leave.sig') [[/ %sig] ~])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +leave-record: what the leave fiber did, in leave-last.json: when,
+::  the notes, the plan for the next appointment, and the keys of the
+::  occurrences already alerted (the last fifty). No coordinate, no
+::  token: the record is read by the page and kept with the rest
+::
+++  leave-record
+  |=  [last=json now=@da notes=(list @t) plan=json alerted=(list @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  doc=json
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]
+        ['notes' a+(turn notes |=(n=@t `json`s+n))]
+        ['next' plan]
+        ['alerted' a+(turn (scag 50 alerted) |=(k=@t `json`s+k))]
+    ==
+  ?:  =(doc last)  (pure:m ~)
+  (over:io (rf 0 / %'leave-last.json') [[/ %json] doc])
+::  +geocode: an address's point, from the cache or from Mapbox, which
+::  is asked for a permanent result so it may be kept
+::
+++  geocode
+  |=  [cfg=travel-config:orr addr=@t]
+  =/  m  (fiber:fiber:nexus ,[pt=(unit [lat=@t lon=@t]) why=@t])
+  ^-  form:m
+  =/  key=@t  (addr-key:orr addr)
+  ?:  =('' key)  (pure:m [~ 'it has no address'])
+  ;<  cache=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  =/  hit=(unit [@t @t])  (geo-of:orr (gj:orr cache key))
+  ?^  hit  (pure:m [hit ''])
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (post-json (geocode-url:orr api.cfg token.cfg) '' (geocode-body:orr addr) ~s30 %geocode)
+  ?.  =(200 status.got)
+    (pure:m [~ ?:(=(0 status.got) (cat 3 'Mapbox was not reached: ' (end [3 120] body.got)) (cat 3 'Mapbox answered ' (scot %ud status.got)))])
+  =/  pt=(unit [lat=@t lon=@t])  (geocode-point:orr (fall (de:json:html body.got) ~))
+  ?~  pt  (pure:m [~ 'Mapbox found no such address'])
+  ;<  ~  bind:m  (over:io (rf 0 / %'geocache.json') [[/ %json] (set-key:orr cache key s+(rap 3 lat.u.pt ',' lon.u.pt ~))])
+  (pure:m [pt ''])
+::  +point-of: where an appointment is: the place it names, by its geo,
+::  else its address; else the address as written
+::
+++  point-of
+  |=  [cfg=travel-config:orr all=(list loaded:orr) multi=(set @t) now=@da a=appointment:orr]
+  =/  m  (fiber:fiber:nexus ,[pt=(unit [lat=@t lon=@t]) why=@t])
+  ^-  form:m
+  ?~  place.a  (geocode cfg where.a)
+  =/  l=(unit loaded:orr)  (loaded-of:orr all u.place.a)
+  ?~  l  (geocode cfg where.a)
+  =/  w=(map @t (list row:orr))  (fold:orr rows.u.l multi now)
+  =/  g=(list row:orr)  (fall (~(get by w) 'geo') ~)
+  =/  pt=(unit [@t @t])  ?~(g ~ (geo-of:orr value.obs.i.g))
+  ?^  pt  (pure:m [pt ''])
+  =/  addr=@t  (winner-text:orr w 'address')
+  (geocode cfg ?:(=('' addr) where.a addr))
+::  +origin-of: where the owner will leave from: their phone's position
+::  when it is under twelve hours old (the phone reports a move, not a
+::  stay, so an old position is where they still are); else an
+::  appointment they are at
+::  now that ends before this one starts; else home, when it has a
+::  point or an address; else nowhere, said so, never guessed
+::
+++  origin-of
+  |=  [cfg=travel-config:orr all=(list loaded:orr) multi=(set @t) now=@da a=appointment:orr]
+  =/  m  (fiber:fiber:nexus ,(unit [kind=@t lat=@t lon=@t]))
+  ^-  form:m
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
+  ?:  &(?=(^ at) (lte u.at now) (lth (sub now u.at) ~h12) (coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))
+    (pure:m `['position' (gs:orr pos 'lat') (gs:orr pos 'lon')])
+  =/  here=(list appointment:orr)
+    %+  skim  (appointments-ahead:orr all multi (sub now ~h12) ~h12)
+    |=  b=appointment:orr
+    ?&  !=(id.b id.a)  !=(%no verdict.b)  (lte starts.b now)
+        ?=(^ ends.b)  (gte u.ends.b now)  (lte u.ends.b starts.a)
+    ==
+  ;<  prev=[pt=(unit [@t @t]) why=@t]  bind:m
+    ?~  here  (pure:(fiber:fiber:nexus ,[pt=(unit [@t @t]) why=@t]) [~ ''])
+    (point-of cfg all multi now i.here)
+  ?^  pt.prev  (pure:m `['previous' -.u.pt.prev +.u.pt.prev])
+  =/  home=(unit loaded:orr)  (loaded-of:orr all 'place/home')
+  ?~  home  (pure:m ~)
+  =/  w=(map @t (list row:orr))  (fold:orr rows.u.home multi now)
+  =/  g=(list row:orr)  (fall (~(get by w) 'geo') ~)
+  =/  pt=(unit [@t @t])  ?~(g ~ (geo-of:orr value.obs.i.g))
+  ?^  pt  (pure:m `['home' -.u.pt +.u.pt])
+  =/  addr=@t  (winner-text:orr w 'address')
+  ?:  =('' addr)  (pure:m ~)
+  ;<  hp=[pt=(unit [@t @t]) why=@t]  bind:m  (geocode cfg addr)
+  (pure:m ?~(pt.hp ~ `['home' -.u.pt.hp +.u.pt.hp]))
+::  +leave-pass: the next appointment the owner goes to, routed from
+::  where they are with traffic, its leave-by written, and the alert
+::  pushed once its time has come; answers when to look again: the
+::  refresh points 30, 15 and 5 minutes before the alert, the alert,
+::  and after an alert the appointment's start, when the next one is
+::  up. Unsure ones are routed and alerted like sure ones: the brief
+::  has asked about them
+::
+++  leave-pass
+  =/  m  (fiber:fiber:nexus ,(unit @da))
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
+  =/  cfg=travel-config:orr  (de-travel-config:orr cfg-j)
+  ?.  enabled.cfg  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'leave-last.json'))
+  =/  alerted=(list @t)  (strings:orr (ga:orr last 'alerted'))
+  ?:  =('' token.cfg)
+    ;<  ~  bind:m  (leave-record last now ~['no Mapbox token is set'] ~ alerted)
+    (pure:m ~)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  mine=(list appointment:orr)
+    (skip (appointments-ahead:orr all multi now horizon.cfg) |=(a=appointment:orr =(%no verdict.a)))
+  ?~  mine
+    ;<  ~  bind:m  (leave-record last now ~['nothing ahead to leave for'] ~ alerted)
+    (pure:m ~)
+  =/  a=appointment:orr  i.mine
+  =/  key=@t  (appt-key:orr a)
+  ?:  (lien alerted |=(k=@t =(k key)))
+    (pure:m `(add starts.a ~m1))
+  ;<  got-dest=[pt=(unit [lat=@t lon=@t]) why=@t]  bind:m  (point-of cfg all multi now a)
+  =/  dest  pt.got-dest
+  ?~  dest
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no point for ' name.a ': ' why.got-dest ~)] ~ alerted)
+    (pure:m `(add now ~m15))
+  ;<  from=(unit [kind=@t lat=@t lon=@t])  bind:m  (origin-of cfg all multi now a)
+  ?~  from
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'nowhere to leave from for ' name.a ': no recent position, no appointment now, no home' ~)] ~ alerted)
+    (pure:m `(add now ~m15))
+  ::  depart at the leave time last worked out for this occurrence, so
+  ::  the traffic is the traffic then; now when that is behind
+  =/  was=(unit @da)
+    ?.  =(key (gs:orr (gj:orr last 'next') 'key'))  ~
+    (de-iso:orr (gs:orr (gj:orr last 'next') 'leave_by'))
+  =/  depart=(unit @da)  ?~(was ~ ?:((gth u.was (add now ~m1)) was ~))
+  =/  route=request:http
+    :^  %'POST'  (directions-url:orr api.cfg token.cfg)
+      ~[['content-type' 'application/x-www-form-urlencoded']]
+    `(as-octs:mimes:html (directions-body:orr [lat.u.from lon.u.from] u.dest depart))
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json route ~s30 %route)
+  ?.  =(200 status.got)
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'Mapbox answered ' (scot %ud status.got) ' for the drive to ' name.a ~)] ~ alerted)
+    (pure:m `(add now ~m10))
+  =/  secs=(unit @ud)  (route-secs:orr (fall (de:json:html body.got) ~))
+  ?~  secs
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no route to ' name.a ~)] ~ alerted)
+    (pure:m ~)
+  =/  [leave=@da alert=@da]  (leave-times:orr starts.a u.secs buffer.cfg lead.cfg)
+  ;<  tz=@t  bind:m  owner-tz
+  =/  minutes=@ud  (div (add u.secs 30) 60)
+  ::  the leave-by the page and the brief show, lasting until the start
+  =/  l=(unit loaded:orr)  (loaded-of:orr all id.a)
+  =/  shown=@t  ?~(l '' (winner-text:orr (fold:orr rows.u.l multi now) 'leave-by'))
+  ;<  *  bind:m
+    ?:  =(shown (en-iso:orr leave))  (pure:(fiber:fiber:nexus ,@ud) 0)
+    %+  file-ops-on
+      (observe-ops:orr ~ ~[(obs-row:orr id.a 'leave-by' s+(en-iso:orr leave) now `starts.a 90 ['ship' (cat 3 'leave/' key)] 'ship')])
+    /leave
+  =/  plan=json
+    %-  pairs:enjs:format
+    :~  ['key' s+key]
+        ['id' s+id.a]
+        ['name' s+name.a]
+        ['starts' s+(en-iso:orr starts.a)]
+        ['leave_by' s+(en-iso:orr leave)]
+        ['alert_at' s+(en-iso:orr alert)]
+        ['minutes' (numb:enjs:format minutes)]
+        ['from' s+kind.u.from]
+        ['verdict' s+verdict.a]
+    ==
+  ?.  (lte alert (add now ~s30))
+    ;<  ~  bind:m  (leave-record last now ~ plan alerted)
+    =/  points=(list @da)
+      (skim `(list @da)`~[(sub alert ~m30) (sub alert ~m15) (sub alert ~m5) alert] |=(t=@da (gth t now)))
+    (pure:m ?~(points `alert `i.points))
+  ::  the alert: once per occurrence; its tag lets the phone cancel the
+  ::  alarm it set in case this push did not come
+  =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
+  =/  title=@t
+    ?:  =(0 left)  (rap 3 'Leave now for ' name.a ~)
+    (rap 3 'Leave in ' (scot %ud left) ' min for ' name.a ~)
+  =/  body=@t  (rap 3 (scot %ud minutes) ' min with traffic; leave by ' (hhmm:orr leave tz) ~)
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  err=(unit tang)  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
+  =/  note=@t  ?~(err (rap 3 'told the owner to leave for ' name.a ~) 'the push road is refused')
+  ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted])
+  (pure:m `(add starts.a ~m1))
 ::  ==  the daily brief (version 52)
 ::
 ::  +brief-send: today's brief, unless one went today already (forced
@@ -5119,7 +5400,12 @@
     ?:  ?=(%| -.ans)  (pure:n ['Nothing to add.' p.ans])
     =/  t=@t  (trim-cord:orr text.p.ans)
     (pure:n [?:(=('' t) 'Nothing to add.' t) ''])
-  =/  text=@t  (brief-render:orr day today lines.waiting suggestions)
+  ;<  travel-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
+  =/  leaving=(list @t)
+    ?.  enabled:(de-travel-config:orr travel-j)  ~
+    ?.  (gth to now)  ~
+    (brief-leaving:orr (appointments-ahead:orr all multi now (sub to now)) tz)
+  =/  text=@t  (brief-render:orr day today leaving lines.waiting suggestions)
   ;<  aus=(unit path)  bind:m  (find-base %auspex)
   ;<  sent=(unit @t)  bind:m
     =/  n  (fiber:fiber:nexus ,(unit @t))

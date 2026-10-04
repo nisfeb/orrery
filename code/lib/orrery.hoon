@@ -1082,6 +1082,7 @@
           ~['children' 'parents' 'siblings']
       ==
       [64 ~['resolve'] ~[['situation' ~['needs' 'waiting-on' 'outcome']]] ~]
+      [69 ~ ~[['situation' ~['attending' 'leave-by']] ['activity' ~['attending' 'leave-by']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1185,8 +1186,10 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by']
           :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+              ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
+              ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
               ['needs' 'what has to happen for this to be over, one short clause in the messages\' own terms; written when a message says it and written again when it changes']
               ['waiting-on' 'who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else']
               ['outcome' 'how it ended, a few plain words, written with status closed once a message says it is over']
@@ -1198,8 +1201,10 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by']
           :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
+              ['attending' 'yes or no: whether the owner goes to it themselves, in their own word when they gave it; it holds for every occurrence until they say otherwise']
+              ['leave-by' 'when the owner must leave for the next occurrence, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
               ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
               ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
               ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
@@ -6158,6 +6163,231 @@
   =/  trimmed=tape  (skip-trailing-space out)
   ?:  ?=([%',' *] trimmed)  $(s rest, out (weld cs t.trimmed))
   $(s rest, out (weld cs trimmed))
+::  ==  time to leave (version 69)
+::
+::  The ship tells the owner when to leave for an appointment they go
+::  to: the one-off situations by starts and the series by next, within
+::  a few hours, at a place it can route to, from where the owner is,
+::  with traffic. These are the pure parts; the app's leave fiber asks
+::  Mapbox and pushes.
+::
+::  +attends: whether the owner goes themselves. Their own word on
+::  attending wins; then the participants they filed themselves (none
+::  of them the owner: no); then the calendar's guess, that the owner
+::  is at an event that names them or nobody else the ship knows, which
+::  is a yes the morning brief asks about; else no. A rule over the
+::  ship's own facts, with the doubt said out loud, not a reading of
+::  the text
+::
++$  verdict  ?(%yes %no %unsure)
+++  attends
+  |=  [l=loaded multi=(set @t) now=@da]
+  ^-  verdict
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  said=@t  (lower (trim-cord (winner-text w 'attending')))
+  ?:  |(=('yes' said) =('true' said))  %yes
+  ?:  |(=('no' said) =('false' said))  %no
+  =/  parts=(list row)  (fall (~(get by w) 'participants') ~)
+  =/  me  |=(r=row =('person/me' (ref-or-text value.obs.r)))
+  =/  theirs=(list row)  (skim parts |=(r=row |(=('owner' by.obs.r) =('user' by.obs.r))))
+  =/  mine=?  (lien theirs me)
+  ?.  =(~ theirs)  ?:(mine %yes %no)
+  ?:((lien parts me) %unsure %no)
+::  an appointment ahead: when, where (the place it names, else the
+::  address as written), and whether the owner goes
+::
++$  appointment
+  $:  id=bid  name=@t  starts=@da  ends=(unit @da)
+      where=@t  place=(unit bid)  =verdict
+  ==
+::  +online: a location that is a link or a call, not a place to drive to
+::
+++  online
+  |=  t=@t
+  ^-  ?
+  =/  l=tape  (cass (trip t))
+  (lien `(list tape)`~["http" "zoom.us" "meet.google" "teams.microsoft" "webex"] |=(k=tape ?=(^ (find k l))))
+::  +appointments-ahead: the situations starting and the series next
+::  occurring within the horizon, soonest first, that have a place to
+::  go to: closed ones, all-day ones and ones online are left out
+::
+++  appointments-ahead
+  |=  [all=(list loaded) multi=(set @t) now=@da horizon=@dr]
+  ^-  (list appointment)
+  %+  sort
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit appointment)
+    ?.  ?=(?(%situation %activity) kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    ?:  (is-closed w)  ~
+    =/  sit=?  =(%situation kind.body.l)
+    =/  at=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
+    ?~  at  ~
+    ?.  &((gth u.at now) (lte u.at (add now horizon)))  ~
+    =/  ends=(unit @da)  ?.(sit ~ (de-iso (winner-text w 'ends')))
+    ?:  &(?=(^ ends) (gte u.ends u.at) (gte (sub u.ends u.at) ~h20))  ~
+    =/  loc=(list row)  (fall (~(get by w) 'location') ~)
+    ?~  loc  ~
+    =/  v=json  value.obs.i.loc
+    =/  place=(unit bid)
+      ?.  ?=([%o *] v)  ~
+      =/  r=@t  (gs v 'ref')
+      ?.(=('place' (kind-of r)) ~ `r)
+    =/  where=@t  ?:(?=([%s *] v) (trim-cord p.v) '')
+    ?:  &(?=(~ place) |(=('' where) (online where)))  ~
+    `[id.l name.body.l u.at ends where place (attends l multi now)]
+  |=([a=appointment b=appointment] (lth starts.a starts.b))
+::  +appt-key: one alert per occurrence: a series' next moves on
+::
+++  appt-key
+  |=  a=appointment
+  ^-  @t
+  (rap 3 id.a '@' (crip (a-co:co (ms-of starts.a))) ~)
+::  +leave-times: when to leave and when to say so: the start less the
+::  drive and the minutes to park and walk in, and that less the lead
+::
+++  leave-times
+  |=  [starts=@da secs=@ud buffer=@dr lead=@dr]
+  ^-  [leave=@da alert=@da]
+  =/  leave=@da  (sub starts (add (mul secs ~s1) buffer))
+  [leave (sub leave lead)]
+::  +addr-key: an address as the geocache keys it: lower case, one space
+::
+++  addr-key
+  |=  t=@t
+  ^-  @t
+  =/  words=(list tape)  (split-ws (cass (trip t)))
+  (crip (zing (join " " words)))
+::  +geo-of: a place's geo as written, "lat,lon" or {lat, lon}, as text
+::
+++  geo-of
+  |=  v=json
+  ^-  (unit [lat=@t lon=@t])
+  ?:  ?=([%o *] v)
+    =/  la=json  (gj v 'lat')
+    =/  lo=json  =/(x (gj v 'lon') ?~(x (gj v 'lng') x))
+    ?.  &(?=([%n *] la) ?=([%n *] lo))  ~
+    `[p.la p.lo]
+  ?.  ?=([%s *] v)  ~
+  =/  parts=(list @t)  (turn (split-char ',' (trip p.v)) |=(t=tape (trim-cord (crip t))))
+  ?.  ?=([@ @ ~] parts)  ~
+  ?.  &((coordinate i.parts 90) (coordinate i.t.parts 180))  ~
+  `[i.parts i.t.parts]
+::  +coordinate: a decimal degree no further than bound from zero: an
+::  optional minus, digits, an optional point and digits
+::
+++  coordinate
+  |=  [t=@t bound=@ud]
+  ^-  ?
+  =/  r  ;~(plug (punt hep) dem (punt ;~(pfix dot (plus nud))))
+  =/  got  (rush t r)
+  ?~  got  |
+  (lte +<.u.got bound)
+::  +directions-url, +directions-body: Mapbox's driving-traffic route
+::  between two points, as a POST: the token in the URL, the rest a
+::  form body, lon before lat as Mapbox writes them, no geometry,
+::  departing then when that is ahead (traffic as it will be) or now.
+::  Not a GET with the points in its path: the ship's HTTP client cut
+::  the path at the ; between them (version 69)
+::
+++  directions-url
+  |=  [api=@t token=@t]
+  ^-  @t
+  (rap 3 api '/directions/v5/mapbox/driving-traffic?access_token=' token ~)
+++  directions-body
+  |=  [from=[lat=@t lon=@t] to=[lat=@t lon=@t] depart=(unit @da)]
+  ^-  @t
+  %+  rap  3
+  :~  'coordinates='  lon.from  ','  lat.from  ';'  lon.to  ','  lat.to
+      '&overview=false&steps=false'
+      ?~(depart '' (cat 3 '&depart_at=' (en-iso u.depart)))
+  ==
+::  +geocode-url, +geocode-body: Mapbox's forward geocoding of one
+::  address, permanent since the point is kept (a temporary result may
+::  not be), as a batch of one: a POST, so the address rides in a JSON
+::  body. In a GET's query it could not travel: the ship's HTTP client
+::  decodes the query before sending, so an encoded space ("%20" or
+::  "+") went out raw and the request was malformed (version 69)
+::
+++  geocode-url
+  |=  [api=@t token=@t]
+  ^-  @t
+  (rap 3 api '/search/geocode/v6/batch?permanent=true&access_token=' token ~)
+++  geocode-body
+  |=  q=@t
+  ^-  json
+  =/  one=@t  (join-cords ', ' (skip (turn (split-lines q) trim-cord) |=(t=@t =('' t))))
+  a+~[(pairs:enjs:format ~[['q' s+one] ['limit' (numb:enjs:format 1)]])]
+::  +route-secs: the first route's duration, whole seconds
+::
+++  route-secs
+  |=  j=json
+  ^-  (unit @ud)
+  =/  rs=(list json)  (ga j 'routes')
+  ?~  rs  ~
+  =/  d=json  (gj i.rs 'duration')
+  ?.  ?=([%n *] d)  ~
+  =/  t=tape  (trip p.d)
+  (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+::  +geocode-point: the first feature's point, as text, lat then lon,
+::  from a batch's first answer or a single answer
+::
+++  geocode-point
+  |=  j=json
+  ^-  (unit [lat=@t lon=@t])
+  =/  bs=(list json)  (ga j 'batch')
+  =?  j  ?=(^ bs)  i.bs
+  =/  fs=(list json)  (ga j 'features')
+  ?~  fs  ~
+  =/  c=(list json)  (ga (gj i.fs 'geometry') 'coordinates')
+  ?.  ?=([[%n *] [%n *] *] c)  ~
+  `[p.i.t.c p.i.c]
+::  the settings, in travel.json: on or off, the Mapbox token (never
+::  answered back), where Mapbox is (the gate points it at a stub), how
+::  long before leaving to say so, the minutes to park and walk in, and
+::  how far ahead to look
+::
++$  travel-config  [enabled=? token=@t api=@t lead=@dr buffer=@dr horizon=@dr]
+++  de-travel-config
+  |=  j=json
+  ^-  travel-config
+  =/  api=@t  (gs j 'api_url')
+  :*  ?=([%b %.y] (gj j 'enabled'))
+      (gs j 'token')
+      ?:(=('' api) 'https://api.mapbox.com' api)
+      (mul ~m1 (min 120 (fall (gn j 'lead_min') 10)))
+      (mul ~m1 (min 60 (fall (gn j 'buffer_min') 5)))
+      (mul ~h1 (max 1 (min 12 (fall (gn j 'horizon_hours') 3))))
+  ==
+++  en-travel-config-masked
+  |=  c=travel-config
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.c]
+      ['token_set' b+!=('' token.c)]
+      ['api_url' s+api.c]
+      ['lead_min' (numb:enjs:format (div lead.c ~m1))]
+      ['buffer_min' (numb:enjs:format (div buffer.c ~m1))]
+      ['horizon_hours' (numb:enjs:format (div horizon.c ~h1))]
+  ==
+::  +brief-leaving: the brief's lines for today's appointments the ship
+::  will say when to leave for, and those it is not sure the owner goes
+::  to, with the reply that says so
+::
+++  brief-leaving
+  |=  [appts=(list appointment) tz=@t]
+  ^-  (list @t)
+  %+  murn  appts
+  |=  a=appointment
+  ^-  (unit @t)
+  ?:  =(%no verdict.a)  ~
+  =/  at=@t  (hhmm starts.a tz)
+  =/  first=@t  =/(ls (split-lines where.a) ?~(ls '' i.ls))
+  =/  there=@t  ?:(=('' first) '' (rap 3 ' (' (end [3 60] first) ')' ~))
+  ?:  =(%yes verdict.a)
+    `(rap 3 at '  ' name.a there ': I\'ll say when to leave' ~)
+  `(rap 3 at '  ' name.a there ': going? Reply "not me: ' name.a '" if not' ~)
 ::  ==  a lattice page followed (version 66)
 ::
 ::  A page the owner sends from lattice is a situation handed to the
@@ -7202,12 +7432,13 @@
 ::  +brief-render: the mail's text
 ::
 ++  brief-render
-  |=  [day=@t today=(list @t) waiting=(list @t) suggestions=@t]
+  |=  [day=@t today=(list @t) leaving=(list @t) waiting=(list @t) suggestions=@t]
   ^-  @t
   %-  join-lines
   %-  zing
   :~  ~[(brief-day-line day) '']
       ?~(today ~['Nothing on the calendar.'] today)
+      ?~(leaving ~ (weld `(list @t)`~['' 'When to leave'] leaving))
       ~['' 'Waiting on you']
       ?~(waiting ~['Nothing.'] waiting)
       ?~(waiting ~ ~['' 'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday".'])
@@ -7513,6 +7744,7 @@
     %'set-chat'       %'chat.json'
     %'set-mail'       %'mail.json'
     %'set-read'       %'read.json'
+    %'set-travel'     %'travel.json'
   ==
 ++  settings-view
   |=  [op=@t doc=json]
@@ -7523,6 +7755,7 @@
     %'set-chat'       (en-chat-config (de-chat-config doc))
     %'set-mail'       (en-mail-config (de-mail-config doc))
     %'set-read'       (en-mail-config (de-mail-config doc))
+    %'set-travel'     (en-travel-config-masked (de-travel-config doc))
   ==
 ++  list-json
   |=  [items=(list [id=@t name=@t]) note=@t]
@@ -7842,6 +8075,11 @@
   ?:  &(=('POST' meth) ?=([%api %read ~] suffix))               `[%post-read %writes]
   ?:  &(=('POST' meth) ?=([%api %follow ~] suffix))             `[%post-follow %own]
   ?:  &(=('GET' meth) ?=([%api %follow ~] suffix))              `[%get-follow %own]
+  ?:  &(=('GET' meth) ?=([%api %travel ~] suffix))              `[%get-travel %writes]
+  ?:  &(=('PUT' meth) ?=([%api %travel ~] suffix))              `[%put-travel %own]
+  ?:  &(=('GET' meth) ?=([%api %travel %last ~] suffix))        `[%get-travel-last %own]
+  ?:  &(=('POST' meth) ?=([%api %travel %wake ~] suffix))       `[%post-travel-wake %own]
+  ?:  &(=('POST' meth) ?=([%api %position ~] suffix))           `[%post-position %writes]
   ?:  &(=('POST' meth) ?=([%api %follow %wake ~] suffix))       `[%post-follow-wake %own]
   ?:  &(=('GET' meth) ?=([%api %read %settings ~] suffix))      `[%get-read-settings %writes]
   ?:  &(=('PUT' meth) ?=([%api %read %settings ~] suffix))      `[%put-read-settings %writes]

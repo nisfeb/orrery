@@ -1048,7 +1048,7 @@
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by']) !>((strings:orr (ga:orr sit 'attrs'))))
     (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 64]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 69]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1206,6 +1206,79 @@
     (expect !>(!(has-key:orr v 'schema')))
     ::  one kind
     (expect-eq !>(1) !>((lent (ga:orr (brief-json:orr all acts multi now 'person' (numb:enjs:format 7) schema) 'bodies'))))
+  ==
+::  ==  time to leave (version 69)
+::
+++  test-leave
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  iso  |=(d=@dr `json`s+(en-iso:orr (add now d)))
+  =/  multi=(set @t)  (sy ~['participants'])
+  ::  the dentist names nobody the ship knows: the calendar's guess
+  =/  dentist  (mk 'situation/dentist' %situation 'Dentist' ~[['starts' (iso ~h2) 'calendar'] ['ends' (iso ~h3) 'calendar'] ['location' s+'Smile Dental\0a1 Main St, Jacksonville' 'calendar'] ['participants' (ref 'person/me') 'calendar']])
+  ::  the play date: the owner filed the children and not themselves
+  =/  play  (mk 'situation/play' %situation 'Casey play date' ~[['starts' (iso ~h1) 'calendar'] ['location' s+'Alberts Field' 'calendar'] ['participants' (ref 'person/me') 'calendar'] ['participants' (ref 'person/rose') 'owner']])
+  ::  the meeting: the owner said they go; a place they named
+  =/  meet  (mk 'situation/meet' %situation 'Parent meeting' ~[['starts' (iso ~m90) 'calendar'] ['location' (ref 'place/ballet') 'calendar'] ['attending' s+'yes' 'owner']])
+  ::  the practice, a series, next in four hours: out of a three-hour window
+  =/  practice  (mk 'activity/practice' %activity 'Practice' ~[['next' (iso ~h4) 'calendar'] ['location' s+'Alberts Field' 'calendar'] ['participants' (ref 'person/me') 'owner']])
+  ::  online, all day, closed, and said no to
+  =/  call  (mk 'situation/call' %situation 'Call' ~[['starts' (iso ~h1) 'calendar'] ['location' s+'https://zoom.us/j/1' 'calendar']])
+  =/  fair  (mk 'situation/fair' %situation 'Fair' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h30) 'calendar'] ['location' s+'Fairground' 'calendar']])
+  =/  over  (mk 'situation/over' %situation 'Over' ~[['starts' (iso ~h1) 'calendar'] ['location' s+'Somewhere' 'calendar'] ['status' s+'closed' 'owner']])
+  =/  nope  (mk 'situation/nope' %situation 'Nope' ~[['starts' (iso ~h2) 'calendar'] ['location' s+'Elsewhere' 'calendar'] ['participants' (ref 'person/me') 'calendar'] ['attending' s+'no' 'owner']])
+  =/  all=(list loaded:orr)  ~[dentist play meet practice call fair over nope]
+  =/  ahead=(list appointment:orr)  (appointments-ahead:orr all multi now ~h3)
+  =/  ids=(list @t)  (turn ahead |=(a=appointment:orr id.a))
+  =/  dir=json  (jo '{"routes": [{"duration": 1834.7, "distance": 20000}], "code": "Ok"}')
+  =/  geo=json  (jo '{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-81.5423, 30.3241]}, "properties": {}}]}')
+  ;:  weld
+    ::  the verdicts
+    (expect-eq !>(%unsure) !>((attends:orr dentist multi now)))
+    (expect-eq !>(%no) !>((attends:orr play multi now)))
+    (expect-eq !>(%yes) !>((attends:orr meet multi now)))
+    (expect-eq !>(%yes) !>((attends:orr practice multi now)))
+    (expect-eq !>(%no) !>((attends:orr nope multi now)))
+    (expect-eq !>(%no) !>((attends:orr call multi now)))
+    ::  what is ahead, soonest first: online, all day, closed and beyond the window left out
+    (expect-eq !>(`(list @t)`~['situation/play' 'situation/meet' 'situation/dentist' 'situation/nope']) !>(ids))
+    (expect-eq !>([`(unit @t)`[~ 'place/ballet'] '']) !>(=/(m (snag 1 ahead) [place.m where.m])))
+    (expect-eq !>('Smile Dental\0a1 Main St, Jacksonville') !>(where:(snag 2 ahead)))
+    ::  a series is ahead by its next once the window reaches it
+    (expect !>((lien (turn (appointments-ahead:orr all multi now ~h5) |=(a=appointment:orr id.a)) |=(t=@t =('activity/practice' t)))))
+    ::  one alert per occurrence
+    =/  first=appointment:orr  (snag 0 ahead)
+    (expect !>(!=((appt-key:orr first) (appt-key:orr first(starts (add now ~d7))))))
+    ::  leave and alert: the start less the drive and the buffer, less the lead
+    (expect-eq !>([(sub (add now ~h2) (add ~s1834 ~m5)) (sub (add now ~h2) (add ~s1834 ~m15))]) !>((leave-times:orr (add now ~h2) 1.834 ~m5 ~m10)))
+    ::  addresses and coordinates
+    (expect-eq !>('smile dental 1 main st, jacksonville') !>((addr-key:orr 'Smile  Dental\0a1 Main St,  Jacksonville ')))
+    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geo-of:orr s+'30.3241, -81.5423')))
+    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geo-of:orr (jo '{"lat": 30.3241, "lon": -81.5423}'))))
+    (expect-eq !>(`(unit [@t @t])`~) !>((geo-of:orr s+'95.1,-81.5')))
+    (expect-eq !>(`(unit [@t @t])`~) !>((geo-of:orr s+'home')))
+    ::  Mapbox: lon before lat, no geometry, departing when ahead; a permanent lookup
+    (expect-eq !>('https://api.mapbox.com/directions/v5/mapbox/driving-traffic?access_token=tk') !>((directions-url:orr 'https://api.mapbox.com' 'tk')))
+    (expect-eq !>('coordinates=-81.6,30.2;-81.5423,30.3241&overview=false&steps=false&depart_at=2026-09-18T13:00:00Z') !>((directions-body:orr ['30.2' '-81.6'] ['30.3241' '-81.5423'] `(add now ~h1))))
+    (expect-eq !>('coordinates=-81.6,30.2;-81.5423,30.3241&overview=false&steps=false') !>((directions-body:orr ['30.2' '-81.6'] ['30.3241' '-81.5423'] ~)))
+    (expect-eq !>('https://api.mapbox.com/search/geocode/v6/batch?permanent=true&access_token=tk') !>((geocode-url:orr 'https://api.mapbox.com' 'tk')))
+    ::  the address in the body, its lines one line
+    (expect-eq !>((jo '[{"q": "The Florida Ballet, 10131 Atlantic Blvd, Ste #2571, Jacksonville", "limit": 1}]')) !>((geocode-body:orr 'The Florida Ballet\0a10131 Atlantic Blvd, Ste #2571, Jacksonville \0a')))
+    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr (jo '{"batch": [{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-81.5423, 30.3241]}}]}]}'))))
+    (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"batch": [{"type": "FeatureCollection", "features": []}]}'))))
+    (expect-eq !>(`(unit @ud)`[~ 1.834]) !>((route-secs:orr dir)))
+    (expect-eq !>(`(unit @ud)`~) !>((route-secs:orr (jo '{"routes": [], "code": "NoRoute"}'))))
+    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr geo)))
+    (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"features": []}'))))
+    ::  the brief's lines: the sure ones say so, the unsure ones ask, a no is left out
+    (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr (slag 1 ahead) 'UTC')))
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')

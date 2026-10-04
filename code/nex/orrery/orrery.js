@@ -692,8 +692,27 @@
           ' <button class="small" data-uncorrect="' + esc(c.id) + '">undo</button></li>';
       }).join('') + '</ul></div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+  // the time-to-leave card (version 69): on or off, the Mapbox token
+  // (never shown back), the lead and the minutes to park, when the phone
+  // last said where the owner is (when, never where), and the last plan
+  function travelCard(t, last) {
+    t = t || {}; last = last || {};
+    var out = '<div class="card"><h2>Time to leave</h2><div id="travel">' +
+      '<p class="muted">The ship tells you when to leave for an appointment you go to, from where your phone last was, with Mapbox\'s live traffic. ' +
+      'Your phone sends its position to the ship; the ship keeps only the latest and sends it to Mapbox with the appointment\'s address.</p>' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (t.enabled ? ' checked' : '') + '> on</label></p>' +
+      '<p><label class="field">Mapbox token <input name="token" type="password" placeholder="' + (t.token_set ? 'a token is set; leave blank to keep it' : 'no token set') + '"></label></p>' +
+      '<p><label class="field">minutes of warning <input name="lead_min" value="' + esc(t.lead_min != null ? t.lead_min : '') + '" placeholder="10"></label> ' +
+      '<label class="field">minutes to park and walk in <input name="buffer_min" value="' + esc(t.buffer_min != null ? t.buffer_min : '') + '" placeholder="5"></label></p>' +
+      '<p><button data-save-travel="1">save</button><button data-travel-wake="1">look now</button></p></div>' +
+      '<p class="muted">' + (t.position_at ? 'Your phone last said where you are ' + fmtTime(t.position_at) + '.' : 'Your phone has not said where you are.') + '</p>';
+    var n = last.next;
+    if (n && n.name) out += '<p class="muted">Next: ' + esc(n.name) + ' at ' + fmtTime(n.starts) + ', ' + esc(String(n.minutes)) + ' min with traffic, leave by ' + fmtTime(n.leave_by) + '.</p>';
+    (last.notes || []).forEach(function (x) { out += '<p class="muted">' + esc(x) + '</p>'; });
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast) {
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -1108,7 +1127,7 @@
     if (v.name === 'inbox') return show(inbox(openActions(d), d));
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
-      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections));
+      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1377,6 +1396,14 @@
     } else if (b.dataset.saveGenerator) {
       say('saving generator settings');
       post('/generator', generatorForm(), 'PUT').then(function () { dirty = false; say('generator saved'); }).catch(oops);
+    } else if (b.dataset.saveTravel) {
+      var tv = function (name) { return field('#travel', name); };
+      var tf = { enabled: !!view.querySelector('#travel input[name="enabled"]:checked'), lead_min: numOrNull(tv('lead_min')), buffer_min: numOrNull(tv('buffer_min')) };
+      if (tv('token')) tf.token = tv('token');
+      say('saving time to leave');
+      post('/travel', tf, 'PUT').then(function () { dirty = false; say('time to leave saved'); }).catch(oops);
+    } else if (b.dataset.travelWake) {
+      post('/travel/wake', {}).then(function () { say('looking now; the card updates in a moment'); setTimeout(refresh, 8000); }).catch(oops);
     } else if (b.dataset.generate) {
       post('/generate', {}).then(function () { say('pass started; the last pass line updates when it ends'); setTimeout(refresh, 30000); }).catch(oops);
     } else if (b.dataset.reconcile) {

@@ -507,6 +507,14 @@ class Stub(http.server.BaseHTTPRequestHandler):
             out = {'ok': True, 'result': {'user': {'id': 1001}}}
         elif self.path.endswith('/decisions'):
             out = DECIDER_CANNED
+        elif self.path.startswith('/directions/v5/mapbox/driving-traffic?'):
+            # Mapbox's route, as a form POST: two points or it is refused, as Mapbox refuses it
+            form = urllib.parse.parse_qs(body if isinstance(body, str) else '')
+            pts = form.get('coordinates', [''])[0].split(';')
+            out = {'code': 'Ok', 'routes': [{'duration': 1800.4, 'distance': 21000}]} if len(pts) == 2 else None
+            if out is None: out, status = {'code': 'InvalidInput', 'message': 'two coordinates are needed'}, 422
+        elif self.path.startswith('/search/geocode/v6/batch?'):
+            out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-81.5423, 30.3241]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
         else:
             system = ((body.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
             if system.startswith('You turn') and DOWN:
@@ -526,7 +534,10 @@ class Stub(http.server.BaseHTTPRequestHandler):
         self.send_response(status); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
         n = int(self.headers.get('content-length', 0))
-        self.answer(json.loads(self.rfile.read(n)))
+        raw = self.rfile.read(n).decode()
+        try: body = json.loads(raw)
+        except ValueError: body = raw   # a form body: Mapbox's route
+        self.answer(body)
     def do_GET(self):
         self.answer({})
     def log_message(self, *a): pass
@@ -1092,6 +1103,57 @@ else:
     curl('DELETE', API + '/body/' + FSIT)
     gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + FPAGE, jar=JAR)
     gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + FLINK, jar=JAR)
+
+
+# ---- time to leave (version 69): the owner's position, an appointment they go to, Mapbox through the stub,
+# the leave-by written and the alert recorded once; one they do not go to passed over ----
+print('== time to leave')
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+TRUN = secrets.token_hex(3)
+tnow = datetime.now(timezone.utc).replace(microsecond=0)
+TADDR = 'The Gate Ballet\n10131 Atlantic Blvd, Jacksonville, FL 32225 ' + TRUN
+code, d = curl('PUT', API + '/travel', {'enabled': True, 'token': 'gate-token', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'lead_min': 10, 'buffer_min': 5})
+check('the travel settings answer masked', code == 200 and dictish(d).get('token_set') is True and 'token' not in dictish(d), (code, d))
+code, d = curl('POST', API + '/position', {'lat': 'north', 'lon': -81.6})
+check('a position that is not degrees is refused', code == 400, (code, d))
+code, d = curl('POST', API + '/position', {'lat': 30.2012, 'lon': -81.6034, 'acc': 12})
+check('the owner\'s position is taken', code == 200 and dictish(d).get('ok') is True, (code, d))
+code, d = curl('GET', API + '/travel')
+check('the settings say when the position came, never where', dictish(d).get('position_at') and '30.2012' not in json.dumps(d), d)
+TSIT, TNO = 'situation/gate-leave-' + TRUN, 'situation/gate-not-mine-' + TRUN
+tsrc = {'kind': 'user', 'id': 'gate-leave-' + TRUN}
+def tobs(sub, attr, value): return {'subject': sub, 'attr': attr, 'value': value, 'at': iso(tnow), 'conf': 100, 'source': tsrc, 'by': 'owner'}
+observe([{'id': TNO, 'name': 'Gate not mine ' + TRUN}, {'id': TSIT, 'name': 'Gate leave ' + TRUN}],
+        [tobs(TNO, 'starts', iso(tnow + timedelta(minutes=40))), tobs(TNO, 'location', TADDR), tobs(TNO, 'participants', {'ref': 'person/gate-tg'}),
+         tobs(TSIT, 'starts', iso(tnow + timedelta(minutes=45))), tobs(TSIT, 'location', TADDR), tobs(TSIT, 'attending', 'yes')])
+seen.clear()
+curl('POST', API + '/travel/wake', {})
+tl = gate.wait('the leave fiber alerts', lambda: (lambda l: l if any('Gate leave' in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60) or {}
+tn = dictish(tl.get('next'))
+check('the alert goes for the appointment the owner goes to, from their position, with the drive', any('told the owner to leave for Gate leave' in n for n in tl.get('notes', [])) and tn.get('id') == TSIT and tn.get('minutes') == 30 and tn.get('from') == 'position', tl)
+check('the one the owner does not go to is passed over', TNO not in json.dumps(tl), tl)
+check('the record holds no coordinate and no token', '30.2012' not in json.dumps(tl) and 'gate-token' not in json.dumps(tl), tl)
+tb = dictish(dictish(curl('GET', API + '/body/' + TSIT)[1]).get('attrs'))
+check('leave-by is on the appointment, the ship\'s', dictish(tb.get('leave-by')).get('value') == tn.get('leave_by') and dictish(tb.get('leave-by')).get('by') == 'ship', tb.get('leave-by'))
+tgeo = [x for x in seen if x[0].startswith('/search/geocode/v6/batch?')]
+tdir = [x for x in seen if x[0].startswith('/directions/v5/mapbox/driving-traffic?')]
+check('the address went to Mapbox once, permanently, in the body', len(tgeo) == 1 and 'permanent=true' in tgeo[0][0] and dictish((tgeo[0][2] or [{}])[0]).get('q', '').startswith('The Gate Ballet, 10131 Atlantic Blvd'), tgeo)
+check('the drive went as a form, lon before lat, the token in the URL', len(tdir) == 1 and tdir[0][1].get('content-type') == 'application/x-www-form-urlencoded'
+      and str(tdir[0][2]).startswith('coordinates=-81.6034,30.2012;-81.5423,30.3241') and 'access_token=gate-token' in tdir[0][0], tdir)
+seen.clear()
+curl('POST', API + '/travel/wake', {})
+time.sleep(8)
+tl2 = dictish(curl('GET', API + '/travel/last')[1])
+check('a second look neither alerts again nor asks Mapbox', not [x for x in seen if x[0].startswith(('/search', '/directions'))] and tl2.get('alerted') == tl.get('alerted'), (tl2.get('notes'), len(seen)))
+owner_only('the travel record is the owner\'s', 'GET', '/travel/last')
+curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
+code, d = curl('GET', API + '/travel')
+check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)
+srv.shutdown()
+srv.server_close()
+curl('DELETE', API + '/body/' + TSIT)
+curl('DELETE', API + '/body/' + TNO)
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----

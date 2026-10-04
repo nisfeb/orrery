@@ -150,6 +150,11 @@ ok('the generator card shows the settings and says a key is set', genSettings.in
 ok('the generator card offers a run and a save', genSettings.includes('data-generate="1"') && genSettings.includes('data-save-generator="1"'));
 ok('the last pass is summarised', genSettings.includes('3 filed, 1 dropped') && genSettings.includes('$0.0229') && genSettings.includes('the trip is stale') && genSettings.includes('Model calls today: 4 (1 urgent)') && genSettings.includes('This month: $1.23'));
 ok('the limits are on the card', genSettings.includes('name="cooldown_minutes" value="60"') && genSettings.includes('name="max_daily" value="24"') && genSettings.includes('name="max_urgent" value="5"'));
+const travelSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], { enabled: true, token_set: true, lead_min: 10, buffer_min: 5, position_at: '2026-10-04T20:00:00Z' }, { next: { name: 'Parent meeting', starts: '2026-10-04T21:00:00Z', minutes: 32, leave_by: '2026-10-04T20:23:00Z' }, notes: ['told the owner to leave for Parent meeting'] });
+ok('the time-to-leave card offers the token without showing one, says when the phone last spoke, and the next plan',
+  travelSettings.includes('<h2>Time to leave</h2>') && travelSettings.includes('name="token" type="password" placeholder="a token is set; leave blank to keep it"')
+  && travelSettings.includes('Your phone last said where you are') && travelSettings.includes('Next: Parent meeting') && travelSettings.includes('32 min with traffic')
+  && travelSettings.includes('data-save-travel="1"'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
 ok('the schema and policy cards still follow', genSettings.indexOf('<h2>Generator</h2>') < genSettings.indexOf('<h2>schema.json</h2>') && genSettings.includes('id="policy"'));
