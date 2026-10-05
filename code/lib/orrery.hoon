@@ -6945,7 +6945,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  72
+++  version  73
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so
