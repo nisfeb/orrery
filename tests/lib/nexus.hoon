@@ -1259,6 +1259,24 @@
     (expect !>(!=((appt-key:orr first) (appt-key:orr first(starts (add now ~d7))))))
     ::  leave and alert: the start less the drive and the buffer, less the lead
     (expect-eq !>([(sub (add now ~h2) (add ~s1834 ~m5)) (sub (add now ~h2) (add ~s1834 ~m15))]) !>((leave-times:orr (add now ~h2) 1.834 ~m5 ~m10)))
+    ::  no telling needed: at the place already, from a close fix of any age
+    (expect-eq !>(`(unit @t)`[~ 'already there']) !>((leave-quiet:orr 90 1.500 'position' '12' `(sub now ~h2) now %yes)))
+    ::  set off: a close fix minutes old and the drive far shorter
+    (expect-eq !>(`(unit @t)`[~ 'on the way already']) !>((leave-quiet:orr 700 1.500 'position' '8.5' `(sub now ~m3) now %yes)))
+    ::  a coarse fix is never evidence, near or moving
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 90 1.500 'position' '2000' `now now %yes)))
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 700 1.500 'position' '2000' `(sub now ~m3) now %yes)))
+    ::  an old fix with the drive shorter is the traffic, not a set-off
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 700 1.500 'position' '8' `(sub now ~m30) now %yes)))
+    ::  a little shorter is not a set-off
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 1.300 1.500 'position' '8' `(sub now ~m3) now %yes)))
+    ::  leaving from home, not the phone's fix, or a fix with no accuracy: no evidence
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 60 1.500 'home' '8' `now now %yes)))
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 60 1.500 'position' '' `now now %yes)))
+    ::  over two hours away: only for what the owner said they go to
+    (expect-eq !>(`(unit @t)`[~ 'over two hours away, and not said to be going']) !>((leave-quiet:orr 8.000 8.000 'home' '' ~ now %unsure)))
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 8.000 8.000 'home' '' ~ now %yes)))
+    (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 7.200 7.200 'home' '' ~ now %unsure)))
     ::  addresses and coordinates
     (expect-eq !>('smile dental 1 main st, jacksonville') !>((addr-key:orr 'Smile  Dental\0a1 Main St,  Jacksonville ')))
     (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geo-of:orr s+'30.3241, -81.5423')))

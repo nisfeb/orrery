@@ -508,10 +508,11 @@ class Stub(http.server.BaseHTTPRequestHandler):
         elif self.path.endswith('/decisions'):
             out = DECIDER_CANNED
         elif self.path.startswith('/directions/v5/mapbox/driving-traffic?'):
-            # Mapbox's route, as a form POST: two points or it is refused, as Mapbox refuses it
+            # Mapbox's route, as a form POST: two points or it is refused, as Mapbox refuses it; a minute
+            # from the gate's place itself, half an hour from anywhere else
             form = urllib.parse.parse_qs(body if isinstance(body, str) else '')
             pts = form.get('coordinates', [''])[0].split(';')
-            out = {'code': 'Ok', 'routes': [{'duration': 1800.4, 'distance': 21000}]} if len(pts) == 2 else None
+            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-81.5423,30.3241' else 1800.4, 'distance': 21000}]} if len(pts) == 2 else None
             if out is None: out, status = {'code': 'InvalidInput', 'message': 'two coordinates are needed'}, 422
         elif self.path.startswith('/search/geocode/v6/batch?'):
             out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-81.5423, 30.3241]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
@@ -1165,6 +1166,17 @@ tp = gate.wait('the pick-up is planned', lambda: (lambda l: l if dictish(l.get('
 check('a pick-up is planned for the end, as a pick-up, and the drop-off is not the owner\'s',
       dictish(tp.get('next')).get('trip') == 'pick' and dictish(tp.get('next')).get('starts') == iso(tnow + timedelta(minutes=80)), tp)
 curl('DELETE', API + '/body/' + TPU)
+# already there (version 72): a close fix at the place and a minute's drive: no alert, no next, so the phone's
+# alarm stands down, and the occurrence quiet, not alerted, since no push went
+TQ = 'situation/gate-there-' + TRUN
+curl('POST', API + '/position', {'lat': 30.3241, 'lon': -81.5423, 'acc': 10})
+observe([{'id': TQ, 'name': 'Gate there ' + TRUN}], [tobs(TQ, 'starts', iso(tnow + timedelta(minutes=12))), tobs(TQ, 'location', TADDR), tobs(TQ, 'attending', 'yes')])
+curl('POST', API + '/travel/wake', {})
+tq = gate.wait('the one the owner is at is left quiet', lambda: (lambda l: l if any(k.startswith(TQ + '@') for k in l.get('quiet') or []) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60) or {}
+check('at the place already: no alert, the occurrence quiet and not alerted, and not the phone\'s next',
+      any(k.startswith(TQ + '@') for k in tq.get('quiet') or []) and not any(k.startswith(TQ + '@') for k in tq.get('alerted') or [])
+      and dictish(tq.get('next')).get('id') != TQ and not any('to leave for Gate there' in x for x in tq.get('notes', [])), tq)
+curl('DELETE', API + '/body/' + TQ)
 curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
 code, d = curl('GET', API + '/travel')
 check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)

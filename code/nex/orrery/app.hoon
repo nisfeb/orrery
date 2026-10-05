@@ -5161,7 +5161,7 @@
 ::  token: the record is read by the page and kept with the rest
 ::
 ++  leave-record
-  |=  [last=json now=@da notes=(list @t) plan=json alerted=(list @t)]
+  |=  [last=json now=@da notes=(list @t) plan=json alerted=(list @t) quiet=(list @t)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  doc=json
@@ -5170,6 +5170,7 @@
         ['notes' a+(turn notes |=(n=@t `json`s+n))]
         ['next' plan]
         ['alerted' a+(turn (scag 50 alerted) |=(k=@t `json`s+k))]
+        ['quiet' a+(turn (scag 50 quiet) |=(k=@t `json`s+k))]
     ==
   ?:  =(doc last)  (pure:m ~)
   (over:io (rf 0 / %'leave-last.json') [[/ %json] doc])
@@ -5260,16 +5261,20 @@
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'leave-last.json'))
   =/  alerted=(list @t)  (strings:orr (ga:orr last 'alerted'))
+  ::  the occurrences the phone showed needed no alert (version 72)
+  =/  quiet=(list @t)  (strings:orr (ga:orr last 'quiet'))
   ?:  =('' token.cfg)
-    ;<  ~  bind:m  (leave-record last now ~['no Mapbox token is set'] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~['no Mapbox token is set'] ~ alerted quiet)
     (pure:m ~)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  multi=(set @t)  (multi-of:orr schema)
+  ::  one left quiet is passed over, so the one after it is planned
   =/  mine=(list appointment:orr)
-    (skip (appointments-ahead:orr all multi now horizon.cfg) |=(a=appointment:orr =(%no verdict.a)))
+    %+  skip  (appointments-ahead:orr all multi now horizon.cfg)
+    |=(a=appointment:orr |(=(%no verdict.a) (lien quiet |=(k=@t =(k (appt-key:orr a))))))
   ?~  mine
-    ;<  ~  bind:m  (leave-record last now ~['nothing ahead to leave for'] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~['nothing ahead to leave for'] ~ alerted quiet)
     (pure:m ~)
   =/  a=appointment:orr  i.mine
   =/  key=@t  (appt-key:orr a)
@@ -5278,11 +5283,11 @@
   ;<  got-dest=[pt=(unit [lat=@t lon=@t]) why=@t]  bind:m  (point-of cfg all multi now a)
   =/  dest  pt.got-dest
   ?~  dest
-    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no point for ' name.a ': ' why.got-dest ~)] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no point for ' name.a ': ' why.got-dest ~)] ~ alerted quiet)
     (pure:m `(add now ~m15))
   ;<  from=(unit [kind=@t lat=@t lon=@t])  bind:m  (origin-of cfg all multi now a)
   ?~  from
-    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'nowhere to leave from for ' name.a ': no recent position, no appointment now, no home' ~)] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'nowhere to leave from for ' name.a ': no recent position, no appointment now, no home' ~)] ~ alerted quiet)
     (pure:m `(add now ~m15))
   ::  depart at the leave time last worked out for this occurrence, so
   ::  the traffic is the traffic then; now when that is behind
@@ -5296,12 +5301,18 @@
     `(as-octs:mimes:html (directions-body:orr [lat.u.from lon.u.from] u.dest depart))
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json route ~s30 %route)
   ?.  =(200 status.got)
-    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'Mapbox answered ' (scot %ud status.got) ' for the drive to ' name.a ~)] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'Mapbox answered ' (scot %ud status.got) ' for the drive to ' name.a ~)] ~ alerted quiet)
     (pure:m `(add now ~m10))
   =/  secs=(unit @ud)  (route-secs:orr (fall (de:json:html body.got) ~))
   ?~  secs
-    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no route to ' name.a ~)] ~ alerted)
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no route to ' name.a ~)] ~ alerted quiet)
     (pure:m ~)
+  ::  the longest drive seen for this occurrence, what a set-off is
+  ::  measured from: each move the phone reports plans it again
+  =/  longest=@ud
+    =/  nx=json  (gj:orr last 'next')
+    ?.  =(key (gs:orr nx 'key'))  u.secs
+    (max u.secs (fall (gn:orr nx 'longest_secs') 0))
   =/  [leave=@da alert=@da]  (leave-times:orr starts.a u.secs buffer.cfg lead.cfg)
   ;<  tz=@t  bind:m  owner-tz
   =/  minutes=@ud  (div (add u.secs 30) 60)
@@ -5322,15 +5333,25 @@
         ['leave_by' s+(en-iso:orr leave)]
         ['alert_at' s+(en-iso:orr alert)]
         ['minutes' (numb:enjs:format minutes)]
+        ['longest_secs' (numb:enjs:format longest)]
         ['from' s+kind.u.from]
         ['verdict' s+verdict.a]
         ['trip' s+leg.a]
     ==
   ?.  (lte alert (add now ~s30))
-    ;<  ~  bind:m  (leave-record last now ~ plan alerted)
+    ;<  ~  bind:m  (leave-record last now ~ plan alerted quiet)
     =/  points=(list @da)
       (skim `(list @da)`~[(sub alert ~m30) (sub alert ~m15) (sub alert ~m5) alert] |=(t=@da (gth t now)))
     (pure:m ?~(points `alert `i.points))
+  ::  none where the phone shows none is needed: the record's next goes
+  ::  empty, so the phone's alarm stands down, and the key goes in
+  ::  quiet, not alerted, since no push went
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  why=(unit @t)
+    (leave-quiet:orr u.secs longest kind.u.from (gs:orr pos 'acc') (de-iso:orr (gs:orr pos 'at')) now verdict.a)
+  ?^  why
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no alert for ' name.a ': ' u.why ~)] ~ alerted [key quiet])
+    (pure:m `(add now ~s5))
   ::  the alert: once per occurrence; its tag lets the phone cancel the
   ::  alarm it set in case this push did not come
   =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
@@ -5349,7 +5370,7 @@
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
   =/  note=@t  ?~(err (rap 3 'told the owner to leave ' for ~) 'the push road is refused')
-  ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted])
+  ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted] quiet)
   (pure:m `(add starts.a ~m1))
 ::  ==  the daily brief (version 52)
 ::

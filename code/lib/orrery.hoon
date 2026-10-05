@@ -6312,6 +6312,29 @@
   ^-  [leave=@da alert=@da]
   =/  leave=@da  (sub starts (add (mul secs ~s1) buffer))
   [leave (sub leave lead)]
+::  +leave-quiet: why the owner needs no telling to leave, when their
+::  phone shows it: at the place already, a drive of two minutes or
+::  less from a close fix of any age (the phone reports a move, not a
+::  stay); or set off toward it, a close fix from the last twelve
+::  minutes and the drive a quarter and three minutes shorter than the
+::  longest seen for this occurrence. A coarse fix is never evidence: a
+::  network one can jump while the phone lies still. And a drive of
+::  over two hours only for what the owner said they go to: away from
+::  home, the local series they are down for is not a trip (version 72)
+::
+++  leave-quiet
+  |=  [secs=@ud longest=@ud from=@t acc=@t fix=(unit @da) now=@da =verdict]
+  ^-  (unit @t)
+  ?:  &((gth secs 7.200) !=(%yes verdict))  `'over two hours away, and not said to be going'
+  ?.  =('position' from)  ~
+  =/  metres=(unit @ud)
+    =/  t=tape  (trip acc)
+    (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+  ?.  &(?=(^ metres) (lte u.metres 100))  ~
+  ?:  (lte secs 120)  `'already there'
+  ?.  &(?=(^ fix) (lte u.fix now) (lth (sub now u.fix) ~m12))  ~
+  ?.  &((lte (mul 4 secs) (mul 3 longest)) (gte longest (add secs 180)))  ~
+  `'on the way already'
 ::  +addr-key: an address as the geocache keys it: lower case, one space
 ::
 ++  addr-key
@@ -6418,7 +6441,7 @@
       ?:(=('' api) 'https://api.mapbox.com' api)
       (mul ~m1 (min 120 (fall (gn j 'lead_min') 10)))
       (mul ~m1 (min 60 (fall (gn j 'buffer_min') 5)))
-      (mul ~h1 (max 1 (min 12 (fall (gn j 'horizon_hours') 3))))
+      (mul ~h1 (max 1 (min 12 (fall (gn j 'horizon_hours') 12))))
   ==
 ++  en-travel-config-masked
   |=  c=travel-config
