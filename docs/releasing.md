@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 72's owner steps
+
+Nothing for an owner to do. Time to leave looks twelve hours ahead by default (a `horizon_hours` you set is kept), so a long drive is planned before its time to leave. It holds an alert back when the phone shows none is needed, already there or already on the way, from a fix good to 100 m; and a drive of over two hours alerts only for what the owner said they go to. A held-back occurrence is listed in `GET /travel/last` under `quiet`, and `next` goes empty so the phone's alarm stands down.
+
 ### Version 71's owner steps
 
 Nothing for an owner to do. A pick-up for a series now finds when the occurrence ends: version 70 read the end from the winning `next` row, and on a ship where reconcile had written the same `next` later (without the end), it found none and left the pick-up out.
