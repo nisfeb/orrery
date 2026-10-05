@@ -155,6 +155,15 @@ ok('the time-to-leave card offers the token without showing one, says when the p
   travelSettings.includes('<h2>Time to leave</h2>') && travelSettings.includes('name="token" type="password" placeholder="a token is set; leave blank to keep it"')
   && travelSettings.includes('Your phone last said where you are') && travelSettings.includes('Next: Parent meeting') && travelSettings.includes('32 min with traffic')
   && travelSettings.includes('data-save-travel="1"'));
+const whySettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], { enabled: true, token_set: true },
+  { next: { name: 'Fencing', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 31, typical_minutes: 19, via: 'I 95 South', incident: 'Crash on I-95 S', learned_min: 4 } });
+ok('the next plan says why: the usual time, the roads, an incident, and what arrivals there taught (version 73)',
+  whySettings.includes('31 min with traffic (19 usual) via I 95 South') && whySettings.includes('On the way: Crash on I-95 S') && whySettings.includes('Your arrivals there add 4 min to park.'));
+const calmSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], { enabled: true },
+  { next: { name: 'Fencing', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 20, typical_minutes: 19, via: '', incident: '', learned_min: 0 } });
+ok('a drive near its usual time says no usual, no roads, no incident and nothing learned', calmSettings.includes('20 min with traffic, leave by') && !calmSettings.includes('usual') && !calmSettings.includes('On the way') && !calmSettings.includes('arrivals there'));
+const mapSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, { day: '2026-10-06', at: '2026-10-06T11:00:00Z', sent: true, tags: {}, notes: [], map: 'pin-l-1+d9534f(-81.4,30.1)' });
+ok('the brief card shows the stops on a map when the brief had any', mapSettings.includes('<img class="brief-map"') && mapSettings.includes('/apps/orrery/api/brief/map?at=2026-10-06T11%3A00%3A00Z') && !whySettings.includes('brief-map'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
 ok('the schema and policy cards still follow', genSettings.indexOf('<h2>Generator</h2>') < genSettings.indexOf('<h2>schema.json</h2>') && genSettings.includes('id="policy"'));

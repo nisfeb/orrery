@@ -1209,6 +1209,44 @@
   ==
 ::  ==  time to leave (version 69)
 ::
+++  test-on-the-way
+  =/  dir=json  (jo '{"routes": [{"duration": 1860.2, "duration_typical": 1140.4, "legs": [{"summary": "I 95 South, Baymeadows Road", "incidents": [{"impact": "minor", "description": "Independent Dr: no through traffic"}, {"impact": "major", "description": "Crash on I-95 S at Baymeadows"}]}]}]}')
+  =/  calm=json  (jo '{"routes": [{"duration": 1200, "legs": [{"summary": "Philips Hwy", "incidents": [{"impact": "low", "description": "Lane closed"}]}]}]}')
+  =/  shop=json  (jo '{"features": [{"geometry": {"coordinates": [-81.5440, 30.3250]}, "properties": {"name": "Walgreens", "metadata": {"phone": "+19049249019", "open_hours": {"weekday_text": ["Monday: 8:00 AM - 10:00 PM", "Tuesday: 8:00 AM - 9:00 PM", "Sunday: Closed"]}}}}]}')
+  =/  club=json  (jo '{"features": [{"geometry": {"coordinates": [-81.5430, 30.3245]}, "properties": {"name": "Club", "metadata": {"open_hours": {"weekday_text": ["Tuesday: Open 24 hours"]}}}}]}')
+  =/  far=json  (jo '{"features": [{"geometry": {"coordinates": [-81.4834, 30.1106]}, "properties": {"name": "Elsewhere", "metadata": {}}}]}')
+  =/  at=[@t @t]  ['30.3241' '-81.5423']
+  ;:  weld
+    ::  why the drive is what it is: usual seconds, the roads, the worst that matters
+    (expect-eq !>([`(unit @ud)`[~ 1.140] 'I 95 South, Baymeadows Road' 'Crash on I-95 S at Baymeadows']) !>((route-why:orr dir)))
+    (expect-eq !>([`(unit @ud)`~ 'Philips Hwy' '']) !>((route-why:orr calm)))
+    (expect-eq !>(`(unit @ud)`[~ 1.860]) !>((route-secs:orr dir)))
+    ::  the usual time only when traffic adds three minutes or more
+    (expect-eq !>('31 min with traffic (19 usual) via I 95 South') !>((drive-line:orr 1.860 `1.140 'I 95 South')))
+    (expect-eq !>('20 min with traffic') !>((drive-line:orr 1.200 `1.140 '')))
+    ::  late by the drive and the minutes to park past the time to be there
+    (expect-eq !>(5) !>((late-by:orr now 1.800 ~m5 (add now ~m30))))
+    (expect-eq !>(0) !>((late-by:orr now 600 ~m5 (add now ~m30))))
+    ::  learned: nothing under three arrivals, the lower middle, twenty minutes at most
+    (expect-eq !>(`@dr`0) !>((learned-extra:orr ~[300 60])))
+    (expect-eq !>(~s120) !>((learned-extra:orr ~[300 60 120])))
+    (expect-eq !>(~m20) !>((learned-extra:orr ~[3.000 2.000 2.500 9.000])))
+    ::  points: millionths, near within about 300 m, across the sign apart
+    (expect-eq !>(`(unit [? @ud])`[~ & 81.542.300]) !>((micro:orr '-81.5423')))
+    (expect !>((near:orr at ['30.3250' '-81.5440'])))
+    (expect !>(!(near:orr at ['30.1106' '-81.4834'])))
+    (expect !>(!(near:orr ['0.001' '1.0'] ['-0.003' '1.0'])))
+    ::  a place now: near, its phone, its hours that day; open all day says nothing
+    (expect-eq !>(`(unit [@t @t @t])`[~ 'Walgreens' '+19049249019' 'Tuesday: 8:00 AM - 9:00 PM']) !>((place-info:orr shop at 2)))
+    (expect-eq !>(`(unit [@t @t @t])`[~ 'Walgreens' '+19049249019' 'Sunday: Closed']) !>((place-info:orr shop at 0)))
+    (expect-eq !>(`(unit [@t @t @t])`[~ 'Club' '' '']) !>((place-info:orr club at 2)))
+    (expect-eq !>(`(unit [@t @t @t])`~) !>((place-info:orr far at 2)))
+    ::  the search: encoded twice, near the point, businesses only
+    (expect-eq !>('https://api.mapbox.com/search/searchbox/v1/forward?q=Smile%2520Dental%252C%25201%2520Main%2520St&proximity=-81.5423,30.3241&types=poi&limit=1&access_token=tk') !>((searchbox-url:orr 'https://api.mapbox.com' 'tk' 'Smile Dental\0a1 Main St' at)))
+    ::  the map: numbered pins, lon before lat, fit to them
+    (expect-eq !>('pin-l-1+d9534f(-81.4,30.1),pin-l-2+d9534f(-81.5,30.2)') !>((static-overlay:orr ~[['30.1' '-81.4'] ['30.2' '-81.5']])))
+    (expect-eq !>('https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-l-1+d9534f(-81.4,30.1)/auto/600x360@2x?padding=40&access_token=tk') !>((static-url:orr 'https://api.mapbox.com' 'tk' 'pin-l-1+d9534f(-81.4,30.1)')))
+  ==
 ++  test-leave
   =/  mk
     |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
@@ -1297,7 +1335,9 @@
     (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr geo)))
     (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"features": []}'))))
     ::  the brief's lines: the sure ones say so, the unsure ones ask, a no is left out
-    (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr ahead 'UTC')))
+    (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr (turn ahead |=(a=appointment:orr [a '' ''])) 'UTC')))
+    ::  a stop with its pin on the map and that day's hours (version 73)
+    (expect-eq !>(`(list @t)`~['[1] 13:30  Parent meeting (Tuesday: 9:00 AM - 5:00 PM): I\'ll say when to leave']) !>((brief-leaving:orr (scag 1 (turn ahead |=(a=appointment:orr [a '1' 'Tuesday: 9:00 AM - 5:00 PM']))) 'UTC')))
   ==
 ++  test-trips
   =/  mk
@@ -1341,7 +1381,7 @@
     =/  bs=(list appointment:orr)  (ahead ~[both])
     (expect !>(!=((appt-key:orr (snag 0 bs)) (appt-key:orr (snag 1 bs)))))
     ::  the brief says which leg
-    (expect-eq !>(`(list @t)`~['13:00  Drop off: Both (SAYC Sailing Center): I\'ll say when to leave' '14:00  Pick up: Both (SAYC Sailing Center): I\'ll say when to leave']) !>((brief-leaving:orr (ahead ~[both]) 'UTC')))
+    (expect-eq !>(`(list @t)`~['13:00  Drop off: Both (SAYC Sailing Center): I\'ll say when to leave' '14:00  Pick up: Both (SAYC Sailing Center): I\'ll say when to leave']) !>((brief-leaving:orr (turn (ahead ~[both]) |=(a=appointment:orr [a '' ''])) 'UTC')))
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')

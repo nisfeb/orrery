@@ -109,3 +109,5 @@ select { font: inherit; padding: .2rem .3rem; border: 1px solid var(--line); bor
 details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }
 .alias { white-space: nowrap; margin-right: .3rem; }
 .alias button.small { margin-left: .15rem; padding: 0 .3rem; }
+
+.brief-map { max-width: 100%; height: auto; border-radius: 6px; }

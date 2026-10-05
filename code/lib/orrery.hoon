@@ -6327,14 +6327,174 @@
   ^-  (unit @t)
   ?:  &((gth secs 7.200) !=(%yes verdict))  `'over two hours away, and not said to be going'
   ?.  =('position' from)  ~
-  =/  metres=(unit @ud)
-    =/  t=tape  (trip acc)
-    (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
-  ?.  &(?=(^ metres) (lte u.metres 100))  ~
+  ?.  (close-fix acc)  ~
   ?:  (lte secs 120)  `'already there'
   ?.  &(?=(^ fix) (lte u.fix now) (lth (sub now u.fix) ~m12))  ~
   ?.  &((lte (mul 4 secs) (mul 3 longest)) (gte longest (add secs 180)))  ~
   `'on the way already'
+::  ==  on the way (version 73)
+::
+::  +close-fix: a fix good to 100 m, by its accuracy as the phone wrote
+::  it; none written is not close
+::
+++  close-fix
+  |=  acc=@t
+  ^-  ?
+  =/  t=tape  (trip acc)
+  =/  m=(unit @ud)  (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+  &(?=(^ m) (lte u.m 100))
+::  +spot-key: what a place's learning is kept under: the place it
+::  names, else its address as the geocache keys it
+::
+++  spot-key
+  |=  a=appointment
+  ^-  @t
+  ?^(place.a u.place.a (addr-key where.a))
+::  +whole: a JSON number's whole part, ~ for anything else
+::
+++  whole
+  |=  v=json
+  ^-  (unit @ud)
+  ?.  ?=([%n *] v)  ~
+  =/  t=tape  (trip p.v)
+  (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+::  +route-why: why the drive takes what it does, from the route Mapbox
+::  answers with traffic: its seconds at that hour in usual traffic, the
+::  roads it takes (the first leg's summary), and the worst incident on
+::  it that matters, a critical one before a major; a minor or a street
+::  note is left out
+::
+++  route-why
+  |=  j=json
+  ^-  [typical=(unit @ud) via=@t incident=@t]
+  =/  rs=(list json)  (ga j 'routes')
+  ?~  rs  [~ '' '']
+  =/  legs=(list json)  (ga i.rs 'legs')
+  =/  incs=(list json)  (zing (turn legs |=(l=json (ga l 'incidents'))))
+  =/  worst=(list json)
+    =/  crit=(list json)  (skim incs |=(i=json =('critical' (gs i 'impact'))))
+    ?^  crit  crit
+    (skim incs |=(i=json =('major' (gs i 'impact'))))
+  :+  (whole (gj i.rs 'duration_typical'))
+    ?~(legs '' (gs i.legs 'summary'))
+  ?~(worst '' (end [3 100] (gs i.worst 'description')))
+::  +drive-line: "31 min with traffic (19 usual) via I 95 South": the
+::  usual time only when the traffic adds three minutes or more
+::
+++  drive-line
+  |=  [secs=@ud typical=(unit @ud) via=@t]
+  ^-  @t
+  =/  mins=@ud  (div (add secs 30) 60)
+  =/  usual=@t
+    ?~  typical  ''
+    =/  um=@ud  (div (add u.typical 30) 60)
+    ?.  (gte mins (add um 3))  ''
+    (rap 3 ' (' (crip (a-co:co um)) ' usual)' ~)
+  (rap 3 (crip (a-co:co mins)) ' min with traffic' usual ?:(=('' via) '' (cat 3 ' via ' via)) ~)
+::  +late-by: whole minutes the owner will be late, leaving now: the
+::  drive and the minutes to park past the time to be there; 0 on time
+::
+++  late-by
+  |=  [now=@da secs=@ud buffer=@dr starts=@da]
+  ^-  @ud
+  =/  there=@da  :(add now (mul secs ~s1) buffer)
+  ?.  (gth there starts)  0
+  (div (sub there starts) ~m1)
+::  +learned-extra: what a place adds to the minutes to park, learned
+::  from the owner's arrivals there: each sample the seconds an arrival
+::  came after Mapbox's estimate from the road (never below 0), the
+::  lower middle of them once there are three, twenty minutes at most
+::
+++  learned-extra
+  |=  samples=(list @ud)
+  ^-  @dr
+  ?:  (lth (lent samples) 3)  `@dr`0
+  =/  s=(list @ud)  (sort samples lth)
+  (mul ~s1 (min 1.200 (snag (div (dec (lent s)) 2) s)))
+::  +micro: a decimal degree as a sign and millionths
+::
+++  micro
+  |=  t=@t
+  ^-  (unit [neg=? n=@ud])
+  =/  got  (rush t ;~(plug (punt hep) dem (punt ;~(pfix dot (plus nud)))))
+  ?~  got  ~
+  =/  frac=tape  (scag 6 (weld (fall +>.u.got "") "000000"))
+  `[?=(^ -.u.got) (add (mul +<.u.got 1.000.000) (fall (rush (crip frac) dem) 0))]
+::  +near: two points within about 300 m: 0.003 degrees of latitude and
+::  0.0035 of longitude, no trigonometry
+::
+++  near
+  |=  [a=[lat=@t lon=@t] b=[lat=@t lon=@t]]
+  ^-  ?
+  =/  gap
+    |=  [x=@t y=@t]
+    ^-  (unit @ud)
+    =/  p  (micro x)
+    =/  q  (micro y)
+    ?:  |(?=(~ p) ?=(~ q))  ~
+    ?.  =(neg.u.p neg.u.q)  `(add n.u.p n.u.q)
+    `?:((gth n.u.p n.u.q) (sub n.u.p n.u.q) (sub n.u.q n.u.p))
+  =/  dl  (gap lat.a lat.b)
+  =/  dn  (gap lon.a lon.b)
+  &(?=(^ dl) ?=(^ dn) (lte u.dl 3.000) (lte u.dn 3.500))
+::  +searchbox-url: Mapbox's place search for an appointment's place:
+::  the first line of where it is with its address, near the point it
+::  was placed at, places of business only. A GET, its query encoded
+::  twice: the ship's HTTP client decodes a query once before sending
+::  (version 69), so once would go out raw
+::
+++  searchbox-url
+  |=  [api=@t token=@t q=@t at=[lat=@t lon=@t]]
+  ^-  @t
+  =/  one=@t  (join-cords ', ' (skip (turn (split-lines q) trim-cord) |=(t=@t =('' t))))
+  %+  rap  3
+  :~  api  '/search/searchbox/v1/forward?q='
+      (crip (en-urlt:html (en-urlt:html (trip (end [3 200] one)))))
+      '&proximity='  lon.at  ','  lat.at
+      '&types=poi&limit=1&access_token='  token
+  ==
+::  +place-info: what Mapbox says of the place now, for this one use:
+::  its name, its phone and its hours on a day ("Tuesday: 8:00 AM to
+::  10:00 PM"; nothing for open all day), only when it lies within
+::  300 m of where the ship placed the appointment. Never kept: Mapbox's
+::  terms allow a search result no storage
+::
+++  place-info
+  |=  [j=json at=[lat=@t lon=@t] day=@ud]
+  ^-  (unit [name=@t phone=@t hours=@t])
+  =/  fs=(list json)  (ga j 'features')
+  ?~  fs  ~
+  =/  c=(list json)  (ga (gj i.fs 'geometry') 'coordinates')
+  ?.  ?=([[%n *] [%n *] *] c)  ~
+  ?.  (near at [p.i.t.c p.i.c])  ~
+  =/  pr=json  (gj i.fs 'properties')
+  =/  md=json  (gj pr 'metadata')
+  =/  dname=@t  (snag (mod day 7) weekday-names)
+  =/  lines=(list @t)  (strings (ga (gj md 'open_hours') 'weekday_text'))
+  =/  today=(list @t)
+    (skim lines |=(t=@t =(dname (end [3 (met 3 dname)] t))))
+  =/  hours=@t
+    ?~  today  ''
+    ?^  (find "24 hours" (trip i.today))  ''
+    (end [3 80] i.today)
+  `[(gs pr 'name') (gs md 'phone') hours]
+::  +static-overlay: the day's stops as numbered pins, nine at most
+::
+++  static-overlay
+  |=  pins=(list [lat=@t lon=@t])
+  ^-  @t
+  =/  n=@ud  0
+  =|  out=(list @t)
+  |-
+  ?:  |(?=(~ pins) (gte n 9))  (join-cords ',' (flop out))
+  =/  pin=@t  (rap 3 'pin-l-' (crip (a-co:co +(n))) '+d9534f(' lon.i.pins ',' lat.i.pins ')' ~)
+  $(pins t.pins, n +(n), out [pin out])
+::  +static-url: Mapbox's still map of those pins, fit to them
+::
+++  static-url
+  |=  [api=@t token=@t overlay=@t]
+  ^-  @t
+  (rap 3 api '/styles/v1/mapbox/streets-v12/static/' overlay '/auto/600x360@2x?padding=40&access_token=' token ~)
 ::  +addr-key: an address as the geocache keys it: lower case, one space
 ::
 ++  addr-key
@@ -6409,10 +6569,7 @@
   ^-  (unit @ud)
   =/  rs=(list json)  (ga j 'routes')
   ?~  rs  ~
-  =/  d=json  (gj i.rs 'duration')
-  ?.  ?=([%n *] d)  ~
-  =/  t=tape  (trip p.d)
-  (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+  (whole (gj i.rs 'duration'))
 ::  +geocode-point: the first feature's point, as text, lat then lon,
 ::  from a batch's first answer or a single answer
 ::
@@ -6459,15 +6616,18 @@
 ::  to, with the reply that says so
 ::
 ++  brief-leaving
-  |=  [appts=(list appointment) tz=@t]
+  |=  [appts=(list [a=appointment pin=@t hours=@t]) tz=@t]
   ^-  (list @t)
   %+  murn  appts
-  |=  a=appointment
+  |=  [a=appointment pin=@t hours=@t]
   ^-  (unit @t)
   ?:  =(%no verdict.a)  ~
-  =/  at=@t  (hhmm starts.a tz)
+  ::  its pin on the map, and that day's hours when Mapbox has them
+  ::  (version 73)
+  =/  at=@t  (rap 3 ?:(=('' pin) '' (rap 3 '[' pin '] ' ~)) (hhmm starts.a tz) ~)
   =/  first=@t  =/(ls (split-lines where.a) ?~(ls '' i.ls))
-  =/  there=@t  ?:(=('' first) '' (rap 3 ' (' (end [3 60] first) ')' ~))
+  =/  inside=@t  (join-cords ', ' (skip `(list @t)`~[(end [3 60] first) hours] |=(t=@t =('' t))))
+  =/  there=@t  ?:(=('' inside) '' (rap 3 ' (' inside ')' ~))
   ?:  =(%pick leg.a)
     `(rap 3 at '  Pick up: ' name.a there ': I\'ll say when to leave' ~)
   ?:  =(%drop leg.a)
@@ -8177,6 +8337,7 @@
   ?:  &(=('GET' meth) ?=([%api %mail %last ~] suffix))          `[%get-mail-last %own]
   ?:  &(=('POST' meth) ?=([%api %mail %wake ~] suffix))         `[%post-mail-wake %own]
   ?:  &(=('GET' meth) ?=([%api %brief %last ~] suffix))         `[%get-brief-last %own]
+  ?:  &(=('GET' meth) ?=([%api %brief %map ~] suffix))          `[%get-brief-map %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))          `[%get-exec-last %own]
   ?:  &(=('GET' meth) ?=([%api %calendar %last ~] suffix))      `[%get-calendar-last %own]

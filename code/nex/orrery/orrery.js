@@ -645,6 +645,8 @@
     if (last.at) {
       out += '<p class="muted">Last brief for ' + esc(last.day || '') + ' at ' + fmtTime(last.at) + (last.sent ? ', sent' : ', not sent') + '; ' + Object.keys(last.tags || {}).length + ' actions tagged.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+      // the stops on a map, fetched by the ship from Mapbox as it is shown (version 73)
+      if (last.map) out += '<p><img class="brief-map" alt="Today\'s stops on a map" src="' + API + '/brief/map?at=' + encodeURIComponent(last.at) + '"></p>';
     }
     return out + '</div>';
   }
@@ -707,7 +709,14 @@
       '<p><button data-save-travel="1">save</button><button data-travel-wake="1">look now</button></p></div>' +
       '<p class="muted">' + (t.position_at ? 'Your phone last said where you are ' + fmtTime(t.position_at) + '.' : 'Your phone has not said where you are.') + '</p>';
     var n = last.next;
-    if (n && n.name) out += '<p class="muted">Next: ' + esc(n.name) + ' at ' + fmtTime(n.starts) + ', ' + esc(String(n.minutes)) + ' min with traffic, leave by ' + fmtTime(n.leave_by) + '.</p>';
+    if (n && n.name) {
+      // why the drive is what it is, and what arrivals there taught (version 73)
+      var usual = n.typical_minutes != null && n.minutes >= n.typical_minutes + 3 ? ' (' + n.typical_minutes + ' usual)' : '';
+      out += '<p class="muted">Next: ' + esc(n.name) + ' at ' + fmtTime(n.starts) + ', ' + esc(String(n.minutes)) + ' min with traffic' + esc(usual) +
+        (n.via ? ' via ' + esc(n.via) : '') + ', leave by ' + fmtTime(n.leave_by) + '.' +
+        (n.learned_min ? ' Your arrivals there add ' + esc(String(n.learned_min)) + ' min to park.' : '') + '</p>';
+      if (n.incident) out += '<p class="muted">On the way: ' + esc(n.incident) + '</p>';
+    }
     (last.notes || []).forEach(function (x) { out += '<p class="muted">' + esc(x) + '</p>'; });
     return out + '</div>';
   }

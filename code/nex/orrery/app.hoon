@@ -29,6 +29,7 @@
 ::    /read.json  /read-last.json  /read-recent.json  /read-inbox/<id>  /read.sig   the read channel (version 59): text a client hands the ship
 ::    /follows/<name>  /follow.sig      the lattice pages followed (version 66): each page sent, its situation, where it stands
 ::    /travel.json  /position.json  /geocache.json  /leave-last.json  /leave.sig   time to leave (version 69)
+::    /trip.json  /trips.json           the trip the owner is on, and what their arrivals taught (version 73)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -165,6 +166,8 @@
           [%fall %& [/ %'position.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'geocache.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'leave-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'trip.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'trips.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
@@ -373,7 +376,9 @@
           [~ %'leave.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery leave: failed")
         |-
-        ;<  next=(unit @da)  bind:m  leave-pass
+        ;<  on=(unit @da)  bind:m  trip-step
+        ;<  plan=(unit @da)  bind:m  leave-pass
+        =/  next=(unit @da)  ?~(on plan ?~(plan on `(min u.on u.plan)))
         ;<  now=@da  bind:m  get-time:io
         =/  wake=@da  ?~(next (add now ~h1) (max (add now ~m1) (min u.next (add now ~h1))))
         ;<  ~  bind:m  (set-timer:io /leave wake)
@@ -1265,6 +1270,7 @@
     %get-mail-last          (serve-doc eyre-id %'mail-last.json')
     %post-mail-wake         (serve-prod eyre-id %'mail.sig' 'mail')
     %get-brief-last         (serve-doc eyre-id %'brief-last.json')
+    %get-brief-map          (serve-brief-map eyre-id)
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
     %get-calendar-last      (serve-doc eyre-id %'calendar-events-last.json')
@@ -5303,22 +5309,35 @@
   ?.  =(200 status.got)
     ;<  ~  bind:m  (leave-record last now ~[(rap 3 'Mapbox answered ' (scot %ud status.got) ' for the drive to ' name.a ~)] ~ alerted quiet)
     (pure:m `(add now ~m10))
-  =/  secs=(unit @ud)  (route-secs:orr (fall (de:json:html body.got) ~))
+  =/  dj=json  (fall (de:json:html body.got) ~)
+  =/  secs=(unit @ud)  (route-secs:orr dj)
   ?~  secs
     ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no route to ' name.a ~)] ~ alerted quiet)
     (pure:m ~)
+  ::  why the drive is what it is: usual traffic, the roads, an
+  ::  incident that matters (version 73)
+  =/  why=[typical=(unit @ud) via=@t incident=@t]  (route-why:orr dj)
   ::  the longest drive seen for this occurrence, what a set-off is
   ::  measured from: each move the phone reports plans it again
   =/  longest=@ud
     =/  nx=json  (gj:orr last 'next')
     ?.  =(key (gs:orr nx 'key'))  u.secs
     (max u.secs (fall (gn:orr nx 'longest_secs') 0))
-  =/  [leave=@da alert=@da]  (leave-times:orr starts.a u.secs buffer.cfg lead.cfg)
+  ::  the minutes to park, and what the owner's arrivals at this place
+  ::  have added to them (version 73)
+  ;<  trips=json  bind:m  (read-json (rf 0 / %'trips.json'))
+  =/  spot=@t  (spot-key:orr a)
+  =/  extra=@dr  (learned-extra:orr (murn (ga:orr trips spot) whole:orr))
+  =/  buffer=@dr  (add buffer.cfg extra)
+  =/  [leave=@da alert=@da]  (leave-times:orr starts.a u.secs buffer lead.cfg)
   ;<  tz=@t  bind:m  owner-tz
   =/  minutes=@ud  (div (add u.secs 30) 60)
   ::  the leave-by the page and the brief show, lasting until the start
   =/  l=(unit loaded:orr)  (loaded-of:orr all id.a)
   =/  shown=@t  ?~(l '' (winner-text:orr (fold:orr rows.u.l multi now) 'leave-by'))
+  ::  whom to tell when the owner runs late: who organized it, when that
+  ::  is a person other than the owner the ship can reach (version 73)
+  =/  [tell=@t via=@t]  (late-contact all multi now l)
   ;<  *  bind:m
     ?:  =(shown (en-iso:orr leave))  (pure:(fiber:fiber:nexus ,@ud) 0)
     %+  file-ops-on
@@ -5337,7 +5356,12 @@
         ['from' s+kind.u.from]
         ['verdict' s+verdict.a]
         ['trip' s+leg.a]
+        ['typical_minutes' ?~(typical.why ~ (numb:enjs:format (div (add u.typical.why 30) 60)))]
+        ['via' s+via.why]
+        ['incident' s+incident.why]
+        ['learned_min' (numb:enjs:format (div extra ~m1))]
     ==
+  =/  trip=json  (trip-doc a key leave u.dest buffer spot tell via now)
   ?.  (lte alert (add now ~s30))
     ;<  ~  bind:m  (leave-record last now ~ plan alerted quiet)
     =/  points=(list @da)
@@ -5347,10 +5371,15 @@
   ::  empty, so the phone's alarm stands down, and the key goes in
   ::  quiet, not alerted, since no push went
   ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
-  =/  why=(unit @t)
+  =/  hush=(unit @t)
     (leave-quiet:orr u.secs longest kind.u.from (gs:orr pos 'acc') (de-iso:orr (gs:orr pos 'at')) now verdict.a)
-  ?^  why
-    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no alert for ' name.a ': ' u.why ~)] ~ alerted [key quiet])
+  ?^  hush
+    ::  already on the way is still a trip: watched for lateness and
+    ::  for the arrival (version 73)
+    ;<  ~  bind:m
+      ?.  =('on the way already' u.hush)  (pure:(fiber:fiber:nexus ,~) ~)
+      (over:io (rf 0 / %'trip.json') [[/ %json] trip])
+    ;<  ~  bind:m  (leave-record last now ~[(rap 3 'no alert for ' name.a ': ' u.hush ~)] ~ alerted [key quiet])
     (pure:m `(add now ~s5))
   ::  the alert: once per occurrence; its tag lets the phone cancel the
   ::  alarm it set in case this push did not come
@@ -5364,7 +5393,13 @@
   =/  title=@t
     ?:  =(0 left)  (rap 3 'Leave now ' for ~)
     (rap 3 'Leave in ' (scot %ud left) ' min ' for ~)
-  =/  body=@t  (rap 3 (scot %ud minutes) ' min with traffic; leave by ' (hhmm:orr leave tz) ~)
+  =/  body=@t
+    %+  rap  3
+    :~  (drive-line:orr u.secs typical.why via.why)
+        '; leave by '  (hhmm:orr leave tz)
+        ?:(=('' incident.why) '' (cat 3 '. ' incident.why))
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] trip])
   ;<  eny=@uvJ  bind:m  get-entropy:io
   ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
@@ -5372,6 +5407,238 @@
   =/  note=@t  ?~(err (rap 3 'told the owner to leave ' for ~) 'the push road is refused')
   ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted] quiet)
   (pure:m `(add starts.a ~m1))
+::  ==  on the way (version 73)
+::
+::  +late-contact: whom to tell when the owner runs late, and how: who
+::  organized it, when that is a person other than the owner, by chat
+::  when they have a ship or by telegram when they have an id; nobody
+::  otherwise
+::
+++  late-contact
+  |=  [all=(list loaded:orr) multi=(set @t) now=@da l=(unit loaded:orr)]
+  ^-  [@t @t]
+  ?~  l  ['' '']
+  =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.l multi now)) 'organizer') ~)
+  ?~  r  ['' '']
+  =/  ref=@t  (gs:orr value.obs.i.r 'ref')
+  ?:  |(=('' ref) =('person/me' ref) !=('person' (kind-of:orr ref)))  ['' '']
+  =/  p=(unit loaded:orr)  (loaded-of:orr all ref)
+  ?~  p  ['' '']
+  =/  w=(map @t (list row:orr))  (fold:orr rows.u.p multi now)
+  ?.  =('' (winner-text:orr w 'ship'))  [ref 'chat']
+  ?.  =('' (winner-text:orr w 'telegram'))  [ref 'telegram']
+  ['' '']
+::  +trip-doc: the trip the owner is on, in trip.json, never served: the
+::  occurrence, the time to be there and to have left, where it is, the
+::  minutes to park as planned, what its learning is kept under, and
+::  whom to tell when late
+::
+++  trip-doc
+  |=  [a=appointment:orr key=@t leave=@da dest=[lat=@t lon=@t] buffer=@dr spot=@t tell=@t via=@t now=@da]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['key' s+key]
+      ['id' s+id.a]
+      ['name' s+name.a]
+      ['where' s+where.a]
+      ['starts' s+(en-iso:orr starts.a)]
+      ['leave_by' s+(en-iso:orr leave)]
+      ['leg' s+leg.a]
+      ['spot' s+spot]
+      ['lat' s+lat.dest]
+      ['lon' s+lon.dest]
+      ['buffer_s' (numb:enjs:format (div buffer ~s1))]
+      ['tell' s+tell]
+      ['via' s+via]
+      ['at' s+(en-iso:orr now)]
+  ==
+::  +trip-step: the trip the owner is on, from the alert, or from when
+::  the phone showed them already on the way, until they are there or
+::  half an hour past the time to be there. It looks at each new fix
+::  from the phone, and every five minutes from five after the time to
+::  have left until they are told or the time to be there has passed:
+::  the drive from where they are. At the place the trip ends, and an
+::  arrival seen from fixes that came close together teaches the place
+::  its minutes to park. Late by five minutes or more: one push saying
+::  so. Answers when to look again
+::
+++  trip-step
+  =/  m  (fiber:fiber:nexus ,(unit @da))
+  ^-  form:m
+  ;<  t=json  bind:m  (read-json (rf 0 / %'trip.json'))
+  =/  key=@t  (gs:orr t 'key')
+  ?:  =('' key)  (pure:m ~)
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
+  =/  cfg=travel-config:orr  (de-travel-config:orr cfg-j)
+  ;<  now=@da  bind:m  get-time:io
+  =/  starts=@da  (fall (de-iso:orr (gs:orr t 'starts')) now)
+  =/  leave=@da  (fall (de-iso:orr (gs:orr t 'leave_by')) starts)
+  ?:  |(!enabled.cfg =('' token.cfg) (gth now (add starts ~m30)))
+    ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] [%o ~]])
+    (pure:m ~)
+  =/  told=?  =([%b &] (gj:orr t 'told'))
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  fix=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
+  =/  seen=(unit @da)  (de-iso:orr (gs:orr t 'fix_at'))
+  =/  looked=(unit @da)  (de-iso:orr (gs:orr t 'looked_at'))
+  ::  a fix is news when it came after the last one looked at, and after
+  ::  the trip began: the one the alert was planned from is not
+  =/  began=@da  (fall (de-iso:orr (gs:orr t 'at')) now)
+  =/  fresh=?  &(?=(^ fix) (gth u.fix (max began (fall seen began))))
+  ::  the clock's look: from five after the time to have left, every
+  ::  five minutes, until told or the time to be there has passed
+  =/  due=?
+    ?&  !told  (lth now starts)  (gte now (add leave ~m5))
+        |(?=(~ looked) (gte now (add u.looked ~m5)))
+    ==
+  =/  again=@da
+    ?:  (lth now (add leave ~m5))  (add leave ~m5)
+    ?:  &(!told (lth now starts))  (add now ~m5)
+    (add starts ~m30)
+  ?.  |(fresh due)  (pure:m `again)
+  ?.  ?&  ?=(^ fix)  (lte u.fix now)  (lth (sub now u.fix) ~h12)
+          (coordinate:orr (gs:orr pos 'lat') 90)  (coordinate:orr (gs:orr pos 'lon') 180)
+      ==
+    (pure:m `again)
+  =/  dest=[lat=@t lon=@t]  [(gs:orr t 'lat') (gs:orr t 'lon')]
+  =/  route=request:http
+    :^  %'POST'  (directions-url:orr api.cfg token.cfg)
+      ~[['content-type' 'application/x-www-form-urlencoded']]
+    `(as-octs:mimes:html (directions-body:orr [(gs:orr pos 'lat') (gs:orr pos 'lon')] dest ~))
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json route ~s30 %route)
+  =/  secs=(unit @ud)  ?.(=(200 status.got) ~ (route-secs:orr (fall (de:json:html body.got) ~)))
+  ::  the look is kept whatever Mapbox said, so a failing route is asked
+  ::  again at the next fix or in five minutes, not at once
+  =/  t1=json
+    =/  with-fix=json  (set-key:orr t 'fix_at' s+(en-iso:orr u.fix))
+    ?.(due with-fix (set-key:orr with-fix 'looked_at' s+(en-iso:orr now)))
+  ?~  secs
+    ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] t1])
+    (pure:m `again)
+  =/  close=?  (close-fix:orr (gs:orr pos 'acc'))
+  ::  there: the trip ends. The arrival is learned when this fix came
+  ::  within three minutes of the one before, so its time is when they
+  ::  got there and not a fix taken minutes after
+  ?:  &(close (lte u.secs 120))
+    =/  eta=(unit @da)  (de-iso:orr (gs:orr t 'eta'))
+    =/  dense=?  &(fresh ?=(^ seen) (lte (sub u.fix (min u.fix u.seen)) ~m3))
+    ;<  ~  bind:m
+      ?.  &(dense ?=(^ eta))  (pure:(fiber:fiber:nexus ,~) ~)
+      (learn-arrival (gs:orr t 'spot') (div (sub u.fix (min u.fix u.eta)) ~s1))
+    ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] [%o ~]])
+    (pure:m ~)
+  ::  the first estimate from the road: a close fix since the trip began
+  =/  t2=json
+    ?.  &(=('' (gs:orr t1 'eta')) fresh close (gth u.fix began))  t1
+    (set-key:orr t1 'eta' s+(en-iso:orr (add u.fix (mul u.secs ~s1))))
+  =/  buffer=@dr  (mul ~s1 (fall (gn:orr t 'buffer_s') 300))
+  =/  late=@ud  (late-by:orr now u.secs buffer starts)
+  ?:  |(told (lth late 5))
+    ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] t2])
+    (pure:m `again)
+  ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] (set-key:orr t2 'told' b+&)])
+  ;<  ~  bind:m  (tell-late t2 now u.secs late cfg)
+  (pure:m `(add starts ~m30))
+::  +learn-arrival: one more arrival at a place, the last eight kept
+::
+++  learn-arrival
+  |=  [spot=@t late=@ud]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  =('' spot)  (pure:m ~)
+  ;<  trips=json  bind:m  (read-json (rf 0 / %'trips.json'))
+  =/  kept=(list json)  (scag 8 `(list json)`[(numb:enjs:format late) (ga:orr trips spot)])
+  (over:io (rf 0 / %'trips.json') [[/ %json] (set-key:orr trips spot a+kept)])
+::  +tell-late: the owner will be late: a push saying by how much and
+::  when they will be there, with the place's phone as Mapbox has it
+::  now, and a message to whoever organized it proposed for the owner
+::  to send. Its tag is not the alert's, so the phone's alarm is left
+::
+++  tell-late
+  |=  [t=json now=@da secs=@ud late=@ud cfg=travel-config:orr]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  tz=@t  bind:m  owner-tz
+  =/  name=@t  (gs:orr t 'name')
+  =/  there=@t  (hhmm:orr (add now (mul secs ~s1)) tz)
+  ;<  info=(unit [name=@t phone=@t hours=@t])  bind:m
+    (place-now cfg (gs:orr t 'where') [(gs:orr t 'lat') (gs:orr t 'lon')] now tz)
+  =/  call=@t
+    ?~  info  ''
+    ?:  =('' phone.u.info)  ''
+    (rap 3 '. ' name.u.info ': ' phone.u.info ~)
+  =/  title=@t  (rap 3 'Running about ' (crip (a-co:co late)) ' min late for ' name ~)
+  =/  body=@t  (rap 3 'There about ' there ' with traffic' call ~)
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  *  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-late-' (gs:orr t 'key'))]] eny]]
+  =/  tell=@t  (gs:orr t 'tell')
+  ?:  =('' tell)  (pure:m ~)
+  =/  text=@t  (rap 3 'Running about ' (crip (a-co:co late)) ' minutes late, there about ' there '.' ~)
+  =/  act=json
+    %-  pairs:enjs:format
+    :~  ['kind' s+'message']
+        ['title' s+(rap 3 'Say you are running late to ' name ~)]
+        ['about' a+~[s+(gs:orr t 'id') s+tell]]
+        ['payload' (pairs:enjs:format ~[['via' s+(gs:orr t 'via')] ['to' s+tell] ['text' s+text]])]
+    ==
+  ;<  *  bind:m  (file-ops-on ~[(pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr act now 'ship')]])] /leave)
+  (pure:m ~)
+::  +place-now: what Mapbox says of a place now, for one use and never
+::  kept: its name, phone and that day's hours, when the search finds a
+::  business within 300 m of the point; ~ otherwise or on any failure
+::
+++  place-now
+  |=  [cfg=travel-config:orr where=@t at=[lat=@t lon=@t] when=@da tz=@t]
+  =/  m  (fiber:fiber:nexus ,(unit [name=@t phone=@t hours=@t]))
+  ^-  form:m
+  ?:  |(=('' where) =('' token.cfg))  (pure:m ~)
+  =/  req=request:http  [%'GET' (searchbox-url:orr api.cfg token.cfg where at) ~ ~]
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json req ~s20 %place)
+  ?.  =(200 status.got)  (pure:m ~)
+  =/  d=(unit @da)  (de-iso:orr (cat 3 (local-day:orr when tz) 'T00:00:00Z'))
+  ?~  d  (pure:m ~)
+  =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore u.d)
+  (pure:m (place-info:orr (fall (de:json:html body.got) ~) at (dow:orr y mo dd)))
+::  +brief-places: today's stops for the brief: each the owner goes to
+::  that has a point is a numbered pin, nine at most, and a business at
+::  its point gives that day's hours, looked up now and never kept.
+::  Answers the stops in order with their pins and hours, and the pins
+::
+++  brief-places
+  |=  [cfg=travel-config:orr all=(list loaded:orr) multi=(set @t) now=@da tz=@t ahead=(list appointment:orr)]
+  =/  m  (fiber:fiber:nexus ,[(list [a=appointment:orr pin=@t hours=@t]) (list [lat=@t lon=@t])])
+  ^-  form:m
+  =|  out=(list [a=appointment:orr pin=@t hours=@t])
+  =|  pins=(list [lat=@t lon=@t])
+  |-
+  ?~  ahead  (pure:m [(flop out) (flop pins)])
+  =/  a=appointment:orr  i.ahead
+  ?:  |(=(%no verdict.a) (gte (lent pins) 9))
+    $(ahead t.ahead, out [[a '' ''] out])
+  ;<  got=[pt=(unit [lat=@t lon=@t]) why=@t]  bind:m  (point-of cfg all multi now a)
+  ?~  pt.got  $(ahead t.ahead, out [[a '' ''] out])
+  ;<  info=(unit [name=@t phone=@t hours=@t])  bind:m  (place-now cfg where.a u.pt.got starts.a tz)
+  =/  pin=@t  (crip (a-co:co +((lent pins))))
+  $(ahead t.ahead, out [[a pin ?~(info '' hours.u.info)] out], pins [u.pt.got pins])
+::  +serve-brief-map: the last brief's stops on Mapbox's still map,
+::  fetched now with the token and answered as it comes, never kept
+::
+++  serve-brief-map
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 1 / %'brief-last.json'))
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'travel.json'))
+  =/  cfg=travel-config:orr  (de-travel-config:orr cfg-j)
+  =/  overlay=@t  (gs:orr last 'map')
+  ?:  |(=('' overlay) =('' token.cfg))  (send-err eyre-id 404 'no map for the last brief')
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (fetch-json [%'GET' (static-url:orr api.cfg token.cfg overlay) ~ ~] ~s20 %map)
+  ?.  =(200 status.got)  (send-err eyre-id 502 (cat 3 'Mapbox answered ' (crip (a-co:co status.got))))
+  %+  send-simple:srv  eyre-id
+  [[200 ~[['content-type' 'image/png'] ['cache-control' 'private, max-age=3600']]] `(as-octs:mimes:html body.got)]
 ::  ==  the daily brief (version 52)
 ::
 ::  +brief-send: today's brief, unless one went today already (forced
@@ -5429,10 +5696,18 @@
     =/  t=@t  (trim-cord:orr text.p.ans)
     (pure:n [?:(=('' t) 'Nothing to add.' t) ''])
   ;<  travel-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
+  =/  travel=travel-config:orr  (de-travel-config:orr travel-j)
+  ::  the stops with their pins and hours, and the map of them (version 73)
+  ;<  [stops=(list [a=appointment:orr pin=@t hours=@t]) pins=(list [lat=@t lon=@t])]  bind:m
+    ?.  &(enabled.travel (gth to now))  (pure:(fiber:fiber:nexus ,[(list [a=appointment:orr pin=@t hours=@t]) (list [lat=@t lon=@t])]) [~ ~])
+    (brief-places travel all multi now tz (appointments-ahead:orr all multi now (sub to now)))
+  =/  overlay=@t  (static-overlay:orr pins)
+  ;<  tg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  public=@t  public-url:(de-tg-config:orr tg-j)
   =/  leaving=(list @t)
-    ?.  enabled:(de-travel-config:orr travel-j)  ~
-    ?.  (gth to now)  ~
-    (brief-leaving:orr (appointments-ahead:orr all multi now (sub to now)) tz)
+    %+  weld  (brief-leaving:orr stops tz)
+    ?:  |(=('' overlay) =('' public))  ~
+    ~[(rap 3 'Map of the stops: ' public ?:(=('/' (cut 3 [(dec (max 1 (met 3 public))) 1] public)) '' '/') 'apps/orrery/api/brief/map' ~)]
   =/  text=@t  (brief-render:orr day today leaving lines.waiting suggestions)
   ;<  aus=(unit path)  bind:m  (find-base %auspex)
   ;<  sent=(unit @t)  bind:m
@@ -5454,6 +5729,7 @@
       %+  snoc  ?:(=(day (gs:orr last 'day')) (ga:orr last 'today') *(list json))
       (pairs:enjs:format ~[['text' s+text] ['tags' tags-j]])
       ['said' s+suggestions]
+      ['map' s+overlay]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
 ::  +calendar-cache: the calendar's order index, ~ without the desk or
