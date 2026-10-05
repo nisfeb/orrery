@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 70's owner steps
+
+Nothing for an owner to do: the ship adds `drop-off` and `pick-up` to situations and activities in its stored schema by itself (`+schema-adds` row 70). Say who drops off and who picks up, in a message, the instruction box or a reply to the brief ("Andrea drops the kids off at sailing and I pick them up"), and time to leave alerts you for your legs only: a drop-off for the start, a pick-up for the end. The brief's "When to leave" says which leg.
+
 ### Version 69's owner steps
 
 No new road, so no consent prompt: the outbound-HTTPS road's description now says it also asks Mapbox for drive times, and the kernel compares roads, not their words. The ship adds `attending` and `leave-by` to situations and activities in its stored schema by itself (`+schema-adds` row 69).
