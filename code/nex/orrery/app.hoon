@@ -6095,8 +6095,14 @@
   =/  m  (fiber:fiber:nexus ,exec-cal)
   ^-  form:m
   ;<  base=(unit path)  bind:m  (find-base %calendar)
-  ?~  base  (pure:m [~ ~ seen | ~])
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ::  no calendar: the actions alone say a pass is due, so an approval is
+  ::  carried out at once and not at the hour (version 73)
+  ?~  base
+    =/  acts-hash=@uvH  (sham acts)
+    ?:  &(?=(^ seen) =(acts.u.seen acts-hash))  (pure:m [~ ~ seen | ~])
+    ;<  now=@da  bind:m  get-time:io
+    (pure:m [~ ~ ?~(seen `[acts-hash *cass:clay ~ now] `u.seen(acts acts-hash)) & ~])
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base %'calendar.calendar'] ~)
   ?.  ?=([~ %file *] vw)  (pure:m [base ~ seen | ~])
   ;<  now=@da  bind:m  get-time:io
