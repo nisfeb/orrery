@@ -24,6 +24,19 @@ def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
     return gate.curl(method, url, body, jar=jar, token=token, timeout=timeout)
 
 
+# a ship without a live calendar or auspex cannot pass the executor's, the calendar's or the mail's checks,
+# and each would wait out its timeout: 27 of 40 minutes on a bare test ship (2026-10-05). Say so and stop,
+# unless --partial asks for the run anyway
+def desk_live(d):
+    code, v = curl('GET', HOST + '/grubbery/ball/apps/shell.shell/desks/%s.desk/desk/data?info=1' % d)
+    return code == 200 and any(str(dictish(c).get('name', '')).startswith(d + '.') for c in dictish(v).get('children') or [])
+MISSING = [d for d in ('calendar', 'auspex') if not desk_live(d)]
+if MISSING and '--partial' not in sys.argv:
+    print('no live %s desk on this ship: the executor, calendar and mail checks cannot pass, and each would wait out its timeout. '
+          'Set it up, or pass --partial to run anyway.' % ' or '.join(MISSING))
+    sys.exit(2)
+
+
 now = datetime.now(timezone.utc).replace(microsecond=0)
 T0 = now - timedelta(hours=12)                       # the breakdown
 M2 = T0 + timedelta(hours=1, minutes=35)             # the tow arrives
@@ -492,6 +505,8 @@ DOWN = False  # the analyst answers 503 while set: the reader's model outage
 #  defined further down; until then the stub answers 503, since a reader
 #  on the ship may call it as soon as it listens (the last run's settings)
 TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = None
+import base64
+GATE_PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
 class Stub(http.server.BaseHTTPRequestHandler):
     #  one stub for the model, the decider and Telegram, told apart by path:
     #  the analyst's chat request by its system block (the analyst prompt's
@@ -512,8 +527,16 @@ class Stub(http.server.BaseHTTPRequestHandler):
             # from the gate's place itself, half an hour from anywhere else
             form = urllib.parse.parse_qs(body if isinstance(body, str) else '')
             pts = form.get('coordinates', [''])[0].split(';')
-            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-81.5423,30.3241' else 1800.4, 'distance': 21000}]} if len(pts) == 2 else None
+            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-81.5423,30.3241' else 1800.4, 'duration_typical': 1100.4, 'distance': 21000,
+                   'legs': [{'summary': 'Gate Road', 'incidents': [{'impact': 'minor', 'description': 'a street note'}, {'impact': 'major', 'description': 'Gate crash'}]}]}]} if len(pts) == 2 else None
             if out is None: out, status = {'code': 'InvalidInput', 'message': 'two coordinates are needed'}, 422
+        elif self.path.startswith('/search/searchbox/v1/forward?'):
+            # Mapbox's place search (version 73): a business beside the gate's place, open nine to five
+            days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            out = {'features': [{'geometry': {'coordinates': [-81.5425, 30.3243]}, 'properties': {'name': 'Gate Club', 'metadata': {
+                'phone': '+19045550100', 'open_hours': {'weekday_text': [d + ': 9:00 AM - 5:00 PM' for d in days]}}}}]}
+        elif self.path.startswith('/styles/v1/mapbox/streets-v12/static/'):
+            out = GATE_PNG   # Mapbox's still map: an image, not JSON
         elif self.path.startswith('/search/geocode/v6/batch?'):
             out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-81.5423, 30.3241]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
         else:
@@ -531,8 +554,9 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 out = TG_CANNED if system.startswith('You turn') else CANNED
         if out is None:
             out, status = {'error': {'message': 'the stub is not ready'}}, 503
-        out = json.dumps(out).encode()
-        self.send_response(status); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
+        ctype = 'image/png' if isinstance(out, bytes) else 'application/json'
+        out = out if isinstance(out, bytes) else json.dumps(out).encode()
+        self.send_response(status); self.send_header('content-type', ctype); self.send_header('content-length', str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
         n = int(self.headers.get('content-length', 0))
         raw = self.rfile.read(n).decode()
@@ -1141,6 +1165,8 @@ tl = gate.wait('the leave fiber alerts', lambda: (lambda l: l if any('Gate leave
 tn = dictish(tl.get('next'))
 check('the alert goes for the appointment the owner goes to, from their position, with the drive', any('told the owner to leave for Gate leave' in n for n in tl.get('notes', [])) and tn.get('id') == TSIT and tn.get('minutes') == 30 and tn.get('from') == 'position', tl)
 check('the one the owner does not go to is passed over', TNO not in json.dumps(tl), tl)
+check('the plan says why (version 73): the usual minutes, the roads, the incident that matters, nothing learned yet',
+      tn.get('typical_minutes') == 18 and tn.get('via') == 'Gate Road' and tn.get('incident') == 'Gate crash' and tn.get('learned_min') == 0, tn)
 check('the record holds no coordinate and no token', '30.2012' not in json.dumps(tl) and 'gate-token' not in json.dumps(tl), tl)
 tb = dictish(dictish(curl('GET', API + '/body/' + TSIT)[1]).get('attrs'))
 check('leave-by is on the appointment, the ship\'s', dictish(tb.get('leave-by')).get('value') == tn.get('leave_by') and dictish(tb.get('leave-by')).get('by') == 'ship', tb.get('leave-by'))
@@ -1177,6 +1203,53 @@ check('at the place already: no alert, the occurrence quiet and not alerted, and
       any(k.startswith(TQ + '@') for k in tq.get('quiet') or []) and not any(k.startswith(TQ + '@') for k in tq.get('alerted') or [])
       and dictish(tq.get('next')).get('id') != TQ and not any('to leave for Gate there' in x for x in tq.get('notes', [])), tq)
 curl('DELETE', API + '/body/' + TQ)
+# running late (version 73): the alert went and the trip is watched; a fix from the road with the drive as
+# long as before puts the owner five minutes late: one late push, and a message to the organizer proposed
+TLATE, TORG = 'situation/gate-late-' + TRUN, 'person/gate-late-org-' + TRUN
+curl('POST', API + '/position', {'lat': 30.2012, 'lon': -81.6034, 'acc': 12})
+tl0 = datetime.now(timezone.utc).replace(microsecond=0)
+observe([{'id': TORG, 'name': 'Gate Coach ' + TRUN}, {'id': TLATE, 'name': 'Gate late ' + TRUN}],
+        [tobs(TORG, 'ship', '~zod'), tobs(TLATE, 'starts', iso(tl0 + timedelta(minutes=30))), tobs(TLATE, 'location', TADDR),
+         tobs(TLATE, 'attending', 'yes'), tobs(TLATE, 'organizer', {'ref': TORG})])
+curl('POST', API + '/travel/wake', {})
+gate.wait('the late one is alerted', lambda: (lambda l: l if any('to leave for Gate late' in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60)
+time.sleep(2)
+curl('POST', API + '/position', {'lat': 30.2013, 'lon': -81.6035, 'acc': 12})
+late = gate.wait('the late message is proposed', lambda: [a for a in (curl('GET', API + '/actions?status=open')[1] or [])
+                 if isinstance(a, dict) and a.get('kind') == 'message' and dictish(a.get('payload')).get('to') == TORG] or None, 60) or []
+check('late by five minutes or more: a message to the organizer is proposed, by chat, saying so, about the appointment',
+      len(late) == 1 and dictish(late[0].get('payload')).get('via') == 'chat' and 'late' in dictish(late[0].get('payload')).get('text', '')
+      and TLATE in (late[0].get('about') or []) and late[0].get('status') == 'proposed', late)
+ttrip = dictish(curl('GET', INSTANCE + '/trip.json?raw=1')[1])
+check('the trip is told once and holds its first estimate from the road', ttrip.get('key', '').startswith(TLATE + '@') and ttrip.get('told') is True and bool(ttrip.get('eta')), ttrip)
+# the brief's stops (version 73): the late one pinned with that day's hours, and the map of them through the ship
+code, b0 = curl('GET', API + '/brief/last')
+curl('POST', API + '/brief/wake', {})
+bl = gate.wait('the brief with its stops lands', lambda: (lambda b: b if b.get('at') and b.get('at') != dictish(b0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 90) or {}
+# the stop is in the brief only when it starts before the day ends; a run near midnight (UTC on a test ship)
+# puts it in tomorrow's
+if bl.get('day') == tl0.strftime('%Y-%m-%d') == (tl0 + timedelta(minutes=31)).strftime('%Y-%m-%d'):
+    bline = [x for x in bl.get('text', '').split('\n') if 'Gate late' in x and x[:1] == '[' and x[1:2].isdigit()]
+    check('a stop in the brief has its pin and that day\'s hours from the place search', len(bline) == 1 and bline[0].startswith('[1] ') and '9:00 AM - 5:00 PM' in bline[0], bl.get('text'))
+    check('the brief keeps the pins for its map, lon before lat', bl.get('map') == 'pin-l-1+d9534f(-81.5423,30.3241)', bl.get('map'))
+    import subprocess
+    mp = subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, API + '/brief/map'], capture_output=True).stdout
+    check('the map is Mapbox\'s image, fetched by the ship', mp == GATE_PNG, len(mp))
+    sbx = [x for x in seen if x[0].startswith('/search/searchbox/v1/forward?')]
+    check('the place search went once encoded, near the place, businesses only', sbx and 'q=The%20Gate%20Ballet%2C%2010131' in sbx[-1][0] and 'proximity=-81.5423,30.3241' in sbx[-1][0] and 'types=poi' in sbx[-1][0], [x[0] for x in sbx])
+else:
+    print('  (the brief stop checks are skipped: the late one starts after the brief\'s day ends)')
+owner_only('the brief map is the owner\'s', 'GET', '/brief/map')
+# there (version 73): a close fix at the place within three minutes of the last ends the trip, and an arrival
+# before the estimate teaches the place nothing to add
+curl('POST', API + '/position', {'lat': 30.3241, 'lon': -81.5423, 'acc': 10})
+gate.wait('the trip ends at the place', lambda: True if not dictish(curl('GET', INSTANCE + '/trip.json?raw=1')[1]).get('key') else None, 60)
+learned = dictish(curl('GET', INSTANCE + '/trips.json?raw=1')[1])
+check('the arrival is learned for the place: early, so nothing added', [v for k, v in learned.items() if TRUN in k] == [[0]], learned)
+curl('DELETE', API + '/body/' + TLATE)
+curl('DELETE', API + '/body/' + TORG)
+for a in late:
+    curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
 curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
 code, d = curl('GET', API + '/travel')
 check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)
