@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 73's owner steps
+
+Nothing for an owner to do. The same Mapbox token serves the place search and the still map. Learning a place's minutes to park waits for the phone's trip mode (a fix a minute while a trip runs): until then the ship learns nothing, by design, since a fix on a 400 m move can come ten minutes after the arrival. A late message goes only to an organizer who is someone else the ship can reach; to have one for events on your own calendar, tell the ship who organizes them.
+
 ### Version 72's owner steps
 
 Nothing for an owner to do. Time to leave looks twelve hours ahead by default (a `horizon_hours` you set is kept), so a long drive is planned before its time to leave. It holds an alert back when the phone shows none is needed, already there or already on the way, from a fix good to 100 m; and a drive of over two hours alerts only for what the owner said they go to. A held-back occurrence is listed in `GET /travel/last` under `quiet`, and `next` goes empty so the phone's alarm stands down.
