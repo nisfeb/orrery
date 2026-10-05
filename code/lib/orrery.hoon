@@ -6261,13 +6261,21 @@
     =/  sit=?  =(%situation kind.body.l)
     =/  begins=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
     ?~  begins  ~
-    ::  a series' end is its next row's until, when the calendar wrote
-    ::  it: the reader stamps each next with its occurrence's end
+    ::  a series' end is the until of the calendar's next row for that
+    ::  occurrence: the reader stamps each next with its occurrence's
+    ::  end. Not the winner's: reconcile writes the same next later with
+    ::  a day's until, and its row wins the fold (version 71)
     =/  ends=(unit @da)
       ?:  sit  (de-iso (winner-text w 'ends'))
-      =/  nx=(list row)  (fall (~(get by w) 'next') ~)
-      ?~  nx  ~
-      ?.(=('calendar' kind.source.obs.i.nx) ~ until.obs.i.nx)
+      =/  said=json  s+(en-iso u.begins)
+      =/  cal=(list row)
+        %+  skim  rows.l
+        |=  r=row
+        ?&  =('next' attr.obs.r)  =('calendar' kind.source.obs.r)
+            !retracted.obs.r  =(said value.obs.r)
+        ==
+      ?~  cal  ~
+      until.obs.i.cal
     ?:  &(?=(^ ends) (gte u.ends u.begins) (gte (sub u.ends u.begins) ~h20))  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~

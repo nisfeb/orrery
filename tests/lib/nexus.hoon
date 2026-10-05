@@ -1302,10 +1302,12 @@
   =/  hers  (mk 'situation/hers' %situation 'Hers' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['participants' (ref 'person/me') 'calendar'] ['drop-off' (ref 'person/andrea') 'owner'] ['pick-up' (ref 'person/andrea') 'owner']])
   ::  a pick-up with no end known: left out
   =/  open-end  (mk 'situation/open' %situation 'Open' ~[['starts' (iso ~h1) 'calendar'] where ['pick-up' (ref 'person/me') 'owner']])
-  ::  a series: the end is the calendar's next row's until
+  ::  a series: the end is the calendar's next row's until, though
+  ::  reconcile's later row for the same occurrence, a day's until, wins
   =/  series=loaded:orr
     :+  'activity/opti'  [%activity 'Opti' ~ now ~]
-    :~  ['activity/opti/next' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) now `(add now ~h3) 100 ['calendar' 'E9'] 'calendar' now | '']]
+    :~  ['activity/opti/next' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) (sub now ~h1) `(add now ~h3) 100 ['calendar' 'E9'] 'calendar' now | '']]
+        ['activity/opti/rnext' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) now `(add now ~d1) 90 ['reconcile' 'times/x'] 'reconcile' now | '']]
         ['activity/opti/loc' ['activity/opti' 'location' s+'SAYC Sailing Center' now ~ 100 ['calendar' 'E9'] 'calendar' now | '']]
         ['activity/opti/pick' ['activity/opti' 'pick-up' (ref 'person/me') now ~ 100 ['owner' 'x'] 'owner' now | '']]
     ==
