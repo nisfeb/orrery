@@ -902,7 +902,14 @@ merges = [a for a in acts if a.get('kind') == 'merge' and dictish(a.get('payload
 check('an org named like a person is proposed for a merge into the person', len(merges) == 1 and merges[0]['payload'].get('into') == DANA and merges[0]['status'] == 'proposed', merges)
 if merges:
     curl('POST', API + '/actions/' + merges[0]['id'], {'status': 'approved', 'by': 'api-matrix'})
-    time.sleep(2)
+    # the executor takes an approval once the news has been still three seconds (version 67), so the
+    # merge is waited for, not looked at after a fixed two
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        code, acts0 = curl('GET', API + '/actions?status=all')
+        if any(dictish(a).get('id') == merges[0]['id'] and dictish(a).get('status') == 'done' for a in (acts0 if isinstance(acts0, list) else [])):
+            break
+        time.sleep(2)
     d, last = reconcile_now()
     s = state()
     ids = {b['id'] for b in s['bodies']}
