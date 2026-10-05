@@ -1048,7 +1048,7 @@
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr sit 'attrs'))))
     (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 69]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 70]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1247,10 +1247,11 @@
     (expect-eq !>(%yes) !>((attends:orr practice multi now)))
     (expect-eq !>(%no) !>((attends:orr nope multi now)))
     (expect-eq !>(%no) !>((attends:orr call multi now)))
-    ::  what is ahead, soonest first: online, all day, closed and beyond the window left out
-    (expect-eq !>(`(list @t)`~['situation/play' 'situation/meet' 'situation/dentist' 'situation/nope']) !>(ids))
-    (expect-eq !>([`(unit @t)`[~ 'place/ballet'] '']) !>(=/(m (snag 1 ahead) [place.m where.m])))
-    (expect-eq !>('Smile Dental\0a1 Main St, Jacksonville') !>(where:(snag 2 ahead)))
+    ::  what is ahead, soonest first: what the owner does not go to,
+    ::  online, all day, closed and beyond the window left out
+    (expect-eq !>(`(list @t)`~['situation/meet' 'situation/dentist']) !>(ids))
+    (expect-eq !>([`(unit @t)`[~ 'place/ballet'] '']) !>(=/(m (snag 0 ahead) [place.m where.m])))
+    (expect-eq !>('Smile Dental\0a1 Main St, Jacksonville') !>(where:(snag 1 ahead)))
     ::  a series is ahead by its next once the window reaches it
     (expect !>((lien (turn (appointments-ahead:orr all multi now ~h5) |=(a=appointment:orr id.a)) |=(t=@t =('activity/practice' t)))))
     ::  one alert per occurrence
@@ -1278,7 +1279,49 @@
     (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr geo)))
     (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"features": []}'))))
     ::  the brief's lines: the sure ones say so, the unsure ones ask, a no is left out
-    (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr (slag 1 ahead) 'UTC')))
+    (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr ahead 'UTC')))
+  ==
+++  test-trips
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  iso  |=(d=@dr `json`s+(en-iso:orr (add now d)))
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  where  ['location' s+'SAYC Sailing Center' 'calendar']
+  ::  sailing today: Andrea drops off, the owner picks up; 4 to 6
+  =/  sail  (mk 'situation/sail' %situation 'Sail' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h3) 'calendar'] where ['drop-off' (ref 'person/andrea') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
+  ::  the owner does both legs
+  =/  both  (mk 'situation/both' %situation 'Both' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['drop-off' (ref 'person/me') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
+  ::  Andrea does both, though the calendar lists the owner: no trip
+  =/  hers  (mk 'situation/hers' %situation 'Hers' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['participants' (ref 'person/me') 'calendar'] ['drop-off' (ref 'person/andrea') 'owner'] ['pick-up' (ref 'person/andrea') 'owner']])
+  ::  a pick-up with no end known: left out
+  =/  open-end  (mk 'situation/open' %situation 'Open' ~[['starts' (iso ~h1) 'calendar'] where ['pick-up' (ref 'person/me') 'owner']])
+  ::  a series: the end is the calendar's next row's until
+  =/  series=loaded:orr
+    :+  'activity/opti'  [%activity 'Opti' ~ now ~]
+    :~  ['activity/opti/next' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) now `(add now ~h3) 100 ['calendar' 'E9'] 'calendar' now | '']]
+        ['activity/opti/loc' ['activity/opti' 'location' s+'SAYC Sailing Center' now ~ 100 ['calendar' 'E9'] 'calendar' now | '']]
+        ['activity/opti/pick' ['activity/opti' 'pick-up' (ref 'person/me') now ~ 100 ['owner' 'x'] 'owner' now | '']]
+    ==
+  =/  ahead  |=(ls=(list loaded:orr) (appointments-ahead:orr ls multi now ~h4))
+  =/  legs  |=(as=(list appointment:orr) (turn as |=(a=appointment:orr [id.a leg.a starts.a])))
+  ;:  weld
+    (expect-eq !>(`(list [@t leg:orr @da])`~[['situation/sail' %pick (add now ~h3)]]) !>((legs (ahead ~[sail]))))
+    (expect-eq !>(`(list [@t leg:orr @da])`~[['situation/both' %drop (add now ~h1)] ['situation/both' %pick (add now ~h2)]]) !>((legs (ahead ~[both]))))
+    (expect-eq !>(`(list [@t leg:orr @da])`~) !>((legs (ahead ~[hers]))))
+    (expect-eq !>(`(list [@t leg:orr @da])`~) !>((legs (ahead ~[open-end]))))
+    (expect-eq !>(`(list [@t leg:orr @da])`~[['activity/opti' %pick (add now ~h3)]]) !>((legs (ahead ~[series]))))
+    ::  a drop-off and a pick-up of one occurrence are two alerts
+    =/  bs=(list appointment:orr)  (ahead ~[both])
+    (expect !>(!=((appt-key:orr (snag 0 bs)) (appt-key:orr (snag 1 bs)))))
+    ::  the brief says which leg
+    (expect-eq !>(`(list @t)`~['13:00  Drop off: Both (SAYC Sailing Center): I\'ll say when to leave' '14:00  Pick up: Both (SAYC Sailing Center): I\'ll say when to leave']) !>((brief-leaving:orr (ahead ~[both]) 'UTC')))
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')

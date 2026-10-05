@@ -1083,6 +1083,7 @@
       ==
       [64 ~['resolve'] ~[['situation' ~['needs' 'waiting-on' 'outcome']]] ~]
       [69 ~ ~[['situation' ~['attending' 'leave-by']] ['activity' ~['attending' 'leave-by']]] ~]
+      [70 ~ ~[['situation' ~['drop-off' 'pick-up']] ['activity' ~['drop-off' 'pick-up']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1186,10 +1187,12 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up']
           :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
               ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
               ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
+              ['drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Andrea drops the kids off")']
+              ['pick-up' 'who collects someone as it ends, a ref to the person, the owner\'s own body when it is them ("I pick them up"); the ship says when to leave for the legs that are the owner\'s']
               ['needs' 'what has to happen for this to be over, one short clause in the messages\' own terms; written when a message says it and written again when it changes']
               ['waiting-on' 'who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else']
               ['outcome' 'how it ended, a few plain words, written with status closed once a message says it is over']
@@ -1201,10 +1204,12 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up']
           :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
               ['attending' 'yes or no: whether the owner goes to it themselves, in their own word when they gave it; it holds for every occurrence until they say otherwise']
               ['leave-by' 'when the owner must leave for the next occurrence, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
+              ['drop-off' 'who takes someone there for the start of each occurrence, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
+              ['pick-up' 'who collects someone as each occurrence ends, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
               ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
               ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
               ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
@@ -6193,13 +6198,42 @@
   =/  mine=?  (lien theirs me)
   ?.  =(~ theirs)  ?:(mine %yes %no)
   ?:((lien parts me) %unsure %no)
-::  an appointment ahead: when, where (the place it names, else the
-::  address as written), and whether the owner goes
+::  a leg of the owner's travel for an appointment: to go to it, to drop
+::  someone off at its start, or to pick someone up at its end
+::
++$  leg  ?(%go %drop %pick)
+::  an appointment ahead, one per trip: when to be there (its start, or
+::  its end for a pick-up), where (the place it names, else the address
+::  as written), whether the owner goes, and the trip
 ::
 +$  appointment
   $:  id=bid  name=@t  starts=@da  ends=(unit @da)
-      where=@t  place=(unit bid)  =verdict
+      where=@t  place=(unit bid)  =verdict  =leg
   ==
+::  +trips: the owner's trips for an appointment (version 70). Who drops
+::  off and who picks up, when either is said, decide: each leg that is
+::  the owner's is a trip, at the start or at the end, and none when
+::  both are someone else's, unless the owner said they go anyway. Else
+::  whether they attend: a trip to go, sure or asked about, or none
+::
+++  trips
+  |=  [l=loaded multi=(set @t) now=@da]
+  ^-  (list [leg verdict])
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  dr=(list row)  (fall (~(get by w) 'drop-off') ~)
+  =/  pr=(list row)  (fall (~(get by w) 'pick-up') ~)
+  =/  drop=@t  ?~(dr '' (ref-or-text value.obs.i.dr))
+  =/  pick=@t  ?~(pr '' (ref-or-text value.obs.i.pr))
+  =/  v=verdict  (attends l multi now)
+  ?:  &(=('' drop) =('' pick))
+    ?:(=(%no v) ~ ~[[%go v]])
+  =/  legs=(list [leg verdict])
+    %+  weld
+      `(list [leg verdict])`?.(=('person/me' drop) ~ ~[[%drop %yes]])
+    `(list [leg verdict])`?.(=('person/me' pick) ~ ~[[%pick %yes]])
+  ?^  legs  legs
+  ::  both legs someone else's: no trip, unless the owner said they go
+  ?:(=('yes' (lower (trim-cord (winner-text w 'attending')))) ~[[%go %yes]] ~)
 ::  +online: a location that is a link or a call, not a place to drive to
 ::
 ++  online
@@ -6214,19 +6248,27 @@
 ++  appointments-ahead
   |=  [all=(list loaded) multi=(set @t) now=@da horizon=@dr]
   ^-  (list appointment)
-  %+  sort
-    %+  murn  all
+  ::  joined under a type before the sort: sort straight over zing
+  ::  sends the compiler into a loop (fuse-loop)
+  =/  each=(list appointment)
+    %-  zing
+    %+  turn  all
     |=  l=loaded
-    ^-  (unit appointment)
+    ^-  (list appointment)
     ?.  ?=(?(%situation %activity) kind.body.l)  ~
     =/  w=(map @t (list row))  (fold rows.l multi now)
     ?:  (is-closed w)  ~
     =/  sit=?  =(%situation kind.body.l)
-    =/  at=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
-    ?~  at  ~
-    ?.  &((gth u.at now) (lte u.at (add now horizon)))  ~
-    =/  ends=(unit @da)  ?.(sit ~ (de-iso (winner-text w 'ends')))
-    ?:  &(?=(^ ends) (gte u.ends u.at) (gte (sub u.ends u.at) ~h20))  ~
+    =/  begins=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
+    ?~  begins  ~
+    ::  a series' end is its next row's until, when the calendar wrote
+    ::  it: the reader stamps each next with its occurrence's end
+    =/  ends=(unit @da)
+      ?:  sit  (de-iso (winner-text w 'ends'))
+      =/  nx=(list row)  (fall (~(get by w) 'next') ~)
+      ?~  nx  ~
+      ?.(=('calendar' kind.source.obs.i.nx) ~ until.obs.i.nx)
+    ?:  &(?=(^ ends) (gte u.ends u.begins) (gte (sub u.ends u.begins) ~h20))  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
@@ -6236,14 +6278,24 @@
       ?.(=('place' (kind-of r)) ~ `r)
     =/  where=@t  ?:(?=([%s *] v) (trim-cord p.v) '')
     ?:  &(?=(~ place) |(=('' where) (online where)))  ~
-    `[id.l name.body.l u.at ends where place (attends l multi now)]
-  |=([a=appointment b=appointment] (lth starts.a starts.b))
+    ::  each trip is to be there at the start, or at the end for a
+    ::  pick-up; one with no end known is left out
+    =/  start=@da  u.begins
+    =/  end=(unit @da)  ends
+    %+  murn  (trips l multi now)
+    |=  [lg=leg vd=verdict]
+    ^-  (unit appointment)
+    =/  at=(unit @da)  ?:(=(%pick lg) end `start)
+    ?~  at  ~
+    ?.  &((gth u.at now) (lte u.at (add now horizon)))  ~
+    `[id.l name.body.l u.at end where place vd lg]
+  (sort each |=([a=appointment b=appointment] (lth starts.a starts.b)))
 ::  +appt-key: one alert per occurrence: a series' next moves on
 ::
 ++  appt-key
   |=  a=appointment
   ^-  @t
-  (rap 3 id.a '@' (crip (a-co:co (ms-of starts.a))) ~)
+  (rap 3 id.a '@' (crip (a-co:co (ms-of starts.a))) ?:(=(%go leg.a) '' (cat 3 '/' leg.a)) ~)
 ::  +leave-times: when to leave and when to say so: the start less the
 ::  drive and the minutes to park and walk in, and that less the lead
 ::
@@ -6385,6 +6437,10 @@
   =/  at=@t  (hhmm starts.a tz)
   =/  first=@t  =/(ls (split-lines where.a) ?~(ls '' i.ls))
   =/  there=@t  ?:(=('' first) '' (rap 3 ' (' (end [3 60] first) ')' ~))
+  ?:  =(%pick leg.a)
+    `(rap 3 at '  Pick up: ' name.a there ': I\'ll say when to leave' ~)
+  ?:  =(%drop leg.a)
+    `(rap 3 at '  Drop off: ' name.a there ': I\'ll say when to leave' ~)
   ?:  =(%yes verdict.a)
     `(rap 3 at '  ' name.a there ': I\'ll say when to leave' ~)
   `(rap 3 at '  ' name.a there ': going? Reply "not me: ' name.a '" if not' ~)

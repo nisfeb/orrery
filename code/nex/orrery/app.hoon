@@ -5324,6 +5324,7 @@
         ['minutes' (numb:enjs:format minutes)]
         ['from' s+kind.u.from]
         ['verdict' s+verdict.a]
+        ['trip' s+leg.a]
     ==
   ?.  (lte alert (add now ~s30))
     ;<  ~  bind:m  (leave-record last now ~ plan alerted)
@@ -5333,15 +5334,21 @@
   ::  the alert: once per occurrence; its tag lets the phone cancel the
   ::  alarm it set in case this push did not come
   =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
+  =/  for=@t
+    ?-  leg.a
+      %go    (cat 3 'for ' name.a)
+      %drop  (cat 3 'to drop off at ' name.a)
+      %pick  (cat 3 'to pick up at ' name.a)
+    ==
   =/  title=@t
-    ?:  =(0 left)  (rap 3 'Leave now for ' name.a ~)
-    (rap 3 'Leave in ' (scot %ud left) ' min for ' name.a ~)
+    ?:  =(0 left)  (rap 3 'Leave now ' for ~)
+    (rap 3 'Leave in ' (scot %ud left) ' min ' for ~)
   =/  body=@t  (rap 3 (scot %ud minutes) ' min with traffic; leave by ' (hhmm:orr leave tz) ~)
   ;<  eny=@uvJ  bind:m  get-entropy:io
   ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
-  =/  note=@t  ?~(err (rap 3 'told the owner to leave for ' name.a ~) 'the push road is refused')
+  =/  note=@t  ?~(err (rap 3 'told the owner to leave ' for ~) 'the push road is refused')
   ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted])
   (pure:m `(add starts.a ~m1))
 ::  ==  the daily brief (version 52)

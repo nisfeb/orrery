@@ -1147,6 +1147,17 @@ time.sleep(8)
 tl2 = dictish(curl('GET', API + '/travel/last')[1])
 check('a second look neither alerts again nor asks Mapbox', not [x for x in seen if x[0].startswith(('/search', '/directions'))] and tl2.get('alerted') == tl.get('alerted'), (tl2.get('notes'), len(seen)))
 owner_only('the travel record is the owner\'s', 'GET', '/travel/last')
+# a pick-up (version 70): someone else drops off, the owner picks up; the alert is for the end
+TPU = 'situation/gate-pickup-' + TRUN
+observe([{'id': TPU, 'name': 'Gate sailing ' + TRUN}],
+        [tobs(TPU, 'starts', iso(tnow + timedelta(minutes=20))), tobs(TPU, 'ends', iso(tnow + timedelta(minutes=80))), tobs(TPU, 'location', TADDR),
+         tobs(TPU, 'drop-off', {'ref': 'person/gate-tg'}), tobs(TPU, 'pick-up', {'ref': 'person/me'}),
+         tobs(TSIT, 'status', 'closed')])
+curl('POST', API + '/travel/wake', {})
+tp = gate.wait('the pick-up is planned', lambda: (lambda l: l if dictish(l.get('next')).get('id') == TPU else None)(dictish(curl('GET', API + '/travel/last')[1])), 60) or {}
+check('a pick-up is planned for the end, as a pick-up, and the drop-off is not the owner\'s',
+      dictish(tp.get('next')).get('trip') == 'pick' and dictish(tp.get('next')).get('starts') == iso(tnow + timedelta(minutes=80)), tp)
+curl('DELETE', API + '/body/' + TPU)
 curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
 code, d = curl('GET', API + '/travel')
 check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)
