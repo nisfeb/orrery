@@ -40,7 +40,7 @@ tr.superseded td, tr.expired td, tr.future td { color: var(--muted); }
 .badge.live, .badge.approved { background: #e2f3e6; }
 .badge.proposed { background: #fff2cc; }
 .badge.failed, .badge.retracted { background: #f8dcda; }
-button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); cursor: pointer; margin-right: .3rem; }
+button { font: inherit; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--card); color: var(--ink); cursor: pointer; margin-right: .3rem; white-space: nowrap; overflow-wrap: normal; }
 button:hover { border-color: var(--amber); }
 button.danger:hover { border-color: var(--bad); color: var(--bad); }
 input:not([type]), input[type="password"] { font: inherit; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 5px; }
