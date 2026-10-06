@@ -3,8 +3,13 @@
 The HTTP gate for orrery: spec section 8, the stranded car, against a
 fake ship. HOST like http://localhost:8080; JAR a curl cookie jar from
 POST /~/login. Exits 1 on any failure. Safe to rerun: it deletes,
-retracts and dismisses what an earlier run left."""
-import json, sys, threading, time, urllib.parse
+retracts and dismisses what an earlier run left.
+
+ONLY=outdoors,"the week" runs the clean slate and the stub, then only the
+sections whose "# ---- " header holds one of those words: a release's
+own checks in a minute or two, where the whole gate takes twenty. A
+section that leans on another's state needs that one named too."""
+import json, os, re, sys, threading, time, urllib.parse
 from gate import fails, check, dictish, listish, iso, all_ok
 import gate
 from datetime import datetime, timedelta, timezone
@@ -159,6 +164,18 @@ for a in (acts if isinstance(acts, list) else []):
     if a['title'] in (TITLE, MSG, RACE) or a['title'].startswith('Gate '):
         curl('POST', API + f'/actions/{a["id"]}', {'status': 'dismissed', 'note': 'matrix rerun'})
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365})
+
+if os.environ.get('ONLY'):
+    want = os.environ['ONLY'].split(',')
+    src = open(__file__).read()
+    for chunk in re.split(r'(?m)^(?=# ---- )', src)[1:]:
+        head = chunk.split('\n', 1)[0]
+        if head.startswith('# ---- the stub:') or any(w in head for w in want):
+            #  padded so a traceback's line numbers are the file's
+            exec(compile('\n' * src[:src.index(chunk)].count('\n') + chunk, __file__, 'exec'))
+    print()
+    print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
+    sys.exit(1 if fails else 0)
 
 # ── 1. setup ────────────────────────────────────────────────────────
 print('1. setup')
@@ -490,7 +507,7 @@ code, d = curl('GET', API + '/generator')
 check('a write without the key keeps it', dictish(d).get('api_key_set') is True and dictish(d).get('model') == 'deepseek/deepseek-v4.1-flash', d)
 owner_only('the settings are the owner\'s, even to a writing key', 'GET', '/generator')
 
-# ---- the on-ship generator: a pass against a stub model ----
+# ---- the stub: one server for the model, the decider, Telegram, Mapbox, the weather service and POTA ----
 import http.server, socketserver
 STUB_PORT = 8099
 # a title unlike any earlier run's, since a dismissed one stays decided
@@ -507,6 +524,7 @@ CANNED = {'choices': [{'message': {'content': json.dumps({'actions': [
     'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 seen = []
 DOWN = False  # the analyst answers 503 while set: the reader's model outage
+SLOW = 0  # seconds the stub's drives take longer: traffic gone worse (version 76)
 #  defined further down; until then the stub answers 503, since a reader
 #  on the ship may call it as soon as it listens (the last run's settings)
 TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = None
@@ -532,7 +550,7 @@ class Stub(http.server.BaseHTTPRequestHandler):
             # from the gate's place itself, half an hour from anywhere else
             form = urllib.parse.parse_qs(body if isinstance(body, str) else '')
             pts = form.get('coordinates', [''])[0].split(';')
-            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-89.6501,39.7817' else 1800.4, 'duration_typical': 1100.4, 'distance': 21000,
+            out = {'code': 'Ok', 'routes': [{'duration': (60.0 if pts[0] == '-89.6501,39.7817' else 1800.4) + SLOW, 'duration_typical': 1100.4, 'distance': 21000,
                    'legs': [{'summary': 'Gate Road', 'incidents': [{'impact': 'minor', 'description': 'a street note'}, {'impact': 'major', 'description': 'Gate crash'}]}]}]} if len(pts) == 2 else None
             if out is None: out, status = {'code': 'InvalidInput', 'message': 'two coordinates are needed'}, 422
         elif self.path.startswith('/search/searchbox/v1/forward?'):
@@ -542,6 +560,23 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 'phone': '+19045550100', 'open_hours': {'weekday_text': [d + ': 9:00 AM - 5:00 PM' for d in days]}}}}]}
         elif self.path.startswith('/styles/v1/mapbox/streets-v12/static/'):
             out = GATE_PNG   # Mapbox's still map: an image, not JSON
+        elif self.path.startswith('/points/'):
+            # the weather service's grid for a point (version 76), then its forecasts and alerts
+            base = 'http://127.0.0.1:%d/gridpoints/GATE/1,1' % STUB_PORT
+            out = {'properties': {'forecast': base + '/forecast', 'forecastHourly': base + '/forecast/hourly'}}
+        elif self.path.startswith('/gridpoints/GATE/1,1/forecast'):
+            t0 = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+            iso = lambda h: (t0 + timedelta(hours=h)).strftime('%Y-%m-%dT%H:%M:%S+00:00')
+            hourly = self.path.endswith('/hourly')
+            out = {'properties': {'periods': [{'startTime': iso(h), 'endTime': iso(h + (1 if hourly else 6)), 'isDaytime': True, 'temperature': 71,
+                   'windSpeed': '10 to 15 mph', 'probabilityOfPrecipitation': {'value': 70}, 'shortForecast': 'Gate Thunderstorms'}
+                   for h in ((range(-1, 60) if hourly else range(-1, 80, 6)))]}}
+        elif self.path.startswith('/alerts/active?point='):
+            out = {'features': [{'properties': {'event': 'Gate Advisory', 'ends': None, 'expires': '2099-01-01T00:00:00Z', 'headline': 'Gate Advisory in force'}}]}
+        elif self.path.startswith('/locations/US-GT'):
+            # the POTA list for a location: one park beside the gate's place, one far off
+            out = [{'reference': 'US-0001', 'name': 'Gate Lake Park', 'latitude': 39.79, 'longitude': -89.65},
+                   {'reference': 'US-0002', 'name': 'Far Gate Woods', 'latitude': 41.9, 'longitude': -87.6}]
         elif self.path.startswith('/search/geocode/v6/batch?'):
             out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-89.6501, 39.7817]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
         else:
@@ -572,6 +607,9 @@ class Stub(http.server.BaseHTTPRequestHandler):
         self.answer({})
     def log_message(self, *a): pass
 socketserver.TCPServer.allow_reuse_address = True
+
+
+# ---- the on-ship generator: a pass against a stub model ----
 srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 # a body and an open action of the section's own, deleted and dismissed at the end,
@@ -1149,6 +1187,10 @@ srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 TRUN = secrets.token_hex(3)
 tnow = datetime.now(timezone.utc).replace(microsecond=0)
+#  the real weather on the dev ship would add its minutes to every leave
+#  time here (version 76): off, the forecast held is cleared
+curl('PUT', API + '/outdoors', {'weather': False})
+gate.wait('the weather held is cleared', lambda: dictish(curl('GET', API + '/weather')[1]).get('periods') is None or None, 30)
 TADDR = 'The Gate Ballet\n100 Main St, Riverton, IL 62701 ' + TRUN
 code, d = curl('PUT', API + '/travel', {'enabled': True, 'token': 'gate-token', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'lead_min': 10, 'buffer_min': 5})
 check('the travel settings answer masked', code == 200 and dictish(d).get('token_set') is True and 'token' not in dictish(d), (code, d))
@@ -1255,9 +1297,26 @@ curl('DELETE', API + '/body/' + TLATE)
 curl('DELETE', API + '/body/' + TORG)
 for a in late:
     curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
+# traffic gone worse after the alert (version 76): the leave-by four minutes off, so the alert goes at once;
+# the drive ten minutes longer by the look three minutes before the leave-by: a second push, once
+TW = 'situation/gate-worse-' + TRUN
+curl('POST', API + '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12})
+tw0 = datetime.now(timezone.utc).replace(microsecond=0)
+observe([{'id': TW, 'name': 'Gate worse ' + TRUN}], [tobs(TW, 'starts', iso(tw0 + timedelta(minutes=39))), tobs(TW, 'location', TADDR), tobs(TW, 'attending', 'yes')])
+curl('POST', API + '/travel/wake', {})
+twn = lambda l, s: l if any(s in n for n in l.get('notes', [])) else None
+gate.wait('the worse one is alerted', lambda: twn(dictish(curl('GET', API + '/travel/last')[1]), 'to leave for Gate worse'), 60)
+SLOW = 600
+tw = gate.wait('the look before leaving finds it worse', lambda: twn(dictish(curl('GET', API + '/travel/last')[1]), 'traffic got worse for Gate worse'), 150) or {}
+check('ten minutes worse, three minutes before the leave-by: a second push, the plan says 40 min, the look done',
+      dictish(tw.get('next')).get('minutes') == 40 and dictish(tw.get('next')).get('rechecked') is True, tw)
+SLOW = 0
+curl('DELETE', API + '/body/' + TW)
 curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
 code, d = curl('GET', API + '/travel')
 check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)
+gate.wait('off, no plan stands for the phone or the nudges (version 76)', lambda: not dictish(curl('GET', API + '/travel/last')[1]).get('next'), 30)
+curl('PUT', API + '/outdoors', {'weather': True})
 srv.shutdown()
 srv.server_close()
 curl('DELETE', API + '/body/' + TSIT)
@@ -1360,6 +1419,40 @@ check('cleared, the day is the defaults again', dictish(d).get('family_from') ==
 for b in [WONE, WKID, WTOT]:
     curl('DELETE', API + '/body/' + b)
 curl('DELETE', API + '/body/' + WHAB)
+
+
+# ---- outdoors (version 76): the weather service and the POTA list through the stub; the brief's weather ----
+print('== outdoors')
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+STUB = 'http://127.0.0.1:%d' % STUB_PORT
+#  the parks are fetched again only when the location or the distance
+#  changes (or a week passes), so each run asks a distance the last did not
+pl0 = dictish(curl('GET', INSTANCE + '/parks-last.json?raw=1')[1])
+code, d = curl('PUT', API + '/outdoors', {'nws_api': STUB, 'pota': True, 'pota_location': 'US-GT', 'pota_radius_km': 21 if pl0.get('radius_km') == 20 else 20, 'pota_api': STUB})
+check('the outdoors settings answer with themselves', code == 200 and dictish(d).get('pota_location') == 'US-GT' and dictish(d).get('weather') is True, (code, d))
+owner_only('the outdoors settings are the owner\'s', 'GET', '/outdoors')
+owner_only('the weather is the owner\'s', 'GET', '/weather')
+wx = gate.wait('the weather from the stub lands', lambda: (lambda w: w if w.get('alerts') else None)(dictish(curl('GET', API + '/weather')[1])), 60) or {}
+check('the forecast and the alert are held, and the answer names no point',
+      len(wx.get('periods') or []) > 5 and dictish((wx.get('alerts') or [{}])[0]).get('event') == 'Gate Advisory' and 'point' not in wx, wx)
+nws = [x for x in seen if x[0].startswith(('/points/', '/gridpoints/', '/alerts/'))]
+check('every call to the weather service says who asks', nws and all('orrery' in x[1].get('user-agent', '') for x in nws), [x[1].get('user-agent') for x in nws])
+check('the point sent is coarse, two decimals', nws and all(re.match(r'/points/-?\d+\.\d{1,2},-?\d+\.\d{1,2}$', x[0]) for x in nws if x[0].startswith('/points/')), [x[0] for x in nws])
+pl = gate.wait('the parks pass lands', lambda: (lambda p: p if p.get('location') == 'US-GT' and p.get('at') != pl0.get('at') else None)(dictish(curl('GET', INSTANCE + '/parks-last.json?raw=1')[1])), 60) or {}
+check('the near park is added, the far one not', pl.get('near') == 1 and pl.get('added') == 1, pl)
+code, b = curl('GET', API + '/body/place/pota-us-0001')
+check('the park is a place with its reference and point', code == 200 and 'US-0001' in json.dumps(b) and 'POTA park' in json.dumps(b), (code, str(b)[:300]))
+code, b = curl('GET', API + '/body/place/pota-us-0002')
+check('the far park is not', code == 404, code)
+code, b0 = curl('GET', API + '/brief/last')
+curl('POST', API + '/brief/wake', {})
+bl = gate.wait('the brief with the weather lands', lambda: (lambda b: b if b.get('at') and b.get('at') != dictish(b0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 90) or {}
+check('the brief gives the day\'s weather and the alert', 'Weather: 71F, Gate Thunderstorms' in (bl.get('text') or '') and 'Alert: Gate Advisory in force' in (bl.get('text') or ''), (bl.get('text') or '')[:800])
+curl('PUT', API + '/outdoors', {'nws_api': '', 'pota': False, 'pota_location': '', 'pota_api': ''})
+curl('DELETE', API + '/body/place/pota-us-0001')
+srv.shutdown()
+srv.server_close()
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
