@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 75's owner steps
+
+Nothing to do. The schema gains `per-week` and `minutes` on activities and three targets on people by itself. Name a habit in your own words ("I want to read three times a week, 20 minutes") and the ship finds the time for it; the targets come once your phone has sent fourteen full days.
+
 ### Version 74's owner steps
 
 Two clients feed the week, both optional. The phone's health comes from Talon once its Health Connect reader ships (it asks for steps, exercise and sleep). The computer's work comes from orrery-utils' `work` reporter: mint a key with write on the Keys page, put it in `work/config.json` with your ship's URL, and start it from the orrery-utils console. The Sunday review goes out at six either way, saying what it has not received yet.
@@ -226,7 +230,7 @@ Nothing for an owner to do. A pick-up for a series now finds when the occurrence
 
 ### Version 70's owner steps
 
-Nothing for an owner to do: the ship adds `drop-off` and `pick-up` to situations and activities in its stored schema by itself (`+schema-adds` row 70). Say who drops off and who picks up, in a message, the instruction box or a reply to the brief ("Andrea drops the kids off at sailing and I pick them up"), and time to leave alerts you for your legs only: a drop-off for the start, a pick-up for the end. The brief's "When to leave" says which leg.
+Nothing for an owner to do: the ship adds `drop-off` and `pick-up` to situations and activities in its stored schema by itself (`+schema-adds` row 70). Say who drops off and who picks up, in a message, the instruction box or a reply to the brief ("Lena drops the kids off at swim practice and I pick them up"), and time to leave alerts you for your legs only: a drop-off for the start, a pick-up for the end. The brief's "When to leave" says which leg.
 
 ### Version 69's owner steps
 
