@@ -1259,6 +1259,54 @@ curl('DELETE', API + '/body/' + TSIT)
 curl('DELETE', API + '/body/' + TNO)
 
 
+# ---- the week (version 74): a day of health from the phone and of work from the computer, kept owner-only;
+# the children and their shares; the Sunday review, mailed and kept ----
+print('== the week')
+WRUN = secrets.token_hex(3)
+wtoday = datetime.now(timezone.utc).date()
+wd1 = (wtoday - timedelta(days=1)).isoformat()
+code, d = curl('POST', API + '/health', {'day': 'yesterday'})
+check('a health day without a date is refused', code == 400 and 'YYYY-MM-DD' in str(dictish(d).get('error')), (code, d))
+code, d = curl('POST', API + '/health', {'day': wd1, 'steps': 5210.7, 'active_minutes': 25, 'partial': False,
+                                         'sleep': [{'start': wd1 + 'T04:10:00Z', 'end': wd1 + 'T10:40:00Z'}, {'start': wd1 + 'T12:00:00Z', 'end': wd1 + 'T11:00:00Z'}],
+                                         'workouts': [{'type': 'running', 'start': wd1 + 'T21:00:00Z', 'end': wd1 + 'T21:30:00Z'}]}, jar=None, token=WKEY)
+check('a writing key sends a day of health, answered with its day', code == 200 and dictish(d).get('ok') is True and dictish(d).get('day') == wd1, (code, d))
+code, d = curl('GET', API + '/health')
+hd = dictish(dictish(d).get(wd1))
+check('the day is kept: whole steps, the backward sleep dropped, the workout typed',
+      code == 200 and hd.get('steps') == 5210 and len(hd.get('sleep') or []) == 1 and dictish((hd.get('workouts') or [{}])[0]).get('type') == 'running' and hd.get('partial') is False, hd)
+code, d = curl('POST', API + '/work', {'day': wd1, 'active_minutes': 9999, 'blocks': [{'start': wd1 + 'T13:00:00Z', 'end': wd1 + 'T17:30:00Z'}, {'start': wd1 + 'T19:00:00Z', 'end': wtoday.isoformat() + 'T01:40:00Z'}]}, jar=None, token=WKEY)
+check('a writing key sends a day of work', code == 200 and dictish(d).get('day') == wd1, (code, d))
+code, d = curl('GET', API + '/work')
+check('the ship counts the work minutes from the blocks, not the sender', dictish(dictish(d).get(wd1)).get('active_minutes') == 670, dictish(d).get(wd1))
+owner_only('health is the owner\'s to read, even to the key that sends it', 'GET', '/health')
+owner_only('work is the owner\'s to read', 'GET', '/work')
+owner_only('the review is the owner\'s', 'GET', '/review/last')
+owner_only('the review\'s wake is the owner\'s', 'POST', '/review/wake', {})
+code, st = curl('GET', API + '/state')
+check('health and work are never in the state', code == 200 and '5210' not in json.dumps(st) and 'active_minutes' not in json.dumps(st), code)
+# two children: a ten-year-old with a one-on-one this week, a toddler at half a share
+WKID, WTOT, WONE = 'person/gate-kid-' + WRUN, 'person/gate-tot-' + WRUN, 'situation/gate-lunch-' + WRUN
+wsrc = {'kind': 'user', 'id': 'gate-week-' + WRUN}
+def wobs(sub, attr, value): return {'subject': sub, 'attr': attr, 'value': value, 'at': iso(datetime.now(timezone.utc).replace(microsecond=0)), 'conf': 100, 'source': wsrc, 'by': 'owner'}
+observe([{'id': WKID, 'name': 'Gate Kid ' + WRUN}, {'id': WTOT, 'name': 'Gate Tot ' + WRUN}, {'id': WONE, 'name': 'Gate lunch ' + WRUN}],
+        [wobs(WKID, 'relationship', 'daughter'), wobs(WKID, 'birthday', (wtoday - timedelta(days=3700)).isoformat()),
+         wobs(WTOT, 'relationship', 'son'), wobs(WTOT, 'birthday', (wtoday - timedelta(days=800)).isoformat()),
+         wobs(WONE, 'starts', iso(datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=2))),
+         wobs(WONE, 'participants', {'ref': 'person/me'}), wobs(WONE, 'participants', {'ref': WKID})])
+code, r0 = curl('GET', API + '/review/last')
+code, d = curl('POST', API + '/review/wake', {})
+rv = gate.wait('the review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r0).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
+rt = rv.get('text', '')
+check('the review has the week\'s work, its late night and the baseline\'s progress',
+      rt.startswith('Your week, ') and '11 h 10 until 01:40' in rt and '1 late night' in rt and 'Learning your baseline: ' in rt, rt)
+check('the review counts each child: the one-on-one for the older, half a share for the toddler, who is most behind',
+      ('Gate Kid %s: 0 drives, 1 one-on-one' % WRUN) in rt and ('Gate Tot %s: 0 drives, 0 one-on-ones (half share)' % WRUN) in rt and ('Most behind: Gate Tot %s.' % WRUN) in rt, rt)
+check('the review was mailed through auspex and pushed in a line', rv.get('sent') is True and 'workout' in rv.get('line', ''), (rv.get('sent'), rv.get('line'), rv.get('notes')))
+for b in [WONE, WKID, WTOT]:
+    curl('DELETE', API + '/body/' + b)
+
+
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
 code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
 check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))
