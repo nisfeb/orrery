@@ -7525,6 +7525,40 @@
   ?~  pt  ~
   =/  act=(list row)  (fall (~(get by w) 'activated') ~)
   `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  +known-addresses: every address the ship knows that has no point
+::  yet (version 77): a place's address when it has no geo (a POTA park
+::  has its point), and each location written as text on an activity or
+::  a situation, once; a location that names a place is the place's
+::
+++  known-addresses
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  [places=(list [id=@t addr=@t]) texts=(list @t)]
+  :-  %+  murn  all
+      |=  l=loaded
+      ^-  (unit [id=@t addr=@t])
+      ?.  =(%place kind.body.l)  ~
+      =/  w=(map @t (list row))  (fold rows.l multi now)
+      ?^  (fall (~(get by w) 'geo') ~)  ~
+      =/  a=@t  (trim-cord (winner-text w 'address'))
+      ?:(=('' a) ~ `[id.l a])
+  =/  each=(list @t)
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit @t)
+    ?.  ?=(?(%activity %situation) kind.body.l)  ~
+    =/  r=(list row)  (fall (~(get by (fold rows.l multi now)) 'location') ~)
+    ?~  r  ~
+    ?.  ?=([%s *] value.obs.i.r)  ~
+    =/  t=@t  (trim-cord p.value.obs.i.r)
+    ?:(=('' t) ~ `t)
+  ::  one per address as the geocache keys it
+  =|  seen=(set @t)
+  =|  out=(list @t)
+  |-
+  ?~  each  (flop out)
+  =/  k=@t  (addr-key i.each)
+  ?:  (~(has in seen) k)  $(each t.each)
+  $(each t.each, seen (~(put in seen) k), out [i.each out])
 ::  +outdoor-lines: the brief's outdoors (version 76): the day's weather
 ::  and the alerts in force, the days ahead whose weather suits an outing
 ::  and whose calendar is light (under four hours booked in its daylight),
@@ -7532,7 +7566,7 @@
 ::  both drop off at and pick up from
 ::
 ++  outdoor-lines
-  |=  [wx=json all=(list loaded) multi=(set @t) now=@da to=@da tz=@t]
+  |=  [wx=json cache=json all=(list loaded) multi=(set @t) now=@da to=@da tz=@t]
   ^-  (list @t)
   =/  days=(list period)  (de-periods (ga wx 'periods'))
   =/  today=(list period)  (skim days |=(p=period &(day.p (lth start.p to) (gth end.p now))))
@@ -7572,16 +7606,21 @@
   =/  waits=(list appointment)
     %+  skim  ahead
     |=  a=appointment
-    &(=(%drop leg.a) ?=(^ place.a) (lien ahead |=(b=appointment &(=(id.b id.a) =(%pick leg.b)))))
+    &(=(%drop leg.a) (lien ahead |=(b=appointment &(=(id.b id.a) =(%pick leg.b)))))
   =/  near=(list @t)
     ?:  =(~ parks)  ~
     %+  murn  waits
     |=  a=appointment
     ^-  (unit @t)
+    ::  the place's geo, else the point its address or the location as
+    ::  written was given, from the geocache (version 77)
     =/  l=(unit loaded)  ?~(place.a ~ (loaded-of all u.place.a))
-    ?~  l  ~
-    =/  g=(list row)  (fall (~(get by (fold rows.u.l multi now)) 'geo') ~)
-    =/  pt  ?~(g ~ (geo-of value.obs.i.g))
+    =/  w=(map @t (list row))  ?~(l ~ (fold rows.u.l multi now))
+    =/  g=(list row)  (fall (~(get by w) 'geo') ~)
+    =/  addr=@t  =/(t (winner-text w 'address') ?:(=('' t) where.a t))
+    =/  pt=(unit [lat=@t lon=@t])
+      ?^  g  (geo-of value.obs.i.g)
+      (geo-of (gj cache (addr-key addr)))
     ?~  pt  ~
     ::  ponytail: ten kilometres around the wait, a setting if owners ask
     =/  ps  (scag 3 (parks-within parks u.pt 10.000))
@@ -9454,6 +9493,7 @@
   ?:  &(=('GET' meth) ?=([%api %outdoors ~] suffix))            `[%get-outdoors %own]
   ?:  &(=('PUT' meth) ?=([%api %outdoors ~] suffix))            `[%put-outdoors %own]
   ?:  &(=('GET' meth) ?=([%api %weather ~] suffix))             `[%get-weather %own]
+  ?:  &(=('POST' meth) ?=([%api %geocode %wake ~] suffix))      `[%post-geocode-wake %own]
   ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
   ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]

@@ -419,13 +419,15 @@
         ;<  ~  bind:m  (rise-later prod "%orrery parks: failed")
         |-
         ;<  ~  bind:m  parks-pass
+        ;<  ~  bind:m  geocode-known
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /parks (add now ~h12))
         ;<  ~  bind:m  (idle-until-poke /parks)
         ;<  ~  bind:m  (cancel-timer:io /parks)
         $
           ::  the parks near the owner (version 76): weekly, or when the
-          ::  owner changes the location or the distance
+          ::  owner changes the location or the distance; and a point for
+          ::  every known address (version 77), twice a day or on a wake
           [~ %'nudge.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
         |-
@@ -1359,6 +1361,7 @@
     %get-outdoors           (serve-outdoors eyre-id)
     %put-outdoors           (serve-set-doc eyre-id 'set-outdoors' jon)
     %get-weather            (serve-weather eyre-id)
+    %post-geocode-wake      (serve-prod eyre-id %'parks.sig' 'geocode')
     %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
@@ -5337,13 +5340,53 @@
   ;<  cache=json  bind:m  (read-json (rf 0 / %'geocache.json'))
   =/  hit=(unit [@t @t])  (geo-of:orr (gj:orr cache key))
   ?^  hit  (pure:m [hit ''])
+  ::  a miss is kept too, so it is not paid for again (version 77)
+  ?:  =(s+'none' (gj:orr cache key))  (pure:m [~ 'Mapbox found no such address'])
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (post-json (geocode-url:orr api.cfg token.cfg) '' (geocode-body:orr addr) ~s30 %geocode)
   ?.  =(200 status.got)
     (pure:m [~ ?:(=(0 status.got) (cat 3 'Mapbox was not reached: ' (end [3 120] body.got)) (cat 3 'Mapbox answered ' (scot %ud status.got)))])
   =/  pt=(unit [lat=@t lon=@t])  (geocode-point:orr (fall (de:json:html body.got) ~))
-  ?~  pt  (pure:m [~ 'Mapbox found no such address'])
+  ?~  pt
+    ;<  ~  bind:m  (over:io (rf 0 / %'geocache.json') [[/ %json] (set-key:orr cache key s+'none')])
+    (pure:m [~ 'Mapbox found no such address'])
   ;<  ~  bind:m  (over:io (rf 0 / %'geocache.json') [[/ %json] (set-key:orr cache key s+(rap 3 lat.u.pt ',' lon.u.pt ~))])
   (pure:m [pt ''])
+::  +geocode-known: a point for every address the ship knows (version
+::  77): a place's address becomes its geo, the ship's, and a location
+::  written as text goes into the geocache, where the leave fiber and the
+::  brief find it. Fifty a pass at most, each address paid for once; none
+::  without time to leave's Mapbox token
+::
+++  geocode-known
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
+  =/  cfg=travel-config:orr  (de-travel-config:orr cfg-j)
+  ?:  =('' token.cfg)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  known  (known-addresses:orr all (multi-of:orr schema) now)
+  ;<  cache=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  =/  texts=(list @t)
+    (scag 50 (skip texts.known |=(t=@t !=(~ (gj:orr cache (addr-key:orr t))))))
+  =/  places=(list [id=@t addr=@t])  (scag (sub 50 (lent texts)) places.known)
+  ;<  ~  bind:m
+    =/  n  (fiber:fiber:nexus ,~)
+    |-
+    ?~  texts  (pure:n ~)
+    ;<  *  bind:n  (geocode cfg i.texts)
+    $(texts t.texts)
+  =|  rows=(list json)
+  |-
+  ?~  places
+    ?:  =(~ rows)  (pure:m ~)
+    ;<  *  bind:m  (file-ops-on (observe-ops:orr ~ rows) /geocode)
+    (pure:m ~)
+  ;<  got=[pt=(unit [lat=@t lon=@t]) why=@t]  bind:m  (geocode cfg addr.i.places)
+  =?  rows  ?=(^ pt.got)
+    [(obs-row:orr id.i.places 'geo' s+(rap 3 lat.u.pt.got ',' lon.u.pt.got ~) now ~ 90 ['mapbox' 'geocode'] 'ship') rows]
+  $(places t.places)
 ::  +point-of: where an appointment is: the place it names, by its geo,
 ::  else its address; else the address as written
 ::
@@ -5903,7 +5946,8 @@
       (turn (plan-habits:orr hs busy (max f now) t per-window.r) |=([h=habit:orr s=@da e=@da] (habit-line:orr h s tz)))
     (zing per)
   ;<  wx=json  bind:m  (read-json (rf 0 / %'weather.json'))
-  =/  outdoor=(list @t)  (outdoor-lines:orr wx all multi now to tz)
+  ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  =/  outdoor=(list @t)  (outdoor-lines:orr wx gc all multi now to tz)
   =/  today=(list @t)
     ;:  weld
       %:  brief-today:orr
