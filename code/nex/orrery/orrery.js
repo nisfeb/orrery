@@ -720,8 +720,23 @@
     (last.notes || []).forEach(function (x) { out += '<p class="muted">' + esc(x) + '</p>'; });
     return out + '</div>';
   }
-  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+  // the week (version 74): what the phone and the computer reported, the
+  // baseline's progress, and the last Sunday review with a button to send one
+  function weekCard(w) {
+    w = w || {};
+    var h = w.health || {}, k = w.work || {}, r = w.review || {};
+    var out = '<div class="card"><h2>The week</h2><p class="muted">Your phone sends a day of health (steps, workouts, sleep) and your computer a day of work; ' +
+      'the ship keeps sixty days, never as facts, and on Sunday at six it mails you the week: work, health, time with each child, and the week ahead.</p>';
+    var days = w.healthDays || 0;
+    out += '<p class="muted">' + (days ? 'Health: ' + days + ' day' + (days === 1 ? '' : 's') + ' kept' + (days < 14 ? '; the baseline needs 14' : '') + '.' : 'Health: nothing from your phone yet.') +
+      (h.day ? ' Last, ' + esc(h.day) + ': ' + (h.steps != null ? esc(String(h.steps)) + ' steps' : 'no steps') + ', ' + (h.workouts || []).length + ' workout' + ((h.workouts || []).length === 1 ? '' : 's') + '.' : '') + '</p>';
+    out += '<p class="muted">' + (k.day ? 'Work, ' + esc(k.day) + ': ' + Math.floor((k.active_minutes || 0) / 60) + ' h ' + ((k.active_minutes || 0) % 60) + ' min at the computer.' : 'Work: nothing from your computer yet.') + '</p>';
+    out += '<p><button data-review-wake="1">send the review now</button></p>';
+    if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
+    return out + '</div>';
+  }
+  function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast, week) {
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -1136,7 +1151,8 @@
     if (v.name === 'inbox') return show(inbox(openActions(d), d));
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
-      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last));
+      var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1469,6 +1485,8 @@
       post('/read/wake', {}).then(function () { say('reader woken'); setTimeout(function () { refresh(true); }, 8000); }).catch(oops);
     } else if (b.dataset.mailWake) {
       post('/mail/wake', {}).then(function () { say('mail reader woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
+    } else if (b.dataset.reviewWake) {
+      post('/review/wake', {}).then(function () { say('review on its way; the card updates when it is sent'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.briefWake) {
       post('/brief/wake', {}).then(function () { say('brief on its way; the card updates when it is sent'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.webhook) {

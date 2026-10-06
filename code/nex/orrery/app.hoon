@@ -30,6 +30,7 @@
 ::    /follows/<name>  /follow.sig      the lattice pages followed (version 66): each page sent, its situation, where it stands
 ::    /travel.json  /position.json  /geocache.json  /leave-last.json  /leave.sig   time to leave (version 69)
 ::    /trip.json  /trips.json           the trip the owner is on, and what their arrivals taught (version 73)
+::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -168,6 +169,11 @@
           [%fall %& [/ %'leave-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'trip.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'trips.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'health.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'work.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'drives.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'review-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'review.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
@@ -388,6 +394,31 @@
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
           ::  owner's wake sends one now
+          [~ %'review.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery review: failed")
+        |-
+        ;<  now=@da  bind:m  get-time:io
+        ;<  tz=@t  bind:m  owner-tz
+        =/  day=@t  (local-day:orr now tz)
+        =/  sunday=?  =(0 (dow-of:orr day))
+        =/  six=@da  (utc-of:orr (add (fall (day-da:orr day) now) ~h18) tz)
+        ;<  ~  bind:m
+          ?.  &(sunday (gte now six) (lth now (add six ~h1)))  (pure:(fiber:fiber:nexus ,~) ~)
+          (review-send day |)
+        =/  next=@da
+          ?:  &(sunday (lth now six))  six
+          (utc-of:orr (add (fall (day-da:orr (next-sunday:orr day)) now) ~h18) tz)
+        ;<  ~  bind:m  (cancel-timer:io /review)
+        ;<  ~  bind:m  (set-timer:io /review (add next ~s1))
+        ;<  in=gen-in  bind:m  (take-gen-in /review)
+        ;<  ~  bind:m
+          ?.  ?=(%poke -.in)  (pure:(fiber:fiber:nexus ,~) ~)
+          ;<  now=@da  bind:(fiber:fiber:nexus ,~)  get-time:io
+          (review-send (local-day:orr now tz) &)
+        $
+          ::  the week's review (version 74): at six on Sunday evening on
+          ::  the owner's clock, the week by mail and a push; the owner's
+          ::  wake sends one now
           [~ %'brief.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery brief: failed")
         |-
@@ -1271,6 +1302,12 @@
     %post-mail-wake         (serve-prod eyre-id %'mail.sig' 'mail')
     %get-brief-last         (serve-doc eyre-id %'brief-last.json')
     %get-brief-map          (serve-brief-map eyre-id)
+    %post-health            (serve-day eyre-id jon %'health.json' health-doc:orr)
+    %get-health             (serve-doc eyre-id %'health.json')
+    %post-work              (serve-day eyre-id jon %'work.json' work-doc:orr)
+    %get-work               (serve-doc eyre-id %'work.json')
+    %get-review-last        (serve-doc eyre-id %'review-last.json')
+    %post-review-wake       (serve-prod eyre-id %'review.sig' 'review')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
     %get-calendar-last      (serve-doc eyre-id %'calendar-events-last.json')
@@ -4206,6 +4243,9 @@
   ;<  travel=json  bind:m  (doc %'travel.json')
   ;<  leave-last=json  bind:m  (doc %'leave-last.json')
   ;<  pos=json  bind:m  (doc %'position.json')
+  ;<  review-last=json  bind:m  (doc %'review-last.json')
+  ;<  health=json  bind:m  (doc %'health.json')
+  ;<  work=json  bind:m  (doc %'work.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -4242,6 +4282,10 @@
         'position_at'
       ?:(=('' (gs:orr pos 'at')) ~ s+(gs:orr pos 'at'))
       ['travel_last' leave-last]
+      ['review_last' review-last]
+      ['health_days' (numb:enjs:format ?:(?=([%o *] health) ~(wyt by p.health) 0))]
+      ['health_last' (newest-day:orr health)]
+      ['work_last' (newest-day:orr work)]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -5161,6 +5205,19 @@
   ;<  ~  bind:m  (over:io (rf 1 / %'position.json') [[/ %json] doc])
   ;<  *  bind:m  (poke-soft:io (rf 1 / %'leave.sig') [[/ %sig] ~])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-day: a day of health or of work, checked and kept in its
+::  store, the newest sixty days, replacing a day sent before (version 74)
+::
+++  serve-day
+  |=  [eyre-id=@ta jon=json name=@ta check=$-(json (each json @t))]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  got=(each json @t)  (check jon)
+  ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
+  ;<  store=json  bind:m  (read-json (rf 1 / name))
+  =/  day=@t  (gs:orr p.got 'day')
+  ;<  ~  bind:m  (over:io (rf 1 / name) [[/ %json] (keep-days:orr store day p.got)])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['day' s+day]]))
 ::  +leave-record: what the leave fiber did, in leave-last.json: when,
 ::  the notes, the plan for the next appointment, and the keys of the
 ::  occurrences already alerted (the last fifty). No coordinate, no
@@ -5361,7 +5418,14 @@
         ['incident' s+incident.why]
         ['learned_min' (numb:enjs:format (div extra ~m1))]
     ==
-  =/  trip=json  (trip-doc a key leave u.dest buffer spot tell via now)
+  ::  the children the trip is for, so the week counts it as time with
+  ::  them (version 74)
+  =/  kids=(list @t)
+    =/  mine=(set @t)  (silt (turn (children:orr all multi now) |=([id=@t *] id)))
+    ?~  l  ~
+    %+  murn  (fall (~(get by (fold:orr rows.u.l multi now)) 'participants') ~)
+    |=(r=row:orr =/(k (ref-or-text:orr value.obs.r) ?:((~(has in mine) k) `k ~)))
+  =/  trip=json  (trip-doc a key leave u.dest buffer spot tell via kids now)
   ?.  (lte alert (add now ~s30))
     ;<  ~  bind:m  (leave-record last now ~ plan alerted quiet)
     =/  points=(list @da)
@@ -5434,10 +5498,11 @@
 ::  whom to tell when late
 ::
 ++  trip-doc
-  |=  [a=appointment:orr key=@t leave=@da dest=[lat=@t lon=@t] buffer=@dr spot=@t tell=@t via=@t now=@da]
+  |=  [a=appointment:orr key=@t leave=@da dest=[lat=@t lon=@t] buffer=@dr spot=@t tell=@t via=@t kids=(list @t) now=@da]
   ^-  json
   %-  pairs:enjs:format
   :~  ['key' s+key]
+      ['kids' a+(turn kids |=(k=@t `json`s+k))]
       ['id' s+id.a]
       ['name' s+name.a]
       ['where' s+where.a]
@@ -5474,6 +5539,7 @@
   =/  starts=@da  (fall (de-iso:orr (gs:orr t 'starts')) now)
   =/  leave=@da  (fall (de-iso:orr (gs:orr t 'leave_by')) starts)
   ?:  |(!enabled.cfg =('' token.cfg) (gth now (add starts ~m30)))
+    ;<  ~  bind:m  ?.((gth now (add starts ~m30)) (pure:(fiber:fiber:nexus ,~) ~) (log-drive t))
     ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] [%o ~]])
     (pure:m ~)
   =/  told=?  =([%b &] (gj:orr t 'told'))
@@ -5525,6 +5591,7 @@
     ;<  ~  bind:m
       ?.  &(dense ?=(^ eta))  (pure:(fiber:fiber:nexus ,~) ~)
       (learn-arrival (gs:orr t 'spot') (div (sub u.fix (min u.fix u.eta)) ~s1))
+    ;<  ~  bind:m  (log-drive t)
     ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] [%o ~]])
     (pure:m ~)
   ::  the first estimate from the road: a close fix since the trip began
@@ -5539,6 +5606,24 @@
   ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] (set-key:orr t2 'told' b+&)])
   ;<  ~  bind:m  (tell-late t2 now u.secs late cfg)
   (pure:m `(add starts ~m30))
+::  +log-drive: a trip of the owner's that ended, kept for the week's
+::  time with the children: when, what, the leg, the children; the last
+::  two hundred (version 74)
+::
+++  log-drive
+  |=  t=json
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  d=json  bind:m  (read-json (rf 0 / %'drives.json'))
+  =/  one=json
+    %-  pairs:enjs:format
+    :~  ['at' s+(gs:orr t 'starts')]
+        ['id' s+(gs:orr t 'id')]
+        ['name' s+(gs:orr t 'name')]
+        ['leg' s+(gs:orr t 'leg')]
+        ['kids' (gj:orr t 'kids')]
+    ==
+  (over:io (rf 0 / %'drives.json') [[/ %json] (pairs:enjs:format ~[['drives' a+(scag 200 `(list json)`[one (ga:orr d 'drives')])]])])
 ::  +learn-arrival: one more arrival at a place, the last eight kept
 ::
 ++  learn-arrival
@@ -5731,6 +5816,96 @@
       ['said' s+suggestions]
       ['map' s+overlay]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
+  ==
+::  +review-send: the week's review (version 74), unless one went today
+::  already (the owner's wake sends another): the last seven days' work
+::  and health as the computer and the phone reported them, how many of
+::  the last fourteen days the phone has reported (the baseline), the
+::  time with each child, the owner's trips in the week ahead; mailed
+::  from the owner to the owner through auspex, pushed in a line, and
+::  kept in review-last.json
+::
+++  review-send
+  |=  [day=@t forced=?]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'review-last.json'))
+  ?:  &(!forced =(day (gs:orr last 'day')))  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  owner-tz
+  ;<  our=@p  bind:m  get-our:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  ;<  health-j=json  bind:m  (read-json (rf 0 / %'health.json'))
+  ;<  work-j=json  bind:m  (read-json (rf 0 / %'work.json'))
+  ;<  drives-j=json  bind:m  (read-json (rf 0 / %'drives.json'))
+  ::  the seven days ending today, oldest first
+  =/  midnight=@da  (fall (day-da:orr day) now)
+  =/  week=(list @t)  (flop (turn (gulf 0 6) |=(n=@ud (end [3 10] (en-iso:orr (sub midnight (mul n ~d1)))))))
+  =/  work
+    %+  turn  week
+    |=  d=@t
+    ^-  [day=@t mins=@ud last=(unit @da)]
+    =/  doc=json  (gj:orr work-j d)
+    =/  ends=(list @da)  (turn (spans:orr (ga:orr doc 'blocks')) |=([s=@da e=@da *] e))
+    [d (fall (gn:orr doc 'active_minutes') 0) ?:(=(~ ends) ~ `(roll ends max))]
+  =/  health
+    %+  turn  week
+    |=  d=@t
+    ^-  [day=@t steps=(unit @ud) active=(unit @ud) workouts=@ud night=(unit [start=@da end=@da])]
+    =/  doc=json  (gj:orr health-j d)
+    [d (gn:orr doc 'steps') (gn:orr doc 'active_minutes') (lent (ga:orr doc 'workouts')) (night-of:orr (spans:orr (ga:orr doc 'sleep')))]
+  ::  the baseline: of the last fourteen days, those the phone reported in full
+  =/  seen=@ud
+    %+  roll  (gulf 1 14)
+    |=  [n=@ud c=@ud]
+    =/  doc=json  (gj:orr health-j (end [3 10] (en-iso:orr (sub midnight (mul n ~d1)))))
+    ?:  |(=(~ doc) =([%b &] (gj:orr doc 'partial')))  c
+    +(c)
+  =/  kids  (children:orr all multi now)
+  =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
+  =/  drives=(list [at=@da kids=(list @t)])
+    %+  murn  (ga:orr drives-j 'drives')
+    |=  j=json
+    =/  at=(unit @da)  (de-iso:orr (gs:orr j 'at'))
+    ?~(at ~ `[u.at (strings:orr (ga:orr j 'kids'))])
+  =/  ones  (one-on-ones:orr all multi now (sub now ~d7) now kidset)
+  =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
+  =/  behind=(unit @t)  (kid-behind:orr tally)
+  =/  ahead=(list @t)  (week-ahead:orr (appointments-ahead:orr all multi now ~d7) tz)
+  =/  text=@t  (review-render:orr day tz work health seen tally behind ahead)
+  ;<  aus=(unit path)  bind:m  (find-base %auspex)
+  ;<  sent=(unit @t)  bind:m
+    =/  n  (fiber:fiber:nexus ,(unit @t))
+    ?~  aus  (pure:n `'auspex desk not installed')
+    ;<  err=(unit tang)  bind:n  (poke-auspex u.aus our (cat 3 'Your week, ' day) text)
+    (pure:n ?~(err ~ `(tang-head u.err)))
+  ::  the push: the week in a line
+  =/  total=@ud  (roll work |=([w=[day=@t mins=@ud last=(unit @da)] n=@ud] (add n mins.w)))
+  =/  outs=@ud  (roll health |=([h=[day=@t steps=(unit @ud) active=(unit @ud) workouts=@ud night=(unit [start=@da end=@da])] n=@ud] (add n workouts.h)))
+  =/  line=@t
+    %+  join-cords:orr  ', '
+    %+  skip
+      ^-  (list @t)
+      :~  ?:(=(0 total) '' (cat 3 (hours:orr total) ' of work'))
+          (rap 3 (crip (a-co:co outs)) ' workout' ?:(=(1 outs) '' 's') ~)
+          ?~(behind '' (cat 3 u.behind ' is most behind'))
+      ==
+    |=(t=@t =('' t))
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  *  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ ['Your week' line ~ `'/apps/orrery' `'orrery-review']] eny]]
+  %+  over:io  (rf 0 / %'review-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['day' s+day]
+      ['at' s+(en-iso:orr now)]
+      ['sent' b+?=(~ sent)]
+      ['text' s+text]
+      ['line' s+line]
+      ['notes' a+(turn (skip `(list @t)`~[(fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
 ::  +calendar-cache: the calendar's order index, ~ without the desk or
 ::  the road

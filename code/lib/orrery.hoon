@@ -6495,6 +6495,335 @@
   |=  [api=@t token=@t overlay=@t]
   ^-  @t
   (rap 3 api '/styles/v1/mapbox/streets-v12/static/' overlay '/auto/600x360@2x?padding=40&access_token=' token ~)
+::  ==  the week (version 74)
+::
+::  The owner's health and work as the phone and the computer report
+::  them, one summary a day each, kept owner-only and never as facts;
+::  the time they spend with each child; and on Sunday evening a review
+::  of the week, with the week ahead.
+::
+::  +day-da: a local date, "2026-10-06", as its midnight; +day-ok: one
+::
+++  day-da  |=(d=@t ^-((unit @da) ?.(=(10 (met 3 d)) ~ (de-iso (cat 3 d 'T00:00:00Z')))))
+++  day-ok  |=(d=@t ^-(? ?=(^ (day-da d))))
+::  +day-plus: the date n days after
+::
+++  day-plus
+  |=  [d=@t n=@ud]
+  ^-  @t
+  (end [3 10] (en-iso (add (fall (day-da d) *@da) (mul n ~d1))))
+::  +dow-of: a date's day of the week, 0 for Sunday
+::
+++  dow-of
+  |=  d=@t
+  ^-  @ud
+  =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore (fall (day-da d) ~2000.1.1))
+  (dow y mo dd)
+::  +next-sunday: the Sunday after a date
+::
+++  next-sunday
+  |=  d=@t
+  ^-  @t
+  =/  w=@ud  (dow-of d)
+  (day-plus d ?:(=(0 w) 7 (sub 7 w)))
+::  +spans: a list of {start, end} as ISO instants, each kept when it
+::  parses, ends after it starts and lasts a day at most; the type with
+::  it when one is named
+::
+++  spans
+  |=  l=(list json)
+  ^-  (list [start=@da end=@da type=@t])
+  %+  murn  l
+  |=  j=json
+  ^-  (unit [start=@da end=@da type=@t])
+  =/  s=(unit @da)  (de-iso (gs j 'start'))
+  =/  e=(unit @da)  (de-iso (gs j 'end'))
+  ?.  &(?=(^ s) ?=(^ e) (gth u.e u.s) (lte (sub u.e u.s) ~d1))  ~
+  `[u.s u.e (end [3 40] (gs j 'type'))]
+++  en-spans
+  |=  [l=(list [start=@da end=@da type=@t]) typed=?]
+  ^-  json
+  :-  %a
+  %+  turn  l
+  |=  [s=@da e=@da t=@t]
+  ^-  json
+  %-  pairs:enjs:format
+  %+  weld  `(list [@t json])`~[['start' s+(en-iso s)] ['end' s+(en-iso e)]]
+  ?.(typed ~ `(list [@t json])`~[['type' s+?:(=('' t) 'other' t)]])
+::  +health-doc: a day of health from the phone, as it is kept: the day,
+::  its steps and active minutes when given, the sleep sessions and the
+::  workouts that parse, and whether the day is still filling; or why it
+::  is refused
+::
+++  health-doc
+  |=  j=json
+  ^-  (each json @t)
+  =/  day=@t  (gs j 'day')
+  ?.  (day-ok day)  |+'day: a local date, YYYY-MM-DD, is required'
+  =/  num  |=(k=@t ^-(json =/(v (whole (gj j k)) ?~(v ~ (numb:enjs:format (min u.v 1.000.000))))))
+  :-  %&
+  %-  pairs:enjs:format
+  :~  ['day' s+day]
+      ['steps' (num 'steps')]
+      ['active_minutes' (num 'active_minutes')]
+      ['sleep' (en-spans (scag 12 (spans (ga j 'sleep'))) |)]
+      ['workouts' (en-spans (scag 24 (spans (ga j 'workouts'))) &)]
+      ['partial' b+=([%b &] (gj j 'partial'))]
+  ==
+::  +work-doc: a day at the computer, as it is kept: the day, the blocks
+::  of activity that parse, and their minutes, counted here
+::
+++  work-doc
+  |=  j=json
+  ^-  (each json @t)
+  =/  day=@t  (gs j 'day')
+  ?.  (day-ok day)  |+'day: a local date, YYYY-MM-DD, is required'
+  =/  blocks=(list [start=@da end=@da type=@t])  (scag 96 (spans (ga j 'blocks')))
+  =/  mins=@ud
+    (roll blocks |=([b=[start=@da end=@da type=@t] n=@ud] (add n (div (sub end.b start.b) ~m1))))
+  :-  %&
+  %-  pairs:enjs:format
+  :~  ['day' s+day]
+      ['active_minutes' (numb:enjs:format mins)]
+      ['blocks' (en-spans blocks |)]
+  ==
+::  +keep-days: a day put in a store of days, the newest sixty kept
+::
+++  keep-days
+  |=  [store=json day=@t doc=json]
+  ^-  json
+  =/  m=(map @t json)  ?:(?=([%o *] store) p.store ~)
+  =.  m  (~(put by m) day doc)
+  =/  days=(list @t)
+    (sort ~(tap in ~(key by m)) |=([a=@t b=@t] (gth (fall (day-da a) *@da) (fall (day-da b) *@da))))
+  [%o (~(gas by *(map @t json)) (turn (scag 60 days) |=(d=@t [d (~(got by m) d)])))]
+::  +newest-day: a store's newest day, ~ when it has none
+::
+++  newest-day
+  |=  store=json
+  ^-  json
+  ?.  ?=([%o *] store)  ~
+  =/  days=(list @t)
+    (sort ~(tap in ~(key by p.store)) |=([a=@t b=@t] (gth (fall (day-da a) *@da) (fall (day-da b) *@da))))
+  ?~(days ~ (~(got by p.store) i.days))
+::  +night-of: the night's sleep among a day's sessions: the longest
+::
+++  night-of
+  |=  l=(list [start=@da end=@da type=@t])
+  ^-  (unit [start=@da end=@da])
+  =|  best=(unit [start=@da end=@da])
+  |-
+  ?~  l  best
+  =/  this=[start=@da end=@da]  [start.i.l end.i.l]
+  ?:  &(?=(^ best) (lte (sub end.i.l start.i.l) (sub end.u.best start.u.best)))  $(l t.l)
+  $(l t.l, best `this)
+::  +children: the owner's children, by the relationship the ship holds,
+::  oldest first, each with their age when known and their share of the
+::  owner's time: half under five, whole from five (the owner: "the
+::  younger 3 need less time")
+::
+++  children
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [id=@t name=@t age=(unit @ud) share=@ud])
+  =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore now)
+  =/  each=(list [id=@t name=@t age=(unit @ud) share=@ud])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [id=@t name=@t age=(unit @ud) share=@ud])
+    ?.  =(%person kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    =/  rel=@t  (lower (trim-cord (winner-text w 'relationship')))
+    ?.  |(=('son' rel) =('daughter' rel) =('child' rel))  ~
+    =/  age=(unit @ud)
+      =/  b=(unit @da)  (day-da (end [3 10] (winner-text w 'birthday')))
+      ?~  b  (rush (trim-cord (winner-text w 'age')) dem)
+      =/  [[* by=@ud] bm=@ud [bd=@ud *]]  (yore u.b)
+      ?:  (gte by y)  `0
+      =/  years=@ud  (sub y by)
+      `?:(|((lth mo bm) &(=(mo bm) (lth dd bd))) (dec years) years)
+    `[id.l name.body.l age ?:(&(?=(^ age) (lth u.age 5)) 50 100)]
+  (sort each |=([a=[@t @t age=(unit @ud) @ud] b=[@t @t age=(unit @ud) @ud]] (gth (fall age.a 0) (fall age.b 0))))
+::  +one-on-ones: the owner's time with one child alone: a situation
+::  starting in the window whose participants are the owner and that one
+::  child
+::
+++  one-on-ones
+  |=  [all=(list loaded) multi=(set @t) now=@da from=@da to=@da kids=(set @t)]
+  ^-  (list [at=@da kid=@t])
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [at=@da kid=@t])
+  ?.  =(%situation kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  at=(unit @da)  (de-iso (winner-text w 'starts'))
+  ?.  &(?=(^ at) (gte u.at from) (lth u.at to))  ~
+  =/  who=(set @t)
+    (silt (turn (fall (~(get by w) 'participants') ~) |=(r=row (ref-or-text value.obs.r))))
+  =/  others=(list @t)  ~(tap in (~(del in who) 'person/me'))
+  ?.  &((~(has in who) 'person/me') ?=([@ ~] others))  ~
+  ?.  (~(has in kids) i.others)  ~
+  `[u.at i.others]
+::  +kid-tally: each child's drives and one-on-ones in the window, and
+::  their standing against their share: a one-on-one three points, a
+::  drive one, over the share
+::
++$  kid-row  [id=@t name=@t share=@ud drives=@ud ones=@ud score=@ud]
+++  kid-tally
+  |=  $:  kids=(list [id=@t name=@t age=(unit @ud) share=@ud])
+          drives=(list [at=@da kids=(list @t)])
+          ones=(list [at=@da kid=@t])
+          from=@da  to=@da
+      ==
+  ^-  (list kid-row)
+  %+  turn  kids
+  |=  [id=@t name=@t age=(unit @ud) share=@ud]
+  ^-  kid-row
+  =/  d=@ud
+    (lent (skim drives |=([at=@da ks=(list @t)] &((gte at from) (lth at to) (lien ks |=(k=@t =(k id)))))))
+  =/  o=@ud  (lent (skim ones |=([at=@da k=@t] &((gte at from) (lth at to) =(k id)))))
+  [id name share d o (div (mul 100 (add d (mul 3 o))) (max 1 share))]
+::  +kid-behind: the child furthest behind their share, when the gap is
+::  real: the lowest standing under half the highest; of two as low, the
+::  one with the larger share
+::
+++  kid-behind
+  |=  t=(list kid-row)
+  ^-  (unit @t)
+  =/  hi=@ud  (roll t |=([r=kid-row m=@ud] (max m score.r)))
+  =/  lo=(list kid-row)
+    (sort t |=([a=kid-row b=kid-row] ?.(=(score.a score.b) (lth score.a score.b) (gth share.a share.b))))
+  ?~  lo  ~
+  ?.  &((gth hi 0) (lth (mul 2 score.i.lo) hi))  ~
+  `name.i.lo
+::  +week-ahead: the owner's trips in the coming week, one line a day
+::
+++  week-ahead
+  |=  [appts=(list appointment) tz=@t]
+  ^-  (list @t)
+  =|  out=(list [day=@t items=(list @t)])
+  |-
+  ?~  appts
+    %+  turn  (flop out)
+    |=  [day=@t items=(list @t)]
+    (rap 3 (end [3 3] (snag (dow-of day) weekday-names)) '  ' (join-cords ', ' (flop items)) ~)
+  =/  a=appointment  i.appts
+  ?:  =(%no verdict.a)  $(appts t.appts)
+  =/  day=@t  (local-day starts.a tz)
+  =/  what=@t
+    %+  rap  3
+    :~  (hhmm starts.a tz)  ' '
+        ?-(leg.a %go '', %drop 'drop off: ', %pick 'pick up: ')
+        name.a
+    ==
+  ?:  &(?=(^ out) =(day day.i.out))
+    $(appts t.appts, out [[day [what items.i.out]] t.out])
+  $(appts t.appts, out [[day ~[what]] out])
+::  +hours: minutes as "9 h 30", "11 h", "40 min"
+::
+++  hours
+  |=  mins=@ud
+  ^-  @t
+  ?:  (lth mins 60)  (rap 3 (crip (a-co:co mins)) ' min' ~)
+  =/  h=@t  (crip (a-co:co (div mins 60)))
+  =/  r=@ud  (mod mins 60)
+  ?:  =(0 r)  (cat 3 h ' h')
+  (rap 3 h ' h ' ?:((lth r 10) '0' '') (crip (a-co:co r)) ~)
+::  +bed-minutes: a bedtime as minutes after 18:00 on the owner's clock,
+::  so a night past midnight sorts after one before it
+::
+++  bed-minutes
+  |=  [at=@da tz=@t]
+  ^-  @ud
+  =/  t=@t  (hhmm at tz)
+  =/  h=@ud  (fall (rush (end [3 2] t) dem) 0)
+  =/  mi=@ud  (fall (rush (cut 3 [3 2] t) dem) 0)
+  (mod (sub (add (add (mul h 60) mi) 1.440) 1.080) 1.440)
+::  +review-render: the Sunday review's text
+::
+++  review-render
+  |=  $:  day=@t  tz=@t
+          work=(list [day=@t mins=@ud last=(unit @da)])
+          health=(list [day=@t steps=(unit @ud) active=(unit @ud) workouts=@ud night=(unit [start=@da end=@da])])
+          seen=@ud
+          tally=(list kid-row)
+          behind=(unit @t)
+          ahead=(list @t)
+      ==
+  ^-  @t
+  =/  short  |=(d=@t (end [3 3] (snag (dow-of d) weekday-names)))
+  =/  worked=(list [day=@t mins=@ud last=(unit @da)])  (skim work |=([* m=@ud *] (gth m 0)))
+  =/  late=(list [day=@t mins=@ud last=(unit @da)])
+    %+  skim  worked
+    |=  [* * last=(unit @da)]
+    ?~  last  |
+    =/  b=@ud  (bed-minutes u.last tz)
+    &((gte b 240) (lth b 660))
+  =/  work-lines=(list @t)
+    ?:  =(~ worked)  ~['Nothing reported yet: the reporter on your computer sends it.']
+    :~  %+  join-cords  ', '
+        %+  turn  worked
+        |=  [d=@t m=@ud last=(unit @da)]
+        =/  till=@t
+          ?~  last  ''
+          =/  b=@ud  (bed-minutes u.last tz)
+          ?.  &((gte b 240) (lth b 660))  ''
+          (cat 3 ' until ' (hhmm u.last tz))
+        (rap 3 (short d) ' ' (hours m) till ~)
+        %+  rap  3
+        :~  'In all '  (hours (roll worked |=([w=[@t m=@ud *] n=@ud] (add n m.w))))
+            ?:(=(~ late) '' (rap 3 ', ' (crip (a-co:co (lent late))) ' late night' ?:(=(1 (lent late)) '' 's') ~))
+            '.'
+        ==
+    ==
+  =/  had=(list [day=@t steps=(unit @ud) active=(unit @ud) workouts=@ud night=(unit [start=@da end=@da])])
+    (skim health |=([* s=(unit @ud) a=(unit @ud) w=@ud n=(unit [@da @da])] |(?=(^ s) ?=(^ a) (gth w 0) ?=(^ n))))
+  =/  steps=(list @ud)  (murn had |=([* s=(unit @ud) *] s))
+  =/  nights=(list [start=@da end=@da])  (murn had |=([* * * * n=(unit [start=@da end=@da])] n))
+  =/  health-lines=(list @t)
+    %+  weld
+      ?:  (gte seen 14)  ~
+      ~[(rap 3 'Learning your baseline: ' (crip (a-co:co seen)) ' of 14 days so far.' ~)]
+    ?:  =(~ had)  ~['Nothing from your phone yet: Talon sends it.']
+    =/  active=@ud  (roll (murn had |=([* * a=(unit @ud) *] a)) add)
+    =/  outs=@ud  (roll (turn had |=([* * * w=@ud *] w)) add)
+    %+  murn
+      ^-  (list (unit @t))
+      :~  ?:  =(~ steps)  ~
+          `(rap 3 'Steps: ' (crip (a-co:co (div (roll steps add) (lent steps)))) ' a day.' ~)
+          `(rap 3 'Active: ' (hours active) ' in all, ' (crip (a-co:co outs)) ' workout' ?:(=(1 outs) '' 's') '.' ~)
+          ?:  =(~ nights)  ~
+          =/  slept=@ud  (div (roll (turn nights |=([s=@da e=@da] (div (sub e s) ~m1))) add) (lent nights))
+          =/  beds=(list @ud)  (sort (turn nights |=([s=@da e=@da] (bed-minutes s tz))) lth)
+          =/  mid=@ud  (add 1.080 (snag (div (lent beds) 2) beds))
+          =/  bed=@t
+            =/  hh=@ud  (mod (div mid 60) 24)
+            =/  mm=@ud  (mod mid 60)
+            (rap 3 ?:((lth hh 10) '0' '') (crip (a-co:co hh)) ':' ?:((lth mm 10) '0' '') (crip (a-co:co mm)) ~)
+          `(rap 3 'Sleep: ' (hours slept) ' a night, to bed around ' bed '.' ~)
+      ==
+    |=(u=(unit @t) u)
+  =/  kid-lines=(list @t)
+    %+  weld
+      %+  turn  tally
+      |=  r=kid-row
+      %+  rap  3
+      :~  name.r  ': '  (crip (a-co:co drives.r))  ' drive'  ?:(=(1 drives.r) '' 's')
+          ', '  (crip (a-co:co ones.r))  ' one-on-one'  ?:(=(1 ones.r) '' 's')
+          ?:(=(50 share.r) ' (half share)' '')
+      ==
+    ?~(behind ~ ~[(rap 3 'Most behind: ' u.behind '.' ~)])
+  =/  section
+    |=  [head=@t lines=(list @t)]
+    ^-  @t
+    ?~  lines  ''
+    (rap 3 head nl (join-cords nl lines) nl nl ~)
+  %+  rap  3
+  :~  'Your week, '  (snag (dow-of day) weekday-names)  ' '  day  nl  nl
+      (section 'Work' work-lines)
+      (section 'Health' health-lines)
+      (section 'Time with the kids' kid-lines)
+      (section 'The week ahead' ahead)
+  ==
 ::  +addr-key: an address as the geocache keys it: lower case, one space
 ::
 ++  addr-key
@@ -8338,6 +8667,12 @@
   ?:  &(=('POST' meth) ?=([%api %mail %wake ~] suffix))         `[%post-mail-wake %own]
   ?:  &(=('GET' meth) ?=([%api %brief %last ~] suffix))         `[%get-brief-last %own]
   ?:  &(=('GET' meth) ?=([%api %brief %map ~] suffix))          `[%get-brief-map %own]
+  ?:  &(=('POST' meth) ?=([%api %health ~] suffix))             `[%post-health %writes]
+  ?:  &(=('GET' meth) ?=([%api %health ~] suffix))              `[%get-health %own]
+  ?:  &(=('POST' meth) ?=([%api %work ~] suffix))               `[%post-work %writes]
+  ?:  &(=('GET' meth) ?=([%api %work ~] suffix))                `[%get-work %own]
+  ?:  &(=('GET' meth) ?=([%api %review %last ~] suffix))        `[%get-review-last %own]
+  ?:  &(=('POST' meth) ?=([%api %review %wake ~] suffix))       `[%post-review-wake %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))          `[%get-exec-last %own]
   ?:  &(=('GET' meth) ?=([%api %calendar %last ~] suffix))      `[%get-calendar-last %own]

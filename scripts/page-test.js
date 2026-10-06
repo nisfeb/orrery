@@ -164,6 +164,13 @@ const calmSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, 
 ok('a drive near its usual time says no usual, no roads, no incident and nothing learned', calmSettings.includes('20 min with traffic, leave by') && !calmSettings.includes('usual') && !calmSettings.includes('On the way') && !calmSettings.includes('arrivals there'));
 const mapSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, { day: '2026-10-06', at: '2026-10-06T11:00:00Z', sent: true, tags: {}, notes: [], map: 'pin-l-1+d9534f(-81.4,30.1)' });
 ok('the brief card shows the stops on a map when the brief had any', mapSettings.includes('<img class="brief-map"') && mapSettings.includes('/apps/orrery/api/brief/map?at=2026-10-06T11%3A00%3A00Z') && !whySettings.includes('brief-map'));
+const weekSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
+  { review: { at: '2026-10-11T22:00:00Z', sent: true, text: 'Your week, Sunday 2026-10-11\n\nWork\nMon 9 h' }, healthDays: 9, health: { day: '2026-10-10', steps: 4210, workouts: [{}] }, work: { day: '2026-10-11', active_minutes: 545 } });
+ok('the week card says what came in, how far the baseline is, and shows the last review (version 74)',
+  weekSettings.includes('<h2>The week</h2>') && weekSettings.includes('Health: 9 days kept; the baseline needs 14.') && weekSettings.includes('4210 steps, 1 workout')
+  && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11'));
+const weekEmpty = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
+ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
 ok('the schema and policy cards still follow', genSettings.indexOf('<h2>Generator</h2>') < genSettings.indexOf('<h2>schema.json</h2>') && genSettings.includes('id="policy"'));

@@ -1209,6 +1209,95 @@
   ==
 ::  ==  time to leave (version 69)
 ::
+++  test-review
+  =/  has  |=([t=@t n=tape] ^-(? ?=(^ (find n (trip t)))))
+  ::  a Thursday till half past one, a Friday short; three nights' sleep; two kids
+  =/  work=(list [@t @ud (unit @da)])
+    :~  ['2026-09-17' 570 `~2026.9.18..01.30.00]
+        ['2026-09-18' 45 `~2026.9.18..17.00.00]
+        ['2026-09-19' 0 ~]
+    ==
+  =/  health=(list [@t (unit @ud) (unit @ud) @ud (unit [@da @da])])
+    :~  ['2026-09-17' `3.000 `20 1 `[~2026.9.17..00.30.00 ~2026.9.17..06.30.00]]
+        ['2026-09-18' `5.000 ~ 0 `[~2026.9.18..01.30.00 ~2026.9.18..07.00.00]]
+        ['2026-09-19' ~ ~ 0 ~]
+    ==
+  =/  tally=(list kid-row:orr)  ~[['person/rose' 'Rose' 100 2 1 5] ['person/seamus' 'Seamus' 50 0 0 0]]
+  =/  t=@t  (review-render:orr '2026-09-20' 'UTC' work health 9 tally `'Seamus' ~['Tue  19:30 pick up: Opti Sail'])
+  =/  none=@t  (review-render:orr '2026-09-20' 'UTC' ~ ~ 0 ~ ~ ~)
+  ;:  weld
+    (expect !>((has t "Your week, Sunday 2026-09-20")))
+    (expect !>((has t "Thu 9 h 30 until 01:30, Fri 45 min")))
+    (expect !>((has t "In all 10 h 15, 1 late night.")))
+    (expect !>((has t "Learning your baseline: 9 of 14 days so far.")))
+    (expect !>((has t "Steps: 4000 a day.")))
+    (expect !>((has t "Active: 20 min in all, 1 workout.")))
+    (expect !>((has t "Sleep: 5 h 45 a night, to bed around 01:30.")))
+    (expect !>((has t "Rose: 2 drives, 1 one-on-one")))
+    (expect !>((has t "Seamus: 0 drives, 0 one-on-ones (half share)")))
+    (expect !>((has t "Most behind: Seamus.")))
+    (expect !>((has t "The week ahead\0aTue  19:30 pick up: Opti Sail")))
+    ::  nothing yet: says where it comes from, no kids, no week ahead
+    (expect !>((has none "Nothing reported yet")))
+    (expect !>((has none "Nothing from your phone yet")))
+    (expect !>(!(has none "Time with the kids")))
+  ==
+++  test-the-week
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  multi=(set @t)  (sy ~['participants'])
+  ::  now is 2026-09-18: a ten-year-old by age, a girl turning four next month, a baby
+  =/  rose  (mk 'person/rose' %person 'Rose' ~[['relationship' s+'daughter' 'owner'] ['age' s+'10' 'owner']])
+  =/  addie  (mk 'person/adelaide' %person 'Adelaide' ~[['relationship' s+'daughter' 'owner'] ['birthday' s+'2022-10-19' 'owner']])
+  =/  baby  (mk 'person/seamus' %person 'Seamus' ~[['relationship' s+'son' 'owner'] ['birthday' s+'2025-11-03' 'owner']])
+  =/  andrea  (mk 'person/andrea' %person 'Andrea' ~[['relationship' s+'wife' 'owner']])
+  =/  lunch  (mk 'situation/lunch' %situation 'Lunch with Rose' ~[['starts' s+(en-iso:orr (sub now ~d2)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner']])
+  =/  party  (mk 'situation/party' %situation 'Party' ~[['starts' s+(en-iso:orr (sub now ~d1)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner'] ['participants' (ref 'person/andrea') 'owner']])
+  =/  old  (mk 'situation/old' %situation 'Lunch with Rose before' ~[['starts' s+(en-iso:orr (sub now ~d9)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner']])
+  =/  all=(list loaded:orr)  ~[rose addie baby andrea lunch party old]
+  =/  kids  (children:orr all multi now)
+  =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
+  =/  ones  (one-on-ones:orr all multi now (sub now ~d7) now kidset)
+  =/  drives=(list [at=@da kids=(list @t)])  ~[[(sub now ~d3) ~['person/rose' 'person/adelaide']] [(sub now ~d8) ~['person/adelaide']]]
+  =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
+  =/  hd  (health-doc:orr (jo '{"day": "2026-09-17", "steps": 4210.0, "sleep": [{"start": "2026-09-17T04:55:00Z", "end": "2026-09-17T11:20:00Z"}, {"start": "2026-09-17T19:00:00Z", "end": "2026-09-17T18:00:00Z"}], "workouts": [{"type": "running", "start": "2026-09-17T22:00:00Z", "end": "2026-09-17T22:30:00Z"}, {"start": "2026-09-17T23:00:00Z", "end": "2026-09-17T23:20:00Z"}], "partial": true}'))
+  =/  wd  (work-doc:orr (jo '{"day": "2026-09-17", "active_minutes": 999, "blocks": [{"start": "2026-09-17T13:00:00Z", "end": "2026-09-17T15:30:00Z"}, {"start": "2026-09-18T03:00:00Z", "end": "2026-09-18T05:20:00Z"}]}'))
+  ;:  weld
+    ::  the children, oldest first, half a share under five; Andrea is not one
+    (expect-eq !>(`(list [@t @t (unit @ud) @ud])`~[['person/rose' 'Rose' `10 100] ['person/adelaide' 'Adelaide' `3 50] ['person/seamus' 'Seamus' `0 50]]) !>(kids))
+    ::  one-on-ones: the owner and one child, in the window; a party with Andrea is not one
+    (expect-eq !>(`(list [@da @t])`~[[(sub now ~d2) 'person/rose']]) !>(ones))
+    ::  the tally: a drive counts for each child in it, a one-on-one three points, over the share
+    (expect-eq !>(`(list kid-row:orr)`~[['person/rose' 'Rose' 100 1 1 4] ['person/adelaide' 'Adelaide' 50 1 0 2] ['person/seamus' 'Seamus' 50 0 0 0]]) !>(tally))
+    (expect-eq !>(`(unit @t)`[~ 'Seamus']) !>((kid-behind:orr tally)))
+    (expect-eq !>(`(unit @t)`~) !>((kid-behind:orr (kid-tally:orr kids ~ ~ (sub now ~d7) now))))
+    ::  a health day kept: steps whole, no active minutes, a backward session dropped, workouts typed or other
+    (expect !>(?=(%& -.hd)))
+    (expect-eq !>((jo '{"active_minutes":null,"day":"2026-09-17","partial":true,"sleep":[{"end":"2026-09-17T11:20:00Z","start":"2026-09-17T04:55:00Z"}],"steps":4210,"workouts":[{"end":"2026-09-17T22:30:00Z","start":"2026-09-17T22:00:00Z","type":"running"},{"end":"2026-09-17T23:20:00Z","start":"2026-09-17T23:00:00Z","type":"other"}]}')) !>(?:(?=(%& -.hd) p.hd ~)))
+    (expect-eq !>(`(each json @t)`|+'day: a local date, YYYY-MM-DD, is required') !>((health-doc:orr (jo '{"day": "yesterday"}'))))
+    ::  a work day counts its own minutes from the blocks
+    (expect-eq !>(`json`(numb:enjs:format 290)) !>(?:(?=(%& -.wd) (gj:orr p.wd 'active_minutes') ~)))
+    ::  the store keeps the newest sixty days
+    (expect-eq !>(60) !>(=/(st=json [%o ~] =/(n=@ud 0 |-(?:((gte n 70) (lent ~(tap by ?>(?=([%o *] st) p.st))) $(n +(n), st (keep-days:orr st (day-plus:orr '2026-01-01' n) b+&))))))))
+    (expect !>(=/(st (keep-days:orr [%o ~] '2026-01-01' b+&) ?=([%o *] st))))
+    ::  dates: the day of the week, the next Sunday
+    (expect-eq !>(5) !>((dow-of:orr '2026-09-18')))
+    (expect-eq !>('2026-09-20') !>((next-sunday:orr '2026-09-18')))
+    (expect-eq !>('2026-09-27') !>((next-sunday:orr '2026-09-20')))
+    ::  the night: the longest session
+    (expect-eq !>(`(unit [@da @da])`[~ (sub now ~h9) (sub now ~h2)]) !>((night-of:orr ~[[(sub now ~h12) (sub now ~h11) ''] [(sub now ~h9) (sub now ~h2) ''] [(sub now ~h1) now '']])))
+    ::  minutes in words
+    (expect-eq !>(['40 min' '11 h' '9 h 05']) !>([(hours:orr 40) (hours:orr 660) (hours:orr 545)]))
+    ::  a bedtime past midnight sorts after one before it
+    (expect !>((gth (bed-minutes:orr ~2026.9.18..01.10.00 'UTC') (bed-minutes:orr ~2026.9.17..23.30.00 'UTC'))))
+  ==
 ++  test-on-the-way
   =/  dir=json  (jo '{"routes": [{"duration": 1860.2, "duration_typical": 1140.4, "legs": [{"summary": "I 95 South, Baymeadows Road", "incidents": [{"impact": "minor", "description": "Independent Dr: no through traffic"}, {"impact": "major", "description": "Crash on I-95 S at Baymeadows"}]}]}]}')
   =/  calm=json  (jo '{"routes": [{"duration": 1200, "legs": [{"summary": "Philips Hwy", "incidents": [{"impact": "low", "description": "Lane closed"}]}]}]}')

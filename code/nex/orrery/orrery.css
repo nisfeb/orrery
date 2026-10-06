@@ -111,3 +111,5 @@ details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }
 .alias button.small { margin-left: .15rem; padding: 0 .3rem; }
 
 .brief-map { max-width: 100%; height: auto; border-radius: 6px; }
+
+.review { white-space: pre-wrap; font: inherit; font-size: 0.9em; margin: 0; }
