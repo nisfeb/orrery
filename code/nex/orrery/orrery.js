@@ -406,7 +406,7 @@
     }).join(' &middot; ') + '</div>';
   }
   function inbox(actions, state) {
-    var out = '<h1>Inbox</h1>' + instructBox('', '', 'Tell the ship anything: "Andrea was not in Barcelona", "Sam and Samuel are one person", "never propose calls"');
+    var out = '<h1>Inbox</h1>' + instructBox('', '', 'Tell the ship anything: "Dana was not in Barcelona", "Sam and Samuel are one person", "never propose calls"');
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
     var byId = index(state);
     out += '<ul class="actions">';
@@ -731,6 +731,20 @@
     out += '<p class="muted">' + (days ? 'Health: ' + days + ' day' + (days === 1 ? '' : 's') + ' kept' + (days < 14 ? '; the baseline needs 14' : '') + '.' : 'Health: nothing from your phone yet.') +
       (h.day ? ' Last, ' + esc(h.day) + ': ' + (h.steps != null ? esc(String(h.steps)) + ' steps' : 'no steps') + ', ' + (h.workouts || []).length + ' workout' + ((h.workouts || []).length === 1 ? '' : 's') + '.' : '') + '</p>';
     out += '<p class="muted">' + (k.day ? 'Work, ' + esc(k.day) + ': ' + Math.floor((k.active_minutes || 0) / 60) + ' h ' + ((k.active_minutes || 0) % 60) + ' min at the computer.' : 'Work: nothing from your computer yet.') + '</p>';
+    // the day's nudges (version 75): three at most, none from nine at night to seven
+    var sent = (w.nudge && w.nudge.sent) || [];
+    out += '<p class="muted">Nudges ' + (w.nudge && w.nudge.day ? 'on ' + esc(w.nudge.day) + ': ' + sent.length + ' of 3' : 'today: none yet') +
+      (sent.length ? '. Last: ' + esc(sent[sent.length - 1].title || '') + ' (' + fmtTime(sent[sent.length - 1].at) + ')' : '') + '.</p>';
+    // your day (version 75): the times the nudges and the habit slots keep to
+    var rh = w.rhythm || {};
+    var fld = function (name, label, ph) { return '<label class="field">' + label + ' <input name="' + name + '" value="' + esc(rh[name] != null ? String(rh[name]) : '') + '" placeholder="' + ph + '"></label> '; };
+    out += '<div id="rhythm"><p class="muted">Your day: times as HH:MM on your clock. Leave family time blank if you have none.</p>' +
+      '<p>' + fld('quiet_from', 'quiet from', '21:00') + fld('quiet_to', 'to', '07:00') + '</p>' +
+      '<p>' + fld('family_from', 'family time from', '') + fld('family_to', 'to', '') + '</p>' +
+      '<p>' + fld('evening_from', 'habits in the evening from', '18:00') + fld('evening_to', 'to', '21:00') + '</p>' +
+      '<p>' + fld('weekend_from', 'and weekend mornings from', '09:00') + fld('weekend_to', 'to', '12:00') + '</p>' +
+      '<p>' + fld('per_window', 'habits a window', '2') + fld('young_age', 'children under', '0') + fld('young_share', 'get this share of your time, %', '100') + '</p>' +
+      '<p><button data-save-rhythm="1">save your day</button></p></div>';
     out += '<p><button data-review-wake="1">send the review now</button></p>';
     if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
     return out + '</div>';
@@ -1152,7 +1166,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1427,6 +1441,13 @@
       if (tv('token')) tf.token = tv('token');
       say('saving time to leave');
       post('/travel', tf, 'PUT').then(function () { dirty = false; say('time to leave saved'); }).catch(oops);
+    } else if (b.dataset.saveRhythm) {
+      var rv = function (name) { return field('#rhythm', name); };
+      var rf = {};
+      ['quiet_from', 'quiet_to', 'family_from', 'family_to', 'evening_from', 'evening_to', 'weekend_from', 'weekend_to'].forEach(function (k) { rf[k] = rv(k); });
+      ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
+      say('saving your day');
+      post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
     } else if (b.dataset.travelWake) {
       post('/travel/wake', {}).then(function () { say('looking now; the card updates in a moment'); setTimeout(refresh, 8000); }).catch(oops);
     } else if (b.dataset.generate) {

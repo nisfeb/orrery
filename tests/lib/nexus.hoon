@@ -122,7 +122,7 @@
 ::  a correction: held at the door, kept newest first and once per fact,
 ::  taken back by its id, and matched however the value is cased
 ++  test-corrections
-  =/  ref-me  (pairs:enjs:format ~[['ref' s+'person/andrea']])
+  =/  ref-me  (pairs:enjs:format ~[['ref' s+'person/lena']])
   =/  c1  (de-correct:orr (pairs:enjs:format ~[['subject' s+'situation/trip'] ['attr' s+'participants'] ['value' ref-me] ['why' s+'  she stays home ']]) now)
   =/  c2  (de-correct:orr (jo '{"subject": "person/lin", "attr": "school", "value": "Oak Hill"}') now)
   ?>  ?=(%& -.c1)
@@ -148,8 +148,8 @@
     ==
   =/  struck  (strike-obs:orr batch cs)
   ;:  weld
-    (expect-eq !>(['situation/trip' 'participants' 'person/andrea' 'she stays home' now 'owner']) !>(p.c1))
-    (expect-eq !>(`(list @t)`~['person/andrea' 'person/lin']) !>((turn cs |=(c=correction:orr ?:(=('person/lin' subject.c) subject.c value.c)))))
+    (expect-eq !>(['situation/trip' 'participants' 'person/lena' 'she stays home' now 'owner']) !>(p.c1))
+    (expect-eq !>(`(list @t)`~['person/lena' 'person/lin']) !>((turn cs |=(c=correction:orr ?:(=('person/lin' subject.c) subject.c value.c)))))
     (expect-eq !>('twice') !>(why:(snag 0 cs)))
     (expect-eq !>(1) !>((lent (de-corrections:orr (drop-correction:orr again (correction-id:orr p.c1(why 'twice')))))))
     (expect-eq !>(again) !>((drop-correction:orr again 'nope')))
@@ -240,7 +240,7 @@
   =/  sc  (de-scope:orr (jo '{"kinds": ["situation"], "write": true}'))
   ?>  ?=(%& -.sc)
   =/  cs=(list correction:orr)
-    :~  ['situation/trip' 'participants' 'person/andrea' '' now 'owner']
+    :~  ['situation/trip' 'participants' 'person/lena' '' now 'owner']
         ['situation/trip' 'venue' 'Oak Hall' '' now 'owner']
         ['situation/trip' 'health' 'flu' '' now 'owner']
         ['person/lin' 'school' 'Oak Hill' '' now 'owner']
@@ -266,12 +266,12 @@
         (act 6 'generator' %task %dismissed 'no')
         (act 7 'generator' %task %dismissed 'no')
     ==
-  =/  c=correction:orr  ['situation/trip' 'participants' 'person/andrea' 'she stays home' now 'owner']
+  =/  c=correction:orr  ['situation/trip' 'participants' 'person/lena' 'she stays home' now 'owner']
   ;:  weld
     %+  expect-eq
       !>  ^-  (list @t)
       :~  'The owner struck these facts as wrong; never write them again:'
-          '  situation/trip participants = person/andrea (she stays home)'
+          '  situation/trip participants = person/lena (she stays home)'
           'The owner dismissed these of your proposals, with the reason; do not propose their like:'
           '  task | T1 | a refund'
       ==
@@ -303,9 +303,9 @@
     ?>(?=(%| -.w) p.w)
   =/  fact=json  (op (mk %fact '{"subject": "person/lin", "attr": "school", "value": "Oak Hill"}'))
   ::  a merge is left to run-merges, which checks it took
-  =/  plans  (plan-exec:orr ~[['c1' (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}}')] ['m1' (mk %merge '{"from": "person/a", "into": "person/b"}')] ['p1' (mk %preference '{"text": ""}')]] ~ ~ ~ now '' ['' ''])
+  =/  plans  (plan-exec:orr ~[['c1' (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/lena"}}')] ['m1' (mk %merge '{"from": "person/a", "into": "person/b"}')] ['p1' (mk %preference '{"text": ""}')]] ~ ~ ~ now '' ['' ''])
   ;:  weld
-    (expect-eq !>('correct') !>((gs:orr (op (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}, "why": "home"}')) 'op')))
+    (expect-eq !>('correct') !>((gs:orr (op (mk %correct '{"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/lena"}, "why": "home"}')) 'op')))
     (expect-eq !>('observe') !>((gs:orr fact 'op')))
     (expect-eq !>('owner') !>((gs:orr (gj:orr (snag 0 (ga:orr fact 'observations')) 'source') 'kind')))
     (expect-eq !>('Oak Hill') !>((gs:orr (snag 0 (ga:orr fact 'observations')) 'value')))
@@ -321,23 +321,23 @@
 ::  the model's answer to an instruction, held: kinds it may propose,
 ::  bodies the ship knows, a writer's kind whole, a default title
 ++  test-de-instruct
-  =/  known=(set @t)  (sy ~['situation/trip' 'person/andrea' 'person/me'])
+  =/  known=(set @t)  (sy ~['situation/trip' 'person/lena' 'person/me'])
   =/  ans=json
     %-  jo
     '''
-    {"reply": "  Takes Andrea off the trip. ",
+    {"reply": "  Takes Lena off the trip. ",
      "actions": [
-      {"kind": "correct", "title": "Andrea is not on the trip", "about": ["situation/trip", "person/nobody"],
-       "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}, "why": "she stays home"}},
-      {"kind": "correct", "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/andrea"}}},
+      {"kind": "correct", "title": "Lena is not on the trip", "about": ["situation/trip", "person/nobody"],
+       "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/lena"}, "why": "she stays home"}},
+      {"kind": "correct", "payload": {"subject": "situation/trip", "attr": "participants", "value": {"ref": "person/lena"}}},
       {"kind": "home", "title": "lights", "payload": {}},
       {"kind": "merge", "title": "one", "payload": {"from": "person/ghost", "into": "person/me"}},
-      {"kind": "fact", "title": "bad", "payload": {"subject": "person/andrea", "attr": "", "value": "x"}},
-      {"kind": "preference", "title": "rule", "payload": {"text": "Andrea stays home when I travel for work"}}]}
+      {"kind": "fact", "title": "bad", "payload": {"subject": "person/lena", "attr": "", "value": "x"}},
+      {"kind": "preference", "title": "rule", "payload": {"text": "Lena stays home when I travel for work"}}]}
     '''
   =/  out  (de-instruct:orr ans known now 'owner')
   ;:  weld
-    (expect-eq !>('Takes Andrea off the trip.') !>(reply.out))
+    (expect-eq !>('Takes Lena off the trip.') !>(reply.out))
     (expect-eq !>(`(list @t)`~['correct' 'correct' 'preference']) !>((turn acts.out |=(j=json (gs:orr j 'kind')))))
     (expect-eq !>(`(list @t)`~['situation/trip']) !>((strings:orr (ga:orr (snag 0 acts.out) 'about'))))
     (expect-eq !>('correct') !>((gs:orr (snag 1 acts.out) 'title')))
@@ -352,18 +352,18 @@
     ^-  loaded:orr
     [id [%person name (sy als) now ~] ~]
   =/  all=(list loaded:orr)
-    :~  (b 'person/andrea' 'Andrea' ~['wife'])
+    :~  (b 'person/lena' 'Lena' ~['wife'])
         (b 'person/lin' 'Lin' ~)
         (b 'situation/trip' 'Barcelona trip' ~)
         (b 'person/al' 'Al' ~)
     ==
   ;:  weld
-    (expect-eq !>(`(list @t)`~['situation/trip' 'person/andrea']) !>((turn (instruct-focus:orr all (sy ~['situation/trip']) 'my Wife stays home') |=(l=loaded:orr id.l))))
+    (expect-eq !>(`(list @t)`~['situation/trip' 'person/lena']) !>((turn (instruct-focus:orr all (sy ~['situation/trip']) 'my Wife stays home') |=(l=loaded:orr id.l))))
     (expect-eq !>(`(list @t)`~) !>((turn (instruct-focus:orr all ~ 'al is here') |=(l=loaded:orr id.l))))
   ==
 ::  an alias comes off however it is cased or spaced, and the rest stay
 ++  test-without-alias
-  =/  b=body:orr  [%person 'Andrea' (sy ~['jackson' '~ricsul-bilwyt-dozzod-nisfeb' 'wife']) now `~wet]
+  =/  b=body:orr  [%person 'Lena' (sy ~['jackson' '~ricsul-bilwyt-dozzod-nisfeb' 'wife']) now `~wet]
   ;:  weld
     (expect-eq !>((sy ~['jackson' 'wife'])) !>(aliases:(without-alias:orr b ' ~Ricsul-Bilwyt-Dozzod-Nisfeb ')))
     (expect-eq !>(b) !>((without-alias:orr b 'nobody')))
@@ -1049,7 +1049,7 @@
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
     (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr sit 'attrs'))))
-    (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
     (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
@@ -1057,12 +1057,12 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 70]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 75]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
     (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
-    (expect-eq !>(`(list @t)`~['status']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
     (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings']) !>((strings:orr (ga:orr bare 'multi'))))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
@@ -1169,8 +1169,8 @@
     ^-  row:orr
     [(rap 3 id '/' a ~) [id a v now ~ 90 ['t' 'x'] 'owner' now | '']]
   =/  all=(list loaded:orr)
-    :~  (mk 'person/rose' %person 'Rose' ~[['relationship' s+'daughter'] ['likes' s+'ballet'] ['likes' s+'sailing']])
-        (mk 'situation/trip' %situation 'Trip to Lisbon' ~[['status' s+'open'] ['needs' s+'a hotel'] ['waiting-on' s+'person/rose'] ['participants' o+(~(put by *(map @t json)) 'ref' s+'person/rose')] ['starts' s+'2026-12-12T17:00:00Z']])
+    :~  (mk 'person/wren' %person 'Wren' ~[['relationship' s+'daughter'] ['likes' s+'ballet'] ['likes' s+'swimming']])
+        (mk 'situation/trip' %situation 'Trip to Lisbon' ~[['status' s+'open'] ['needs' s+'a hotel'] ['waiting-on' s+'person/wren'] ['participants' o+(~(put by *(map @t json)) 'ref' s+'person/wren')] ['starts' s+'2026-12-12T17:00:00Z']])
         (mk 'situation/done' %situation 'Over' ~[['status' s+'closed'] ['outcome' s+'fine']])
     ==
   =/  acts=(list [id=@ta a=action:orr])
@@ -1180,23 +1180,23 @@
   =/  multi=(set @t)  (sy ~['likes' 'participants'])
   =/  schema=json  (jo '{"kinds": {"person": {"attrs": ["status", "likes"], "notes": {"likes": "x"}}, "situation": {"attrs": ["status", "needs"]}}, "multi": ["likes", "participants"], "style": "s"}')
   =/  v=json  (brief-json:orr all acts multi now '' (numb:enjs:format 7) schema)
-  =/  rose=json  (snag 0 (ga:orr v 'bodies'))
+  =/  wren=json  (snag 0 (ga:orr v 'bodies'))
   =/  lisbon=json  (snag 1 (ga:orr v 'bodies'))
   =/  text=@t  (en:json:html v)
   ;:  weld
     (expect !>(?=([%b %.y] (gj:orr v 'brief'))))
     ::  values only: a single value as it is, a multi as the list, a ref as a ref
-    (expect-eq !>('daughter') !>((gs:orr (gj:orr rose 'attrs') 'relationship')))
-    (expect-eq !>(`(list @t)`~['ballet' 'sailing']) !>((sort (strings:orr (ga:orr (gj:orr rose 'attrs') 'likes')) aor)))
-    (expect-eq !>(`(list @t)`~['situation/trip']) !>((strings:orr (ga:orr rose 'involved'))))
-    (expect-eq !>((jo '{"ref": "person/rose"}')) !>((snag 0 (ga:orr (gj:orr lisbon 'attrs') 'participants'))))
+    (expect-eq !>('daughter') !>((gs:orr (gj:orr wren 'attrs') 'relationship')))
+    (expect-eq !>(`(list @t)`~['ballet' 'swimming']) !>((sort (strings:orr (ga:orr (gj:orr wren 'attrs') 'likes')) aor)))
+    (expect-eq !>(`(list @t)`~['situation/trip']) !>((strings:orr (ga:orr wren 'involved'))))
+    (expect-eq !>((jo '{"ref": "person/wren"}')) !>((snag 0 (ga:orr (gj:orr lisbon 'attrs') 'participants'))))
     ::  no provenance anywhere
     (expect !>(?=(~ (find "\"source\"" (trip text)))))
     (expect !>(?=(~ (find "\"conf\"" (trip text)))))
     (expect !>(?=(~ (find "\"history\"" (trip text)))))
     ::  the open situations with what they need; the closed one is not among them
     (expect-eq !>(1) !>((lent (ga:orr v 'situations'))))
-    (expect-eq !>(['situation/trip' 'Trip to Lisbon' 'open' 'a hotel' 'person/rose' '2026-12-12T17:00:00Z']) !>(=/(s (snag 0 (ga:orr v 'situations')) [(gs:orr s 'id') (gs:orr s 'name') (gs:orr s 'status') (gs:orr s 'needs') (gs:orr s 'waiting_on') (gs:orr s 'starts')])))
+    (expect-eq !>(['situation/trip' 'Trip to Lisbon' 'open' 'a hotel' 'person/wren' '2026-12-12T17:00:00Z']) !>(=/(s (snag 0 (ga:orr v 'situations')) [(gs:orr s 'id') (gs:orr s 'name') (gs:orr s 'status') (gs:orr s 'needs') (gs:orr s 'waiting_on') (gs:orr s 'starts')])))
     ::  the open actions, small; the done one left out
     (expect-eq !>(1) !>((lent (ga:orr v 'actions'))))
     (expect-eq !>(['a1' 'task' 'Book the hotel' 'approved' '2026-12-11T00:00:00Z']) !>(=/(a (snag 0 (ga:orr v 'actions')) [(gs:orr a 'id') (gs:orr a 'kind') (gs:orr a 'title') (gs:orr a 'status') (gs:orr a 'due')])))
@@ -1209,6 +1209,121 @@
   ==
 ::  ==  time to leave (version 69)
 ::
+++  test-schema-renote
+  ::  a stored schema that still holds a retired note word for word gets the
+  ::  starter's; one the owner rewrote keeps theirs
+  =/  at74=json  (set-key:orr starter-schema:orr 'schema_version' (numb:enjs:format 74))
+  =/  with
+    |=  [d=json t=@t]
+    ^-  json
+    =/  ks=json  (gj:orr d 'kinds')
+    =/  sit=json  (gj:orr ks 'situation')
+    (set-key:orr d 'kinds' (set-key:orr ks 'situation' (set-key:orr sit 'notes' (set-key:orr (gj:orr sit 'notes') 'drop-off' s+t))))
+  =/  note  |=(d=json (gs:orr (gj:orr (gj:orr (gj:orr d 'kinds') 'situation') 'notes') 'drop-off'))
+  =/  [* * old=@t]  (snag 0 schema-renotes:orr)
+  ;:  weld
+    (expect-eq !>((note starter-schema:orr)) !>((note (schema-upgrade:orr (with at74 old)))))
+    (expect-eq !>('my own words') !>((note (schema-upgrade:orr (with at74 'my own words')))))
+    (expect !>(!=(old (note starter-schema:orr))))
+  ==
+++  test-nudges
+  ::  now is 2026-09-18 (a Friday) in the tests' clock; UTC as the owner's zone
+  =/  blk  |=([a=@da b=@da] [a b ''])
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  read  (mk 'activity/reading' %activity 'Reading' ~[['per-week' n+'3' 'owner'] ['minutes' s+'30' 'owner'] ['last' s+'2026-09-15' 'owner'] ['last' s+'2026-09-17T20:00:00Z' 'mail'] ['last' s+'2026-09-13' 'owner']])
+  =/  guitar  (mk 'activity/guitar' %activity 'Guitar' ~[['per-week' s+'2' 'owner']])
+  =/  chess  (mk 'activity/chess' %activity 'Chess' ~[['cadence' s+'weekly' 'calendar']])
+  =/  hs  (habits:orr ~[read guitar chess] (sy ~['participants']) now 'UTC')
+  =/  d17  |=(n=@ud (end [3 10] (en-iso:orr (sub now (mul n ~d1)))))
+  =/  wd  |=([d=@t e=@da] (pairs:enjs:format ~[['day' s+d] ['blocks' a+~[(pairs:enjs:format ~[['start' s+(en-iso:orr (sub e ~h2))] ['end' s+(en-iso:orr e)]])]]]))
+  =/  hd  |=([n=@ud steps=@ud] (pairs:enjs:format ~[['steps' (numb:enjs:format steps)] ['sleep' a+~[(pairs:enjs:format ~[['start' s+(en-iso:orr (sub (sub now (mul n ~d1)) ~h8))] ['end' s+(en-iso:orr (sub (sub now (mul n ~d1)) ~h1))]])]] ['partial' b+|]]))
+  =/  store=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 15) |=(n=@ud [(d17 n) (hd n (mul n 1.000))])))]
+  =/  thin=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 13) |=(n=@ud [(d17 n) (hd n 4.000)])))]
+  =/  plain=rhythm:orr  (de-rhythm:orr ~)
+  =/  own=rhythm:orr  (de-rhythm:orr (jo '{"quiet_from": "23:00", "quiet_to": "07:00", "family_from": "17:00", "family_to": "19:30", "evening_from": "19:30", "evening_to": "23:00", "weekend_from": "08:00", "weekend_to": "11:00", "per_window": 1, "young_age": 6, "young_share": 50}'))
+  ;:  weld
+    ::  the clock: quiet from nine at night to seven in the morning
+    ::  the defaults, for anyone: quiet nine at night to seven, evenings six to nine, weekend mornings
+    (expect !>((quiet-hour:orr ~2026.9.18..21.00.00 'UTC' plain)))
+    (expect !>((quiet-hour:orr ~2026.9.18..06.59.00 'UTC' plain)))
+    (expect !>(!(quiet-hour:orr ~2026.9.18..20.59.00 'UTC' plain)))
+    ::  an owner's own: quiet from eleven, family time, evenings past it, one habit a window
+    (expect !>(!(quiet-hour:orr ~2026.9.18..22.30.00 'UTC' own)))
+    (expect !>((quiet-hour:orr ~2026.9.18..23.30.00 'UTC' own)))
+    (expect-eq !>(`(unit [@ud @ud])`[~ 1.020 1.170]) !>(family.own))
+    (expect-eq !>(`(unit [@ud @ud])`[~ 6 50]) !>(young.own))
+    (expect-eq !>(`(unit [@ud @ud])`~) !>(young.plain))
+    (expect-eq !>('23:00') !>((gs:orr (en-rhythm:orr own) 'quiet_from')))
+    (expect-eq !>(own) !>((de-rhythm:orr (en-rhythm:orr own))))
+    (expect !>((in-span:orr 30 1.380 420)))
+    (expect !>(!(in-span:orr 600 1.380 420)))
+    ::  a stretch: the latest block, ninety minutes or more, ending within seven of now
+    (expect-eq !>(`(unit [@da @ud])`[~ (sub now ~m100) 95]) !>((desk-stretch:orr ~[(blk (sub now ~h5) (sub now ~h4)) (blk (sub now ~m100) (sub now ~m5))] now)))
+    (expect-eq !>(`(unit [@da @ud])`~) !>((desk-stretch:orr ~[(blk (sub now ~m100) (sub now ~m10))] now)))
+    (expect-eq !>(`(unit [@da @ud])`~) !>((desk-stretch:orr ~[(blk (sub now ~m80) now)] now)))
+    ::  late nights: work that ran past eleven, until five
+    (expect-eq !>(2) !>((late-nights:orr ~[(wd '2026-09-15' ~2026.9.16..00.30.00) (wd '2026-09-16' ~2026.9.16..22.30.00) (wd '2026-09-17' ~2026.9.17..23.10.00) ~] 'UTC')))
+    ::  the week begins on Monday
+    (expect-eq !>('2026-09-14') !>((monday-of:orr '2026-09-18')))
+    (expect-eq !>('2026-09-14') !>((monday-of:orr '2026-09-14')))
+    (expect-eq !>('2026-09-14') !>((monday-of:orr '2026-09-20')))
+    ::  habits: those with a weekly count; this week's distinct days done; thirty minutes unless said
+    (expect-eq !>(`(list habit:orr)`~[['activity/reading' 'Reading' 3 30 2] ['activity/guitar' 'Guitar' 2 30 0]]) !>(hs))
+    ::  a free slot: the first gap long enough, the busy spans in any order
+    (expect-eq !>(`(unit [@da @da])`[~ (add now ~h2) (add now ~h3)]) !>((free-slot:orr ~[[(add now ~h3) (add now ~h4)] [now (add now ~h2)]] now (add now ~h6) ~h1)))
+    (expect-eq !>(`(unit [@da @da])`~) !>((free-slot:orr ~[[now (add now ~h6)]] now (add now ~h6) ~h1)))
+    ::  the window: five to nine on a weekday, eight to nine at the weekend
+    (expect-eq !>(`(list [@da @da])`~[[~2026.9.18..18.00.00 ~2026.9.18..21.00.00]]) !>((habit-windows:orr '2026-09-18' 'UTC' plain)))
+    (expect-eq !>(`(list [@da @da])`~[[~2026.9.19..09.00.00 ~2026.9.19..12.00.00] [~2026.9.19..18.00.00 ~2026.9.19..21.00.00]]) !>((habit-windows:orr '2026-09-19' 'UTC' plain)))
+    (expect-eq !>(`(list [@da @da])`~[[~2026.9.18..19.30.00 ~2026.9.18..23.00.00]]) !>((habit-windows:orr '2026-09-18' 'UTC' own)))
+    ::  the plan: the furthest behind first, each slot taken from the next one's time
+    =/  plan  (plan-habits:orr hs ~[[~2026.9.18..17.00.00 ~2026.9.18..18.00.00]] ~2026.9.18..17.00.00 ~2026.9.18..21.00.00 2)
+    (expect-eq !>(`(list [@t @da @da])`~[['activity/guitar' ~2026.9.18..18.00.00 ~2026.9.18..18.30.00] ['activity/reading' ~2026.9.18..18.40.00 ~2026.9.18..19.10.00]]) !>((turn plan |=([h=habit:orr s=@da e=@da] [id.h s e]))))
+    ::  one a window holds only the furthest behind
+    (expect-eq !>(1) !>((lent (plan-habits:orr hs ~ ~2026.9.18..17.00.00 ~2026.9.18..21.00.00 1))))
+    (expect-eq !>('18:40  Reading, 30 min (2 of 3 this week)') !>((habit-line:orr ['activity/reading' 'Reading' 3 30 2] ~2026.9.18..18.40.00 'UTC')))
+    ::  the baseline needs fourteen complete days; the targets a notch above it
+    (expect-eq !>(`(unit [@ud @ud @ud])`~) !>((baseline:orr thin (d17 0) 'UTC')))
+    (expect-eq !>(`(unit [@ud @ud @ud])`[~ 8.000 420 (bed-minutes:orr (sub now ~h8) 'UTC')]) !>((baseline:orr store (d17 0) 'UTC')))
+    (expect-eq !>([4.700 435 '00:45']) !>((targets-of:orr [4.210 420 (bed-minutes:orr ~2026.9.18..01.00.00 'UTC')])))
+    ::  busy: the owner's own appointments only, around start and end
+    =/  mk2
+      |=  [id=@t kind=@tas attrs=(list [a=@t v=json by=@t])]
+      ^-  loaded:orr
+      :+  id  [kind id ~ now ~]
+      %+  turn  attrs
+      |=  [a=@t v=json by=@t]
+      ^-  row:orr
+      [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+    =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+    =/  go  (mk2 'situation/go' %situation ~[['starts' s+(en-iso:orr (add now ~h2)) 'owner'] ['ends' s+(en-iso:orr (add now ~h3)) 'owner'] ['attending' s+'yes' 'owner']])
+    =/  nope  (mk2 'situation/nope' %situation ~[['starts' s+(en-iso:orr (add now ~h2)) 'owner'] ['attending' s+'no' 'owner']])
+    =/  pick  (mk2 'situation/pick' %situation ~[['starts' s+(en-iso:orr (add now ~h4)) 'owner'] ['ends' s+(en-iso:orr (add now ~h5)) 'owner'] ['pick-up' (ref 'person/me') 'owner'] ['drop-off' (ref 'person/lena') 'owner']])
+    (expect-eq !>(`(list [@da @da])`~[[(add now ~m100) (add now ~m195)] [(add now ~m270) (add now ~m315)]]) !>((day-busy:orr ~[go nope pick] (sy ~['participants']) now now (add now ~h12))))
+    ::  the day's nudges
+    (expect-eq !>(1) !>((lent (sent-today:orr (jo '{"day": "2026-09-18", "sent": [{"kind": "desk"}]}') '2026-09-18'))))
+    (expect-eq !>(0) !>((lent (sent-today:orr (jo '{"day": "2026-09-17", "sent": [{"kind": "desk"}]}') '2026-09-18'))))
+  ==
+++  test-review-replies
+  =/  our=@p  ~zod
+  =/  root=mail-msg:orr  ['t1' '0v1' our 'Your week, 2026-09-20' 'Your week, Sunday\0a...' now ~ &]
+  =/  reply=mail-msg:orr  ['t1' '0v2' our 'Re: Your week, 2026-09-20' 'make reading 4 times a week' now `0v1 &]
+  =/  other=mail-msg:orr  ['t2' '0v3' our 'Re: Daily brief 2026-09-20' 'approve A1' now `0v1 &]
+  =/  msgs=(list mail-msg:orr)  ~[root reply other]
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['0v2']) !>((turn (review-replies-of:orr msgs msgs our ~ 'Your week, Sunday\0a...') |=([r=mail-msg:orr *] id.r))))
+    ::  read once; not a reply to an older review; not with no review sent
+    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our (sy ~['mail:0v2']) 'Your week, Sunday\0a...') |=([r=mail-msg:orr *] id.r))))
+    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our ~ 'another week') |=([r=mail-msg:orr *] id.r))))
+    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our ~ '') |=([r=mail-msg:orr *] id.r))))
+  ==
 ++  test-review
   =/  has  |=([t=@t n=tape] ^-(? ?=(^ (find n (trip t)))))
   ::  a Thursday till half past one, a Friday short; three nights' sleep; two kids
@@ -1222,9 +1337,9 @@
         ['2026-09-18' `5.000 ~ 0 `[~2026.9.18..01.30.00 ~2026.9.18..07.00.00]]
         ['2026-09-19' ~ ~ 0 ~]
     ==
-  =/  tally=(list kid-row:orr)  ~[['person/rose' 'Rose' 100 2 1 5] ['person/seamus' 'Seamus' 50 0 0 0]]
-  =/  t=@t  (review-render:orr '2026-09-20' 'UTC' work health 9 tally `'Seamus' ~['Tue  19:30 pick up: Opti Sail'])
-  =/  none=@t  (review-render:orr '2026-09-20' 'UTC' ~ ~ 0 ~ ~ ~)
+  =/  tally=(list kid-row:orr)  ~[['person/wren' 'Wren' 100 2 1 5] ['person/abe' 'Abe' 50 0 0 0]]
+  =/  t=@t  (review-render:orr '2026-09-20' 'UTC' work health 9 tally `'Abe' ~['Tue  19:30 pick up: Swim Team'] ~[['Habits' ~['Reading: 2 of 3 this week']]])
+  =/  none=@t  (review-render:orr '2026-09-20' 'UTC' ~ ~ 0 ~ ~ ~ ~)
   ;:  weld
     (expect !>((has t "Your week, Sunday 2026-09-20")))
     (expect !>((has t "Thu 9 h 30 until 01:30, Fri 45 min")))
@@ -1233,10 +1348,11 @@
     (expect !>((has t "Steps: 4000 a day.")))
     (expect !>((has t "Active: 20 min in all, 1 workout.")))
     (expect !>((has t "Sleep: 5 h 45 a night, to bed around 01:30.")))
-    (expect !>((has t "Rose: 2 drives, 1 one-on-one")))
-    (expect !>((has t "Seamus: 0 drives, 0 one-on-ones (half share)")))
-    (expect !>((has t "Most behind: Seamus.")))
-    (expect !>((has t "The week ahead\0aTue  19:30 pick up: Opti Sail")))
+    (expect !>((has t "Wren: 2 drives, 1 one-on-one")))
+    (expect !>((has t "Abe: 0 drives, 0 one-on-ones (50% share)")))
+    (expect !>((has t "Most behind: Abe.")))
+    (expect !>((has t "The week ahead\0aTue  19:30 pick up: Swim Team")))
+    (expect !>((has t "Habits\0aReading: 2 of 3 this week\0a\0aThe week ahead")))
     ::  nothing yet: says where it comes from, no kids, no week ahead
     (expect !>((has none "Nothing reported yet")))
     (expect !>((has none "Nothing from your phone yet")))
@@ -1254,29 +1370,29 @@
   =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
   =/  multi=(set @t)  (sy ~['participants'])
   ::  now is 2026-09-18: a ten-year-old by age, a girl turning four next month, a baby
-  =/  rose  (mk 'person/rose' %person 'Rose' ~[['relationship' s+'daughter' 'owner'] ['age' s+'10' 'owner']])
-  =/  addie  (mk 'person/adelaide' %person 'Adelaide' ~[['relationship' s+'daughter' 'owner'] ['birthday' s+'2022-10-19' 'owner']])
-  =/  baby  (mk 'person/seamus' %person 'Seamus' ~[['relationship' s+'son' 'owner'] ['birthday' s+'2025-11-03' 'owner']])
-  =/  andrea  (mk 'person/andrea' %person 'Andrea' ~[['relationship' s+'wife' 'owner']])
-  =/  lunch  (mk 'situation/lunch' %situation 'Lunch with Rose' ~[['starts' s+(en-iso:orr (sub now ~d2)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner']])
-  =/  party  (mk 'situation/party' %situation 'Party' ~[['starts' s+(en-iso:orr (sub now ~d1)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner'] ['participants' (ref 'person/andrea') 'owner']])
-  =/  old  (mk 'situation/old' %situation 'Lunch with Rose before' ~[['starts' s+(en-iso:orr (sub now ~d9)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/rose') 'owner']])
-  =/  all=(list loaded:orr)  ~[rose addie baby andrea lunch party old]
-  =/  kids  (children:orr all multi now)
+  =/  wren  (mk 'person/wren' %person 'Wren' ~[['relationship' s+'daughter' 'owner'] ['age' s+'10' 'owner']])
+  =/  addie  (mk 'person/nora' %person 'Nora' ~[['relationship' s+'daughter' 'owner'] ['birthday' s+'2022-10-19' 'owner']])
+  =/  baby  (mk 'person/abe' %person 'Abe' ~[['relationship' s+'son' 'owner'] ['birthday' s+'2025-11-03' 'owner']])
+  =/  lena  (mk 'person/lena' %person 'Lena' ~[['relationship' s+'wife' 'owner']])
+  =/  lunch  (mk 'situation/lunch' %situation 'Lunch with Wren' ~[['starts' s+(en-iso:orr (sub now ~d2)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/wren') 'owner']])
+  =/  party  (mk 'situation/party' %situation 'Party' ~[['starts' s+(en-iso:orr (sub now ~d1)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/wren') 'owner'] ['participants' (ref 'person/lena') 'owner']])
+  =/  old  (mk 'situation/old' %situation 'Lunch with Wren before' ~[['starts' s+(en-iso:orr (sub now ~d9)) 'owner'] ['participants' (ref 'person/me') 'owner'] ['participants' (ref 'person/wren') 'owner']])
+  =/  all=(list loaded:orr)  ~[wren addie baby lena lunch party old]
+  =/  kids  (children:orr all multi now `[5 50])
   =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
   =/  ones  (one-on-ones:orr all multi now (sub now ~d7) now kidset)
-  =/  drives=(list [at=@da kids=(list @t)])  ~[[(sub now ~d3) ~['person/rose' 'person/adelaide']] [(sub now ~d8) ~['person/adelaide']]]
+  =/  drives=(list [at=@da kids=(list @t)])  ~[[(sub now ~d3) ~['person/wren' 'person/nora']] [(sub now ~d8) ~['person/nora']]]
   =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
   =/  hd  (health-doc:orr (jo '{"day": "2026-09-17", "steps": 4210.0, "sleep": [{"start": "2026-09-17T04:55:00Z", "end": "2026-09-17T11:20:00Z"}, {"start": "2026-09-17T19:00:00Z", "end": "2026-09-17T18:00:00Z"}], "workouts": [{"type": "running", "start": "2026-09-17T22:00:00Z", "end": "2026-09-17T22:30:00Z"}, {"start": "2026-09-17T23:00:00Z", "end": "2026-09-17T23:20:00Z"}], "partial": true}'))
   =/  wd  (work-doc:orr (jo '{"day": "2026-09-17", "active_minutes": 999, "blocks": [{"start": "2026-09-17T13:00:00Z", "end": "2026-09-17T15:30:00Z"}, {"start": "2026-09-18T03:00:00Z", "end": "2026-09-18T05:20:00Z"}]}'))
   ;:  weld
-    ::  the children, oldest first, half a share under five; Andrea is not one
-    (expect-eq !>(`(list [@t @t (unit @ud) @ud])`~[['person/rose' 'Rose' `10 100] ['person/adelaide' 'Adelaide' `3 50] ['person/seamus' 'Seamus' `0 50]]) !>(kids))
-    ::  one-on-ones: the owner and one child, in the window; a party with Andrea is not one
-    (expect-eq !>(`(list [@da @t])`~[[(sub now ~d2) 'person/rose']]) !>(ones))
+    ::  the children, oldest first, half a share under five; Lena is not one
+    (expect-eq !>(`(list [@t @t (unit @ud) @ud])`~[['person/wren' 'Wren' `10 100] ['person/nora' 'Nora' `3 50] ['person/abe' 'Abe' `0 50]]) !>(kids))
+    ::  one-on-ones: the owner and one child, in the window; a party with Lena is not one
+    (expect-eq !>(`(list [@da @t])`~[[(sub now ~d2) 'person/wren']]) !>(ones))
     ::  the tally: a drive counts for each child in it, a one-on-one three points, over the share
-    (expect-eq !>(`(list kid-row:orr)`~[['person/rose' 'Rose' 100 1 1 4] ['person/adelaide' 'Adelaide' 50 1 0 2] ['person/seamus' 'Seamus' 50 0 0 0]]) !>(tally))
-    (expect-eq !>(`(unit @t)`[~ 'Seamus']) !>((kid-behind:orr tally)))
+    (expect-eq !>(`(list kid-row:orr)`~[['person/wren' 'Wren' 100 1 1 4] ['person/nora' 'Nora' 50 1 0 2] ['person/abe' 'Abe' 50 0 0 0]]) !>(tally))
+    (expect-eq !>(`(unit @t)`[~ 'Abe']) !>((kid-behind:orr tally)))
     (expect-eq !>(`(unit @t)`~) !>((kid-behind:orr (kid-tally:orr kids ~ ~ (sub now ~d7) now))))
     ::  a health day kept: steps whole, no active minutes, a backward session dropped, workouts typed or other
     (expect !>(?=(%& -.hd)))
@@ -1299,16 +1415,16 @@
     (expect !>((gth (bed-minutes:orr ~2026.9.18..01.10.00 'UTC') (bed-minutes:orr ~2026.9.17..23.30.00 'UTC'))))
   ==
 ++  test-on-the-way
-  =/  dir=json  (jo '{"routes": [{"duration": 1860.2, "duration_typical": 1140.4, "legs": [{"summary": "I 95 South, Baymeadows Road", "incidents": [{"impact": "minor", "description": "Independent Dr: no through traffic"}, {"impact": "major", "description": "Crash on I-95 S at Baymeadows"}]}]}]}')
-  =/  calm=json  (jo '{"routes": [{"duration": 1200, "legs": [{"summary": "Philips Hwy", "incidents": [{"impact": "low", "description": "Lane closed"}]}]}]}')
-  =/  shop=json  (jo '{"features": [{"geometry": {"coordinates": [-81.5440, 30.3250]}, "properties": {"name": "Walgreens", "metadata": {"phone": "+19049249019", "open_hours": {"weekday_text": ["Monday: 8:00 AM - 10:00 PM", "Tuesday: 8:00 AM - 9:00 PM", "Sunday: Closed"]}}}}]}')
-  =/  club=json  (jo '{"features": [{"geometry": {"coordinates": [-81.5430, 30.3245]}, "properties": {"name": "Club", "metadata": {"open_hours": {"weekday_text": ["Tuesday: Open 24 hours"]}}}}]}')
-  =/  far=json  (jo '{"features": [{"geometry": {"coordinates": [-81.4834, 30.1106]}, "properties": {"name": "Elsewhere", "metadata": {}}}]}')
-  =/  at=[@t @t]  ['30.3241' '-81.5423']
+  =/  dir=json  (jo '{"routes": [{"duration": 1860.2, "duration_typical": 1140.4, "legs": [{"summary": "I 95 South, Elm Road", "incidents": [{"impact": "minor", "description": "Independent Dr: no through traffic"}, {"impact": "major", "description": "Crash on I-95 S at Elm"}]}]}]}')
+  =/  calm=json  (jo '{"routes": [{"duration": 1200, "legs": [{"summary": "Main Hwy", "incidents": [{"impact": "low", "description": "Lane closed"}]}]}]}')
+  =/  shop=json  (jo '{"features": [{"geometry": {"coordinates": [-89.6518, 39.7826]}, "properties": {"name": "Walgreens", "metadata": {"phone": "+19049249019", "open_hours": {"weekday_text": ["Monday: 8:00 AM - 10:00 PM", "Tuesday: 8:00 AM - 9:00 PM", "Sunday: Closed"]}}}}]}')
+  =/  club=json  (jo '{"features": [{"geometry": {"coordinates": [-89.6508, 39.7821]}, "properties": {"name": "Club", "metadata": {"open_hours": {"weekday_text": ["Tuesday: Open 24 hours"]}}}}]}')
+  =/  far=json  (jo '{"features": [{"geometry": {"coordinates": [-89.5912, 39.5682]}, "properties": {"name": "Elsewhere", "metadata": {}}}]}')
+  =/  at=[@t @t]  ['39.7817' '-89.6501']
   ;:  weld
     ::  why the drive is what it is: usual seconds, the roads, the worst that matters
-    (expect-eq !>([`(unit @ud)`[~ 1.140] 'I 95 South, Baymeadows Road' 'Crash on I-95 S at Baymeadows']) !>((route-why:orr dir)))
-    (expect-eq !>([`(unit @ud)`~ 'Philips Hwy' '']) !>((route-why:orr calm)))
+    (expect-eq !>([`(unit @ud)`[~ 1.140] 'I 95 South, Elm Road' 'Crash on I-95 S at Elm']) !>((route-why:orr dir)))
+    (expect-eq !>([`(unit @ud)`~ 'Main Hwy' '']) !>((route-why:orr calm)))
     (expect-eq !>(`(unit @ud)`[~ 1.860]) !>((route-secs:orr dir)))
     ::  the usual time only when traffic adds three minutes or more
     (expect-eq !>('31 min with traffic (19 usual) via I 95 South') !>((drive-line:orr 1.860 `1.140 'I 95 South')))
@@ -1321,9 +1437,9 @@
     (expect-eq !>(~s120) !>((learned-extra:orr ~[300 60 120])))
     (expect-eq !>(~m20) !>((learned-extra:orr ~[3.000 2.000 2.500 9.000])))
     ::  points: millionths, near within about 300 m, across the sign apart
-    (expect-eq !>(`(unit [? @ud])`[~ & 81.542.300]) !>((micro:orr '-81.5423')))
-    (expect !>((near:orr at ['30.3250' '-81.5440'])))
-    (expect !>(!(near:orr at ['30.1106' '-81.4834'])))
+    (expect-eq !>(`(unit [? @ud])`[~ & 89.650.100]) !>((micro:orr '-89.6501')))
+    (expect !>((near:orr at ['39.7826' '-89.6518'])))
+    (expect !>(!(near:orr at ['39.5682' '-89.5912'])))
     (expect !>(!(near:orr ['0.001' '1.0'] ['-0.003' '1.0'])))
     ::  a place now: near, its phone, its hours that day; open all day says nothing
     (expect-eq !>(`(unit [@t @t @t])`[~ 'Walgreens' '+19049249019' 'Tuesday: 8:00 AM - 9:00 PM']) !>((place-info:orr shop at 2)))
@@ -1331,10 +1447,10 @@
     (expect-eq !>(`(unit [@t @t @t])`[~ 'Club' '' '']) !>((place-info:orr club at 2)))
     (expect-eq !>(`(unit [@t @t @t])`~) !>((place-info:orr far at 2)))
     ::  the search: encoded twice, near the point, businesses only
-    (expect-eq !>('https://api.mapbox.com/search/searchbox/v1/forward?q=Smile%2520Dental%252C%25201%2520Main%2520St&proximity=-81.5423,30.3241&types=poi&limit=1&access_token=tk') !>((searchbox-url:orr 'https://api.mapbox.com' 'tk' 'Smile Dental\0a1 Main St' at)))
+    (expect-eq !>('https://api.mapbox.com/search/searchbox/v1/forward?q=Smile%2520Dental%252C%25201%2520Main%2520St&proximity=-89.6501,39.7817&types=poi&limit=1&access_token=tk') !>((searchbox-url:orr 'https://api.mapbox.com' 'tk' 'Smile Dental\0a1 Main St' at)))
     ::  the map: numbered pins, lon before lat, fit to them
-    (expect-eq !>('pin-l-1+d9534f(-81.4,30.1),pin-l-2+d9534f(-81.5,30.2)') !>((static-overlay:orr ~[['30.1' '-81.4'] ['30.2' '-81.5']])))
-    (expect-eq !>('https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-l-1+d9534f(-81.4,30.1)/auto/600x360@2x?padding=40&access_token=tk') !>((static-url:orr 'https://api.mapbox.com' 'tk' 'pin-l-1+d9534f(-81.4,30.1)')))
+    (expect-eq !>('pin-l-1+d9534f(-89.5,39.6),pin-l-2+d9534f(-89.6,39.7)') !>((static-overlay:orr ~[['39.6' '-89.5'] ['39.7' '-89.6']])))
+    (expect-eq !>('https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-l-1+d9534f(-89.5,39.6)/auto/600x360@2x?padding=40&access_token=tk') !>((static-url:orr 'https://api.mapbox.com' 'tk' 'pin-l-1+d9534f(-89.5,39.6)')))
   ==
 ++  test-leave
   =/  mk
@@ -1349,9 +1465,9 @@
   =/  iso  |=(d=@dr `json`s+(en-iso:orr (add now d)))
   =/  multi=(set @t)  (sy ~['participants'])
   ::  the dentist names nobody the ship knows: the calendar's guess
-  =/  dentist  (mk 'situation/dentist' %situation 'Dentist' ~[['starts' (iso ~h2) 'calendar'] ['ends' (iso ~h3) 'calendar'] ['location' s+'Smile Dental\0a1 Main St, Jacksonville' 'calendar'] ['participants' (ref 'person/me') 'calendar']])
+  =/  dentist  (mk 'situation/dentist' %situation 'Dentist' ~[['starts' (iso ~h2) 'calendar'] ['ends' (iso ~h3) 'calendar'] ['location' s+'Smile Dental\0a1 Main St, Riverton' 'calendar'] ['participants' (ref 'person/me') 'calendar']])
   ::  the play date: the owner filed the children and not themselves
-  =/  play  (mk 'situation/play' %situation 'Casey play date' ~[['starts' (iso ~h1) 'calendar'] ['location' s+'Alberts Field' 'calendar'] ['participants' (ref 'person/me') 'calendar'] ['participants' (ref 'person/rose') 'owner']])
+  =/  play  (mk 'situation/play' %situation 'Bea play date' ~[['starts' (iso ~h1) 'calendar'] ['location' s+'Alberts Field' 'calendar'] ['participants' (ref 'person/me') 'calendar'] ['participants' (ref 'person/wren') 'owner']])
   ::  the meeting: the owner said they go; a place they named
   =/  meet  (mk 'situation/meet' %situation 'Parent meeting' ~[['starts' (iso ~m90) 'calendar'] ['location' (ref 'place/ballet') 'calendar'] ['attending' s+'yes' 'owner']])
   ::  the practice, a series, next in four hours: out of a three-hour window
@@ -1365,7 +1481,7 @@
   =/  ahead=(list appointment:orr)  (appointments-ahead:orr all multi now ~h3)
   =/  ids=(list @t)  (turn ahead |=(a=appointment:orr id.a))
   =/  dir=json  (jo '{"routes": [{"duration": 1834.7, "distance": 20000}], "code": "Ok"}')
-  =/  geo=json  (jo '{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-81.5423, 30.3241]}, "properties": {}}]}')
+  =/  geo=json  (jo '{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-89.6501, 39.7817]}, "properties": {}}]}')
   ;:  weld
     ::  the verdicts
     (expect-eq !>(%unsure) !>((attends:orr dentist multi now)))
@@ -1378,7 +1494,7 @@
     ::  online, all day, closed and beyond the window left out
     (expect-eq !>(`(list @t)`~['situation/meet' 'situation/dentist']) !>(ids))
     (expect-eq !>([`(unit @t)`[~ 'place/ballet'] '']) !>(=/(m (snag 0 ahead) [place.m where.m])))
-    (expect-eq !>('Smile Dental\0a1 Main St, Jacksonville') !>(where:(snag 1 ahead)))
+    (expect-eq !>('Smile Dental\0a1 Main St, Riverton') !>(where:(snag 1 ahead)))
     ::  a series is ahead by its next once the window reaches it
     (expect !>((lien (turn (appointments-ahead:orr all multi now ~h5) |=(a=appointment:orr id.a)) |=(t=@t =('activity/practice' t)))))
     ::  one alert per occurrence
@@ -1405,23 +1521,23 @@
     (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 8.000 8.000 'home' '' ~ now %yes)))
     (expect-eq !>(`(unit @t)`~) !>((leave-quiet:orr 7.200 7.200 'home' '' ~ now %unsure)))
     ::  addresses and coordinates
-    (expect-eq !>('smile dental 1 main st, jacksonville') !>((addr-key:orr 'Smile  Dental\0a1 Main St,  Jacksonville ')))
-    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geo-of:orr s+'30.3241, -81.5423')))
-    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geo-of:orr (jo '{"lat": 30.3241, "lon": -81.5423}'))))
-    (expect-eq !>(`(unit [@t @t])`~) !>((geo-of:orr s+'95.1,-81.5')))
+    (expect-eq !>('smile dental 1 main st, riverton') !>((addr-key:orr 'Smile  Dental\0a1 Main St,  Riverton ')))
+    (expect-eq !>(`(unit [@t @t])`[~ '39.7817' '-89.6501']) !>((geo-of:orr s+'39.7817, -89.6501')))
+    (expect-eq !>(`(unit [@t @t])`[~ '39.7817' '-89.6501']) !>((geo-of:orr (jo '{"lat": 39.7817, "lon": -89.6501}'))))
+    (expect-eq !>(`(unit [@t @t])`~) !>((geo-of:orr s+'95.1,-89.6')))
     (expect-eq !>(`(unit [@t @t])`~) !>((geo-of:orr s+'home')))
     ::  Mapbox: lon before lat, no geometry, departing when ahead; a permanent lookup
     (expect-eq !>('https://api.mapbox.com/directions/v5/mapbox/driving-traffic?access_token=tk') !>((directions-url:orr 'https://api.mapbox.com' 'tk')))
-    (expect-eq !>('coordinates=-81.6,30.2;-81.5423,30.3241&overview=false&steps=false&depart_at=2026-09-18T13:00:00Z') !>((directions-body:orr ['30.2' '-81.6'] ['30.3241' '-81.5423'] `(add now ~h1))))
-    (expect-eq !>('coordinates=-81.6,30.2;-81.5423,30.3241&overview=false&steps=false') !>((directions-body:orr ['30.2' '-81.6'] ['30.3241' '-81.5423'] ~)))
+    (expect-eq !>('coordinates=-89.7,39.7;-89.6501,39.7817&overview=false&steps=false&depart_at=2026-09-18T13:00:00Z') !>((directions-body:orr ['39.7' '-89.7'] ['39.7817' '-89.6501'] `(add now ~h1))))
+    (expect-eq !>('coordinates=-89.7,39.7;-89.6501,39.7817&overview=false&steps=false') !>((directions-body:orr ['39.7' '-89.7'] ['39.7817' '-89.6501'] ~)))
     (expect-eq !>('https://api.mapbox.com/search/geocode/v6/batch?permanent=true&access_token=tk') !>((geocode-url:orr 'https://api.mapbox.com' 'tk')))
     ::  the address in the body, its lines one line
-    (expect-eq !>((jo '[{"q": "The Florida Ballet, 10131 Atlantic Blvd, Ste #2571, Jacksonville", "limit": 1}]')) !>((geocode-body:orr 'The Florida Ballet\0a10131 Atlantic Blvd, Ste #2571, Jacksonville \0a')))
-    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr (jo '{"batch": [{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-81.5423, 30.3241]}}]}]}'))))
+    (expect-eq !>((jo '[{"q": "The City Ballet, 100 Main St, Ste #2571, Riverton", "limit": 1}]')) !>((geocode-body:orr 'The City Ballet\0a100 Main St, Ste #2571, Riverton \0a')))
+    (expect-eq !>(`(unit [@t @t])`[~ '39.7817' '-89.6501']) !>((geocode-point:orr (jo '{"batch": [{"type": "FeatureCollection", "features": [{"geometry": {"type": "Point", "coordinates": [-89.6501, 39.7817]}}]}]}'))))
     (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"batch": [{"type": "FeatureCollection", "features": []}]}'))))
     (expect-eq !>(`(unit @ud)`[~ 1.834]) !>((route-secs:orr dir)))
     (expect-eq !>(`(unit @ud)`~) !>((route-secs:orr (jo '{"routes": [], "code": "NoRoute"}'))))
-    (expect-eq !>(`(unit [@t @t])`[~ '30.3241' '-81.5423']) !>((geocode-point:orr geo)))
+    (expect-eq !>(`(unit [@t @t])`[~ '39.7817' '-89.6501']) !>((geocode-point:orr geo)))
     (expect-eq !>(`(unit [@t @t])`~) !>((geocode-point:orr (jo '{"features": []}'))))
     ::  the brief's lines: the sure ones say so, the unsure ones ask, a no is left out
     (expect-eq !>(`(list @t)`~['13:30  Parent meeting: I\'ll say when to leave' '14:00  Dentist (Smile Dental): going? Reply "not me: Dentist" if not']) !>((brief-leaving:orr (turn ahead |=(a=appointment:orr [a '' ''])) 'UTC')))
@@ -1440,23 +1556,23 @@
   =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
   =/  iso  |=(d=@dr `json`s+(en-iso:orr (add now d)))
   =/  multi=(set @t)  (sy ~['participants'])
-  =/  where  ['location' s+'SAYC Sailing Center' 'calendar']
-  ::  sailing today: Andrea drops off, the owner picks up; 4 to 6
-  =/  sail  (mk 'situation/sail' %situation 'Sail' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h3) 'calendar'] where ['drop-off' (ref 'person/andrea') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
+  =/  where  ['location' s+'Lakeside Pool' 'calendar']
+  ::  swimming today: Lena drops off, the owner picks up; 4 to 6
+  =/  sail  (mk 'situation/sail' %situation 'Sail' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h3) 'calendar'] where ['drop-off' (ref 'person/lena') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
   ::  the owner does both legs
   =/  both  (mk 'situation/both' %situation 'Both' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['drop-off' (ref 'person/me') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
-  ::  Andrea does both, though the calendar lists the owner: no trip
-  =/  hers  (mk 'situation/hers' %situation 'Hers' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['participants' (ref 'person/me') 'calendar'] ['drop-off' (ref 'person/andrea') 'owner'] ['pick-up' (ref 'person/andrea') 'owner']])
+  ::  Lena does both, though the calendar lists the owner: no trip
+  =/  hers  (mk 'situation/hers' %situation 'Hers' ~[['starts' (iso ~h1) 'calendar'] ['ends' (iso ~h2) 'calendar'] where ['participants' (ref 'person/me') 'calendar'] ['drop-off' (ref 'person/lena') 'owner'] ['pick-up' (ref 'person/lena') 'owner']])
   ::  a pick-up with no end known: left out
   =/  open-end  (mk 'situation/open' %situation 'Open' ~[['starts' (iso ~h1) 'calendar'] where ['pick-up' (ref 'person/me') 'owner']])
   ::  a series: the end is the calendar's next row's until, though
   ::  reconcile's later row for the same occurrence, a day's until, wins
   =/  series=loaded:orr
-    :+  'activity/opti'  [%activity 'Opti' ~ now ~]
-    :~  ['activity/opti/next' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) (sub now ~h1) `(add now ~h3) 100 ['calendar' 'E9'] 'calendar' now | '']]
-        ['activity/opti/rnext' ['activity/opti' 'next' s+(en-iso:orr (add now ~h1)) now `(add now ~d1) 90 ['reconcile' 'times/x'] 'reconcile' now | '']]
-        ['activity/opti/loc' ['activity/opti' 'location' s+'SAYC Sailing Center' now ~ 100 ['calendar' 'E9'] 'calendar' now | '']]
-        ['activity/opti/pick' ['activity/opti' 'pick-up' (ref 'person/me') now ~ 100 ['owner' 'x'] 'owner' now | '']]
+    :+  'activity/swim'  [%activity 'Swim' ~ now ~]
+    :~  ['activity/swim/next' ['activity/swim' 'next' s+(en-iso:orr (add now ~h1)) (sub now ~h1) `(add now ~h3) 100 ['calendar' 'E9'] 'calendar' now | '']]
+        ['activity/swim/rnext' ['activity/swim' 'next' s+(en-iso:orr (add now ~h1)) now `(add now ~d1) 90 ['reconcile' 'times/x'] 'reconcile' now | '']]
+        ['activity/swim/loc' ['activity/swim' 'location' s+'Lakeside Pool' now ~ 100 ['calendar' 'E9'] 'calendar' now | '']]
+        ['activity/swim/pick' ['activity/swim' 'pick-up' (ref 'person/me') now ~ 100 ['owner' 'x'] 'owner' now | '']]
     ==
   =/  ahead  |=(ls=(list loaded:orr) (appointments-ahead:orr ls multi now ~h4))
   =/  legs  |=(as=(list appointment:orr) (turn as |=(a=appointment:orr [id.a leg.a starts.a])))
@@ -1465,12 +1581,12 @@
     (expect-eq !>(`(list [@t leg:orr @da])`~[['situation/both' %drop (add now ~h1)] ['situation/both' %pick (add now ~h2)]]) !>((legs (ahead ~[both]))))
     (expect-eq !>(`(list [@t leg:orr @da])`~) !>((legs (ahead ~[hers]))))
     (expect-eq !>(`(list [@t leg:orr @da])`~) !>((legs (ahead ~[open-end]))))
-    (expect-eq !>(`(list [@t leg:orr @da])`~[['activity/opti' %pick (add now ~h3)]]) !>((legs (ahead ~[series]))))
+    (expect-eq !>(`(list [@t leg:orr @da])`~[['activity/swim' %pick (add now ~h3)]]) !>((legs (ahead ~[series]))))
     ::  a drop-off and a pick-up of one occurrence are two alerts
     =/  bs=(list appointment:orr)  (ahead ~[both])
     (expect !>(!=((appt-key:orr (snag 0 bs)) (appt-key:orr (snag 1 bs)))))
     ::  the brief says which leg
-    (expect-eq !>(`(list @t)`~['13:00  Drop off: Both (SAYC Sailing Center): I\'ll say when to leave' '14:00  Pick up: Both (SAYC Sailing Center): I\'ll say when to leave']) !>((brief-leaving:orr (turn (ahead ~[both]) |=(a=appointment:orr [a '' ''])) 'UTC')))
+    (expect-eq !>(`(list @t)`~['13:00  Drop off: Both (Lakeside Pool): I\'ll say when to leave' '14:00  Pick up: Both (Lakeside Pool): I\'ll say when to leave']) !>((brief-leaving:orr (turn (ahead ~[both]) |=(a=appointment:orr [a '' ''])) 'UTC')))
   ==
 ++  test-del-key
   =/  o=json  (jo '{"a": 1, "parked": "x"}')

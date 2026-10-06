@@ -1084,6 +1084,7 @@
       [64 ~['resolve'] ~[['situation' ~['needs' 'waiting-on' 'outcome']]] ~]
       [69 ~ ~[['situation' ~['attending' 'leave-by']] ['activity' ~['attending' 'leave-by']]] ~]
       [70 ~ ~[['situation' ~['drop-off' 'pick-up']] ['activity' ~['drop-off' 'pick-up']]] ~]
+      [75 ~ ~[['person' ~['steps-target' 'sleep-target' 'bedtime-target']] ['activity' ~['per-week' 'minutes']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1146,7 +1147,26 @@
       (set-key ks kind (put (put spec 'attrs' (more (ga spec 'attrs') attrs)) 'notes' notes))
     ?~  multi.a  acc
     (put acc 'multi' (more (ga acc 'multi') multi.a))
+  ::  a note the starter retired, still held word for word, is the
+  ::  starter's note now; one the owner changed stays theirs (version 75)
+  =.  new
+    %+  roll  schema-renotes
+    |=  [[kind=@t attr=@t old=@t] acc=_new]
+    ^-  json
+    =/  spec=json  (gj (gj acc 'kinds') kind)
+    ?.  =(s+old (gj (gj spec 'notes') attr))  acc
+    =/  said=json  (gj (gj (gj (gj starter-schema 'kinds') kind) 'notes') attr)
+    ?~  said  acc
+    (set-key acc 'kinds' (set-key (gj acc 'kinds') kind (set-key spec 'notes' (set-key (gj spec 'notes') attr said))))
   (set-key new 'schema_version' (numb:enjs:format schema-newest))
+::  +schema-renotes: notes the starter carried once and retired, each
+::  replaced in a stored schema that still holds it word for word: the
+::  drop-off note's example named a real person until version 75
+::
+++  schema-renotes
+  ^-  (list [kind=@t attr=@t old=@t])
+  :~  ['situation' 'drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Andrea drops the kids off")']
+  ==
 ++  starter-schema
   ^-  json
   =/  kind
@@ -1161,7 +1181,7 @@
       %-  pairs:enjs:format
       :~  :-  'person'
           %+  kind
-            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'spouse' 'children' 'parents' 'siblings' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income']
+            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'spouse' 'children' 'parents' 'siblings' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income' 'steps-target' 'sleep-target' 'bedtime-target']
           :~  ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
               ['location' 'where the person is: a place body as a ref when the ship has one, else a short place name; null when they have left and the new place is unknown']
               ['telegram' 'the Telegram chat id the ship reaches this person at, a number as text; identity, like phone']
@@ -1172,6 +1192,9 @@
               ['siblings' 'each brother or sister, a person body as a ref, one row per sibling; written on both of them']
               ['health' 'a medical fact about the person; kept from client keys by policy']
               ['income' 'a money fact about the person; kept from client keys by policy']
+              ['steps-target' 'the owner\'s aim for steps a day, a number; on person/me, in the owner\'s word or proposed by the ship from their baseline']
+              ['sleep-target' 'the owner\'s aim for a night\'s sleep, in minutes, a number; on person/me']
+              ['bedtime-target' 'the time the owner aims to be in bed by, HH:MM on their clock; on person/me']
           ==
           :-  'place'
           %+  kind
@@ -1191,7 +1214,7 @@
           :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
               ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
               ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
-              ['drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Andrea drops the kids off")']
+              ['drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Lena drops the kids off")']
               ['pick-up' 'who collects someone as it ends, a ref to the person, the owner\'s own body when it is them ("I pick them up"); the ship says when to leave for the legs that are the owner\'s']
               ['needs' 'what has to happen for this to be over, one short clause in the messages\' own terms; written when a message says it and written again when it changes']
               ['waiting-on' 'who has the next move: a ref to the person or org, or to the owner when it is theirs; written again each time the move passes to someone else']
@@ -1204,13 +1227,15 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up' 'per-week' 'minutes']
           :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
               ['attending' 'yes or no: whether the owner goes to it themselves, in their own word when they gave it; it holds for every occurrence until they say otherwise']
               ['leave-by' 'when the owner must leave for the next occurrence, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
               ['drop-off' 'who takes someone there for the start of each occurrence, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
               ['pick-up' 'who collects someone as each occurrence ends, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
-              ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start']
+              ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start; for a habit, when the owner last did it ("read tonight")']
+              ['per-week' 'a habit: how many times a week the owner wants to do it, a number ("read three times a week"); the ship finds the time for it in their free evenings and weekends']
+              ['minutes' 'a habit: how long one time takes, in minutes, a number; thirty when not said']
               ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
               ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
               ['cadence' 'weekly, twice a week, monthly']
@@ -3163,9 +3188,9 @@
   ?:  &(?=(^ rest) (is-alnum i.rest))  ~
   `[[i.t (flop acc)] rest]
 ::  +names-in: the names a title is certain about, and a leading first
-::  name to check against the people the ship knows. "Mira- Ballet/Tap"
-::  is certain of Mira, "Theo and Juno- Opti Sail" of both, "Felix
-::  Birthday" of Felix; "Felix Fencing Lesson" only says Felix if the
+::  name to check against the people the ship knows. "Mira- Gymnastics"
+::  is certain of Mira, "Theo and Juno- Swim Team" of both, "Felix
+::  Birthday" of Felix; "Felix Chess Club" only says Felix if the
 ::  ship already has a Felix.
 ::
 ++  names-in
@@ -3720,7 +3745,7 @@
   Worked examples. "jury duty makes me want to scream", from Sarah: person/sarah.status = "on jury duty" (conf 80), person/sarah.mood = "frustrated" (conf 60, discarded). "car died on route 9, stranded waiting for a tow": status = "stranded, waiting for a tow", location = "Route 9", thing/subaru.status = "broken down". "stuck in meetings till 11:30", from Sarah at 2026-08-19T10:03:00-04:00: person/sarah.status = "in meetings", until = "2026-08-19T11:30:00-04:00". "ugh, Mondays": nothing.
   A situation body carries participants (one observation per participant, value {"ref": ...}), location, and its times: "starts" and "ends" are the schedule (a meeting on December 5 has starts and ends on December 5, even today), "started" and "ended" are facts about what happened, written only once it has. Its status is "open" or "closed" (or "cancelled"), nothing else: never "upcoming", "under way" or "over", which are read off the times. A situation happens once: a breakdown, a birthday, a delivery. When the messages say what it will take for a situation to be over, write its "needs", and "waiting-on", who has the next move, as a ref; write them again when a message moves things on. When a message says it is over, write status "closed" and "outcome", how it ended in a few plain words.
   An activity is something that repeats: a class, a practice, a standing appointment, a weekly meeting. It is one body of kind activity, with schedule ("Mon/Wed 18:00"), cadence ("weekly"), location, participants and organizer. An occurrence of an activity is never a new body: write the activity's "last" = the start of that occurrence, with "at" = that start, and "next" = the start of the following one when the message says it. An occurrence that is called off is not a cancelled activity: write the activity's "skipped" = the start of that occurrence, one observation per occurrence, and never its "status", which means the whole series. A calendar reminder or notification for a repeating event is an occurrence of an activity, not a situation.
-  Any part of an event can name a person: its title ("Mira- Ballet/Tap", "Theo and Juno- Opti Sail", "Felix Birthday"), its description ("bring Juno's helmet"), its attendee list, its organizer ("Coach Pat"), a note. Every person an event names is a participant of the activity or situation, and its organizer is its organizer. Resolve each name against the people listed; when nobody by that name exists, create the person, the first name (or the full name when the event gives it) as the body's name. A production, a team or a place is not a person: "Swan Lake rehearsal" and "Hornets practice" name no one.
+  Any part of an event can name a person: its title ("Mira- Gymnastics", "Theo and Juno- Swim Team", "Felix Birthday"), its description ("bring Juno's helmet"), its attendee list, its organizer ("Coach Pat"), a note. Every person an event names is a participant of the activity or situation, and its organizer is its organizer. Resolve each name against the people listed; when nobody by that name exists, create the person, the first name (or the full name when the event gives it) as the body's name. A production, a team or a place is not a person: "Swan Lake rehearsal" and "Hornets practice" name no one.
   A person is never an org. A payment request, a reminder or a note from a person names a person body; reuse the existing person when the name or the address matches, even when only the first name is on record.
   "at" is when the fact became true, ISO 8601 with the offset the message times carry (they are in the owner's time zone), and defaults to the message's time; set it only when the message says otherwise. "until" is when it will stop being true, when the message says so.
   "conf" is 0 to 100: 90 for a plain statement, 60 for an inference, 40 for a guess.
@@ -6619,11 +6644,11 @@
   $(l t.l, best `this)
 ::  +children: the owner's children, by the relationship the ship holds,
 ::  oldest first, each with their age when known and their share of the
-::  owner's time: half under five, whole from five (the owner: "the
-::  younger 3 need less time")
+::  owner's time: whole, unless the owner set a smaller share for those
+::  under an age
 ::
 ++  children
-  |=  [all=(list loaded) multi=(set @t) now=@da]
+  |=  [all=(list loaded) multi=(set @t) now=@da young=(unit [age=@ud share=@ud])]
   ^-  (list [id=@t name=@t age=(unit @ud) share=@ud])
   =/  [[* y=@ud] mo=@ud [dd=@ud *]]  (yore now)
   =/  each=(list [id=@t name=@t age=(unit @ud) share=@ud])
@@ -6641,7 +6666,7 @@
       ?:  (gte by y)  `0
       =/  years=@ud  (sub y by)
       `?:(|((lth mo bm) &(=(mo bm) (lth dd bd))) (dec years) years)
-    `[id.l name.body.l age ?:(&(?=(^ age) (lth u.age 5)) 50 100)]
+    `[id.l name.body.l age ?:(&(?=(^ young) ?=(^ age) (lth u.age age.u.young)) share.u.young 100)]
   (sort each |=([a=[@t @t age=(unit @ud) @ud] b=[@t @t age=(unit @ud) @ud]] (gth (fall age.a 0) (fall age.b 0))))
 ::  +one-on-ones: the owner's time with one child alone: a situation
 ::  starting in the window whose participants are the owner and that one
@@ -6748,6 +6773,7 @@
           tally=(list kid-row)
           behind=(unit @t)
           ahead=(list @t)
+          extra=(list [head=@t lines=(list @t)])
       ==
   ^-  @t
   =/  short  |=(d=@t (end [3 3] (snag (dow-of d) weekday-names)))
@@ -6809,7 +6835,7 @@
       %+  rap  3
       :~  name.r  ': '  (crip (a-co:co drives.r))  ' drive'  ?:(=(1 drives.r) '' 's')
           ', '  (crip (a-co:co ones.r))  ' one-on-one'  ?:(=(1 ones.r) '' 's')
-          ?:(=(50 share.r) ' (half share)' '')
+          ?:((lth share.r 100) (rap 3 ' (' (crip (a-co:co share.r)) '% share)' ~) '')
       ==
     ?~(behind ~ ~[(rap 3 'Most behind: ' u.behind '.' ~)])
   =/  section
@@ -6822,8 +6848,336 @@
       (section 'Work' work-lines)
       (section 'Health' health-lines)
       (section 'Time with the kids' kid-lines)
+      (rap 3 (turn extra |=([h=@t ls=(list @t)] (section h ls))))
       (section 'The week ahead' ahead)
   ==
+::  ==  nudges, habits and targets (version 75)
+::
+::  The week's second half: a push at a moment the owner can act, three
+::  at most a day and none between nine at night and seven in the
+::  morning (the owner's word); habits placed in the real gaps of the
+::  owner's day; and targets a notch above the baseline the phone's
+::  reports show, proposed once two weeks of them are in.
+::
+::  +rhythm: the owner's day as they set it, in rhythm.json: when no
+::  push may come, a block of family time, the evening window a habit
+::  may take, a weekend window besides, how many habits one window
+::  holds, and whether younger children have a smaller share of the
+::  owner's time. Every field has a default meant for anyone; an owner
+::  sets their own on the page
+::
++$  rhythm
+  $:  quiet=[from=@ud to=@ud]
+      family=(unit [from=@ud to=@ud])
+      evening=[from=@ud to=@ud]
+      weekend=(unit [from=@ud to=@ud])
+      per-window=@ud
+      young=(unit [age=@ud share=@ud])
+  ==
+::  +clock-of: "HH:MM" as minutes past midnight
+::
+++  clock-of
+  |=  t=@t
+  ^-  (unit @ud)
+  =/  got  (rush (trim-cord t) ;~(plug dem ;~(pfix col dem)))
+  ?~  got  ~
+  ?.  &((lth -.u.got 24) (lth +.u.got 60))  ~
+  `(add (mul 60 -.u.got) +.u.got)
+++  en-clock
+  |=  mi=@ud
+  ^-  @t
+  =/  hh=@ud  (mod (div mi 60) 24)
+  =/  mm=@ud  (mod mi 60)
+  (rap 3 ?:((lth hh 10) '0' '') (crip (a-co:co hh)) ':' ?:((lth mm 10) '0' '') (crip (a-co:co mm)) ~)
+++  de-rhythm
+  |=  j=json
+  ^-  rhythm
+  =/  at  |=([k=@t d=@ud] ^-(@ud (fall (clock-of (gs j k)) d)))
+  =/  span
+    |=  [a=@t b=@t]
+    ^-  (unit [from=@ud to=@ud])
+    =/  f=(unit @ud)  (clock-of (gs j a))
+    =/  t=(unit @ud)  (clock-of (gs j b))
+    ?.  &(?=(^ f) ?=(^ t) !=(u.f u.t))  ~
+    `[u.f u.t]
+  =/  age=(unit @ud)  (gn j 'young_age')
+  =/  share=@ud  (max 10 (min 100 (fall (gn j 'young_share') 100)))
+  :*  [(at 'quiet_from' 1.260) (at 'quiet_to' 420)]
+      (span 'family_from' 'family_to')
+      [(at 'evening_from' 1.080) (at 'evening_to' 1.260)]
+      ?:(&(=('' (gs j 'weekend_from')) =('' (gs j 'weekend_to'))) `[540 720] (span 'weekend_from' 'weekend_to'))
+      (max 1 (min 4 (fall (gn j 'per_window') 2)))
+      ?.(&(?=(^ age) (gth u.age 0) (lth share 100)) ~ `[(min 18 u.age) share])
+  ==
+++  en-rhythm
+  |=  r=rhythm
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['quiet_from' s+(en-clock from.quiet.r)]
+      ['quiet_to' s+(en-clock to.quiet.r)]
+      ['family_from' ?~(family.r s+'' s+(en-clock from.u.family.r))]
+      ['family_to' ?~(family.r s+'' s+(en-clock to.u.family.r))]
+      ['evening_from' s+(en-clock from.evening.r)]
+      ['evening_to' s+(en-clock to.evening.r)]
+      ['weekend_from' ?~(weekend.r s+'' s+(en-clock from.u.weekend.r))]
+      ['weekend_to' ?~(weekend.r s+'' s+(en-clock to.u.weekend.r))]
+      ['per_window' (numb:enjs:format per-window.r)]
+      ['young_age' ?~(young.r (numb:enjs:format 0) (numb:enjs:format age.u.young.r))]
+      ['young_share' ?~(young.r (numb:enjs:format 100) (numb:enjs:format share.u.young.r))]
+  ==
+::  +in-span: minutes inside a span, one that crosses midnight included
+::
+++  in-span
+  |=  [mi=@ud from=@ud to=@ud]
+  ^-  ?
+  ?:  (lte from to)  &((gte mi from) (lth mi to))
+  |((gte mi from) (lth mi to))
+::  +clock-minutes: minutes past local midnight
+::
+++  clock-minutes
+  |=  [at=@da tz=@t]
+  ^-  @ud
+  =/  t=@t  (hhmm at tz)
+  (add (mul 60 (fall (rush (end [3 2] t) dem) 0)) (fall (rush (cut 3 [3 2] t) dem) 0))
+::  +quiet-hour: inside the owner's quiet hours, owner time
+::
+++  quiet-hour
+  |=  [now=@da tz=@t r=rhythm]
+  ^-  ?
+  (in-span (clock-minutes now tz) from.quiet.r to.quiet.r)
+::  +at-clock: a local date's moment at minutes past midnight
+::
+++  at-clock
+  |=  [day=@t mi=@ud tz=@t]
+  ^-  @da
+  (utc-of (add (fall (day-da day) *@da) (mul mi ~m1)) tz)
+::  +desk-stretch: the owner at the computer for ninety minutes or more
+::  without a break of over ten: the latest block of the day when it
+::  ends within seven minutes of now; its start and its minutes
+::
+++  desk-stretch
+  |=  [blocks=(list [start=@da end=@da type=@t]) now=@da]
+  ^-  (unit [start=@da mins=@ud])
+  =/  last=(unit [start=@da end=@da type=@t])
+    %+  roll  blocks
+    |=  [b=[start=@da end=@da type=@t] best=(unit [start=@da end=@da type=@t])]
+    ?~(best `b ?:((gth end.b end.u.best) `b best))
+  ?~  last  ~
+  ?.  (gte end.u.last (sub now (min now ~m7)))  ~
+  =/  mins=@ud  (div (sub end.u.last (min end.u.last start.u.last)) ~m1)
+  ?.  (gte mins 90)  ~
+  `[start.u.last mins]
+::  +late-nights: the days, of those given, whose work ran past eleven
+::  at night on the owner's clock (until five the next morning)
+::
+++  late-nights
+  |=  [days=(list json) tz=@t]
+  ^-  @ud
+  %+  roll  days
+  |=  [d=json n=@ud]
+  =/  ends=(list @da)  (turn (spans (ga d 'blocks')) |=([s=@da e=@da *] e))
+  ?:  =(~ ends)  n
+  =/  b=@ud  (bed-minutes (roll ends max) tz)
+  ?:(&((gte b 300) (lth b 660)) +(n) n)
+::  +monday-of: the Monday that begins a date's week
+::
+++  monday-of
+  |=  day=@t
+  ^-  @t
+  =/  w=@ud  (dow-of day)
+  =/  back=@ud  (mod (add w 6) 7)
+  (end [3 10] (en-iso (sub (fall (day-da day) *@da) (mul back ~d1))))
+::  +habit: an activity the owner said they want to do so many times a
+::  week, how long a time takes, and how many times this week so far
+::
++$  habit  [id=@t name=@t per-week=@ud minutes=@ud done=@ud]
+++  habits
+  |=  [all=(list loaded) multi=(set @t) now=@da tz=@t]
+  ^-  (list habit)
+  =/  monday=@t  (monday-of (local-day now tz))
+  =/  sunday=@t  (day-plus monday 6)
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit habit)
+  ?.  =(%activity kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?:  (is-closed w)  ~
+  ::  a count said as a number or as text
+  =/  said
+    |=  a=@t
+    ^-  (unit @ud)
+    =/  r=(list row)  (fall (~(get by w) a) ~)
+    ?~  r  ~
+    =/  t=tape  (trip (trim-cord (ref-or-text value.obs.i.r)))
+    (rush (crip (scag (fall (find "." t) (lent t)) t)) dem)
+  =/  per=(unit @ud)  (said 'per-week')
+  ?~  per  ~
+  ?:  =(0 u.per)  ~
+  =/  mins=@ud  (fall (said 'minutes') 30)
+  ::  the times this week: the distinct dates the rows of last name,
+  ::  every row and not only the winner, each one a time it was done
+  =/  dates=(set @t)
+    %-  silt
+    %+  murn  rows.l
+    |=  r=row
+    ^-  (unit @t)
+    ?.  &(=('last' attr.obs.r) !retracted.obs.r)  ~
+    =/  v=@t  (ref-or-text value.obs.r)
+    =/  d=@t
+      =/  at=(unit @da)  (de-iso v)
+      ?^  at  (local-day u.at tz)
+      (end [3 10] v)
+    ?.  (day-ok d)  ~
+    ?.  &((aor monday d) (aor d sunday))  ~
+    `d
+  `[id.l name.body.l (min u.per 14) (max 5 (min 240 mins)) ~(wyt in dates)]
+::  +free-slot: the first gap in a window long enough for a stretch of
+::  time, the busy spans given in any order
+::
+++  free-slot
+  |=  [busy=(list [@da @da]) from=@da to=@da need=@dr]
+  ^-  (unit [start=@da end=@da])
+  =/  spans=(list [@da @da])  (sort busy |=([a=[@da @da] b=[@da @da]] (lth -.a -.b)))
+  =/  at=@da  from
+  |-
+  ?:  (gth (add at need) to)  ~
+  ?~  spans  `[at (add at need)]
+  =/  [s=@da e=@da]  i.spans
+  ?:  (lte e at)  $(spans t.spans)
+  ?:  (gte s (add at need))  `[at (add at need)]
+  $(spans t.spans, at (max at e))
+::  +habit-windows: when habits fit in a day, earliest first: the
+::  evening window every day, and the weekend window on a Saturday or a
+::  Sunday. A window that ends past midnight ends on the next day
+::
+++  habit-windows
+  |=  [day=@t tz=@t r=rhythm]
+  ^-  (list [from=@da to=@da])
+  =/  w=@ud  (dow-of day)
+  =/  span
+    |=  [f=@ud t=@ud]
+    ^-  [from=@da to=@da]
+    [(at-clock day f tz) ?:((gth t f) (at-clock day t tz) (at-clock (day-plus day 1) t tz))]
+  =/  evening=[from=@da to=@da]  (span from.evening.r to.evening.r)
+  ?.  &(?=(^ weekend.r) |(=(0 w) =(6 w)))  ~[evening]
+  =/  wk=[from=@da to=@da]  (span from.u.weekend.r to.u.weekend.r)
+  ?:((lth from.wk from.evening) ~[wk evening] ~[evening wk])
+::  +plan-habits: today's slots for the habits behind this week, the
+::  furthest behind first, each slot taken out of the free time the
+::  next is placed in, ten minutes' margin each
+::
+++  plan-habits
+  |=  [hs=(list habit) busy=(list [@da @da]) from=@da to=@da cap=@ud]
+  ^-  (list [h=habit start=@da end=@da])
+  =/  behind=(list habit)
+    %+  sort  (skim hs |=(h=habit (lth done.h per-week.h)))
+    |=([a=habit b=habit] (gth (sub per-week.a done.a) (sub per-week.b done.b)))
+  =|  out=(list [h=habit start=@da end=@da])
+  |-
+  ?:  |(?=(~ behind) (gte (lent out) cap))  (flop out)
+  =/  slot  (free-slot busy from to (mul (add minutes.i.behind 10) ~m1))
+  ?~  slot  $(behind t.behind)
+  =/  end=@da  (add start.u.slot (mul minutes.i.behind ~m1))
+  $(behind t.behind, out [[i.behind start.u.slot end] out], busy [[start.u.slot (add end ~m10)] busy])
+::  +day-busy: the owner's own appointments in a window as busy spans:
+::  going to one, twenty minutes before its start to a quarter hour past
+::  its end; a drop-off around the start, a pick-up around the end; an
+::  hour when the end is not known. What the owner does not go to keeps
+::  nobody busy
+::
+++  day-busy
+  |=  [all=(list loaded) multi=(set @t) now=@da from=@da to=@da]
+  ^-  (list [@da @da])
+  %-  zing
+  %+  turn  all
+  |=  l=loaded
+  ^-  (list [@da @da])
+  ?.  ?=(?(%situation %activity) kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?:  (is-closed w)  ~
+  =/  sit=?  =(%situation kind.body.l)
+  =/  begins=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
+  ?~  begins  ~
+  =/  ends=@da
+    =/  e=(unit @da)  ?.(sit ~ (de-iso (winner-text w 'ends')))
+    ?:(&(?=(^ e) (gth u.e u.begins)) u.e (add u.begins ~h1))
+  ?.  &((lth (sub u.begins (min u.begins ~m30)) to) (gth (add ends ~m15) from))  ~
+  %+  turn  (trips l multi now)
+  |=  [lg=leg vd=verdict]
+  ^-  [@da @da]
+  ?-  lg
+    %go    [(sub u.begins ~m20) (add ends ~m15)]
+    %drop  [(sub u.begins ~m30) (add u.begins ~m15)]
+    %pick  [(sub ends ~m30) (add ends ~m15)]
+  ==
+::  +habit-line: "18:30  Reading, 30 min (1 of 3 this week)"
+::
+++  habit-line
+  |=  [h=habit start=@da tz=@t]
+  ^-  @t
+  %+  rap  3
+  :~  (hhmm start tz)  '  '  name.h  ', '  (hours minutes.h)
+      ' ('  (crip (a-co:co done.h))  ' of '  (crip (a-co:co per-week.h))  ' this week)'
+  ==
+::  +baseline: the owner's normal from the phone's reports, once fourteen
+::  complete days of the last twenty-eight are in: the middle steps, the
+::  middle night's sleep in minutes, the middle bedtime as minutes past
+::  six in the evening
+::
+++  baseline
+  |=  [store=json today=@t tz=@t]
+  ^-  (unit [steps=@ud sleep=@ud bed=@ud])
+  =/  days=(list json)
+    %+  murn  (gulf 1 28)
+    |=  n=@ud
+    =/  d=json  (gj store (end [3 10] (en-iso (sub (fall (day-da today) *@da) (mul n ~d1)))))
+    ?:  |(=(~ d) =([%b &] (gj d 'partial')))  ~
+    `d
+  ?:  (lth (lent days) 14)  ~
+  =/  mid  |=(l=(list @ud) ^-(@ud ?:(=(~ l) 0 (snag (div (lent l) 2) (sort l lth)))))
+  =/  nights=(list [start=@da end=@da])  (murn days |=(d=json (night-of (spans (ga d 'sleep')))))
+  :-  ~
+  :+  (mid (murn days |=(d=json (gn d 'steps'))))
+    (mid (turn nights |=([s=@da e=@da] (div (sub e s) ~m1))))
+  (mid (turn nights |=([s=@da e=@da] (bed-minutes s tz))))
+::  +targets-of: a notch above the baseline: a tenth more steps, to the
+::  hundred; a quarter hour more sleep; to bed a quarter hour sooner
+::
+++  targets-of
+  |=  base=[steps=@ud sleep=@ud bed=@ud]
+  ^-  [steps=@ud sleep=@ud bed=@t]
+  =/  steps=@ud  (mul 100 (div (add (div (mul steps.base 11) 10) 99) 100))
+  =/  bed=@ud  (add 1.080 (sub bed.base (min bed.base 15)))
+  =/  hh=@ud  (mod (div bed 60) 24)
+  =/  mm=@ud  (mod bed 60)
+  :+  steps  (add sleep.base 15)
+  (rap 3 ?:((lth hh 10) '0' '') (crip (a-co:co hh)) ':' ?:((lth mm 10) '0' '') (crip (a-co:co mm)) ~)
+::  +sent-today: the nudges recorded for a day
+::
+++  sent-today
+  |=  [last=json day=@t]
+  ^-  (list json)
+  ?.  =(day (gs last 'day'))  ~
+  (ga last 'sent')
+::  +review-prefix, +review-replies-of: the owner's replies to the last
+::  Sunday review: from us, answering a message from us whose body is
+::  the review word for word, under its subject, and not read before
+::
+++  review-prefix  'Your week, '
+++  review-replies-of
+  |=  [fresh=(list mail-msg) msgs=(list mail-msg) our=@p seen=(set @t) sent=@t]
+  ^-  (list [r=mail-msg root=@t])
+  ?:  =('' sent)  ~
+  =/  by-id=(map @t mail-msg)  (~(gas by *(map @t mail-msg)) (turn msgs |=(x=mail-msg [id.x x])))
+  %+  murn  fresh
+  |=  x=mail-msg
+  ^-  (unit [r=mail-msg root=@t])
+  ?.  &(=(our from.x) ?=(^ prev.x) !(~(has in seen) (cat 3 'mail:' id.x)))  ~
+  ?~  (find (trip review-prefix) (trip subj.x))  ~
+  =/  root=(unit mail-msg)  (~(get by by-id) (scot %uv u.prev.x))
+  ?~  root  ~
+  ?.  &(=(our from.u.root) =(sent body.u.root))  ~
+  `[x body.u.root]
 ::  +addr-key: an address as the geocache keys it: lower case, one space
 ::
 ++  addr-key
@@ -8673,6 +9027,10 @@
   ?:  &(=('GET' meth) ?=([%api %work ~] suffix))                `[%get-work %own]
   ?:  &(=('GET' meth) ?=([%api %review %last ~] suffix))        `[%get-review-last %own]
   ?:  &(=('POST' meth) ?=([%api %review %wake ~] suffix))       `[%post-review-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %nudge %last ~] suffix))         `[%get-nudge-last %own]
+  ?:  &(=('GET' meth) ?=([%api %rhythm ~] suffix))              `[%get-rhythm %own]
+  ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
+  ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]
   ?:  &(=('GET' meth) ?=([%api %exec %last ~] suffix))          `[%get-exec-last %own]
   ?:  &(=('GET' meth) ?=([%api %calendar %last ~] suffix))      `[%get-calendar-last %own]

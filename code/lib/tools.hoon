@@ -50,6 +50,18 @@
   --
 ::
 +$  tool-handler  _*form:(fiber:fiber:nexus ,tool-result)
+::  +so-loose: a lenient string decoder for a parameter typed %number.
+::  The honest schema type is %number, so a well-behaved client sends a
+::  JSON number (%n); a fuzzy LLM client may still send a string (%s).
+::  This reads the raw cord from either, and defers to so:dejs:format for
+::  a %s (and for the crash on a genuinely wrong type). Use it in place of
+::  so:dejs:format at a jo deg/dog site whose parameter is now %number.
+++  so-loose
+  |=  j=json
+  ^-  @t
+  ?+  j  (so:dejs:format j)
+    [%n *]  p.j
+  ==
 ::  Tool names are file locations under a lib/mcp root: path segments
 ::  joined with '__', hyphens rendered as underscores (knots can't
 ::  hold underscores). wallet__send <-> wallet/send.hoon. The mapping
@@ -83,7 +95,7 @@
 ::  mirrors /lib, so it lands at /code/lib.
 ::
 ::    /&  bundle  /lib/tool-bundle/
-::    [%over %| /'tools.tools' (seed-tools bundle)]
+::    [%over %| /tools (seed-tools bundle)]
 ::
 ++  seed-tools
   |=  srcs=(axal (map @ta mime))
@@ -94,7 +106,7 @@
 ::  +merge-boles: overlay `over` onto `base`, OVER winning every conflict.
 ::  File contents are unioned per node (over's grubs replace same-named
 ::  base grubs; base-only grubs survive), and kids recurse. Used to reseed
-::  the bundle over the live tools.tools subtree without deleting tools a
+::  the bundle over the live tools subtree without deleting tools a
 ::  user added at runtime (they live in base, absent from the bundle).
 ::
 ++  merge-boles
@@ -369,6 +381,17 @@
   ^-  ?
   %-  ~(has in `(set @tas)`(sy ~[%json %txt %hoon %html %css %js %csv %xml %md %sig]))
   name
+::  +norm-mite: files uploaded before the multipart fix carry their
+::  content-type as ONE segment ('image/jpeg'); split it so the checks
+::  below see /image/jpeg. Already-split mites pass through.
+::
+++  norm-mite
+  |=  =mite
+  ^-  ^mite
+  ?.  ?=([@ ~] mite)  mite
+  =/  t=tape  (trip i.mite)
+  ?~  sl=(find "/" t)  mite
+  ~[(crip (scag u.sl t)) (crip (slag +(u.sl) t))]
 ::  Is this mime media type representable as text?
 ::
 ++  is-text-mime
@@ -401,6 +424,7 @@
 ++  render-mime
   |=  out=mime
   ^-  tool-result
+  =.  p.out  (norm-mite p.out)
   ?:  (is-text-mime p.out)
     [%text (crip (trip q.q.out))]
   ?:  (is-multimodal-mime p.out)

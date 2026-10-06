@@ -156,21 +156,25 @@ ok('the time-to-leave card offers the token without showing one, says when the p
   && travelSettings.includes('Your phone last said where you are') && travelSettings.includes('Next: Parent meeting') && travelSettings.includes('32 min with traffic')
   && travelSettings.includes('data-save-travel="1"'));
 const whySettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], { enabled: true, token_set: true },
-  { next: { name: 'Fencing', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 31, typical_minutes: 19, via: 'I 95 South', incident: 'Crash on I-95 S', learned_min: 4 } });
+  { next: { name: 'Chess', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 31, typical_minutes: 19, via: 'I 95 South', incident: 'Crash on I-95 S', learned_min: 4 } });
 ok('the next plan says why: the usual time, the roads, an incident, and what arrivals there taught (version 73)',
   whySettings.includes('31 min with traffic (19 usual) via I 95 South') && whySettings.includes('On the way: Crash on I-95 S') && whySettings.includes('Your arrivals there add 4 min to park.'));
 const calmSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], { enabled: true },
-  { next: { name: 'Fencing', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 20, typical_minutes: 19, via: '', incident: '', learned_min: 0 } });
+  { next: { name: 'Chess', starts: '2026-10-05T21:00:00Z', leave_by: '2026-10-05T20:20:00Z', minutes: 20, typical_minutes: 19, via: '', incident: '', learned_min: 0 } });
 ok('a drive near its usual time says no usual, no roads, no incident and nothing learned', calmSettings.includes('20 min with traffic, leave by') && !calmSettings.includes('usual') && !calmSettings.includes('On the way') && !calmSettings.includes('arrivals there'));
-const mapSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, { day: '2026-10-06', at: '2026-10-06T11:00:00Z', sent: true, tags: {}, notes: [], map: 'pin-l-1+d9534f(-81.4,30.1)' });
+const mapSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, { day: '2026-10-06', at: '2026-10-06T11:00:00Z', sent: true, tags: {}, notes: [], map: 'pin-l-1+d9534f(-89.5,39.6)' });
 ok('the brief card shows the stops on a map when the brief had any', mapSettings.includes('<img class="brief-map"') && mapSettings.includes('/apps/orrery/api/brief/map?at=2026-10-06T11%3A00%3A00Z') && !whySettings.includes('brief-map'));
 const weekSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
-  { review: { at: '2026-10-11T22:00:00Z', sent: true, text: 'Your week, Sunday 2026-10-11\n\nWork\nMon 9 h' }, healthDays: 9, health: { day: '2026-10-10', steps: 4210, workouts: [{}] }, work: { day: '2026-10-11', active_minutes: 545 } });
+  { review: { at: '2026-10-11T22:00:00Z', sent: true, text: 'Your week, Sunday 2026-10-11\n\nWork\nMon 9 h' }, healthDays: 9, health: { day: '2026-10-10', steps: 4210, workouts: [{}] }, work: { day: '2026-10-11', active_minutes: 545 },
+    nudge: { day: '2026-10-11', sent: [{ at: '2026-10-11T19:05:00Z', kind: 'desk', title: '1 h 35 min at the desk' }] },
+    rhythm: { quiet_from: '22:00', quiet_to: '07:00', family_from: '', family_to: '', evening_from: '18:00', evening_to: '21:00', weekend_from: '09:00', weekend_to: '12:00', per_window: 2, young_age: 0, young_share: 100 } });
 ok('the week card says what came in, how far the baseline is, and shows the last review (version 74)',
   weekSettings.includes('<h2>The week</h2>') && weekSettings.includes('Health: 9 days kept; the baseline needs 14.') && weekSettings.includes('4210 steps, 1 workout')
-  && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11'));
+  && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11')
+  && weekSettings.includes('Nudges on 2026-10-11: 1 of 3. Last: 1 h 35 min at the desk')
+  && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"'));
 const weekEmpty = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
-ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review'));
+ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review') && weekEmpty.includes('Nudges today: none yet.'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
 ok('an untouched generator renders off, with no key and reasoning off', genOff.includes('name="enabled">') && genOff.includes('no key set') && genOff.includes('name="effort" value="off"'));
 ok('the schema and policy cards still follow', genSettings.indexOf('<h2>Generator</h2>') < genSettings.indexOf('<h2>schema.json</h2>') && genSettings.includes('id="policy"'));
@@ -242,7 +246,7 @@ ok('the state is asked for only if it moved: the page names its rev, and "same" 
   && src.indexOf('var again = seen[v.here] === d && drawn === v.here;') < src.indexOf("seen['bodies '] = s; seen['inbox '] = s;"));
 const tidyState = { me: 'person/me', bodies: [
   { id: 'person/me', kind: 'person', name: 'jackson', ship: '~zod', aliases: ['~bus'], attrs: { home: { value: { ref: 'place/home' } } } },
-  { id: 'person/andrea', kind: 'person', name: 'Andrea', ship: '~wet', aliases: [], attrs: { relationship: { value: 'wife' } } },
+  { id: 'person/lena', kind: 'person', name: 'Lena', ship: '~wet', aliases: [], attrs: { relationship: { value: 'wife' } } },
   { id: 'person/martyr', kind: 'person', name: 'jackson wife', aliases: ['~wet', '~bus'], attrs: {} },
   { id: 'place/home', kind: 'place', name: 'Home', aliases: [], attrs: {} },
   { id: 'org/lone', kind: 'org', name: 'Lone <Co>', aliases: [], attrs: { phone: { value: '1' } } }] };
@@ -252,16 +256,16 @@ const sits = render.dupesOf({ bodies: [
   { id: 'situation/b', kind: 'situation', name: 'Ballet', attrs: { starts: { value: '2026-10-08T18:00:00Z' } } },
   { id: 'situation/c', kind: 'situation', name: 'ballet', attrs: { starts: { value: '2026-10-08T19:00:00Z' } } }] });
 ok('likely duplicates: a shared own ship, the surer body as into, no weaker match beside a sure one, the owner never merged away; a situation by name only on the same day',
-  dupes.length === 1 && dupes[0].from.id === 'person/martyr' && dupes[0].into.id === 'person/andrea' && dupes[0].strong
+  dupes.length === 1 && dupes[0].from.id === 'person/martyr' && dupes[0].into.id === 'person/lena' && dupes[0].strong
   && !dupes.some(function (d) { return d.from.id === 'person/me' || d.into.id === 'person/me'; })
   && sits.length === 1 && sits.every(function (d) { return d.from.id !== 'situation/a' && d.into.id !== 'situation/a'; }));
 const merged = render.dupesOf({ me: 'person/me', bodies: [
   { id: 'person/me', kind: 'person', name: 'jackson', ship: '~zod', aliases: ['~bus'], attrs: {} },
-  { id: 'person/andrea', kind: 'person', name: 'Andrea', ship: '~wet', aliases: ['~bus', 'jackson'], attrs: {} }] });
+  { id: 'person/lena', kind: 'person', name: 'Lena', ship: '~wet', aliases: ['~bus', 'jackson'], attrs: {} }] });
 ok('the owner is offered as into only on a ship the other holds as its own, not on an alias a merge brought', merged.length === 0);
 const tidy = render.tidyCard(tidyState, false);
 ok('the tidy section offers each duplicate a merge and each body with no connection a delete, names escaped',
-  tidy.includes('data-merge="person/martyr" data-into="person/andrea"') && tidy.includes('data-delete-body="org/lone"') && tidy.includes('Lone &lt;Co&gt;')
+  tidy.includes('data-merge="person/martyr" data-into="person/lena"') && tidy.includes('data-delete-body="org/lone"') && tidy.includes('Lone &lt;Co&gt;')
   && !tidy.includes('data-delete-body="person/me"') && !tidy.includes('data-delete-body="place/home"') && tidy.includes('1 possible duplicate, 2 with no connection'));
 const prefs = render.prefsCard({ style: 'No em dashes.', preferences: ['Never a todo for attending'] }, [{ reason: 'never a todo for attending', count: 3 }, { reason: 'a refund, not a bill', count: 2 }]);
 ok('the preferences card holds the style and one preference a line, and offers each reason not kept already',
@@ -274,8 +278,8 @@ const lat = new Function('typedNote', 'refresh', 'setTimeout',
   'var dirty, awaitMove, awaitGone; ' + laterSrc + '; later({ ok: true, id: "a1" }); var r = [awaitMove, awaitGone]; later(["person/x"]); return r.concat([awaitMove, awaitGone]);')(
   function () { return false; }, function () {}, function () {});
 ok('an answer handed in by .then is not taken for bodies to wait for; a list is', lat[0] === 10 && lat[1] === null && lat[2] === 20 && lat[3][0] === 'person/x');
-const aliased = render.body({ id: 'person/andrea', kind: 'person', name: 'Andrea', aliases: ['jack<son>'], attrs: {}, observations: [] }, { bodies: [], actions: [] });
-ok('a body page gives each alias its own remove button, escaped', aliased.includes('data-unalias="jack&lt;son&gt;" data-id="person/andrea"') && !aliased.includes('<son>'));
+const aliased = render.body({ id: 'person/lena', kind: 'person', name: 'Lena', aliases: ['jack<son>'], attrs: {}, observations: [] }, { bodies: [], actions: [] });
+ok('a body page gives each alias its own remove button, escaped', aliased.includes('data-unalias="jack&lt;son&gt;" data-id="person/lena"') && !aliased.includes('<son>'));
 ok('after the owner\'s own move the refresh looks again each second until the rev moves, ten times at most',
   src.includes("function later(gone) { dirty = typedNote(); awaitGone = Array.isArray(gone) ? gone : null; awaitMove = awaitGone ? 20 : 10; setTimeout(function () { refresh(!dirty); }, 300); }")
   && src.includes("var still = awaitGone ? (s.bodies || []).some(function (x) { return awaitGone.indexOf(x.id) >= 0; }) : s.rev === before;")
@@ -287,21 +291,21 @@ ok('a tidy move shows at once: the button says what is under way, and the row is
   src.includes("working(b, 'merging');") && src.includes("settled(b, 'merged'); later([b.dataset.merge]);") && src.includes("function settled(b, what) {"));
 const quality = render.qualityCard([{ by: 'mail', kind: 'task', kept: 3, dismissed: 1, reasoned: 1, waiting: 0, failed: 0 }]);
 ok('the quality card says what each proposer kept of what was decided', quality.includes('>mail<') && quality.includes('75%') && quality.includes('(1 with a reason)') && render.qualityCard([]) === '');
-const struck = render.correctionsCard([{ id: '42', subject: 'person/andrea', attr: 'participants', value: 'situation/barcelona', why: 'she was not there', at: '2026-09-27T00:00:00Z', by: 'owner' }]);
+const struck = render.correctionsCard([{ id: '42', subject: 'person/lena', attr: 'participants', value: 'situation/barcelona', why: 'she was not there', at: '2026-09-27T00:00:00Z', by: 'owner' }]);
 ok('the corrections card lists what was struck, with the reason and an undo by id',
-  struck.includes('href="#body/person/andrea"') && struck.includes('she was not there') && struck.includes('data-uncorrect="42"') && render.correctionsCard([]) === '');
+  struck.includes('href="#body/person/lena"') && struck.includes('she was not there') && struck.includes('data-uncorrect="42"') && render.correctionsCard([]) === '');
 ok('a string or a ref value may be struck as not true; a number or a list may not',
-  render.notTrue('person/andrea', 'city', 'Paris').includes('data-correct="person/andrea" data-attr="city" data-value="Paris"')
-  && render.notTrue('person/andrea', 'spouse', { ref: 'person/sam' }).includes('data-value="person/sam"')
-  && render.notTrue('person/andrea', 'age', 40) === '' && render.notTrue('person/andrea', 'kids', ['a']) === '');
-const box = render.instructBox('person/andrea', '', 'Tell the ship');
+  render.notTrue('person/lena', 'city', 'Paris').includes('data-correct="person/lena" data-attr="city" data-value="Paris"')
+  && render.notTrue('person/lena', 'spouse', { ref: 'person/sam' }).includes('data-value="person/sam"')
+  && render.notTrue('person/lena', 'age', 40) === '' && render.notTrue('person/lena', 'kids', ['a']) === '');
+const box = render.instructBox('person/lena', '', 'Tell the ship');
 ok('an instruction box carries its body and action in one key, with a do-it and a propose button',
-  box.includes('data-instruct-text="person/andrea|"') && box.includes('data-instruct="person/andrea|">do it') && box.includes('data-propose="1">propose'));
+  box.includes('data-instruct-text="person/lena|"') && box.includes('data-instruct="person/lena|">do it') && box.includes('data-propose="1">propose'));
 ok('the body page offers an instruction box and marks each string value not true',
   body.includes('data-instruct-text="' + view.id + '|"') && body.includes('data-correct="'));
 ok('the inbox leads with an instruction box and answers a proposed note with one of its own, not a refine box',
   inboxHtml.indexOf('data-instruct-text="|"') < inboxHtml.indexOf('<ul class="actions">')
-  && render.inbox([{ id: 'n9', kind: 'note', title: 'Andrea in Barcelona?', status: 'proposed', proposed: '', by: 'generator', about: [], history: [] }]).includes('data-instruct-text="|n9"')
+  && render.inbox([{ id: 'n9', kind: 'note', title: 'Lena in Barcelona?', status: 'proposed', proposed: '', by: 'generator', about: [], history: [] }]).includes('data-instruct-text="|n9"')
   && !inboxHtml.includes('data-instruct-text="|p1"'));
 ok('a half-typed instruction holds the refresh like a half-typed refine note',
   src.includes("querySelectorAll('[data-refine-text], [data-instruct-text]')"));

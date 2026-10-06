@@ -280,7 +280,7 @@
 ++  test-restates
   ;:  weld
     (expect !>((restates:gen 'Go to Ballet' 'Ballet')))
-    (expect !>((restates:gen 'Attend the Nutcracker rehearsal' 'Nutcracker rehearsal')))
+    (expect !>((restates:gen 'Attend the Recital rehearsal' 'Recital rehearsal')))
     (expect !>(!(restates:gen 'Plan Milo\'s birthday' 'Milo Birthday')))
     (expect !>(!(restates:gen 'Pack for the day at Grandma and Grandaddy\'s' 'Grandma and Grandaddy\'s')))
     (expect !>(!(restates:gen 'Ballet' '')))
@@ -288,13 +288,13 @@
 ++  test-validate-drops-event-todos
   =/  f  fixture
   =/  known=(set @t)  (sy (turn all.f |=(l=loaded:orr id.l)))
-  =/  events=(list @t)  ~['Ballet' 'Nutcracker rehearsal' 'Parent meeting']
+  =/  events=(list @t)  ~['Ballet' 'Recital rehearsal' 'Parent meeting']
   =/  answer=json
     %-  jo
     '''
     {"actions": [
       {"kind": "task", "title": "Ballet", "about": ["activity/ballet"]},
-      {"kind": "task", "title": "Go to the Nutcracker rehearsal"},
+      {"kind": "task", "title": "Go to the Recital rehearsal"},
       {"kind": "task", "title": "Pack ballet shoes and tights for the first class", "about": ["activity/ballet"], "payload": {"notes": "shoes, tights, hair ties"}},
       {"kind": "task", "title": "Sort out the overlap between ballet and the parent meeting", "about": ["activity/ballet", "situation/2026-12-05-meeting"]}
     ]}
@@ -304,7 +304,7 @@
   ;:  weld
     (expect-eq !>(`(list @t)`~['Pack ballet shoes and tights for the first class' 'Sort out the overlap between ballet and the parent meeting']) !>(`(list @t)`(turn acts.got |=(a=json (gs:orr a 'title')))))
     (expect !>((has-sub joined 'dropped as a todo for an event on the calendar: Ballet (Ballet)')))
-    (expect !>((has-sub joined 'Go to the Nutcracker rehearsal (Nutcracker rehearsal)')))
+    (expect !>((has-sub joined 'Go to the Recital rehearsal (Recital rehearsal)')))
   ==
 ::  ==  the limits
 ::
@@ -440,7 +440,7 @@
     (expect-eq !>('dinner') !>((normalize-title:orr 'Dinner 6 pm Friday 9/12')))
     (expect-eq !>('ballet') !>((normalize-title:orr 'Ballet Sep 12, 2026')))
     (expect-eq !>('trip starting') !>((strict-key:orr 'Reminder:  Trip   Starting')))
-    (expect-eq !>('theo-juno-opti-sail') !>((slug:orr 'Theo & Juno: Opti Sail!')))
+    (expect-eq !>('theo-juno-swim-team') !>((slug:orr 'Theo & Juno: Swim Team!')))
     (expect-eq !>('x') !>((slug:orr '---')))
   ==
 ++  test-same-person
@@ -452,9 +452,9 @@
     (expect !>(!(same-person:orr 'Dana\'s mom' 'dana')))
     (expect !>((same-person:orr 'Dr Dana Quill' 'dana')))
     (expect-eq !>(~) !>((person-key:orr 'jackson wife')))
-    %+  expect-eq  !>((my ~[['jackson' 'person/me'] ['andrea' 'person/andrea']]))
+    %+  expect-eq  !>((my ~[['jackson' 'person/me'] ['lena' 'person/lena']]))
     !>  %-  known-people:orr
-        :~  (mkb 'person/andrea' %person 'Andrea' ~['jackson wife' 'jackson'] ~ now)
+        :~  (mkb 'person/lena' %person 'Lena' ~['jackson wife' 'jackson'] ~ now)
             (mkb 'person/me' %person 'Jackson' ~ ~ now)
         ==
     (expect !>((same-person:orr 'Dana Quill' 'Quill, Dana')))
@@ -466,10 +466,10 @@
 ++  test-names-in
   ;:  weld
     (expect-eq !>(`[(list @t) (unit @t)]`[~['Mira'] ~]) !>((names-in:orr 'Mira- Ballet/Tap')))
-    (expect-eq !>(`[(list @t) (unit @t)]`[~['Theo' 'Juno'] ~]) !>((names-in:orr 'Theo and Juno- Opti Sail')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~['Theo' 'Juno'] ~]) !>((names-in:orr 'Theo and Juno- Swim Team')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~['Felix'] ~]) !>((names-in:orr 'Felix\'s birthday')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~['Felix'] ~]) !>((names-in:orr 'Felix Birthday party')))
-    (expect-eq !>(`[(list @t) (unit @t)]`[~ `'Felix']) !>((names-in:orr 'Felix Fencing Lesson')))
+    (expect-eq !>(`[(list @t) (unit @t)]`[~ `'Felix']) !>((names-in:orr 'Felix Chess Lesson')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'trip to Boston')))
     (expect-eq !>(`[(list @t) (unit @t)]`[~ ~]) !>((names-in:orr 'FELIX x')))
     (expect-eq !>(`(list @t)`~) !>(-:(names-in:orr 'Flight - SFO to JFK')))
@@ -563,7 +563,7 @@
     :~  (mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ now)
         (mkb 'activity/ballet' %activity 'Mira- Ballet/Tap' ~ ~[['participants' (pairs:enjs:format ~[['ref' s+'person/mira-quill']])]] now)
         (mkb 'situation/2026-10-01-felix-birthday' %situation 'Felix Birthday' ~ ~ now)
-        (mkb 'situation/2026-10-02-felix-fencing' %situation 'Felix Fencing Lesson' ~ ~ now)
+        (mkb 'situation/2026-10-02-felix-chess' %situation 'Felix Chess Lesson' ~ ~ now)
         (mkb 'situation/2026-10-03-trip' %situation 'Trip to Boston' ~ ~ now)
     ==
   =/  got  (plan-participants:orr all (sy ~['participants']) now)
@@ -573,7 +573,7 @@
     (expect-eq !>(2) !>(rows.got))
     (expect-eq !>('person/felix') !>((gs:orr (snag 0 (ga:orr op 'bodies')) 'id')))
     %+  expect-eq
-      !>(`(list @t)`~['situation/2026-10-01-felix-birthday' 'situation/2026-10-02-felix-fencing'])
+      !>(`(list @t)`~['situation/2026-10-01-felix-birthday' 'situation/2026-10-02-felix-chess'])
       !>((turn (ga:orr op 'observations') |=(r=json (gs:orr r 'subject'))))
     (expect-eq !>('person/felix') !>((gs:orr (gj:orr (snag 1 (ga:orr op 'observations')) 'value') 'ref')))
   ==
@@ -1162,10 +1162,10 @@
 ++  exec-acts
   ^-  (list [id=@ta a=action:orr])
   =/  pay  |=(t=@t ^-(json (need (de:json:html t))))
-  :~  ['m1' [%message 'Tell Rose' (pay '{"via": "telegram", "to": "person/rose", "text": "Dana could not call back"}') (sy ~['person/rose']) ~ 'telegram' now %approved '' ~]]
+  :~  ['m1' [%message 'Tell Wren' (pay '{"via": "telegram", "to": "person/wren", "text": "Dana could not call back"}') (sy ~['person/wren']) ~ 'telegram' now %approved '' ~]]
       ['m2' [%message 'Tell Bob' (pay '{"via": "mail", "to": "person/bob", "text": "hi"}') (sy ~['person/bob']) ~ 'telegram' now %approved '' ~]]
       ['m3' [%message 'Tell Eve' (pay '{"via": "telegram", "to": "person/eve", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
-      ['m4' [%message 'DM Rose' (pay '{"via": "chat", "to": "person/rose", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
+      ['m4' [%message 'DM Wren' (pay '{"via": "chat", "to": "person/wren", "text": "x"}') ~ ~ 'telegram' now %approved '' ~]]
       ['m5' [%message 'Tell Ann' (pay '{"via": "telegram", "to": "person/ann", "text": "y"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c1' [%calendar 'Dinner with Sarah' (pay '{"title": "Dinner with Sarah", "starts": "2026-09-25T20:00:00Z", "ends": "2026-09-25T22:00:00Z", "location": "the usual place"}') ~ ~ 'telegram' now %approved '' ~]]
       ['c2' [%calendar 'Field day' (pay '{"title": "Field day", "starts": "2026-10-03T00:00:00Z", "ends": "2026-10-04T00:00:00Z"}') ~ ~ 'telegram' now %approved '' ~]]
@@ -1178,7 +1178,7 @@
   ==
 ++  exec-bodies
   ^-  (list loaded:orr)
-  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['telegram' s+'545179154']] now)
+  :~  (mkb 'person/wren' %person 'Wren' ~ ~[['telegram' s+'545179154']] now)
       (mkb 'person/bob' %person 'Bob' ~ ~[['ship' s+'~sampel-palnet']] now)
       (mkb 'person/eve' %person 'Eve' ~ ~ now)
       (mkb 'person/ann' %person 'Ann' ~ ~ now)
@@ -1207,7 +1207,7 @@
     (expect-eq !>('777') !>((gs:orr body:(~(got by by-id) 'm5') 'chat_id')))
     (expect-eq !>('') !>(note:(~(got by by-id) 'm5')))
     ::  the attribute wins over the people map
-    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/rose']]) now '' ['' '']) |=(p=exec-plan:orr [id.p p])))) 'm1')))
+    (expect-eq !>('545179154') !>(to:(~(got by (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr exec-acts exec-bodies ~ (my ~[['999' 'person/wren']]) now '' ['' '']) |=(p=exec-plan:orr [id.p p])))) 'm1')))
     (expect-eq !>(%calendar) !>(target:(~(got by by-id) 'c1')))
     (expect-eq !>('timed') !>((gs:orr body:(~(got by by-id) 'c1') 'cat')))
     (expect-eq !>('allday') !>((gs:orr body:(~(got by by-id) 'c2') 'cat')))
@@ -1469,22 +1469,22 @@
 ++  test-clean-text
   =/  em=@t  (crip (tufa ~[`@c`0x2014]))
   ;:  weld
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose ' em ' call me back' ~))))
-    (expect-eq !>('Rose, call me back') !>((clean-text:orr (rap 3 'Rose' em 'call me back' ~))))
+    (expect-eq !>('Wren, call me back') !>((clean-text:orr (rap 3 'Wren ' em ' call me back' ~))))
+    (expect-eq !>('Wren, call me back') !>((clean-text:orr (rap 3 'Wren' em 'call me back' ~))))
     (expect-eq !>('plain') !>((clean-text:orr 'plain')))
     ::  two in a row, with or without spaces, give one comma
     (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a' em em 'b' ~))))
     (expect-eq !>('a, b') !>((clean-text:orr (rap 3 'a ' em ' ' em ' b' ~))))
   ==
 ++  test-route-message
-  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "telegram", "to": "person/rose", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
+  =/  m=action:orr  [%message 'Tell Wren' (jo '{"via": "telegram", "to": "person/wren", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
   =/  got  (route-message:orr m '~sampel-palnet')
   =/  same  (route-message:orr m '')
-  =/  chat  (route-message:orr m(payload (jo '{"via": "chat", "to": "person/rose", "text": "hi"}')) '~sampel-palnet')
+  =/  chat  (route-message:orr m(payload (jo '{"via": "chat", "to": "person/wren", "text": "hi"}')) '~sampel-palnet')
   =/  task  (route-message:orr m(kind %task) '~sampel-palnet')
   ;:  weld
     (expect-eq !>('chat') !>((gs:orr payload.a.got 'via')))
-    (expect-eq !>('via rewritten to chat: person/rose has a ship') !>(note.got))
+    (expect-eq !>('via rewritten to chat: person/wren has a ship') !>(note.got))
     (expect-eq !>('telegram') !>((gs:orr payload.a.same 'via')))
     (expect-eq !>('') !>(note.same))
     (expect-eq !>('') !>(note.chat))
@@ -1501,8 +1501,8 @@
         ['to' s+'required: the body id of the person, e.g. person/alice']
         ['text' s+'required: the message, short, in the owner\'s own voice. No em dashes.']
     ==
-  =/  pj=json  (jo '{"via": "mail", "to": "person/rose", "text": "hi"}')
-  =/  held  (hold-payload:orr ?>(?=([%o *] pj) p.pj) shape (sy ~['person/rose']) ~)
+  =/  pj=json  (jo '{"via": "mail", "to": "person/wren", "text": "hi"}')
+  =/  held  (hold-payload:orr ?>(?=([%o *] pj) p.pj) shape (sy ~['person/wren']) ~)
   ;:  weld
     (expect-eq !>(`(list @t)`~['chat' 'telegram' 'mail']) !>((one-of:orr new)))
     (expect-eq !>(`(list @t)`~['telegram' 'mail' 'chat']) !>((one-of:orr old)))
@@ -1511,12 +1511,12 @@
     (expect-eq !>('mail') !>(?>(?=(%& -.held) (gs:orr [%o p.held] 'via'))))
   ==
 ++  test-reroute-on-revise
-  =/  old=action:orr  [%message 'Tell Rose' (jo '{"via": "telegram", "to": "person/rose", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
+  =/  old=action:orr  [%message 'Tell Wren' (jo '{"via": "telegram", "to": "person/wren", "text": "hi"}') ~ ~ 'mail' now %proposed '' ~]
   =/  to-karl  old(payload (jo '{"via": "telegram", "to": "person/karl", "text": "hi"}'))
   =/  karl-mail  old(payload (jo '{"via": "mail", "to": "person/karl", "text": "hi"}'))
   =/  moved  (reroute-on-revise:orr old to-karl '~sampel-palnet')
   =/  worded  (reroute-on-revise:orr old karl-mail '~sampel-palnet')
-  =/  same  (reroute-on-revise:orr old old(title 'Tell Rose again') '~sampel-palnet')
+  =/  same  (reroute-on-revise:orr old old(title 'Tell Wren again') '~sampel-palnet')
   =/  noship  (reroute-on-revise:orr old to-karl '')
   ;:  weld
     ::  a new recipient with a ship, and no word on the channel: rerouted
@@ -1531,11 +1531,11 @@
     (expect-eq !>('telegram') !>((gs:orr payload.a.noship 'via')))
   ==
 ++  test-revise
-  =/  m=action:orr  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
-  =/  got  (revise:orr m 'Tell Rose and Dana' (jo '{"via": "chat", "to": "person/rose", "text": "hi both"}') (sy ~['person/rose' 'person/dana-hill']) `(add now ~d1) 'user' (add now ~m5))
-  =/  op=json  (revise-action-op:orr 'a1' 'T' (jo '{}') ~['person/rose'] ~ 'user')
+  =/  m=action:orr  [%message 'Tell Wren' (jo '{"via": "chat", "to": "person/wren", "text": "hi"}') (sy ~['person/wren']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+  =/  got  (revise:orr m 'Tell Wren and Dana' (jo '{"via": "chat", "to": "person/wren", "text": "hi both"}') (sy ~['person/wren' 'person/dana-hill']) `(add now ~d1) 'user' (add now ~m5))
+  =/  op=json  (revise-action-op:orr 'a1' 'T' (jo '{}') ~['person/wren'] ~ 'user')
   ;:  weld
-    (expect-eq !>('Tell Rose and Dana') !>(title.got))
+    (expect-eq !>('Tell Wren and Dana') !>(title.got))
     (expect-eq !>(%proposed) !>(status.got))
     (expect-eq !>(2) !>((lent history.got)))
     (expect-eq !>([%revised 'user']) !>([status by]:(rear history.got)))
@@ -1547,22 +1547,22 @@
   ^-  reader-ctx:orr
   =/  schema=json  starter-schema:orr
   %-  reader-context:orr
-  :+  :~  (mkb 'person/rose' %person 'Rose' ~ ~[['ship' s+'~sampel-palnet']] now)
+  :+  :~  (mkb 'person/wren' %person 'Wren' ~ ~[['ship' s+'~sampel-palnet']] now)
           (mkb 'person/dana-hill' %person 'Dana Hill' ~['dana'] ~ now)
       ==
     schema
   now
 ++  refine-act
   ^-  action:orr
-  [%message 'Tell Rose' (jo '{"via": "chat", "to": "person/rose", "text": "hi"}') (sy ~['person/rose']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
+  [%message 'Tell Wren' (jo '{"via": "chat", "to": "person/wren", "text": "hi"}') (sy ~['person/wren']) ~ 'mail' now %proposed '' ~[[now %proposed 'mail']]]
 ++  test-refine-check
-  =/  good=json  (jo '{"action": {"title": "Tell Rose and Dana", "payload": {"via": "chat", "to": "person/rose", "text": "hi both"}, "about": ["person/rose", "dana"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/rose"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
+  =/  good=json  (jo '{"action": {"title": "Tell Wren and Dana", "payload": {"via": "chat", "to": "person/wren", "text": "hi both"}, "about": ["person/wren", "dana"], "due": null}, "extras": [{"kind": "task", "title": "Go shopping", "payload": {"notes": "before the dinner"}, "about": ["person/wren"], "due": "2026-09-24T14:00:00Z"}], "refused": ""}')
   =/  got  (refine-check:orr good refine-act 'a1' refine-ctx now)
-  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Rose and Karl", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/rose", "person/karl"]}, "extras": [], "refused": ""}')
-  =/  nobody=json  (jo '{"action": {"title": "Tell Rose", "payload": {"via": "chat", "to": "person/rose", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
+  =/  newbie=json  (jo '{"bodies": [{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}], "action": {"title": "Tell Wren and Karl", "payload": {"via": "chat", "to": "person/wren", "text": "hi"}, "about": ["person/wren", "person/karl"]}, "extras": [], "refused": ""}')
+  =/  nobody=json  (jo '{"action": {"title": "Tell Wren", "payload": {"via": "chat", "to": "person/wren", "text": "hi"}, "about": ["person/nobody"]}, "extras": [], "refused": ""}')
   =/  refused=json  (jo '{"refused": "no person named Karl on the ship"}')
-  =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
-  =/  past=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2020-01-01T00:00:00Z"}, "about": []}], "refused": ""}')
+  =/  badkind=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "x"}, "about": []}, "extras": [{"kind": "home", "title": "Lights", "payload": {}, "about": []}], "refused": ""}')
+  =/  past=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "x"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2020-01-01T00:00:00Z"}, "about": []}], "refused": ""}')
   =/  new-got  (refine-check:orr newbie refine-act 'a1' refine-ctx now)
   =/  no-got  (refine-check:orr nobody refine-act 'a1' refine-ctx now)
   =/  ref-got  (refine-check:orr refused refine-act 'a1' refine-ctx now)
@@ -1575,32 +1575,32 @@
   =/  dashed=json
     %-  jo
     %+  rap  3
-    :~  '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "Rose '
+    :~  '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "Wren '
         em
         ' call me"}, "about": []}, "extras": [{"kind": "calendar", "title": "Dinner", "payload": {"title": "Dinner", "starts": "2026-09-25T18:00:00Z", "ends": null}, "about": []}], "refused": ""}'
     ==
   =/  dash-got  (refine-check:orr dashed refine-act 'a1' refine-ctx now)
   ::  a due written but garbled refuses rather than clearing the time
-  =/  garbled=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": [], "due": "tomorrowish"}, "extras": [], "refused": ""}')
+  =/  garbled=json  (jo '{"action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "x"}, "about": [], "due": "tomorrowish"}, "extras": [], "refused": ""}')
   =/  garbled-got  (refine-check:orr garbled refine-act 'a1' refine-ctx now)
   ::  a created body of a kind a note may not conjure is dropped, so an
   ::  about naming it refuses
-  =/  sit=json  (jo '{"bodies": [{"id": "situation/2026-09-25-dinner", "kind": "situation", "name": "Dinner", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": ["situation/2026-09-25-dinner"]}, "extras": [], "refused": ""}')
+  =/  sit=json  (jo '{"bodies": [{"id": "situation/2026-09-25-dinner", "kind": "situation", "name": "Dinner", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "x"}, "about": ["situation/2026-09-25-dinner"]}, "extras": [], "refused": ""}')
   =/  sit-got  (refine-check:orr sit refine-act 'a1' refine-ctx now)
-  =/  org=json  (jo '{"bodies": [{"id": "org/acme", "kind": "org", "name": "Acme", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/rose", "text": "x"}, "about": ["org/acme"]}, "extras": [], "refused": ""}')
+  =/  org=json  (jo '{"bodies": [{"id": "org/acme", "kind": "org", "name": "Acme", "aliases": []}], "action": {"title": "T", "payload": {"via": "chat", "to": "person/wren", "text": "x"}, "about": ["org/acme"]}, "extras": [], "refused": ""}')
   =/  org-got  (refine-check:orr org refine-act 'a1' refine-ctx now)
   ;:  weld
     (expect !>(?=(%& -.got)))
     (expect-eq !>('due is not a time') !>(?>(?=(%| -.garbled-got) p.garbled-got)))
     (expect-eq !>('no body named situation/2026-09-25-dinner on the ship') !>(?>(?=(%| -.sit-got) p.sit-got)))
     (expect-eq !>(1) !>(?>(?=(%& -.org-got) (lent bodies.p.org-got))))
-    (expect-eq !>('Tell Rose and Dana') !>(?>(?=(%& -.got) title.p.got)))
-    (expect-eq !>(`(list @t)`~['person/rose' 'person/dana-hill']) !>(?>(?=(%& -.got) about.p.got)))
+    (expect-eq !>('Tell Wren and Dana') !>(?>(?=(%& -.got) title.p.got)))
+    (expect-eq !>(`(list @t)`~['person/wren' 'person/dana-hill']) !>(?>(?=(%& -.got) about.p.got)))
     (expect-eq !>(1) !>(?>(?=(%& -.got) (lent extras.p.got))))
     (expect-eq !>('a1') !>(?>(?=(%& -.got) (gs:orr (gj:orr (snag 0 extras.p.got) 'payload') 'refined_from'))))
     ::  a person the note names and the ship lacks is created, not refused
     (expect-eq !>(1) !>(?>(?=(%& -.new-got) (lent bodies.p.new-got))))
-    (expect-eq !>(`(list @t)`~['person/rose' 'person/karl']) !>(?>(?=(%& -.new-got) about.p.new-got)))
+    (expect-eq !>(`(list @t)`~['person/wren' 'person/karl']) !>(?>(?=(%& -.new-got) about.p.new-got)))
     ::  an about id the answer neither knows nor creates refuses
     (expect !>(?=(%| -.no-got)))
     (expect-eq !>('no body named person/nobody on the ship') !>(?>(?=(%| -.no-got) p.no-got)))
@@ -1617,12 +1617,12 @@
     (expect-eq !>(`(list @t)`~['K']) !>(?>(?=(%& -.name-got) (strings:orr (ga:orr (snag 0 bodies.p.name-got) 'aliases')))))
     ::  an em dash in the revised text becomes a comma, and a null ends
     ::  on a calendar extra is no end
-    (expect-eq !>('Rose, call me') !>(?>(?=(%& -.dash-got) (gs:orr payload.p.dash-got 'text'))))
+    (expect-eq !>('Wren, call me') !>(?>(?=(%& -.dash-got) (gs:orr payload.p.dash-got 'text'))))
     (expect-eq !>(1) !>(?>(?=(%& -.dash-got) (lent extras.p.dash-got))))
     (expect !>(?>(?=(%& -.dash-got) !(has-sub (en:json:html (gj:orr (snag 0 extras.p.dash-got) 'payload')) '"ends"'))))
   ==
 ++  test-refine-ops
-  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/rose", "text": "x"}') ~['person/rose' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/rose"]}')] ~]
+  =/  r=refined:orr  [~[(jo '{"id": "person/karl", "kind": "person", "name": "Karl", "aliases": []}')] 'T' (jo '{"via": "chat", "to": "person/wren", "text": "x"}') ~['person/wren' 'person/karl'] ~ ~[(jo '{"kind": "task", "title": "Go shopping", "payload": {"refined_from": "a1"}, "about": ["person/wren"]}')] ~]
   =/  ops=(list json)  (refine-ops:orr r 'a1' 'user' now)
   =/  none=(list json)  (refine-ops:orr r(bodies ~) 'a1' 'user' now)
   ;:  weld

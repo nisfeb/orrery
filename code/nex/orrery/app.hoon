@@ -31,6 +31,7 @@
 ::    /travel.json  /position.json  /geocache.json  /leave-last.json  /leave.sig   time to leave (version 69)
 ::    /trip.json  /trips.json           the trip the owner is on, and what their arrivals taught (version 73)
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
+::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -174,6 +175,9 @@
           [%fall %& [/ %'drives.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'review-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'review.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'nudge-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'rhythm.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
@@ -394,6 +398,17 @@
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
           ::  owner's wake sends one now
+          [~ %'nudge.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
+        |-
+        ;<  ~  bind:m  nudge-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
+        ;<  ~  bind:m  (idle-until-poke /nudge)
+        ;<  ~  bind:m  (cancel-timer:io /nudge)
+        $
+          ::  the day's nudges (version 75): every five minutes, one push
+          ::  at most, three a day, none in the quiet hours
           [~ %'review.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery review: failed")
         |-
@@ -779,6 +794,7 @@
   ?:  =('set-chat' op)  (do-set-chat jon)
   ?:  =('set-mail' op)  (do-set-mail jon)
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
+  ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
   ?:  =('set-travel' op)  (do-set-travel jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
@@ -1308,6 +1324,10 @@
     %get-work               (serve-doc eyre-id %'work.json')
     %get-review-last        (serve-doc eyre-id %'review-last.json')
     %post-review-wake       (serve-prod eyre-id %'review.sig' 'review')
+    %get-nudge-last         (serve-doc eyre-id %'nudge-last.json')
+    %get-rhythm             (serve-rhythm eyre-id)
+    %put-rhythm             (serve-set-doc eyre-id 'set-rhythm' jon)
+    %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
     %get-calendar-last      (serve-doc eyre-id %'calendar-events-last.json')
@@ -4253,6 +4273,8 @@
   ;<  review-last=json  bind:m  (doc %'review-last.json')
   ;<  health=json  bind:m  (doc %'health.json')
   ;<  work=json  bind:m  (doc %'work.json')
+  ;<  nudge-last=json  bind:m  (doc %'nudge-last.json')
+  ;<  rhythm=json  bind:m  (doc %'rhythm.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -4293,6 +4315,8 @@
       ['health_days' (numb:enjs:format ?:(?=([%o *] health) ~(wyt by p.health) 0))]
       ['health_last' (newest-day:orr health)]
       ['work_last' (newest-day:orr work)]
+      ['nudge_last' nudge-last]
+      ['rhythm' (en-rhythm:orr (de-rhythm:orr rhythm))]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -4696,6 +4720,12 @@
   ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
   =/  replies=(list [r=mail-msg:orr root=@t])  (brief-replies-of:orr fresh msgs our seen (brief-texts bl))
   ;<  [handled=(list @t) reply-notes=(list @t)]  bind:m  (brief-replies replies all schema now tz)
+  ::  the owner's replies to the Sunday review: their own words, handed
+  ::  to the read channel (version 75)
+  ;<  rl=json  bind:m  (read-json (rf 0 / %'review-last.json'))
+  =/  review-replies=(list [r=mail-msg:orr root=@t])  (review-replies-of:orr fresh msgs our seen (gs:orr rl 'text'))
+  ;<  ~  bind:m  (review-hand review-replies (gs:orr rl 'day') now)
+  =.  handled  (weld handled (turn review-replies |=([r=mail-msg:orr *] (cat 3 'mail:' id.r))))
   ;<  ~  bind:m  (reader-remember %'mail-seen.json' seen-j handled)
   ::  read again: the write above is what the later writes build on
   ;<  seen-j=json  bind:m  (read-json (rf 0 / %'mail-seen.json'))
@@ -5428,7 +5458,7 @@
   ::  the children the trip is for, so the week counts it as time with
   ::  them (version 74)
   =/  kids=(list @t)
-    =/  mine=(set @t)  (silt (turn (children:orr all multi now) |=([id=@t *] id)))
+    =/  mine=(set @t)  (silt (turn (children:orr all multi now ~) |=([id=@t *] id)))
     ?~  l  ~
     %+  murn  (fall (~(get by (fold:orr rows.u.l multi now)) 'participants') ~)
     |=(r=row:orr =/(k (ref-or-text:orr value.obs.r) ?:((~(has in mine) k) `k ~)))
@@ -5754,14 +5784,31 @@
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  multi=(set @t)  (multi-of:orr schema)
   =/  [from=@da to=@da]  (day-bounds:orr day tz)
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
   ;<  cal=exec-cal  bind:m  (read-calendar ~)
   ;<  cache=(unit cal-cache:orr)  bind:m  (calendar-cache base.cal)
   =/  store=json  (fall store.cal [%o ~])
+  ::  the habits behind this week, in the day's free time (version 75);
+  ::  joined under a type first, since zing straight into weld loops the
+  ::  compiler (fuse-loop)
+  =/  habit-lines=(list @t)
+    =/  r=rhythm:orr  (de-rhythm:orr rhythm-j)
+    =/  hs=(list habit:orr)  (habits:orr all multi now tz)
+    =/  busy=(list [@da @da])  (day-busy:orr all multi now from (add to ~h6))
+    =/  per=(list (list @t))
+      %+  turn  (habit-windows:orr day tz r)
+      |=  [f=@da t=@da]
+      ^-  (list @t)
+      ?.  (gth t now)  ~
+      (turn (plan-habits:orr hs busy (max f now) t per-window.r) |=([h=habit:orr s=@da e=@da] (habit-line:orr h s tz)))
+    (zing per)
   =/  today=(list @t)
-    %:  brief-today:orr
-      (events-in:orr store &)  ?~(cache *cal-order:orr order.u.cache)  (todos-of:orr store)
-      all  multi  from  to  tz
-    ==
+    %+  weld
+      %:  brief-today:orr
+        (events-in:orr store &)  ?~(cache *cal-order:orr order.u.cache)  (todos-of:orr store)
+        all  multi  from  to  tz
+      ==
+    habit-lines
   =/  waiting  (brief-waiting:orr acts all tz)
   =/  decided=(list [id=@ta a=action:orr])
     %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
@@ -5824,6 +5871,143 @@
       ['map' s+overlay]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
+::  +nudge-pass: one nudge, when one is due (version 75). Never in the
+::  owner's quiet hours, never past three a day on their clock, never in
+::  the half hour before a leave alert. In order: a habit whose slot in
+::  one of the owner's windows begins now; at the computer ten minutes
+::  into the owner's family time, a word to step away; ninety minutes or
+::  more at the desk, a walk; and, once the owner has a steps target or
+::  a baseline, from three in the afternoon until family time or seven,
+::  a walk while free when the steps are under half of it. Each once a
+::  day, the desk once a stretch. The times are the owner's rhythm.json
+::
+++  nudge-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  owner-tz
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  =/  r=rhythm:orr  (de-rhythm:orr rhythm-j)
+  ?:  (quiet-hour:orr now tz r)  (pure:m ~)
+  =/  day=@t  (local-day:orr now tz)
+  ;<  last=json  bind:m  (read-json (rf 0 / %'nudge-last.json'))
+  =/  sent=(list json)  (sent-today:orr last day)
+  ?:  (gte (lent sent) 3)  (pure:m ~)
+  =/  keys=(set @t)  (silt (turn sent |=(j=json (gs:orr j 'key'))))
+  ;<  ll=json  bind:m  (read-json (rf 0 / %'leave-last.json'))
+  =/  lb=(unit @da)  (de-iso:orr (gs:orr (gj:orr ll 'next') 'leave_by'))
+  ?:  &(?=(^ lb) (gth u.lb now) (lth u.lb (add now ~m30)))  (pure:m ~)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  ;<  work-j=json  bind:m  (read-json (rf 0 / %'work.json'))
+  ;<  health-j=json  bind:m  (read-json (rf 0 / %'health.json'))
+  =/  mins=@ud  (clock-minutes:orr now tz)
+  =/  blocks  (spans:orr (ga:orr (gj:orr work-j day) 'blocks'))
+  =/  busy=(list [@da @da])  (day-busy:orr all multi now (at-clock:orr day 0 tz) (at-clock:orr day 1.440 tz))
+  ::  a habit whose slot begins now, in whichever of the owner's windows
+  ::  holds it
+  =/  hs=(list habit:orr)  (habits:orr all multi now tz)
+  =/  soon=@da  (sub now (min now ~m5))
+  =/  planned=(list (list [h=habit:orr start=@da end=@da]))
+    %+  turn  (habit-windows:orr day tz r)
+    |=  [f=@da t=@da]
+    ^-  (list [h=habit:orr start=@da end=@da])
+    ?.  (gth t soon)  ~
+    (plan-habits:orr hs busy (max f soon) t per-window.r)
+  =/  flat=(list [h=habit:orr start=@da end=@da])  (zing planned)
+  =/  slot=(list [h=habit:orr start=@da end=@da])
+    %+  skim  flat
+    |=  [h=habit:orr start=@da end=@da]
+    &((lte start now) (lth now (add start ~m10)) !(~(has in keys) (cat 3 'habit/' id.h)))
+  ::  at the computer in the owner's family time, ten minutes or more of
+  ::  it: the owner's own word for working late
+  =/  in-family=?  ?~(family.r | (in-span:orr mins from.u.family.r to.u.family.r))
+  =/  family-desk=?
+    ?.  in-family  |
+    ?~  family.r  |
+    =/  begun=@da  (at-clock:orr day from.u.family.r tz)
+    %+  lien  blocks
+    |=  [s=@da e=@da *]
+    &((gte e (sub now (min now ~m7))) (gte (sub e (min e (max s begun))) ~m10))
+  =/  stretch=(unit [start=@da mins=@ud])  (desk-stretch:orr blocks now)
+  ::  the steps aim: the owner's target, else a notch above the baseline
+  =/  me=(unit loaded:orr)  (loaded-of:orr all 'person/me')
+  =/  aim=(unit @ud)
+    =/  said=(unit @ud)
+      ?~  me  ~
+      =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.me multi now)) 'steps-target') ~)
+      ?~(r ~ (rush (ref-or-text:orr value.obs.i.r) dem))
+    ?^  said  said
+    =/  base  (baseline:orr health-j day tz)
+    ?~(base ~ `steps:(targets-of:orr u.base))
+  =/  steps=(unit @ud)  (gn:orr (gj:orr health-j day) 'steps')
+  =/  free=(unit [start=@da end=@da])  (free-slot:orr busy now (add now ~m40) ~m30)
+  =/  pick=(unit [kind=@t key=@t title=@t body=@t])
+    ?^  slot
+      =/  h=habit:orr  h.i.slot
+      :-  ~
+      :^  'habit'  (cat 3 'habit/' id.h)  (rap 3 'Free now: ' name.h '?' ~)
+      (rap 3 (hours:orr minutes.h) ' until ' (hhmm:orr end.i.slot tz) '. ' (crip (a-co:co done.h)) ' of ' (crip (a-co:co per-week.h)) ' this week.' ~)
+    ?:  &(family-desk !(~(has in keys) 'family'))
+      `['family' 'family' 'Family time' 'You are still at the computer. Step away?']
+    ?:  &(?=(^ stretch) !(~(has in keys) (cat 3 'desk/' (crip (a-co:co (ms-of:orr start.u.stretch))))))
+      `['desk' (cat 3 'desk/' (crip (a-co:co (ms-of:orr start.u.stretch)))) (rap 3 (hours:orr mins.u.stretch) ' at the desk' ~) 'Walk for ten?']
+    ?:  ?&  (gte mins 900)  (lth mins ?~(family.r 1.140 (min 1.140 from.u.family.r)))
+            ?=(^ aim)  ?=(^ steps)  ?=(^ free)
+            (lth (mul 2 u.steps) u.aim)  !(~(has in keys) 'move')
+        ==
+      `['move' 'move' (rap 3 'Free till ' (hhmm:orr end.u.free tz) ': walk twenty?' ~) (rap 3 (crip (a-co:co u.steps)) ' steps so far today.' ~)]
+    ~
+  ?~  pick  (pure:m ~)
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  err=(unit tang)  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title.u.pick body.u.pick ~ `'/apps/orrery' `(cat 3 'orrery-nudge-' kind.u.pick)]] eny]]
+  =/  one=json
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]  ['kind' s+kind.u.pick]  ['key' s+key.u.pick]
+        ['title' s+title.u.pick]  ['body' s+body.u.pick]  ['pushed' b+?=(~ err)]
+    ==
+  %+  over:io  (rf 0 / %'nudge-last.json')
+  [[/ %json] (pairs:enjs:format ~[['day' s+day] ['sent' a+(snoc sent one)]])]
+::  +serve-rhythm: the owner's day as set, every field with its default
+::  filled in (version 75)
+::
+++  serve-rhythm
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'rhythm.json'))
+  (send-json eyre-id 200 (en-rhythm:orr (de-rhythm:orr doc)))
+::  +review-hand: each of the owner's replies to the Sunday review, the
+::  quoted review stripped, handed to the read channel as their own words
+::  with the review it answers named (version 75)
+::
+++  review-hand
+  |=  [replies=(list [r=mail-msg:orr root=@t]) day=@t now=@da]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  |-
+  ?~  replies  (pure:m ~)
+  =/  words=@t  (own-words:orr body.r.i.replies root.i.replies)
+  ?:  =('' words)  $(replies t.replies)
+  =/  text=@t  (rap 3 'The owner\'s reply to their Sunday review of the week to ' day ':' nl:orr nl:orr words ~)
+  =/  id=@t  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (scot %ux (end [3 4] (sham text id.r.i.replies))) ~)
+  =/  item=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        ['text' s+text]
+        ['title' s+(cat 3 'Reply to the review of ' day)]
+        ['source' (pairs:enjs:format ~[['kind' s+'mail'] ['id' s+(cat 3 'review/' day)]])]
+        ['who' s+'person/me']
+        ['at' s+(en-iso:orr now)]
+        ['by' s+'owner']
+        ['scope' ~]
+    ==
+  ;<  *  bind:m  (make-soft:io (rf 0 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
+  ;<  ~  bind:m  (over:io (rf 0 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+  $(replies t.replies)
 ::  +review-send: the week's review (version 74), unless one went today
 ::  already (the owner's wake sends another): the last seven days' work
 ::  and health as the computer and the phone reported them, how many of
@@ -5870,7 +6054,8 @@
     =/  doc=json  (gj:orr health-j (end [3 10] (en-iso:orr (sub midnight (mul n ~d1)))))
     ?:  |(=(~ doc) =([%b &] (gj:orr doc 'partial')))  c
     +(c)
-  =/  kids  (children:orr all multi now)
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  =/  kids  (children:orr all multi now young:(de-rhythm:orr rhythm-j))
   =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
   =/  drives=(list [at=@da kids=(list @t)])
     %+  murn  (ga:orr drives-j 'drives')
@@ -5881,7 +6066,55 @@
   =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
   =/  behind=(unit @t)  (kid-behind:orr tally)
   =/  ahead=(list @t)  (week-ahead:orr (appointments-ahead:orr all multi now ~d7) tz)
-  =/  text=@t  (review-render:orr day tz work health seen tally behind ahead)
+  ::  habits this week, and the targets: the owner's, or a notch above
+  ::  the baseline proposed once, when it is in (version 75)
+  =/  hs=(list habit:orr)  (habits:orr all multi now tz)
+  =/  me=(unit loaded:orr)  (loaded-of:orr all 'person/me')
+  =/  mine
+    |=  a=@t
+    ^-  @t
+    ?~  me  ''
+    =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.me multi now)) a) ~)
+    ?~(r '' (ref-or-text:orr value.obs.i.r))
+  =/  set-targets=?  |(!=('' (mine 'steps-target')) !=('' (mine 'sleep-target')) !=('' (mine 'bedtime-target')))
+  =/  base  (baseline:orr health-j day tz)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  proposed-before=?
+    %+  lien  acts
+    |=([* a=action:orr] &(=(%fact kind.a) =('steps-target' (gs:orr payload.a 'attr'))))
+  =/  propose=(list json)
+    ?:  |(set-targets proposed-before ?=(~ base))  ~
+    =/  t  (targets-of:orr u.base)
+    =/  fact
+      |=  [attr=@t value=json title=@t]
+      ^-  json
+      %-  pairs:enjs:format
+      :~  ['kind' s+'fact']
+          ['title' s+title]
+          ['about' a+~[s+'person/me']]
+          ['payload' (pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+attr] ['value' value]])]
+      ==
+    :~  (fact 'steps-target' (numb:enjs:format steps.t) (rap 3 'Aim for ' (crip (a-co:co steps.t)) ' steps a day (your normal is ' (crip (a-co:co steps.u.base)) ')' ~))
+        (fact 'sleep-target' (numb:enjs:format sleep.t) (rap 3 'Aim for ' (hours:orr sleep.t) ' of sleep (your normal is ' (hours:orr sleep.u.base) ')' ~))
+        (fact 'bedtime-target' s+bed.t (rap 3 'Aim to be in bed by ' bed.t ~))
+    ==
+  ;<  *  bind:m
+    %+  file-ops-on
+      (turn propose |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now 'ship')]])))
+    /review
+  =/  extra=(list [head=@t lines=(list @t)])
+    :~  :-  'Habits'
+        (turn hs |=(h=habit:orr (rap 3 name.h ': ' (crip (a-co:co done.h)) ' of ' (crip (a-co:co per-week.h)) ' this week' ~)))
+        :-  'Targets'
+        ?:  set-targets
+          %+  murn
+            ^-  (list [@t @t])
+            ~[['steps a day' (mine 'steps-target')] ['minutes of sleep' (mine 'sleep-target')] ['in bed by' (mine 'bedtime-target')]]
+          |=([what=@t v=@t] ?:(=('' v) ~ `(rap 3 what ': ' v ~)))
+        ?~  propose  ~
+        ~['Your baseline is in: three targets a notch above it wait on you, on the page or in tomorrow\'s brief.']
+    ==
+  =/  text=@t  (review-render:orr day tz work health seen tally behind ahead extra)
   ;<  aus=(unit path)  bind:m  (find-base %auspex)
   ;<  sent=(unit @t)  bind:m
     =/  n  (fiber:fiber:nexus ,(unit @t))
