@@ -32,6 +32,7 @@
 ::    /trip.json  /trips.json           the trip the owner is on, and what their arrivals taught (version 73)
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
+::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -177,6 +178,11 @@
           [%fall %& [/ %'review.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'rhythm.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'outdoors.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'weather.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'parks-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'weather.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'parks.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
@@ -398,6 +404,28 @@
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
           ::  owner's wake sends one now
+          [~ %'weather.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery weather: failed")
+        |-
+        ;<  ~  bind:m  weather-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /weather (add now ~m30))
+        ;<  ~  bind:m  (idle-until-poke /weather)
+        ;<  ~  bind:m  (cancel-timer:io /weather)
+        $
+          ::  the weather (version 76): the forecast every two hours and
+          ::  the alerts every half hour, for the owner's point
+          [~ %'parks.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery parks: failed")
+        |-
+        ;<  ~  bind:m  parks-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /parks (add now ~h12))
+        ;<  ~  bind:m  (idle-until-poke /parks)
+        ;<  ~  bind:m  (cancel-timer:io /parks)
+        $
+          ::  the parks near the owner (version 76): weekly, or when the
+          ::  owner changes the location or the distance
           [~ %'nudge.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
         |-
@@ -795,6 +823,7 @@
   ?:  =('set-mail' op)  (do-set-mail jon)
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
   ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
+  ?:  =('set-outdoors' op)  (do-set-outdoors jon)
   ?:  =('set-travel' op)  (do-set-travel jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
@@ -1327,6 +1356,9 @@
     %get-nudge-last         (serve-doc eyre-id %'nudge-last.json')
     %get-rhythm             (serve-rhythm eyre-id)
     %put-rhythm             (serve-set-doc eyre-id 'set-rhythm' jon)
+    %get-outdoors           (serve-outdoors eyre-id)
+    %put-outdoors           (serve-set-doc eyre-id 'set-outdoors' jon)
+    %get-weather            (serve-weather eyre-id)
     %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
@@ -2847,6 +2879,8 @@
       %'set-mail'       [%o (merge-settings:orr base p.jon ~)]
       %'set-read'       [%o (merge-settings:orr base p.jon ~)]
       %'set-travel'     [%o (merge-settings:orr base p.jon (sy ~['token']))]
+      %'set-rhythm'     [%o (merge-settings:orr base p.jon ~)]
+      %'set-outdoors'   [%o (merge-settings:orr base p.jon ~)]
     ==
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   %^  write-then  eyre-id  pk
@@ -3890,6 +3924,17 @@
   ;<  ~  bind:m  (note-by 'set-travel' & '' 'http')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'leave.sig') [[/ %sig] ~])
   (pure:m |)
+::  +do-set-outdoors: the weather and parks settings, merged; both
+::  loops wake to take them (version 76)
+::
+++  do-set-outdoors
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  b=?  bind:m  (do-set-merged jon %'outdoors.json' 'set-outdoors')
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'weather.sig') [[/ %sig] ~])
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'parks.sig') [[/ %sig] ~])
+  (pure:m b)
 ::  +do-set-telegram: merge the owner's reader settings over the stored
 ::  ones. A blank or missing token or webhook secret keeps the stored
 ::  one, so the page can save every other field without holding either
@@ -4275,6 +4320,9 @@
   ;<  work=json  bind:m  (doc %'work.json')
   ;<  nudge-last=json  bind:m  (doc %'nudge-last.json')
   ;<  rhythm=json  bind:m  (doc %'rhythm.json')
+  ;<  outdoors=json  bind:m  (doc %'outdoors.json')
+  ;<  weather=json  bind:m  (doc %'weather.json')
+  ;<  parks-last=json  bind:m  (doc %'parks-last.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -4317,6 +4365,9 @@
       ['work_last' (newest-day:orr work)]
       ['nudge_last' nudge-last]
       ['rhythm' (en-rhythm:orr (de-rhythm:orr rhythm))]
+      ['outdoors' (en-outdoors:orr (de-outdoors:orr outdoors))]
+      ['weather_last' (pairs:enjs:format ~[['forecast_at' s+(gs:orr weather 'forecast_at')] ['note' s+(gs:orr weather 'note')] ['alerts' (numb:enjs:format (lent (ga:orr weather 'alerts')))]])]
+      ['parks_last' parks-last]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -5357,12 +5408,17 @@
   ^-  form:m
   ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
   =/  cfg=travel-config:orr  (de-travel-config:orr cfg-j)
-  ?.  enabled.cfg  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
   ;<  last=json  bind:m  (read-json (rf 0 / %'leave-last.json'))
   =/  alerted=(list @t)  (strings:orr (ga:orr last 'alerted'))
   ::  the occurrences the phone showed needed no alert (version 72)
   =/  quiet=(list @t)  (strings:orr (ga:orr last 'quiet'))
+  ::  off, no plan stands: the phone's alarm and the nudges stand down
+  ::  (version 76)
+  ?.  enabled.cfg
+    ?:  =(~ (gj:orr last 'next'))  (pure:m ~)
+    ;<  ~  bind:m  (leave-record last now ~['time to leave is off'] ~ alerted quiet)
+    (pure:m ~)
   ?:  =('' token.cfg)
     ;<  ~  bind:m  (leave-record last now ~['no Mapbox token is set'] ~ alerted quiet)
     (pure:m ~)
@@ -5378,8 +5434,17 @@
     (pure:m ~)
   =/  a=appointment:orr  i.mine
   =/  key=@t  (appt-key:orr a)
-  ?:  (lien alerted |=(k=@t =(k key)))
-    (pure:m `(add starts.a ~m1))
+  ::  alerted already: one more look three minutes before the leave-by
+  ::  (version 76), else nothing until it starts
+  =/  sent=?  (lien alerted |=(k=@t =(k key)))
+  =/  nx=json  (gj:orr last 'next')
+  =/  wait=(unit @da)
+    ?.  sent  ~
+    %:  after-alert:orr  now  starts.a
+      ?.(=(key (gs:orr nx 'key')) ~ (de-iso:orr (gs:orr nx 'leave_by')))
+      ?=([%b %.y] (gj:orr nx 'rechecked'))
+    ==
+  ?^  wait  (pure:m wait)
   ;<  got-dest=[pt=(unit [lat=@t lon=@t]) why=@t]  bind:m  (point-of cfg all multi now a)
   =/  dest  pt.got-dest
   ?~  dest
@@ -5422,7 +5487,11 @@
   ;<  trips=json  bind:m  (read-json (rf 0 / %'trips.json'))
   =/  spot=@t  (spot-key:orr a)
   =/  extra=@dr  (learned-extra:orr (murn (ga:orr trips spot) whole:orr))
-  =/  buffer=@dr  (add buffer.cfg extra)
+  ::  and what the weather at the leaving hour adds (version 76)
+  ;<  wx=json  bind:m  (read-json (rf 0 / %'weather.json'))
+  =/  wet=[extra=@dr why=@t]
+    (weather-extra:orr (de-periods:orr (ga:orr wx 'hourly')) (max now (sub starts.a (min starts.a (mul ~s1 u.secs)))))
+  =/  buffer=@dr  :(add buffer.cfg extra extra.wet)
   =/  [leave=@da alert=@da]  (leave-times:orr starts.a u.secs buffer lead.cfg)
   ;<  tz=@t  bind:m  owner-tz
   =/  minutes=@ud  (div (add u.secs 30) 60)
@@ -5454,6 +5523,8 @@
         ['via' s+via.why]
         ['incident' s+incident.why]
         ['learned_min' (numb:enjs:format (div extra ~m1))]
+        ['weather_min' (numb:enjs:format (div extra.wet ~m1))]
+        ['weather' s+why.wet]
     ==
   ::  the children the trip is for, so the week counts it as time with
   ::  them (version 74)
@@ -5463,11 +5534,45 @@
     %+  murn  (fall (~(get by (fold:orr rows.u.l multi now)) 'participants') ~)
     |=(r=row:orr =/(k (ref-or-text:orr value.obs.r) ?:((~(has in mine) k) `k ~)))
   =/  trip=json  (trip-doc a key leave u.dest buffer spot tell via kids now)
+  =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
+  =/  for=@t
+    ?-  leg.a
+      %go    (cat 3 'for ' name.a)
+      %drop  (cat 3 'to drop off at ' name.a)
+      %pick  (cat 3 'to pick up at ' name.a)
+    ==
+  ::  the look after the alert (version 76): a second push only when the
+  ::  leave-by came five minutes or more sooner and the phone does not
+  ::  show the owner gone already; the same tag, so it replaces the first
+  ?:  sent
+    ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+    =/  hush=(unit @t)
+      (leave-quiet:orr u.secs longest kind.u.from (gs:orr pos 'acc') (de-iso:orr (gs:orr pos 'at')) now verdict.a)
+    =/  kept=json  (set-key:orr (set-key:orr plan 'alert_at' (gj:orr nx 'alert_at')) 'rechecked' b+&)
+    ?.  &(?=(~ hush) ?=(^ was) (lte (add leave ~m5) u.was))
+      ;<  ~  bind:m  (leave-record last now ~[(rap 3 'looked again before leaving ' for ': no worse' ~)] kept alerted quiet)
+      (pure:m `(add starts.a ~m1))
+    =/  title=@t
+      %+  rap  3
+      :~  ?:(=(0 left) 'Leave now' (rap 3 'Leave in ' (scot %ud left) ' min' ~))
+          ': traffic got worse, '  (scot %ud minutes)  ' min'
+      ==
+    =/  body=@t
+      %+  rap  3
+      :~  (drive-line:orr u.secs typical.why via.why)
+          '; leave by '  (hhmm:orr leave tz)
+          ?:(=('' incident.why) '' (cat 3 '. ' incident.why))
+      ==
+    ;<  eny=@uvJ  bind:m  get-entropy:io
+    ;<  err=(unit tang)  bind:m
+      %+  poke-soft:io  push-road:io
+      [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
+    =/  note=@t  ?~(err (rap 3 'told the owner traffic got worse ' for ~) 'the push road is refused')
+    ;<  ~  bind:m  (leave-record last now ~[note] kept alerted quiet)
+    (pure:m `(add starts.a ~m1))
   ?.  (lte alert (add now ~s30))
     ;<  ~  bind:m  (leave-record last now ~ plan alerted quiet)
-    =/  points=(list @da)
-      (skim `(list @da)`~[(sub alert ~m30) (sub alert ~m15) (sub alert ~m5) alert] |=(t=@da (gth t now)))
-    (pure:m ?~(points `alert `i.points))
+    (pure:m `(next-look:orr now leave alert u.secs))
   ::  none where the phone shows none is needed: the record's next goes
   ::  empty, so the phone's alarm stands down, and the key goes in
   ::  quiet, not alerted, since no push went
@@ -5484,13 +5589,6 @@
     (pure:m `(add now ~s5))
   ::  the alert: once per occurrence; its tag lets the phone cancel the
   ::  alarm it set in case this push did not come
-  =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
-  =/  for=@t
-    ?-  leg.a
-      %go    (cat 3 'for ' name.a)
-      %drop  (cat 3 'to drop off at ' name.a)
-      %pick  (cat 3 'to pick up at ' name.a)
-    ==
   =/  title=@t
     ?:  =(0 left)  (rap 3 'Leave now ' for ~)
     (rap 3 'Leave in ' (scot %ud left) ' min ' for ~)
@@ -5499,6 +5597,7 @@
     :~  (drive-line:orr u.secs typical.why via.why)
         '; leave by '  (hhmm:orr leave tz)
         ?:(=('' incident.why) '' (cat 3 '. ' incident.why))
+        ?:(=('' why.wet) '' (rap 3 '. ' (scot %ud (div extra.wet ~m1)) ' min more for ' why.wet ~))
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] trip])
   ;<  eny=@uvJ  bind:m  get-entropy:io
@@ -5507,7 +5606,8 @@
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
   =/  note=@t  ?~(err (rap 3 'told the owner to leave ' for ~) 'the push road is refused')
   ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted] quiet)
-  (pure:m `(add starts.a ~m1))
+  =/  look=@da  (sub leave (min leave ~m3))
+  (pure:m ?:((gth look now) `look `(add starts.a ~m1)))
 ::  ==  on the way (version 73)
 ::
 ::  +late-contact: whom to tell when the owner runs late, and how: who
@@ -5794,7 +5894,7 @@
   =/  habit-lines=(list @t)
     =/  r=rhythm:orr  (de-rhythm:orr rhythm-j)
     =/  hs=(list habit:orr)  (habits:orr all multi now tz)
-    =/  busy=(list [@da @da])  (day-busy:orr all multi now from (add to ~h6))
+    =/  busy=(list [@da @da])  (weld (day-busy:orr all multi now from (add to ~h6)) (family-busy:orr day tz r))
     =/  per=(list (list @t))
       %+  turn  (habit-windows:orr day tz r)
       |=  [f=@da t=@da]
@@ -5802,13 +5902,17 @@
       ?.  (gth t now)  ~
       (turn (plan-habits:orr hs busy (max f now) t per-window.r) |=([h=habit:orr s=@da e=@da] (habit-line:orr h s tz)))
     (zing per)
+  ;<  wx=json  bind:m  (read-json (rf 0 / %'weather.json'))
+  =/  outdoor=(list @t)  (outdoor-lines:orr wx all multi now to tz)
   =/  today=(list @t)
-    %+  weld
+    ;:  weld
       %:  brief-today:orr
         (events-in:orr store &)  ?~(cache *cal-order:orr order.u.cache)  (todos-of:orr store)
         all  multi  from  to  tz
       ==
-    habit-lines
+      habit-lines
+      outdoor
+    ==
   =/  waiting  (brief-waiting:orr acts all tz)
   =/  decided=(list [id=@ta a=action:orr])
     %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
@@ -5904,7 +6008,7 @@
   ;<  health-j=json  bind:m  (read-json (rf 0 / %'health.json'))
   =/  mins=@ud  (clock-minutes:orr now tz)
   =/  blocks  (spans:orr (ga:orr (gj:orr work-j day) 'blocks'))
-  =/  busy=(list [@da @da])  (day-busy:orr all multi now (at-clock:orr day 0 tz) (at-clock:orr day 1.440 tz))
+  =/  busy=(list [@da @da])  (weld (day-busy:orr all multi now (at-clock:orr day 0 tz) (at-clock:orr day 1.440 tz)) (family-busy:orr day tz r))
   ::  a habit whose slot begins now, in whichever of the owner's windows
   ::  holds it
   =/  hs=(list habit:orr)  (habits:orr all multi now tz)
@@ -5971,6 +6075,143 @@
     ==
   %+  over:io  (rf 0 / %'nudge-last.json')
   [[/ %json] (pairs:enjs:format ~[['day' s+day] ['sent' a+(snoc sent one)]])]
+::  +serve-outdoors: the weather and parks settings, defaults filled in
+::
+++  serve-outdoors
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'outdoors.json'))
+  (send-json eyre-id 200 (en-outdoors:orr (de-outdoors:orr doc)))
+::  +serve-weather: the forecast and the alerts the ship holds, without
+::  the point they are for
+::
+++  serve-weather
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  w=json  bind:m  (read-json (rf 1 / %'weather.json'))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['forecast_at' s+(gs:orr w 'forecast_at')]  ['alerts_at' s+(gs:orr w 'alerts_at')]
+      ['periods' (gj:orr w 'periods')]  ['alerts' (gj:orr w 'alerts')]  ['note' s+(gs:orr w 'note')]
+  ==
+::  +weather-point: where the owner's weather is: home's point, else
+::  their phone's last; ~ when the ship knows neither
+::
+++  weather-point
+  =/  m  (fiber:fiber:nexus ,(unit [lat=@t lon=@t]))
+  ^-  form:m
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  =/  home=(unit loaded:orr)  (loaded-of:orr all 'place/home')
+  =/  g=(list row:orr)  ?~(home ~ (fall (~(get by (fold:orr rows.u.home (multi-of:orr schema) now)) 'geo') ~))
+  =/  hp  ?~(g ~ (geo-of:orr value.obs.i.g))
+  ?^  hp  (pure:m hp)
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  (pure:m ~)
+  (pure:m `[(gs:orr pos 'lat') (gs:orr pos 'lon')])
+::  +weather-pass: the weather for the owner's point, kept in weather.json
+::  (version 76): the grid once per point, the daily and hourly forecasts
+::  every two hours (the hourly cut to the next two days), the alerts in
+::  force every pass. A failed call keeps what was held
+::
+++  weather-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  o-j=json  bind:m  (read-json (rf 0 / %'outdoors.json'))
+  =/  o=outdoors:orr  (de-outdoors:orr o-j)
+  ::  off, nothing held: the leave times and the brief read none
+  ?.  weather.o  (over:io (rf 0 / %'weather.json') [[/ %json] [%o ~]])
+  ;<  now=@da  bind:m  get-time:io
+  ;<  pt=(unit [lat=@t lon=@t])  bind:m  weather-point
+  ;<  w=json  bind:m  (read-json (rf 0 / %'weather.json'))
+  ?~  pt
+    (over:io (rf 0 / %'weather.json') [[/ %json] (set-key:orr w 'note' s+'no point: no home with a geo and no position from the phone')])
+  =/  key=@t  (rap 3 (coarse:orr lat.u.pt) ',' (coarse:orr lon.u.pt) ~)
+  =/  hdrs=(list [key=@t value=@t])  ~[['user-agent' weather-agent:orr] ['accept' 'application/geo+json']]
+  =/  same=?  &(=(key (gs:orr w 'point')) =(nws.o (gs:orr w 'api')))
+  ;<  grid=[fc=@t hr=@t]  bind:m
+    =/  n  (fiber:fiber:nexus ,[@t @t])
+    ?:  &(same !=('' (gs:orr w 'forecast_url')))  (pure:n [(gs:orr w 'forecast_url') (gs:orr w 'hourly_url')])
+    ;<  got=[status=@ud body=@t secs=@ud]  bind:n  (fetch-json [%'GET' (rap 3 nws.o '/points/' key ~) hdrs ~] ~s30 %nws)
+    ?.  =(200 status.got)  (pure:n ['' ''])
+    =/  pp=json  (gj:orr (fall (de:json:html body.got) ~) 'properties')
+    (pure:n [(gs:orr pp 'forecast') (gs:orr pp 'forecastHourly')])
+  ?:  =('' fc.grid)
+    (over:io (rf 0 / %'weather.json') [[/ %json] (set-key:orr w 'note' s+'the weather service gave no forecast for this point')])
+  =/  stale=?  |(!same (gte now (add (fall (de-iso:orr (gs:orr w 'forecast_at')) *@da) ~h2)))
+  ;<  fresh=[days=json hours=json at=@t]  bind:m
+    =/  n  (fiber:fiber:nexus ,[json json @t])
+    ?.  stale  (pure:n [(gj:orr w 'periods') (gj:orr w 'hourly') (gs:orr w 'forecast_at')])
+    ;<  f=[status=@ud body=@t secs=@ud]  bind:n  (fetch-json [%'GET' fc.grid hdrs ~] ~s30 %nws)
+    ;<  h=[status=@ud body=@t secs=@ud]  bind:n  (fetch-json [%'GET' hr.grid hdrs ~] ~m1 %nws)
+    =/  dps=(list period:orr)
+      ?.  =(200 status.f)  (de-periods:orr (ga:orr w 'periods'))
+      (nws-periods:orr (fall (de:json:html body.f) ~))
+    =/  hps=(list period:orr)
+      ?.  =(200 status.h)  (de-periods:orr (ga:orr w 'hourly'))
+      (scag 48 (skim (nws-periods:orr (fall (de:json:html body.h) ~)) |=(p=period:orr (gth end.p now))))
+    (pure:n [a+(turn dps en-period:orr) a+(turn hps en-period:orr) ?:(=(200 status.f) (en-iso:orr now) (gs:orr w 'forecast_at'))])
+  ;<  a=[status=@ud body=@t secs=@ud]  bind:m
+    (fetch-json [%'GET' (rap 3 nws.o '/alerts/active?point=' key ~) hdrs ~] ~s30 %nws)
+  =/  alerts=json
+    ?.  =(200 status.a)  (gj:orr w 'alerts')
+    a+(turn (nws-alerts:orr (fall (de:json:html body.a) ~)) en-alert:orr)
+  %+  over:io  (rf 0 / %'weather.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['point' s+key]  ['api' s+nws.o]  ['forecast_url' s+fc.grid]  ['hourly_url' s+hr.grid]
+      ['forecast_at' s+at.fresh]  ['periods' days.fresh]  ['hourly' hours.fresh]
+      ['alerts' alerts]  ['alerts_at' s+(en-iso:orr now)]  ['note' s+'']
+  ==
+::  +parks-pass: the POTA parks within the owner's distance of their
+::  point, each a place (version 76): weekly, or when the owner changes
+::  the location or the distance; a park the ship holds already is left
+::  as it is, so the owner's own facts on it stay
+::
+++  parks-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  o-j=json  bind:m  (read-json (rf 0 / %'outdoors.json'))
+  =/  o=outdoors:orr  (de-outdoors:orr o-j)
+  ?.  &(pota.o !=('' location.o))  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'parks-last.json'))
+  =/  same=?  &(=(location.o (gs:orr last 'location')) =(`radius.o (gn:orr last 'radius_km')))
+  ?:  &(same (lth now (add (fall (de-iso:orr (gs:orr last 'at')) *@da) ~d7)))  (pure:m ~)
+  =/  record
+    |=  [note=@t near=@ud added=@ud]
+    %+  over:io  (rf 0 / %'parks-last.json')
+    :-  [/ %json]
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]  ['location' s+location.o]  ['radius_km' (numb:enjs:format radius.o)]
+        ['near' (numb:enjs:format near)]  ['added' (numb:enjs:format added)]  ['note' s+note]
+    ==
+  ;<  pt=(unit [lat=@t lon=@t])  bind:m  weather-point
+  ?~  pt  (record 'no point: no home with a geo and no position from the phone' 0 0)
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (fetch-json [%'GET' (rap 3 pota-api.o '/locations/' location.o ~) ~[['accept' 'application/json']] ~] ~m1 %pota)
+  ?.  =(200 status.got)  (record (cat 3 'the POTA service answered ' (crip (a-co:co status.got))) 0 0)
+  =/  near  (parks-within:orr (pota-parks:orr (fall (de:json:html body.got) ~)) u.pt (mul radius.o 1.000))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  have=(set @t)  (silt (turn all |=(l=loaded:orr id.l)))
+  =/  new=(list [p=pota-park:orr m=@ud])  (skip near |=([p=pota-park:orr *] (~(has in have) (park-id:orr ref.p))))
+  =/  bodies=(list json)
+    (turn new |=([p=pota-park:orr *] (pairs:enjs:format ~[['id' s+(park-id:orr ref.p)] ['name' s+name.p]])))
+  =/  rows=(list json)
+    %-  zing
+    %+  turn  new
+    |=  [p=pota-park:orr *]
+    =/  id=@t  (park-id:orr ref.p)
+    =/  src=[@t @t]  ['pota' ref.p]
+    :~  (obs-row:orr id 'type' s+'POTA park' now ~ 100 src 'ship')
+        (obs-row:orr id 'pota' s+ref.p now ~ 100 src 'ship')
+        (obs-row:orr id 'geo' s+(rap 3 lat.p ',' lon.p ~) now ~ 100 src 'ship')
+    ==
+  ;<  *  bind:m  (file-ops-on (observe-ops:orr bodies rows) /parks)
+  (record '' (lent near) (lent new))
 ::  +serve-rhythm: the owner's day as set, every field with its default
 ::  filled in (version 75)
 ::
@@ -6062,8 +6303,8 @@
     |=  j=json
     =/  at=(unit @da)  (de-iso:orr (gs:orr j 'at'))
     ?~(at ~ `[u.at (strings:orr (ga:orr j 'kids'))])
-  =/  ones  (one-on-ones:orr all multi now (sub now ~d7) now kidset)
-  =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
+  =/  times  (kid-times:orr all multi now (sub now ~d7) now kidset)
+  =/  tally  (kid-tally:orr kids drives ones.times shared.times (sub now ~d7) now)
   =/  behind=(unit @t)  (kid-behind:orr tally)
   =/  ahead=(list @t)  (week-ahead:orr (appointments-ahead:orr all multi now ~d7) tz)
   ::  habits this week, and the targets: the owner's, or a notch above

@@ -1085,6 +1085,7 @@
       [69 ~ ~[['situation' ~['attending' 'leave-by']] ['activity' ~['attending' 'leave-by']]] ~]
       [70 ~ ~[['situation' ~['drop-off' 'pick-up']] ['activity' ~['drop-off' 'pick-up']]] ~]
       [75 ~ ~[['person' ~['steps-target' 'sleep-target' 'bedtime-target']] ['activity' ~['per-week' 'minutes']]] ~]
+      [76 ~ ~[['activity' ~['wind-mph' 'rain-max' 'temp-f']] ['place' ~['pota' 'activated']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1198,8 +1199,10 @@
           ==
           :-  'place'
           %+  kind
-            ~['type' 'address' 'phone' 'hours' 'geo']
+            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated']
           :~  ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
+              ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
+              ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
           %+  kind
@@ -1227,7 +1230,7 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up' 'per-week' 'minutes']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up' 'per-week' 'minutes' 'wind-mph' 'rain-max' 'temp-f']
           :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
               ['attending' 'yes or no: whether the owner goes to it themselves, in their own word when they gave it; it holds for every occurrence until they say otherwise']
               ['leave-by' 'when the owner must leave for the next occurrence, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
@@ -1236,6 +1239,9 @@
               ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start; for a habit, when the owner last did it ("read tonight")']
               ['per-week' 'a habit: how many times a week the owner wants to do it, a number ("read three times a week"); the ship finds the time for it in their free evenings and weekends']
               ['minutes' 'a habit: how long one time takes, in minutes, a number; thirty when not said']
+              ['wind-mph' 'an outing\'s wind, low to high in mph, "8-18": the ship names the days the forecast gives it']
+              ['rain-max' 'an outing\'s most chance of rain, a percent, a number']
+              ['temp-f' 'an outing\'s temperature, low to high in F, "60-90"']
               ['next' 'the start of the nearest upcoming occurrence, ISO 8601 UTC']
               ['schedule' 'when it recurs, in words: Tue/Thu 16:45, first Saturday of the month']
               ['cadence' 'weekly, twice a week, monthly']
@@ -6337,6 +6343,32 @@
   ^-  [leave=@da alert=@da]
   =/  leave=@da  (sub starts (add (mul secs ~s1) buffer))
   [leave (sub leave lead)]
+::  +next-look: when the leave fiber looks again before the alert: the
+::  points 30, 15 and 5 minutes before it and the alert itself, and in
+::  the last stretch before leaving, two hours or twice the drive when
+::  that is longer, every ten minutes, so traffic gone bad between two
+::  points is seen in time (version 76)
+::
+++  next-look
+  |=  [now=@da leave=@da alert=@da secs=@ud]
+  ^-  @da
+  =/  close=@da  (sub leave (min leave (max ~h2 (mul 2 (mul ~s1 secs)))))
+  =/  points=(list @da)
+    (skim `(list @da)`~[(sub alert ~m30) (sub alert ~m15) (sub alert ~m5) alert] |=(t=@da (gth t now)))
+  =/  first=@da  ?~(points alert i.points)
+  (min first ?:((gte now close) (add now ~m10) close))
+::  +after-alert: what an occurrence alerted already waits for: ~ to look
+::  once more now, three minutes before its leave-by, for traffic gone
+::  worse since the alert; else when to wake, that look's time or, once
+::  it is done or the leave-by is past, the start (version 76)
+::
+++  after-alert
+  |=  [now=@da starts=@da lb=(unit @da) rechecked=?]
+  ^-  (unit @da)
+  ?:  |(?=(~ lb) rechecked (gte now u.lb))  `(add starts ~m1)
+  =/  at=@da  (sub u.lb (min u.lb ~m3))
+  ?:  (lth now at)  `at
+  ~
 ::  +leave-quiet: why the owner needs no telling to leave, when their
 ::  phone shows it: at the place already, a drive of two minutes or
 ::  less from a close fix of any age (the phone reports a move, not a
@@ -6668,45 +6700,66 @@
       `?:(|((lth mo bm) &(=(mo bm) (lth dd bd))) (dec years) years)
     `[id.l name.body.l age ?:(&(?=(^ young) ?=(^ age) (lth u.age age.u.young)) share.u.young 100)]
   (sort each |=([a=[@t @t age=(unit @ud) @ud] b=[@t @t age=(unit @ud) @ud]] (gth (fall age.a 0) (fall age.b 0))))
-::  +one-on-ones: the owner's time with one child alone: a situation
-::  starting in the window whose participants are the owner and that one
-::  child
+::  +kid-times: the owner's time with their children in the window, as
+::  the owner or a reader filed it, never the calendar's (an event the
+::  owner attends is not this time: the owner's choice): a situation
+::  whose participants are the owner and one child alone is a one-on-one;
+::  the owner with more than that, each child in it shared time
+::  (version 76)
 ::
-++  one-on-ones
+++  kid-times
   |=  [all=(list loaded) multi=(set @t) now=@da from=@da to=@da kids=(set @t)]
-  ^-  (list [at=@da kid=@t])
-  %+  murn  all
-  |=  l=loaded
-  ^-  (unit [at=@da kid=@t])
-  ?.  =(%situation kind.body.l)  ~
-  =/  w=(map @t (list row))  (fold rows.l multi now)
-  =/  at=(unit @da)  (de-iso (winner-text w 'starts'))
-  ?.  &(?=(^ at) (gte u.at from) (lth u.at to))  ~
-  =/  who=(set @t)
-    (silt (turn (fall (~(get by w) 'participants') ~) |=(r=row (ref-or-text value.obs.r))))
+  ^-  [ones=(list [at=@da kid=@t]) shared=(list [at=@da kids=(list @t)])]
+  =/  each=(list [at=@da who=(set @t)])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [at=@da who=(set @t)])
+    ?.  =(%situation kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    =/  st=(list row)  (fall (~(get by w) 'starts') ~)
+    ?~  st  ~
+    ?:  =('calendar' kind.source.obs.i.st)  ~
+    =/  at=(unit @da)  (de-iso (winner-text w 'starts'))
+    ?.  &(?=(^ at) (gte u.at from) (lth u.at to))  ~
+    =/  who=(set @t)
+      (silt (turn (fall (~(get by w) 'participants') ~) |=(r=row (ref-or-text value.obs.r))))
+    ?.  (~(has in who) 'person/me')  ~
+    `[u.at who]
+  :-  %+  murn  each
+      |=  [at=@da who=(set @t)]
+      =/  others=(list @t)  ~(tap in (~(del in who) 'person/me'))
+      ?.  ?=([@ ~] others)  ~
+      ?.((~(has in kids) i.others) ~ `[at i.others])
+  %+  murn  each
+  |=  [at=@da who=(set @t)]
   =/  others=(list @t)  ~(tap in (~(del in who) 'person/me'))
-  ?.  &((~(has in who) 'person/me') ?=([@ ~] others))  ~
-  ?.  (~(has in kids) i.others)  ~
-  `[u.at i.others]
-::  +kid-tally: each child's drives and one-on-ones in the window, and
-::  their standing against their share: a one-on-one three points, a
-::  drive one, over the share
+  =/  ks=(list @t)  (skim others |=(k=@t (~(has in kids) k)))
+  ?:  (lth (lent others) 2)  ~
+  ?:(=(~ ks) ~ `[at ks])
+::  +kid-tally: each child's drives, one-on-ones and shared time in the
+::  window, and their standing against their share: a one-on-one three
+::  points, shared time two, a drive one, over the share
 ::
-+$  kid-row  [id=@t name=@t share=@ud drives=@ud ones=@ud score=@ud]
++$  kid-row  [id=@t name=@t share=@ud drives=@ud ones=@ud shared=@ud score=@ud]
 ++  kid-tally
   |=  $:  kids=(list [id=@t name=@t age=(unit @ud) share=@ud])
           drives=(list [at=@da kids=(list @t)])
           ones=(list [at=@da kid=@t])
+          shared=(list [at=@da kids=(list @t)])
           from=@da  to=@da
       ==
   ^-  (list kid-row)
   %+  turn  kids
   |=  [id=@t name=@t age=(unit @ud) share=@ud]
   ^-  kid-row
-  =/  d=@ud
-    (lent (skim drives |=([at=@da ks=(list @t)] &((gte at from) (lth at to) (lien ks |=(k=@t =(k id)))))))
+  =/  among
+    |=  l=(list [at=@da kids=(list @t)])
+    ^-  @ud
+    (lent (skim l |=([at=@da ks=(list @t)] &((gte at from) (lth at to) (lien ks |=(k=@t =(k id)))))))
+  =/  d=@ud  (among drives)
   =/  o=@ud  (lent (skim ones |=([at=@da k=@t] &((gte at from) (lth at to) =(k id)))))
-  [id name share d o (div (mul 100 (add d (mul 3 o))) (max 1 share))]
+  =/  s=@ud  (among shared)
+  [id name share d o s (div (mul 100 :(add d (mul 3 o) (mul 2 s))) (max 1 share))]
 ::  +kid-behind: the child furthest behind their share, when the gap is
 ::  real: the lowest standing under half the highest; of two as low, the
 ::  one with the larger share
@@ -6835,6 +6888,7 @@
       %+  rap  3
       :~  name.r  ': '  (crip (a-co:co drives.r))  ' drive'  ?:(=(1 drives.r) '' 's')
           ', '  (crip (a-co:co ones.r))  ' one-on-one'  ?:(=(1 ones.r) '' 's')
+          ?:(=(0 shared.r) '' (rap 3 ', ' (crip (a-co:co shared.r)) ' shared' ~))
           ?:((lth share.r 100) (rap 3 ' (' (crip (a-co:co share.r)) '% share)' ~) '')
       ==
     ?~(behind ~ ~[(rap 3 'Most behind: ' u.behind '.' ~)])
@@ -6951,6 +7005,16 @@
   |=  [day=@t mi=@ud tz=@t]
   ^-  @da
   (utc-of (add (fall (day-da day) *@da) (mul mi ~m1)) tz)
+::  +family-busy: the owner's family time on a day, as busy time for
+::  the habits: it is not free time (version 76); to the day's end when
+::  it runs past midnight
+::
+++  family-busy
+  |=  [day=@t tz=@t r=rhythm]
+  ^-  (list [@da @da])
+  ?~  family.r  ~
+  =/  [f=@ud t=@ud]  u.family.r
+  ~[[(at-clock day f tz) (at-clock day ?:((gth t f) t 1.440) tz)]]
 ::  +desk-stretch: the owner at the computer for ninety minutes or more
 ::  without a break of over ten: the latest block of the day when it
 ::  ends within seven minutes of now; its start and its minutes
@@ -7178,6 +7242,360 @@
   ?~  root  ~
   ?.  &(=(our from.u.root) =(sent body.u.root))  ~
   `[x body.u.root]
+::  ==  outdoors (version 76): the weather and nearby parks
+::
+::  +outdoors: outdoors.json. The weather is read unless the owner turns
+::  it off (it needs a point: home's, else the phone's); the parks are off
+::  until the owner names their POTA location ("US-CO") and turns them on
+::
++$  outdoors  [weather=? nws=@t pota=? pota-api=@t location=@t radius=@ud]
+++  de-outdoors
+  |=  j=json
+  ^-  outdoors
+  =/  nws=@t  (gs j 'nws_api')
+  =/  papi=@t  (gs j 'pota_api')
+  :*  !=([%b %.n] (gj j 'weather'))
+      ?:(=('' nws) 'https://api.weather.gov' nws)
+      ?=([%b %.y] (gj j 'pota'))
+      ?:(=('' papi) 'https://api.pota.app' papi)
+      (trim-cord (gs j 'pota_location'))
+      (max 5 (min 200 (fall (gn j 'pota_radius_km') 40)))
+  ==
+++  en-outdoors
+  |=  o=outdoors
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['weather' b+weather.o]  ['nws_api' s+nws.o]  ['pota' b+pota.o]  ['pota_api' s+pota-api.o]
+      ['pota_location' s+location.o]  ['pota_radius_km' (numb:enjs:format radius.o)]
+  ==
+::  +coarse: a coordinate to two decimals, about a kilometre: the
+::  forecast grid is coarser, and the point kept says no more than that
+::
+++  coarse
+  |=  t=@t
+  ^-  @t
+  =/  s=tape  (trip t)
+  =/  dot=(unit @ud)  (find "." s)
+  ?~  dot  t
+  (crip (scag (add u.dot 3) s))
+++  en-alert
+  |=  [event=@t ends=(unit @da) headline=@t]
+  ^-  json
+  (pairs:enjs:format ~[['event' s+event] ['ends' ?~(ends ~ s+(en-iso u.ends))] ['headline' s+headline]])
+++  de-alerts
+  |=  l=(list json)
+  ^-  (list [event=@t ends=(unit @da) headline=@t])
+  (turn l |=(j=json [(gs j 'event') (de-iso (gs j 'ends')) (gs j 'headline')]))
+::  +weather-agent: who the weather service is told is asking; it refuses
+::  a request without one
+::
+++  weather-agent  'orrery (github.com/nisfeb/orrery)'
+::  +period: a span of the forecast: its start and end, whether it is
+::  daytime, the temperature in F, the wind's range in mph, the chance of
+::  rain in percent, and the forecast in words
+::
++$  period  [start=@da end=@da day=? temp=@ud wind-lo=@ud wind-hi=@ud rain=@ud short=@t]
+::  +numbers: the runs of digits in a text, in order
+::
+++  numbers
+  |=  t=@t
+  ^-  (list @ud)
+  =/  s=tape  (trip t)
+  =|  out=(list @ud)
+  =|  cur=tape
+  |-
+  ?~  s  (flop ?~(cur out [(fall (rush (crip (flop cur)) dem) 0) out]))
+  ?:  &((gte i.s '0') (lte i.s '9'))  $(s t.s, cur [i.s cur])
+  ?~  cur  $(s t.s)
+  $(s t.s, cur ~, out [(fall (rush (crip (flop cur)) dem) 0) out])
+::  +wind-range: "10 to 15 mph" as its low and high, "7 mph" as both
+::
+++  wind-range
+  |=  t=@t
+  ^-  [lo=@ud hi=@ud]
+  =/  ns=(list @ud)  (numbers t)
+  ?~  ns  [0 0]
+  [i.ns (rear `(list @ud)`ns)]
+::  +nws-periods: the forecast's periods as the weather service answers
+::  them (its daily or its hourly forecast)
+::
+++  nws-periods
+  |=  j=json
+  ^-  (list period)
+  %+  murn  (ga (gj j 'properties') 'periods')
+  |=  p=json
+  ^-  (unit period)
+  =/  s=(unit @da)  (de-iso-any (gs p 'startTime'))
+  =/  e=(unit @da)  (de-iso-any (gs p 'endTime'))
+  ?.  &(?=(^ s) ?=(^ e))  ~
+  =/  w  (wind-range (gs p 'windSpeed'))
+  :*  ~  u.s  u.e  ?=([%b %.y] (gj p 'isDaytime'))
+      (fall (whole (gj p 'temperature')) 0)
+      lo.w  hi.w
+      (fall (whole (gj (gj p 'probabilityOfPrecipitation') 'value')) 0)
+      (end [3 80] (gs p 'shortForecast'))
+  ==
+++  en-period
+  |=  p=period
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['start' s+(en-iso start.p)]  ['end' s+(en-iso end.p)]  ['day' b+day.p]
+      ['temp' (numb:enjs:format temp.p)]  ['wind_lo' (numb:enjs:format wind-lo.p)]  ['wind_hi' (numb:enjs:format wind-hi.p)]
+      ['rain' (numb:enjs:format rain.p)]  ['short' s+short.p]
+  ==
+++  de-periods
+  |=  l=(list json)
+  ^-  (list period)
+  %+  murn  l
+  |=  p=json
+  ^-  (unit period)
+  =/  s=(unit @da)  (de-iso (gs p 'start'))
+  =/  e=(unit @da)  (de-iso (gs p 'end'))
+  ?.  &(?=(^ s) ?=(^ e))  ~
+  `[u.s u.e ?=([%b %.y] (gj p 'day')) (fall (gn p 'temp') 0) (fall (gn p 'wind_lo') 0) (fall (gn p 'wind_hi') 0) (fall (gn p 'rain') 0) (gs p 'short')]
+::  +nws-alerts: the alerts in force at a point: what, until when, and
+::  the headline
+::
+++  nws-alerts
+  |=  j=json
+  ^-  (list [event=@t ends=(unit @da) headline=@t])
+  %+  turn  (ga j 'features')
+  |=  f=json
+  =/  p=json  (gj f 'properties')
+  =/  e=(unit @da)  (de-iso-any (gs p 'ends'))
+  :+  (gs p 'event')
+    ?^(e e (de-iso-any (gs p 'expires')))
+  (end [3 200] (gs p 'headline'))
+::  +weather-extra: what the weather at the time of leaving adds to the
+::  minutes to park: ten for a storm, five for rain likely, and why
+::
+++  weather-extra
+  |=  [hourly=(list period) at=@da]
+  ^-  [extra=@dr why=@t]
+  =/  now=(list period)  (skim hourly |=(p=period &((lte start.p at) (lth at end.p))))
+  ?~  now  [`@dr`0 '']
+  ?^  (find "thunder" (cass (trip short.i.now)))  [~m10 'storms']
+  ?:  (gte rain.i.now 50)  [~m5 'rain']
+  [`@dr`0 '']
+::  +weather-rule: the weather an outing wants, as the owner set it on
+::  the activity: wind in mph from low to high, the most chance of rain,
+::  the temperature in F from low to high; ~ when it sets none
+::
++$  weather-rule  [wind=(unit [lo=@ud hi=@ud]) rain=(unit @ud) temp=(unit [lo=@ud hi=@ud])]
+++  range-of
+  |=  t=@t
+  ^-  (unit [lo=@ud hi=@ud])
+  =/  ns=(list @ud)  (numbers t)
+  ?.  ?=([@ @ *] ns)  ~
+  `[(min i.ns i.t.ns) (max i.ns i.t.ns)]
+++  rule-of
+  |=  w=(map @t (list row))
+  ^-  (unit weather-rule)
+  =/  said
+    |=  a=@t
+    ^-  @t
+    =/  r=(list row)  (fall (~(get by w) a) ~)
+    ?~(r '' (ref-or-text value.obs.i.r))
+  =/  wind  (range-of (said 'wind-mph'))
+  =/  rain  =/(ns (numbers (said 'rain-max')) ?~(ns ~ `i.ns))
+  =/  temp  (range-of (said 'temp-f'))
+  ?:  &(?=(~ wind) ?=(~ rain) ?=(~ temp))  ~
+  `[wind rain temp]
+::  +suits: whether a daytime period gives an outing its weather
+::
+++  suits
+  |=  [r=weather-rule p=period]
+  ^-  ?
+  ?&  day.p
+      ?~(wind.r & &((gte wind-lo.p lo.u.wind.r) (lte wind-hi.p hi.u.wind.r)))
+      ?~(rain.r & (lte rain.p u.rain.r))
+      ?~(temp.r & &((gte temp.p lo.u.temp.r) (lte temp.p hi.u.temp.r)))
+  ==
+::  +outings: the activities that set the weather they want
+::
+++  outings
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [id=@t name=@t rule=weather-rule])
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [id=@t name=@t rule=weather-rule])
+  ?.  =(%activity kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?:  (is-closed w)  ~
+  =/  r  (rule-of w)
+  ?~(r ~ `[id.l name.body.l u.r])
+::  +period-line: "85F, Sunny, wind 5 to 10 mph, rain 10%"
+::
+++  period-line
+  |=  p=period
+  ^-  @t
+  %+  rap  3
+  :~  (crip (a-co:co temp.p))  'F, '  short.p  ', wind '
+      ?:(=(wind-lo.p wind-hi.p) (crip (a-co:co wind-hi.p)) (rap 3 (crip (a-co:co wind-lo.p)) ' to ' (crip (a-co:co wind-hi.p)) ~))
+      ' mph, rain '  (crip (a-co:co rain.p))  '%'
+  ==
+::  +micro-signed: a decimal degree as millionths from the far edge, so
+::  two degrees subtract without a sign: latitude from -90, longitude
+::  from -180
+::
+++  micro-from
+  |=  [t=@t edge=@ud]
+  ^-  (unit @ud)
+  =/  m  (micro t)
+  ?~  m  ~
+  ?:  neg.u.m  ?:((gth n.u.m (mul edge 1.000.000)) ~ `(sub (mul edge 1.000.000) n.u.m))
+  `(add (mul edge 1.000.000) n.u.m)
+::  +cos-of: the cosine of a latitude in millionths of a degree, as
+::  millionths; a polynomial to the sixth power, under a thousandth off
+::  up to the poles' near side
+::
+++  cos-of
+  |=  lat=@ud
+  ^-  @ud
+  =/  s=@ud  1.000.000
+  =/  th=@ud  (div (mul (min lat 89.000.000) 17.453) s)
+  =/  t2=@ud  (div (mul th th) s)
+  =/  t4=@ud  (div (mul t2 t2) s)
+  =/  t6=@ud  (div (mul t4 t2) s)
+  =/  up=@ud  (add s (div t4 24))
+  =/  down=@ud  (add (div t2 2) (div t6 720))
+  ?:((gth down up) 0 (sub up down))
+::  +metres-between: two points apart, in metres, flat over the short
+::  distances a park is near
+::
+++  metres-between
+  |=  [a=[lat=@t lon=@t] b=[lat=@t lon=@t]]
+  ^-  (unit @ud)
+  =/  la1  (micro-from lat.a 90)
+  =/  la2  (micro-from lat.b 90)
+  =/  lo1  (micro-from lon.a 180)
+  =/  lo2  (micro-from lon.b 180)
+  ?.  &(?=(^ la1) ?=(^ la2) ?=(^ lo1) ?=(^ lo2))  ~
+  =/  dla=@ud  ?:((gth u.la1 u.la2) (sub u.la1 u.la2) (sub u.la2 u.la1))
+  =/  dlo=@ud  ?:((gth u.lo1 u.lo2) (sub u.lo1 u.lo2) (sub u.lo2 u.lo1))
+  =/  mid=@ud  (div (add u.la1 u.la2) 2)
+  =/  lat=@ud  ?:((gth mid 90.000.000) (sub mid 90.000.000) (sub 90.000.000 mid))
+  =/  y=@ud  (div (mul dla 111.320) 1.000.000)
+  =/  x=@ud  (div (mul (div (mul dlo 111.320) 1.000.000) (cos-of lat)) 1.000.000)
+  `-:(sqt (add (mul x x) (mul y y)))
+::  +pota-parks: a POTA location's parks as the POTA service lists them
+::
++$  pota-park  [ref=@t name=@t lat=@t lon=@t]
+++  pota-parks
+  |=  j=json
+  ^-  (list pota-park)
+  ?.  ?=([%a *] j)  ~
+  %+  murn  p.j
+  |=  p=json
+  ^-  (unit pota-park)
+  =/  la=json  (gj p 'latitude')
+  =/  lo=json  (gj p 'longitude')
+  =/  ref=@t  (gs p 'reference')
+  ?.  &(?=([%n *] la) ?=([%n *] lo) !=('' ref))  ~
+  `[ref (end [3 120] (gs p 'name')) p.la p.lo]
+::  +parks-within: the parks within a distance of a point, the nearest
+::  first, with their metres
+::
+++  parks-within
+  |=  [ps=(list pota-park) at=[lat=@t lon=@t] metres=@ud]
+  ^-  (list [p=pota-park m=@ud])
+  =/  near=(list [p=pota-park m=@ud])
+    %+  murn  ps
+    |=  p=pota-park
+    =/  m  (metres-between at [lat.p lon.p])
+    ?~(m ~ ?:((gth u.m metres) ~ `[p u.m]))
+  (sort near |=([a=[p=pota-park m=@ud] b=[p=pota-park m=@ud]] (lth m.a m.b)))
+::  +park-id: a park's place body: place/pota-us-1234
+::
+++  park-id  |=(ref=@t ^-(@t (cat 3 'place/pota-' (crip (cass (trip ref))))))
+::  +pota-places: the parks the ship holds: id, name, reference, point,
+::  and when the owner last activated it
+::
+++  pota-places
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [id=@t name=@t ref=@t at=[lat=@t lon=@t] activated=(unit @da)])
+  %+  murn  all
+  |=  l=loaded
+  ?.  =(%place kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  =/  ref=@t  (winner-text w 'pota')
+  ?:  =('' ref)  ~
+  =/  g=(list row)  (fall (~(get by w) 'geo') ~)
+  =/  pt  ?~(g ~ (geo-of value.obs.i.g))
+  ?~  pt  ~
+  =/  act=(list row)  (fall (~(get by w) 'activated') ~)
+  `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  +outdoor-lines: the brief's outdoors (version 76): the day's weather
+::  and the alerts in force, the days ahead whose weather suits an outing
+::  and whose calendar is light (under four hours booked in its daylight),
+::  and the parks near where the owner waits today: an appointment they
+::  both drop off at and pick up from
+::
+++  outdoor-lines
+  |=  [wx=json all=(list loaded) multi=(set @t) now=@da to=@da tz=@t]
+  ^-  (list @t)
+  =/  days=(list period)  (de-periods (ga wx 'periods'))
+  =/  today=(list period)  (skim days |=(p=period &(day.p (lth start.p to) (gth end.p now))))
+  =/  wline=(list @t)  ?~(today ~ ~[(cat 3 'Weather: ' (period-line i.today))])
+  =/  alerts=(list @t)
+    %+  murn  (de-alerts (ga wx 'alerts'))
+    |=  [event=@t ends=(unit @da) headline=@t]
+    ^-  (unit @t)
+    ?:  &(?=(^ ends) (lth u.ends now))  ~
+    `(cat 3 'Alert: ' ?:(=('' headline) event headline))
+  =/  outs=(list @t)
+    %+  murn  (outings all multi now)
+    |=  [id=@t name=@t rule=weather-rule]
+    ^-  (unit @t)
+    =/  good=(list @t)
+      %+  murn  days
+      |=  p=period
+      ^-  (unit @t)
+      ?.  &((suits rule p) (gth end.p now))  ~
+      =/  busy=@dr
+        %+  roll  (day-busy all multi now start.p end.p)
+        |=  [[s=@da e=@da] n=@dr]
+        =/  a=@da  (max s start.p)
+        =/  b=@da  (min e end.p)
+        ?:((gte a b) n (add n (sub b a)))
+      ?:  (gth busy ~h4)  ~
+      `(end [3 3] (snag (dow-of (cut 3 [0 10] (local-iso (en-iso start.p) tz))) weekday-names))
+    ?:  =(~ good)  ~
+    `(rap 3 name ' weather: ' (join-cords ', ' good) ~)
+  =/  parks=(list pota-park)
+    (turn (pota-places all multi now) |=([* name=@t ref=@t at=[lat=@t lon=@t] *] [ref name lat.at lon.at]))
+  =/  done=(map @t @da)
+    %-  malt
+    (murn (pota-places all multi now) |=([* * ref=@t * act=(unit @da)] ?~(act ~ `[ref u.act])))
+  =/  ahead=(list appointment)
+    (skim (appointments-ahead all multi now (sub (max to now) now)) |=(a=appointment (lth starts.a to)))
+  =/  waits=(list appointment)
+    %+  skim  ahead
+    |=  a=appointment
+    &(=(%drop leg.a) ?=(^ place.a) (lien ahead |=(b=appointment &(=(id.b id.a) =(%pick leg.b)))))
+  =/  near=(list @t)
+    ?:  =(~ parks)  ~
+    %+  murn  waits
+    |=  a=appointment
+    ^-  (unit @t)
+    =/  l=(unit loaded)  ?~(place.a ~ (loaded-of all u.place.a))
+    ?~  l  ~
+    =/  g=(list row)  (fall (~(get by (fold rows.u.l multi now)) 'geo') ~)
+    =/  pt  ?~(g ~ (geo-of value.obs.i.g))
+    ?~  pt  ~
+    ::  ponytail: ten kilometres around the wait, a setting if owners ask
+    =/  ps  (scag 3 (parks-within parks u.pt 10.000))
+    ?:  =(~ ps)  ~
+    =/  each=(list @t)
+      %+  turn  ps
+      |=  [p=pota-park m=@ud]
+      =/  act=(unit @da)  (~(get by done) ref.p)
+      %+  rap  3
+      :~  name.p  ' '  ref.p  ' ('  (crip (a-co:co (div (add m 500) 1.000)))  ' km'
+          ?~(act '' (cat 3 ', done ' (cut 3 [0 10] (en-iso u.act))))  ')'
+      ==
+    `(rap 3 'Parks near ' name.a ': ' (join-cords ', ' each) ~)
+  :(weld wline alerts outs near)
 ::  +addr-key: an address as the geocache keys it: lower case, one space
 ::
 ++  addr-key
@@ -8675,6 +9093,8 @@
     %'set-mail'       %'mail.json'
     %'set-read'       %'read.json'
     %'set-travel'     %'travel.json'
+    %'set-rhythm'     %'rhythm.json'
+    %'set-outdoors'   %'outdoors.json'
   ==
 ++  settings-view
   |=  [op=@t doc=json]
@@ -8686,6 +9106,8 @@
     %'set-mail'       (en-mail-config (de-mail-config doc))
     %'set-read'       (en-mail-config (de-mail-config doc))
     %'set-travel'     (en-travel-config-masked (de-travel-config doc))
+    %'set-rhythm'     (en-rhythm (de-rhythm doc))
+    %'set-outdoors'   (en-outdoors (de-outdoors doc))
   ==
 ++  list-json
   |=  [items=(list [id=@t name=@t]) note=@t]
@@ -9029,6 +9451,9 @@
   ?:  &(=('POST' meth) ?=([%api %review %wake ~] suffix))       `[%post-review-wake %own]
   ?:  &(=('GET' meth) ?=([%api %nudge %last ~] suffix))         `[%get-nudge-last %own]
   ?:  &(=('GET' meth) ?=([%api %rhythm ~] suffix))              `[%get-rhythm %own]
+  ?:  &(=('GET' meth) ?=([%api %outdoors ~] suffix))            `[%get-outdoors %own]
+  ?:  &(=('PUT' meth) ?=([%api %outdoors ~] suffix))            `[%put-outdoors %own]
+  ?:  &(=('GET' meth) ?=([%api %weather ~] suffix))             `[%get-weather %own]
   ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
   ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]

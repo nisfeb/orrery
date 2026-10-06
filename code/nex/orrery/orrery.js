@@ -745,6 +745,16 @@
       '<p>' + fld('weekend_from', 'and weekend mornings from', '09:00') + fld('weekend_to', 'to', '12:00') + '</p>' +
       '<p>' + fld('per_window', 'habits a window', '2') + fld('young_age', 'children under', '0') + fld('young_share', 'get this share of your time, %', '100') + '</p>' +
       '<p><button data-save-rhythm="1">save your day</button></p></div>';
+    // outdoors (version 76): the weather from the National Weather Service, and Parks on the Air parks near you
+    var od = w.outdoors || {}, wl = w.weather || {}, pl = w.parks || {};
+    out += '<div id="outdoors"><p class="muted">Outdoors: the weather for home (or your phone\'s last place) adds minutes to the time to leave in rain or storms, and the brief names the days an outing\'s weather comes ' +
+      '(set wind-mph, rain-max, temp-f on the activity). ' + (wl.forecast_at ? 'Forecast ' + fmtTime(wl.forecast_at) + (wl.alerts ? ', ' + wl.alerts + ' alert' + (wl.alerts === 1 ? '' : 's') : '') + '.' : esc(wl.note || 'No forecast yet.')) +
+      (pl.at ? ' Parks ' + fmtTime(pl.at) + ': ' + (pl.near || 0) + ' near, ' + (pl.added || 0) + ' new' + (pl.note ? ' (' + esc(pl.note) + ')' : '') + '.' : '') + '</p>' +
+      '<p><label class="field"><input type="checkbox" name="weather"' + (od.weather !== false ? ' checked' : '') + '> weather</label> ' +
+      '<label class="field"><input type="checkbox" name="pota"' + (od.pota ? ' checked' : '') + '> POTA parks</label> ' +
+      '<label class="field">location <input name="pota_location" value="' + esc(od.pota_location || '') + '" placeholder="US-CO"></label> ' +
+      '<label class="field">within, km <input name="pota_radius_km" value="' + esc(od.pota_radius_km != null ? String(od.pota_radius_km) : '') + '" placeholder="40"></label></p>' +
+      '<p><button data-save-outdoors="1">save outdoors</button></p></div>';
     out += '<p><button data-review-wake="1">send the review now</button></p>';
     if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
     return out + '</div>';
@@ -1166,7 +1176,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1448,6 +1458,12 @@
       ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
       say('saving your day');
       post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
+    } else if (b.dataset.saveOutdoors) {
+      var ov = function (name) { return field('#outdoors', name); };
+      var of = { weather: !!view.querySelector('#outdoors input[name="weather"]:checked'), pota: !!view.querySelector('#outdoors input[name="pota"]:checked'),
+        pota_location: ov('pota_location'), pota_radius_km: numOrNull(ov('pota_radius_km')) };
+      say('saving outdoors');
+      post('/outdoors', of, 'PUT').then(function () { dirty = false; say('outdoors saved'); }).catch(oops);
     } else if (b.dataset.travelWake) {
       post('/travel/wake', {}).then(function () { say('looking now; the card updates in a moment'); setTimeout(refresh, 8000); }).catch(oops);
     } else if (b.dataset.generate) {

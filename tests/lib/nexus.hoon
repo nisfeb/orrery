@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 75]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 76]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1226,6 +1226,95 @@
     (expect-eq !>('my own words') !>((note (schema-upgrade:orr (with at74 'my own words')))))
     (expect !>(!=(old (note starter-schema:orr))))
   ==
+++  test-leave-looks
+  =/  t=@da  ~2026.10.6..12.00.00
+  =/  leave=@da  ~2026.10.6..16.30.00
+  =/  alert=@da  ~2026.10.6..16.20.00
+  ;:  weld
+    ::  far off: the window opens two hours before leaving
+    (expect-eq !>(~2026.10.6..14.30.00) !>((next-look:orr t leave alert 1.500)))
+    ::  a long drive opens it at twice the drive: 1 h 30 each way, three hours
+    (expect-eq !>(~2026.10.6..13.30.00) !>((next-look:orr t leave alert 5.400)))
+    ::  inside it, every ten minutes
+    (expect-eq !>(~2026.10.6..15.10.00) !>((next-look:orr ~2026.10.6..15.00.00 leave alert 1.500)))
+    ::  but never past a point: 16:05 is fifteen before the alert
+    (expect-eq !>(~2026.10.6..16.05.00) !>((next-look:orr ~2026.10.6..16.00.00 leave alert 1.500)))
+    (expect-eq !>(alert) !>((next-look:orr ~2026.10.6..16.16.00 leave alert 1.500)))
+    ::  after the alert: one look three minutes before the leave-by, then the start
+    (expect-eq !>(`(unit @da)``~2026.10.6..16.27.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 `leave |)))
+    (expect-eq !>(`(unit @da)`~) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave |)))
+    (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
+    (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
+    (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-family-busy
+  =/  r=rhythm:orr  (de-rhythm:orr (jo '{"family_from": "17:30", "family_to": "20:30"}'))
+  =/  late=rhythm:orr  (de-rhythm:orr (jo '{"family_from": "22:00", "family_to": "01:00"}'))
+  ;:  weld
+    (expect-eq !>(`(list [@da @da])`~[[~2026.10.6..17.30.00 ~2026.10.6..20.30.00]]) !>((family-busy:orr '2026-10-06' 'UTC' r)))
+    (expect-eq !>(`(list [@da @da])`~[[~2026.10.6..22.00.00 ~2026.10.7]]) !>((family-busy:orr '2026-10-06' 'UTC' late)))
+    (expect-eq !>(`(list [@da @da])`~) !>((family-busy:orr '2026-10-06' 'UTC' (de-rhythm:orr ~))))
+  ==
+++  test-outdoors
+  =/  fc=json  (jo '{"properties": {"periods": [{"startTime": "2026-09-18T06:00:00-05:00", "endTime": "2026-09-18T18:00:00-05:00", "isDaytime": true, "temperature": 78, "windSpeed": "10 to 15 mph", "probabilityOfPrecipitation": {"value": 20}, "shortForecast": "Mostly Sunny"}, {"startTime": "2026-09-18T18:00:00-05:00", "endTime": "2026-09-19T06:00:00-05:00", "isDaytime": false, "temperature": 60, "windSpeed": "5 mph", "probabilityOfPrecipitation": {"value": null}, "shortForecast": "Clear"}, {"startTime": "2026-09-19T06:00:00-05:00", "endTime": "2026-09-19T18:00:00-05:00", "isDaytime": true, "temperature": 84, "windSpeed": "20 to 25 mph", "probabilityOfPrecipitation": {"value": 60}, "shortForecast": "Chance Showers And Thunderstorms"}]}}')
+  =/  ps  (nws-periods:orr fc)
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  boat  (mk 'activity/sailing' %activity 'Sailing' ~[['wind-mph' s+'8-18' 'owner'] ['rain-max' n+'30' 'owner'] ['temp-f' s+'60 to 90' 'owner']])
+  =/  chess  (mk 'activity/chess' %activity 'Chess Club' ~[['schedule' s+'Thursdays' 'owner']])
+  =/  park  (mk 'place/pota-us-0001' %place 'Lakeside Park' ~[['pota' s+'US-0001' 'ship'] ['geo' s+'39.7817,-89.6501' 'ship'] ['activated' s+'2026-09-10' 'owner']])
+  =/  parks  (pota-parks:orr (jo '[{"reference": "US-0001", "name": "Lakeside Park", "latitude": 39.7817, "longitude": -89.6501}, {"reference": "US-0002", "name": "Far Woods", "latitude": 40.5, "longitude": -89.0}, {"reference": "", "name": "No ref", "latitude": 39.8, "longitude": -89.6}]'))
+  =/  rule=weather-rule:orr  rule:(snag 0 (outings:orr ~[boat chess] (sy ~['participants']) now))
+  =/  m=@ud  (need (metres-between:orr ['39.78' '-89.70'] ['39.78' '-89.60']))
+  ;:  weld
+    ::  the forecast as the weather service answers it, wind as a range
+    (expect-eq !>(3) !>((lent ps)))
+    (expect-eq !>([& 78 10 15 20 'Mostly Sunny']) !>(=/(p (snag 0 ps) [day.p temp.p wind-lo.p wind-hi.p rain.p short.p])))
+    (expect-eq !>([| 5 5 0]) !>(=/(p (snag 1 ps) [day.p wind-lo.p wind-hi.p rain.p])))
+    (expect-eq !>(~2026.9.18..11.00.00) !>(start:(snag 0 ps)))
+    (expect-eq !>(ps) !>((de-periods:orr (turn ps en-period:orr))))
+    (expect-eq !>([0 0]) !>((wind-range:orr '')))
+    (expect-eq !>(`(list @ud)`~[10 15]) !>((numbers:orr 'from 10 to 15 mph')))
+    ::  leaving in a storm adds ten minutes, likely rain five, a dry hour none
+    (expect-eq !>([~m10 'storms']) !>((weather-extra:orr ps ~2026.9.19..15.00.00)))
+    (expect-eq !>([`@dr`0 '']) !>((weather-extra:orr ps ~2026.9.18..15.00.00)))
+    (expect-eq !>([~m5 'rain']) !>((weather-extra:orr ~[[now (add now ~h1) & 70 5 5 60 'Showers']] (add now ~m30))))
+    ::  an outing's rule, and the days that suit it: daytime only, every bound held
+    (expect-eq !>(`(list [@t @t])`~[['activity/sailing' 'Sailing']]) !>((turn (outings:orr ~[boat chess] (sy ~['participants']) now) |=([id=@t n=@t *] [id n]))))
+    (expect-eq !>(`weather-rule:orr`[`[8 18] `30 `[60 90]]) !>(rule))
+    (expect-eq !>(`(list @da)`~[~2026.9.18..11.00.00]) !>((turn (skim ps |=(p=period:orr (suits:orr rule p))) |=(p=period:orr start.p))))
+    (expect-eq !>('78F, Mostly Sunny, wind 10 to 15 mph, rain 20%') !>((period-line:orr (snag 0 ps))))
+    ::  alerts in force
+    (expect-eq !>(`(list [@t (unit @da) @t])`~[['Heat Advisory' `~2026.9.18..23.00.00 'Heat Advisory until 7 PM']]) !>((nws-alerts:orr (jo '{"features": [{"properties": {"event": "Heat Advisory", "ends": "2026-09-18T19:00:00-04:00", "headline": "Heat Advisory until 7 PM"}}]}'))))
+    ::  distance without trigonometry: a tenth of a degree of longitude near 40N is about 8.55 km
+    (expect !>(&((gth m 8.530) (lth m 8.580))))
+    (expect-eq !>(`(unit @ud)`[~ 11.132]) !>((metres-between:orr ['39.70' '-89.65'] ['39.80' '-89.65'])))
+    (expect-eq !>(1.000.000) !>((cos-of:orr 0)))
+    ::  POTA: the parks with a reference, the near ones, the nearest first
+    (expect-eq !>(2) !>((lent parks)))
+    (expect-eq !>(`(list @t)`~['US-0001']) !>((turn (parks-within:orr parks ['39.79' '-89.65'] 40.000) |=([p=pota-park:orr *] ref.p))))
+    (expect-eq !>('place/pota-us-0001') !>((park-id:orr 'US-0001')))
+    (expect-eq !>(`(list [@t @t (unit @da)])`~[['place/pota-us-0001' 'US-0001' `~2026.9.10]]) !>((turn (pota-places:orr ~[park boat] (sy ~['participants']) now) |=([id=@t n=@t ref=@t * a=(unit @da)] [id ref a]))))
+    ::  the brief: the day's weather, alerts, an outing's good days (light calendar), parks near a wait
+    =/  wx=json  (pairs:enjs:format ~[['periods' a+(turn ps en-period:orr)] ['alerts' a+~[(en-alert:orr 'Heat Advisory' ~ 'Heat Advisory until 7 PM')]]])
+    =/  out  (outdoor-lines:orr wx ~[boat chess park] (sy ~['participants']) ~2026.9.18..12.00.00 ~2026.9.19..05.00.00 'America/Chicago')
+    (expect-eq !>(`(list @t)`~['Weather: 78F, Mostly Sunny, wind 10 to 15 mph, rain 20%' 'Alert: Heat Advisory until 7 PM' 'Sailing weather: Fri']) !>(out))
+    =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+    =/  studio  (mk 'place/studio' %place 'The Studio' ~[['geo' s+'39.80,-89.65' 'owner']])
+    =/  ballet  (mk 'situation/ballet' %situation 'Ballet' ~[['starts' s+(en-iso:orr (add now ~h1)) 'calendar'] ['ends' s+(en-iso:orr (add now ~h2)) 'calendar'] ['location' (ref 'place/studio') 'calendar'] ['drop-off' (ref 'person/me') 'owner'] ['pick-up' (ref 'person/me') 'owner']])
+    =/  quick  (mk 'situation/quick' %situation 'Quick' ~[['starts' s+(en-iso:orr (add now ~h1)) 'calendar'] ['location' (ref 'place/studio') 'calendar'] ['drop-off' (ref 'person/me') 'owner']])
+    (expect-eq !>(`(list @t)`~['Parks near Ballet: Lakeside Park US-0001 (2 km, done 2026-09-10)']) !>((outdoor-lines:orr [%o ~] ~[studio ballet quick park] (sy ~['participants']) now (add now ~h12) 'UTC')))
+    ::  settings: weather on and parks off by default, nobody's location
+    (expect-eq !>([%'rhythm.json' %'outdoors.json']) !>([(settings-file:orr 'set-rhythm') (settings-file:orr 'set-outdoors')]))
+    (expect-eq !>([& 'https://api.weather.gov' | 'https://api.pota.app' '' 40]) !>((de-outdoors:orr ~)))
+    (expect-eq !>((de-outdoors:orr (jo '{"pota": true, "pota_location": "US-IL", "pota_radius_km": 30}'))) !>((de-outdoors:orr (en-outdoors:orr (de-outdoors:orr (jo '{"pota": true, "pota_location": "US-IL", "pota_radius_km": 30}'))))))
+  ==
 ++  test-nudges
   ::  now is 2026-09-18 (a Friday) in the tests' clock; UTC as the owner's zone
   =/  blk  |=([a=@da b=@da] [a b ''])
@@ -1337,7 +1426,7 @@
         ['2026-09-18' `5.000 ~ 0 `[~2026.9.18..01.30.00 ~2026.9.18..07.00.00]]
         ['2026-09-19' ~ ~ 0 ~]
     ==
-  =/  tally=(list kid-row:orr)  ~[['person/wren' 'Wren' 100 2 1 5] ['person/abe' 'Abe' 50 0 0 0]]
+  =/  tally=(list kid-row:orr)  ~[['person/wren' 'Wren' 100 2 1 1 7] ['person/abe' 'Abe' 50 0 0 0 0]]
   =/  t=@t  (review-render:orr '2026-09-20' 'UTC' work health 9 tally `'Abe' ~['Tue  19:30 pick up: Swim Team'] ~[['Habits' ~['Reading: 2 of 3 this week']]])
   =/  none=@t  (review-render:orr '2026-09-20' 'UTC' ~ ~ 0 ~ ~ ~ ~)
   ;:  weld
@@ -1348,7 +1437,7 @@
     (expect !>((has t "Steps: 4000 a day.")))
     (expect !>((has t "Active: 20 min in all, 1 workout.")))
     (expect !>((has t "Sleep: 5 h 45 a night, to bed around 01:30.")))
-    (expect !>((has t "Wren: 2 drives, 1 one-on-one")))
+    (expect !>((has t "Wren: 2 drives, 1 one-on-one, 1 shared")))
     (expect !>((has t "Abe: 0 drives, 0 one-on-ones (50% share)")))
     (expect !>((has t "Most behind: Abe.")))
     (expect !>((has t "The week ahead\0aTue  19:30 pick up: Swim Team")))
@@ -1380,9 +1469,10 @@
   =/  all=(list loaded:orr)  ~[wren addie baby lena lunch party old]
   =/  kids  (children:orr all multi now `[5 50])
   =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
-  =/  ones  (one-on-ones:orr all multi now (sub now ~d7) now kidset)
+  =/  times  (kid-times:orr all multi now (sub now ~d7) now kidset)
+  =/  ones  ones.times
   =/  drives=(list [at=@da kids=(list @t)])  ~[[(sub now ~d3) ~['person/wren' 'person/nora']] [(sub now ~d8) ~['person/nora']]]
-  =/  tally  (kid-tally:orr kids drives ones (sub now ~d7) now)
+  =/  tally  (kid-tally:orr kids drives ones shared.times (sub now ~d7) now)
   =/  hd  (health-doc:orr (jo '{"day": "2026-09-17", "steps": 4210.0, "sleep": [{"start": "2026-09-17T04:55:00Z", "end": "2026-09-17T11:20:00Z"}, {"start": "2026-09-17T19:00:00Z", "end": "2026-09-17T18:00:00Z"}], "workouts": [{"type": "running", "start": "2026-09-17T22:00:00Z", "end": "2026-09-17T22:30:00Z"}, {"start": "2026-09-17T23:00:00Z", "end": "2026-09-17T23:20:00Z"}], "partial": true}'))
   =/  wd  (work-doc:orr (jo '{"day": "2026-09-17", "active_minutes": 999, "blocks": [{"start": "2026-09-17T13:00:00Z", "end": "2026-09-17T15:30:00Z"}, {"start": "2026-09-18T03:00:00Z", "end": "2026-09-18T05:20:00Z"}]}'))
   ;:  weld
@@ -1391,9 +1481,11 @@
     ::  one-on-ones: the owner and one child, in the window; a party with Lena is not one
     (expect-eq !>(`(list [@da @t])`~[[(sub now ~d2) 'person/wren']]) !>(ones))
     ::  the tally: a drive counts for each child in it, a one-on-one three points, over the share
-    (expect-eq !>(`(list kid-row:orr)`~[['person/wren' 'Wren' 100 1 1 4] ['person/nora' 'Nora' 50 1 0 2] ['person/abe' 'Abe' 50 0 0 0]]) !>(tally))
+    (expect-eq !>(`(list kid-row:orr)`~[['person/wren' 'Wren' 100 1 1 1 6] ['person/nora' 'Nora' 50 1 0 0 2] ['person/abe' 'Abe' 50 0 0 0 0]]) !>(tally))
+    ::  shared time: the owner with more than one other, each child in it, not from the calendar
+    (expect-eq !>(`(list [@da (list @t)])`~[[(sub now ~d1) ~['person/wren']]]) !>(shared.times))
     (expect-eq !>(`(unit @t)`[~ 'Abe']) !>((kid-behind:orr tally)))
-    (expect-eq !>(`(unit @t)`~) !>((kid-behind:orr (kid-tally:orr kids ~ ~ (sub now ~d7) now))))
+    (expect-eq !>(`(unit @t)`~) !>((kid-behind:orr (kid-tally:orr kids ~ ~ ~ (sub now ~d7) now))))
     ::  a health day kept: steps whole, no active minutes, a backward session dropped, workouts typed or other
     (expect !>(?=(%& -.hd)))
     (expect-eq !>((jo '{"active_minutes":null,"day":"2026-09-17","partial":true,"sleep":[{"end":"2026-09-17T11:20:00Z","start":"2026-09-17T04:55:00Z"}],"steps":4210,"workouts":[{"end":"2026-09-17T22:30:00Z","start":"2026-09-17T22:00:00Z","type":"running"},{"end":"2026-09-17T23:20:00Z","start":"2026-09-17T23:00:00Z","type":"other"}]}')) !>(?:(?=(%& -.hd) p.hd ~)))

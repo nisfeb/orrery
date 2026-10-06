@@ -173,6 +173,12 @@ ok('the week card says what came in, how far the baseline is, and shows the last
   && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11')
   && weekSettings.includes('Nudges on 2026-10-11: 1 of 3. Last: 1 h 35 min at the desk')
   && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"'));
+const outSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
+  { outdoors: { weather: true, pota: true, pota_location: 'US-GT', pota_radius_km: 30 }, weather: { forecast_at: '2026-10-06T18:00:00Z', alerts: 1, note: '' }, parks: { at: '2026-10-06T18:01:00Z', near: 4, added: 2, note: '' } });
+ok('the outdoors form shows the settings, the forecast and the parks (version 76)',
+  outSettings.includes('name="weather" checked') && outSettings.includes('name="pota" checked') && outSettings.includes('name="pota_location" value="US-GT"') && outSettings.includes('name="pota_radius_km" value="30"')
+  && outSettings.includes(', 1 alert.') && outSettings.includes(': 4 near, 2 new.') && outSettings.includes('data-save-outdoors="1"'));
+ok('outdoors off by default but the weather, which no forecast yet says', weekSettings.includes('name="weather" checked') && !weekSettings.includes('name="pota" checked') && weekSettings.includes('No forecast yet.'));
 const weekEmpty = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
 ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review') && weekEmpty.includes('Nudges today: none yet.'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
