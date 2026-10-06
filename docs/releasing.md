@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 77's owner steps
+
+Nothing to do. With the Mapbox token set, the ship gives every address it knows a point within a few minutes of the release, and again twice a day for new ones: about half a cent each, once. An appointment whose location is written as text now counts as a wait for the brief's nearby parks when you both drop off and pick up.
+
 ### Version 76's owner steps
 
 Mostly nothing. The weather is on by itself for home's point (or the phone's last), from the National Weather Service, which covers the United States only; elsewhere the card says the service gave no forecast. For Parks on the Air, set your POTA location (`US-CO`) and a distance on the settings page's Outdoors line and tick POTA parks: the parks within it become places, once a week. To have the brief name the days an outing's weather comes, give the activity its weather in your own words ("sailing wants 8 to 18 mph wind, under 30% rain, 60 to 90 F"). Time with a child now counts what you file yourself (a situation with you and more than one other), not only one-on-ones and drives; the calendar's events are left out. Time to leave looks every ten minutes in the last two hours before you leave (longer for a long drive) and once more three minutes before the leave-by, pushing again when traffic made it five minutes or more sooner; about a dozen more Mapbox routes a trip, inside the free tier.
