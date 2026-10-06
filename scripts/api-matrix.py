@@ -532,18 +532,18 @@ class Stub(http.server.BaseHTTPRequestHandler):
             # from the gate's place itself, half an hour from anywhere else
             form = urllib.parse.parse_qs(body if isinstance(body, str) else '')
             pts = form.get('coordinates', [''])[0].split(';')
-            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-81.5423,30.3241' else 1800.4, 'duration_typical': 1100.4, 'distance': 21000,
+            out = {'code': 'Ok', 'routes': [{'duration': 60.0 if pts[0] == '-89.6501,39.7817' else 1800.4, 'duration_typical': 1100.4, 'distance': 21000,
                    'legs': [{'summary': 'Gate Road', 'incidents': [{'impact': 'minor', 'description': 'a street note'}, {'impact': 'major', 'description': 'Gate crash'}]}]}]} if len(pts) == 2 else None
             if out is None: out, status = {'code': 'InvalidInput', 'message': 'two coordinates are needed'}, 422
         elif self.path.startswith('/search/searchbox/v1/forward?'):
             # Mapbox's place search (version 73): a business beside the gate's place, open nine to five
             days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            out = {'features': [{'geometry': {'coordinates': [-81.5425, 30.3243]}, 'properties': {'name': 'Gate Club', 'metadata': {
+            out = {'features': [{'geometry': {'coordinates': [-89.6503, 39.7819]}, 'properties': {'name': 'Gate Club', 'metadata': {
                 'phone': '+19045550100', 'open_hours': {'weekday_text': [d + ': 9:00 AM - 5:00 PM' for d in days]}}}}]}
         elif self.path.startswith('/styles/v1/mapbox/streets-v12/static/'):
             out = GATE_PNG   # Mapbox's still map: an image, not JSON
         elif self.path.startswith('/search/geocode/v6/batch?'):
-            out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-81.5423, 30.3241]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
+            out = {'batch': [{'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [-89.6501, 39.7817]}, 'properties': {}}]} for _ in (body if isinstance(body, list) else [])]}
         else:
             system = ((body.get('messages') or [{}])[0].get('content') or [{}])[0].get('text', '')
             if system.startswith('You turn') and DOWN:
@@ -1149,15 +1149,15 @@ srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 TRUN = secrets.token_hex(3)
 tnow = datetime.now(timezone.utc).replace(microsecond=0)
-TADDR = 'The Gate Ballet\n10131 Atlantic Blvd, Jacksonville, FL 32225 ' + TRUN
+TADDR = 'The Gate Ballet\n100 Main St, Riverton, IL 62701 ' + TRUN
 code, d = curl('PUT', API + '/travel', {'enabled': True, 'token': 'gate-token', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'lead_min': 10, 'buffer_min': 5})
 check('the travel settings answer masked', code == 200 and dictish(d).get('token_set') is True and 'token' not in dictish(d), (code, d))
-code, d = curl('POST', API + '/position', {'lat': 'north', 'lon': -81.6})
+code, d = curl('POST', API + '/position', {'lat': 'north', 'lon': -89.7})
 check('a position that is not degrees is refused', code == 400, (code, d))
-code, d = curl('POST', API + '/position', {'lat': 30.2012, 'lon': -81.6034, 'acc': 12})
+code, d = curl('POST', API + '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12})
 check('the owner\'s position is taken', code == 200 and dictish(d).get('ok') is True, (code, d))
 code, d = curl('GET', API + '/travel')
-check('the settings say when the position came, never where', dictish(d).get('position_at') and '30.2012' not in json.dumps(d), d)
+check('the settings say when the position came, never where', dictish(d).get('position_at') and '39.6588' not in json.dumps(d), d)
 TSIT, TNO = 'situation/gate-leave-' + TRUN, 'situation/gate-not-mine-' + TRUN
 tsrc = {'kind': 'user', 'id': 'gate-leave-' + TRUN}
 def tobs(sub, attr, value): return {'subject': sub, 'attr': attr, 'value': value, 'at': iso(tnow), 'conf': 100, 'source': tsrc, 'by': 'owner'}
@@ -1172,14 +1172,14 @@ check('the alert goes for the appointment the owner goes to, from their position
 check('the one the owner does not go to is passed over', TNO not in json.dumps(tl), tl)
 check('the plan says why (version 73): the usual minutes, the roads, the incident that matters, nothing learned yet',
       tn.get('typical_minutes') == 18 and tn.get('via') == 'Gate Road' and tn.get('incident') == 'Gate crash' and tn.get('learned_min') == 0, tn)
-check('the record holds no coordinate and no token', '30.2012' not in json.dumps(tl) and 'gate-token' not in json.dumps(tl), tl)
+check('the record holds no coordinate and no token', '39.6588' not in json.dumps(tl) and 'gate-token' not in json.dumps(tl), tl)
 tb = dictish(dictish(curl('GET', API + '/body/' + TSIT)[1]).get('attrs'))
 check('leave-by is on the appointment, the ship\'s', dictish(tb.get('leave-by')).get('value') == tn.get('leave_by') and dictish(tb.get('leave-by')).get('by') == 'ship', tb.get('leave-by'))
 tgeo = [x for x in seen if x[0].startswith('/search/geocode/v6/batch?')]
 tdir = [x for x in seen if x[0].startswith('/directions/v5/mapbox/driving-traffic?')]
-check('the address went to Mapbox once, permanently, in the body', len(tgeo) == 1 and 'permanent=true' in tgeo[0][0] and dictish((tgeo[0][2] or [{}])[0]).get('q', '').startswith('The Gate Ballet, 10131 Atlantic Blvd'), tgeo)
+check('the address went to Mapbox once, permanently, in the body', len(tgeo) == 1 and 'permanent=true' in tgeo[0][0] and dictish((tgeo[0][2] or [{}])[0]).get('q', '').startswith('The Gate Ballet, 100 Main St'), tgeo)
 check('the drive went as a form, lon before lat, the token in the URL', len(tdir) == 1 and tdir[0][1].get('content-type') == 'application/x-www-form-urlencoded'
-      and str(tdir[0][2]).startswith('coordinates=-81.6034,30.2012;-81.5423,30.3241') and 'access_token=gate-token' in tdir[0][0], tdir)
+      and str(tdir[0][2]).startswith('coordinates=-89.7112,39.6588;-89.6501,39.7817') and 'access_token=gate-token' in tdir[0][0], tdir)
 seen.clear()
 curl('POST', API + '/travel/wake', {})
 time.sleep(8)
@@ -1188,7 +1188,7 @@ check('a second look neither alerts again nor asks Mapbox', not [x for x in seen
 owner_only('the travel record is the owner\'s', 'GET', '/travel/last')
 # a pick-up (version 70): someone else drops off, the owner picks up; the alert is for the end
 TPU = 'situation/gate-pickup-' + TRUN
-observe([{'id': TPU, 'name': 'Gate sailing ' + TRUN}],
+observe([{'id': TPU, 'name': 'Gate swimming ' + TRUN}],
         [tobs(TPU, 'starts', iso(tnow + timedelta(minutes=20))), tobs(TPU, 'ends', iso(tnow + timedelta(minutes=80))), tobs(TPU, 'location', TADDR),
          tobs(TPU, 'drop-off', {'ref': 'person/gate-tg'}), tobs(TPU, 'pick-up', {'ref': 'person/me'}),
          tobs(TSIT, 'status', 'closed')])
@@ -1200,7 +1200,7 @@ curl('DELETE', API + '/body/' + TPU)
 # already there (version 72): a close fix at the place and a minute's drive: no alert, no next, so the phone's
 # alarm stands down, and the occurrence quiet, not alerted, since no push went
 TQ = 'situation/gate-there-' + TRUN
-curl('POST', API + '/position', {'lat': 30.3241, 'lon': -81.5423, 'acc': 10})
+curl('POST', API + '/position', {'lat': 39.7817, 'lon': -89.6501, 'acc': 10})
 observe([{'id': TQ, 'name': 'Gate there ' + TRUN}], [tobs(TQ, 'starts', iso(tnow + timedelta(minutes=12))), tobs(TQ, 'location', TADDR), tobs(TQ, 'attending', 'yes')])
 curl('POST', API + '/travel/wake', {})
 tq = gate.wait('the one the owner is at is left quiet', lambda: (lambda l: l if any(k.startswith(TQ + '@') for k in l.get('quiet') or []) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60) or {}
@@ -1211,7 +1211,7 @@ curl('DELETE', API + '/body/' + TQ)
 # running late (version 73): the alert went and the trip is watched; a fix from the road with the drive as
 # long as before puts the owner five minutes late: one late push, and a message to the organizer proposed
 TLATE, TORG = 'situation/gate-late-' + TRUN, 'person/gate-late-org-' + TRUN
-curl('POST', API + '/position', {'lat': 30.2012, 'lon': -81.6034, 'acc': 12})
+curl('POST', API + '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12})
 tl0 = datetime.now(timezone.utc).replace(microsecond=0)
 observe([{'id': TORG, 'name': 'Gate Coach ' + TRUN}, {'id': TLATE, 'name': 'Gate late ' + TRUN}],
         [tobs(TORG, 'ship', '~zod'), tobs(TLATE, 'starts', iso(tl0 + timedelta(minutes=30))), tobs(TLATE, 'location', TADDR),
@@ -1219,7 +1219,7 @@ observe([{'id': TORG, 'name': 'Gate Coach ' + TRUN}, {'id': TLATE, 'name': 'Gate
 curl('POST', API + '/travel/wake', {})
 gate.wait('the late one is alerted', lambda: (lambda l: l if any('to leave for Gate late' in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60)
 time.sleep(2)
-curl('POST', API + '/position', {'lat': 30.2013, 'lon': -81.6035, 'acc': 12})
+curl('POST', API + '/position', {'lat': 39.6589, 'lon': -89.7113, 'acc': 12})
 late = gate.wait('the late message is proposed', lambda: [a for a in (curl('GET', API + '/actions?status=open')[1] or [])
                  if isinstance(a, dict) and a.get('kind') == 'message' and dictish(a.get('payload')).get('to') == TORG] or None, 60) or []
 check('late by five minutes or more: a message to the organizer is proposed, by chat, saying so, about the appointment',
@@ -1236,18 +1236,18 @@ bl = gate.wait('the brief with its stops lands', lambda: (lambda b: b if b.get('
 if bl.get('day') == tl0.strftime('%Y-%m-%d') == (tl0 + timedelta(minutes=31)).strftime('%Y-%m-%d'):
     bline = [x for x in bl.get('text', '').split('\n') if 'Gate late' in x and x[:1] == '[' and x[1:2].isdigit()]
     check('a stop in the brief has its pin and that day\'s hours from the place search', len(bline) == 1 and bline[0].startswith('[1] ') and '9:00 AM - 5:00 PM' in bline[0], bl.get('text'))
-    check('the brief keeps the pins for its map, lon before lat', bl.get('map') == 'pin-l-1+d9534f(-81.5423,30.3241)', bl.get('map'))
+    check('the brief keeps the pins for its map, lon before lat', bl.get('map') == 'pin-l-1+d9534f(-89.6501,39.7817)', bl.get('map'))
     import subprocess
     mp = subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, API + '/brief/map'], capture_output=True).stdout
     check('the map is Mapbox\'s image, fetched by the ship', mp == GATE_PNG, len(mp))
     sbx = [x for x in seen if x[0].startswith('/search/searchbox/v1/forward?')]
-    check('the place search went once encoded, near the place, businesses only', sbx and 'q=The%20Gate%20Ballet%2C%2010131' in sbx[-1][0] and 'proximity=-81.5423,30.3241' in sbx[-1][0] and 'types=poi' in sbx[-1][0], [x[0] for x in sbx])
+    check('the place search went once encoded, near the place, businesses only', sbx and 'q=The%20Gate%20Ballet%2C%20100%20Main%20St' in sbx[-1][0] and 'proximity=-89.6501,39.7817' in sbx[-1][0] and 'types=poi' in sbx[-1][0], [x[0] for x in sbx])
 else:
     print('  (the brief stop checks are skipped: the late one starts after the brief\'s day ends)')
 owner_only('the brief map is the owner\'s', 'GET', '/brief/map')
 # there (version 73): a close fix at the place within three minutes of the last ends the trip, and an arrival
 # before the estimate teaches the place nothing to add
-curl('POST', API + '/position', {'lat': 30.3241, 'lon': -81.5423, 'acc': 10})
+curl('POST', API + '/position', {'lat': 39.7817, 'lon': -89.6501, 'acc': 10})
 gate.wait('the trip ends at the place', lambda: True if not dictish(curl('GET', INSTANCE + '/trip.json?raw=1')[1]).get('key') else None, 60)
 learned = dictish(curl('GET', INSTANCE + '/trips.json?raw=1')[1])
 check('the arrival is learned for the place: early, so nothing added', [v for k, v in learned.items() if TRUN in k] == [[0]], learned)
@@ -1299,6 +1299,14 @@ observe([{'id': WKID, 'name': 'Gate Kid ' + WRUN}, {'id': WTOT, 'name': 'Gate To
          wobs(WTOT, 'relationship', 'son'), wobs(WTOT, 'birthday', (wtoday - timedelta(days=800)).isoformat()),
          wobs(WONE, 'starts', iso(datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=2))),
          wobs(WONE, 'participants', {'ref': 'person/me'}), wobs(WONE, 'participants', {'ref': WKID})])
+# the owner's day (version 75): the defaults are anyone's; an owner sets theirs, children under an age at a share
+code, d = curl('GET', API + '/rhythm')
+check('the day reads with its defaults filled in', code == 200 and dictish(d).get('quiet_from') and 'per_window' in dictish(d), d)
+owner_only('the day is the owner\'s to read', 'GET', '/rhythm')
+owner_only('and to set', 'PUT', '/rhythm', {'per_window': 1})
+code, d = curl('PUT', API + '/rhythm', {'young_age': 5, 'young_share': 50})
+code, d = curl('GET', API + '/rhythm')
+check('an owner\'s share for younger children reads back', dictish(d).get('young_age') == 5 and dictish(d).get('young_share') == 50, d)
 code, r0 = curl('GET', API + '/review/last')
 code, d = curl('POST', API + '/review/wake', {})
 rv = gate.wait('the review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r0).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
@@ -1306,10 +1314,52 @@ rt = rv.get('text', '')
 check('the review has the week\'s work, its late night and the baseline\'s progress',
       rt.startswith('Your week, ') and '11 h 10 until 01:40' in rt and '1 late night' in rt and 'Learning your baseline: ' in rt, rt)
 check('the review counts each child: the one-on-one for the older, half a share for the toddler, who is most behind',
-      ('Gate Kid %s: 0 drives, 1 one-on-one' % WRUN) in rt and ('Gate Tot %s: 0 drives, 0 one-on-ones (half share)' % WRUN) in rt and ('Most behind: Gate Tot %s.' % WRUN) in rt, rt)
+      ('Gate Kid %s: 0 drives, 1 one-on-one' % WRUN) in rt and ('Gate Tot %s: 0 drives, 0 one-on-ones (50%% share)' % WRUN) in rt and ('Most behind: Gate Tot %s.' % WRUN) in rt, rt)
 check('the review was mailed through auspex and pushed in a line', rv.get('sent') is True and 'workout' in rv.get('line', ''), (rv.get('sent'), rv.get('line'), rv.get('notes')))
+# nudges and habits (version 75): a long stretch at the desk is one nudge, once; a habit shows its week
+wnow = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+if 7 <= wnow.hour < 21:
+    # a test ship's day of nudges starts empty, so a rerun the same day is not held by the cap of three
+    import subprocess
+    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/nudge-last.json',
+                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+    code, d = curl('POST', API + '/work', {'day': wnow.date().isoformat(), 'blocks': [{'start': iso(wnow - timedelta(minutes=100)), 'end': iso(wnow)}]})
+    code, n0 = curl('GET', API + '/nudge/last')
+    curl('POST', API + '/nudge/wake', {})
+    nl = gate.wait('the nudge lands', lambda: (lambda n: n if any(dictish(x).get('kind') == 'desk' and dictish(x).get('key') == 'desk/%d' % int((wnow - timedelta(minutes=100)).timestamp() * 1000) for x in n.get('sent') or []) else None)(dictish(curl('GET', API + '/nudge/last')[1])), 60) or {}
+    desk = [x for x in nl.get('sent') or [] if dictish(x).get('kind') == 'desk']
+    check('an hour and forty at the desk is a nudge to walk, pushed', desk and desk[-1].get('title') == '1 h 40 at the desk' and desk[-1].get('pushed') is True, nl)
+    curl('POST', API + '/nudge/wake', {})
+    time.sleep(6)
+    nl2 = dictish(curl('GET', API + '/nudge/last')[1])
+    check('the same stretch is not nudged twice', len([x for x in nl2.get('sent') or [] if dictish(x).get('key') == desk[-1].get('key')]) == 1 if desk else False, nl2)
+else:
+    print('  (the nudge checks are skipped: the quiet hours, nine at night to seven, UTC on a test ship)')
+owner_only('the nudges are the owner\'s', 'GET', '/nudge/last')
+WHAB = 'activity/gate-habit-' + WRUN
+observe([{'id': WHAB, 'name': 'Gate habit ' + WRUN}], [wobs(WHAB, 'per-week', 3), wobs(WHAB, 'minutes', '20'), wobs(WHAB, 'last', wtoday.isoformat())])
+code, r1 = curl('GET', API + '/review/last')
+curl('POST', API + '/review/wake', {})
+rv2 = gate.wait('a second review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r1).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
+check('a habit shows its week in the review', ('Gate habit %s: 1 of 3 this week' % WRUN) in rv2.get('text', ''), rv2.get('text'))
+# family time: at the computer ten minutes into it is the owner's working late, one nudge
+if 7 <= wnow.hour < 20:
+    import subprocess
+    hm = lambda t: t.strftime('%H:%M')
+    curl('PUT', API + '/rhythm', {'family_from': hm(wnow - timedelta(minutes=30)), 'family_to': hm(wnow + timedelta(minutes=30))})
+    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/nudge-last.json',
+                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+    curl('POST', API + '/work', {'day': wnow.date().isoformat(), 'blocks': [{'start': iso(wnow - timedelta(minutes=20)), 'end': iso(wnow)}]})
+    curl('POST', API + '/nudge/wake', {})
+    fl = gate.wait('the family nudge lands', lambda: (lambda n: n if any(dictish(x).get('kind') == 'family' for x in n.get('sent') or []) else None)(dictish(curl('GET', API + '/nudge/last')[1])), 60) or {}
+    check('at the computer in family time: one nudge to step away', [dictish(x).get('title') for x in fl.get('sent') or []] == ['Family time'], fl)
+    curl('PUT', API + '/rhythm', {'family_from': None, 'family_to': None})
+curl('PUT', API + '/rhythm', {'young_age': None, 'young_share': None})
+code, d = curl('GET', API + '/rhythm')
+check('cleared, the day is the defaults again', dictish(d).get('family_from') == '' and dictish(d).get('young_age') == 0, d)
 for b in [WONE, WKID, WTOT]:
     curl('DELETE', API + '/body/' + b)
+curl('DELETE', API + '/body/' + WHAB)
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
@@ -1462,17 +1512,17 @@ def completion(answer):
 # carries the run so an earlier run's leftover is never its twin
 REFINE_EXTRA = 'Gate: buy the tow guy a coffee %s' % XRUN
 REFINE_CANNED = {
-    '': completion({'action': {'title': 'Tell Rose and Dana the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked. Dana knows too.'}, 'about': ['person/gate-shipped'], 'due': None},
+    '': completion({'action': {'title': 'Tell Wren and Dana the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked. Dana knows too.'}, 'about': ['person/gate-shipped'], 'due': None},
                     'extras': [{'kind': 'task', 'title': REFINE_EXTRA, 'payload': {'notes': 'before the tow'}, 'about': ['person/gate-shipped'], 'due': '2099-01-01T12:00:00Z'}], 'refused': ''}),
     'include karl in this': completion({'bodies': [{'id': 'person/gate-karl', 'kind': 'person', 'name': 'Gate Karl', 'aliases': []}],
-                                        'action': {'title': 'Tell Rose and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped', 'person/gate-karl'], 'due': None},
+                                        'action': {'title': 'Tell Wren and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped', 'person/gate-karl'], 'due': None},
                                         'extras': [], 'refused': ''}),
     'turn the porch light on': completion({'refused': 'a message cannot switch a light; propose a home action instead'}),
     'send this as mail': completion({'action': {'title': 'Gate mail by refine %s' % XRUN, 'payload': {'via': 'mail', 'to': 'person/gate-shipped', 'text': 'a letter asked for at approval %s' % XRUN}, 'about': ['person/gate-shipped'], 'due': None},
                                      'extras': [], 'refused': ''}),
     # a key whose actions name only message asks for a task extra: the
     # revision lands and the extra is dropped with a note
-    'also add a todo': completion({'action': {'title': 'Tell Rose and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped'], 'due': None},
+    'also add a todo': completion({'action': {'title': 'Tell Wren and Karl the tow is booked', 'payload': {'via': 'chat', 'to': 'person/gate-shipped', 'text': 'The tow is booked.'}, 'about': ['person/gate-shipped'], 'due': None},
                                    'extras': [{'kind': 'task', 'title': 'Gate: todo by key %s' % XRUN, 'payload': {'notes': 'outside the key'}, 'about': ['person/gate-shipped'], 'due': '2099-01-01T12:00:00Z'}], 'refused': ''}),
 }
 
@@ -1535,7 +1585,7 @@ code, d = refine(SHIPID, 'include dana in this')
 d = dictish(d)
 ra, rx = dictish(d.get('action')), [dictish(x) for x in (d.get('extras') or [])]
 check('a note refines the proposed message: ok, the revised action with the canned title and via chat, one extra',
-      code == 200 and d.get('ok') is True and ra.get('id') == SHIPID and ra.get('title') == 'Tell Rose and Dana the tow is booked'
+      code == 200 and d.get('ok') is True and ra.get('id') == SHIPID and ra.get('title') == 'Tell Wren and Dana the tow is booked'
       and dictish(ra.get('payload')).get('via') == 'chat' and dictish(ra.get('payload')).get('text') == 'The tow is booked. Dana knows too.' and len(rx) == 1, (code, d))
 EXTRAID = rx[0].get('id', '') if rx else ''
 MADE.append(EXTRAID)
@@ -1548,7 +1598,7 @@ check('the model was asked once under the generator\'s key, with the refine prom
       len(asked) == 1 and asked[0][0].get('authorization') == 'Bearer sk-stub', len(asked))
 a = action(SHIPID)
 check('read back, the action is still proposed under the new title with a last step revised by user',
-      a.get('status') == 'proposed' and a.get('title') == 'Tell Rose and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
+      a.get('status') == 'proposed' and a.get('title') == 'Tell Wren and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
 check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log[-30:]), log[-4:] if isinstance(log, list) else log)
@@ -1557,12 +1607,12 @@ d = dictish(d)
 karl = dictish(curl('GET', API + '/body/person/gate-karl')[1])
 a = action(SHIPID)
 check('a person the note names is created and the action names them',
-      code == 200 and d.get('ok') is True and karl.get('name') == 'Gate Karl' and 'person/gate-karl' in (a.get('about') or []) and a.get('title') == 'Tell Rose and Karl the tow is booked'
+      code == 200 and d.get('ok') is True and karl.get('name') == 'Gate Karl' and 'person/gate-karl' in (a.get('about') or []) and a.get('title') == 'Tell Wren and Karl the tow is booked'
       and 'person/gate-karl' in (dictish(d.get('action')).get('about') or []), (code, d, karl, a.get('about')))
 code, d = refine(SHIPID, 'turn the porch light on')
 a = action(SHIPID)
 check('a refusal changes nothing and says why', code == 200 and dictish(d).get('ok') is False and dictish(d).get('note') == 'a message cannot switch a light; propose a home action instead'
-      and a.get('title') == 'Tell Rose and Karl the tow is booked' and steps(a)[-1] == ('revised', 'user') and len([s for s, _ in steps(a) if s == 'revised']) == 2, (code, d, a.get('title'), steps(a)))
+      and a.get('title') == 'Tell Wren and Karl the tow is booked' and steps(a)[-1] == ('revised', 'user') and len([s for s, _ in steps(a) if s == 'revised']) == 2, (code, d, a.get('title'), steps(a)))
 code, d = refine(SHIPID, '')
 check('an empty note is refused', code == 400, (code, d))
 code, taskkey = curl('POST', API + '/clients', {'name': 'gate task key', 'by': 'gate-task', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})
