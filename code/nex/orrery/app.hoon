@@ -2863,7 +2863,9 @@
 ::  +find-base: where an app claiming a link name lives: the first lane
 ::  in /sys/link/<name>/dest.lanes. The executor finds the calendar and
 ::  auspex this way. ~ when the road is refused or the registry has no
-::  row.
+::  row. The lanes are a list, earliest claimant first, on develop's
+::  kernel and a set on the dist kernel's; read as either, so orrery
+::  runs on both (version 74)
 ::
 ++  find-base
   |=  name=@ta
@@ -2871,14 +2873,19 @@
   ^-  form:m
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /sys/link/[name] %'dest.lanes'] ~)
   ?.  ?=([~ %file *] vw)  (pure:m ~)
-  =/  ls=(unit (set lane:tarball))
-    (mole |.(!<((set lane:tarball) (need-vase:tarball sang.u.vw))))
-  ?~  ls  (pure:m ~)
+  =/  vas=(unit vase)  (mole |.((need-vase:tarball sang.u.vw)))
+  ?~  vas  (pure:m ~)
+  =/  lanes=(list lane:tarball)
+    =/  as-list=(unit (list lane:tarball))  (mole |.(!<((list lane:tarball) u.vas)))
+    ?^  as-list  u.as-list
+    =/  as-set=(unit (set lane:tarball))  (mole |.(!<((set lane:tarball) u.vas)))
+    ?~(as-set ~ ~(tap in u.as-set))
   =/  dirs=(list path)
-    (murn ~(tap in u.ls) |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~)))
+    (murn lanes |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~)))
   ?~  dirs  (pure:m ~)
-  ::  an arbitrary lane: a desk app cannot learn its own path, so two
-  ::  instances claiming the name leave nothing here to tell them apart
+  ::  the earliest claimant on develop's kernel; an arbitrary one on the
+  ::  dist kernel's, where two instances claiming the name leave nothing
+  ::  to tell them apart
   (pure:m `i.dirs)
 ::  +ug-read-weir: a usergroup's how, read whole, the way calendar reads
 ::  its share groups
@@ -7036,8 +7043,8 @@
 ::  kernel's +hydrate validates and finds the tube from the peeker's
 ::  rail), where no calendar marc lives. So the conversion the ball's
 ::  own JSON route makes is made here by hand: the calendar's compiled
-::  marc, fetched from the code namespace that governs the store (a
-::  %font then a %code dart, both read operations under the peek
+::  marc, fetched from the code namespace that governs the store (found
+::  by +code-for, then a %code dart, both read operations under the peek
 ::  grant), validates the raw noun and grows it to JSON. ~ when any
 ::  step refuses or crashes.
 ::
@@ -7045,30 +7052,35 @@
   |=  [base=path raw=*]
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
-  ;<  font=(unit (unit bend:tarball))  bind:m  (font-soft [%& %& base %'calendar.calendar'])
-  ?.  ?=([~ ~ *] font)  (pure:m ~)
-  ;<  mv=(unit vase)  bind:m  (code-soft (extend-road:tarball [%| u.u.font] /mar %calendar))
+  ;<  ns=(unit path)  bind:m  (code-for base [/mar 'calendar.hoon'])
+  ?~  ns  (pure:m ~)
+  ;<  mv=(unit vase)  bind:m  (code-soft [%& %& (weld u.ns /mar) %calendar])
   ?~  mv  (pure:m ~)
   =/  mc=(unit marc:tarball)  (mole |.(!<(marc:tarball u.mv)))
   ?~  mc  (pure:m ~)
   (pure:m (mole |.(!<(json ((grow:u.mc [/ %json]) (vale:u.mc raw))))))
-::  +font-soft: +get-font that answers ~ on a veto instead of failing
+::  +code-for: the code namespace that governs a directory and holds a
+::  source, found the way the kernel finds it: the directory's sibling
+::  /code, then each ancestor's, root /code last, the first that has
+::  the source. A %font load did this until develop's kernel dropped
+::  it; this builds on both kernels (version 74). A candidate the weir
+::  refuses is passed over.
 ::
-++  font-soft
-  |=  road=road:tarball
-  =/  m  (fiber:fiber:nexus ,(unit (unit bend:tarball)))
+++  code-for
+  |=  [dir=path src=rail:tarball]
+  =/  m  (fiber:fiber:nexus ,(unit path))
   ^-  form:m
-  ;<  w=wire  bind:m  (nonce:io /font)
-  ;<  ~  bind:m  (send-dart:io %node w road %font ~)
-  |=  input:fiber:nexus
-  :+  ~  q.state
-  ?+  in  [%skip ~]
-      ~  [%wait ~]
-      [~ %veto %node * * *]
-    ?.(=(w wire.dart.u.in) [%skip ~] [%done ~])
-      [~ %font * *]
-    ?.(=(w wire.u.in) [%skip ~] [%done res.u.in])
-  ==
+  =/  cands=(list path)
+    =|  acc=(list path)
+    =/  pax=path  dir
+    |-
+    ?:  (lth (lent pax) 2)  (flop `(list path)`[/code acc])
+    $(pax (snip pax), acc [`path`(snoc (snip pax) %code) acc])
+  |-
+  ?~  cands  (pure:m ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld i.cands path.src) name.src] ~)
+  ?:  ?=([~ %file *] vw)  (pure:m `i.cands)
+  $(cands t.cands)
 ::  +code-soft: +get-code that answers ~ on a veto instead of failing
 ::
 ++  code-soft
