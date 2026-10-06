@@ -1217,7 +1217,8 @@ check('the plan says why (version 73): the usual minutes, the roads, the inciden
 check('the record holds no coordinate and no token', '39.6588' not in json.dumps(tl) and 'gate-token' not in json.dumps(tl), tl)
 tb = dictish(dictish(curl('GET', API + '/body/' + TSIT)[1]).get('attrs'))
 check('leave-by is on the appointment, the ship\'s', dictish(tb.get('leave-by')).get('value') == tn.get('leave_by') and dictish(tb.get('leave-by')).get('by') == 'ship', tb.get('leave-by'))
-tgeo = [x for x in seen if x[0].startswith('/search/geocode/v6/batch?')]
+#  the pass that geocodes every known address (version 77) may run beside this one: only this address is counted
+tgeo = [x for x in seen if x[0].startswith('/search/geocode/v6/batch?') and 'The Gate Ballet' in json.dumps(x[2])]
 tdir = [x for x in seen if x[0].startswith('/directions/v5/mapbox/driving-traffic?')]
 check('the address went to Mapbox once, permanently, in the body', len(tgeo) == 1 and 'permanent=true' in tgeo[0][0] and dictish((tgeo[0][2] or [{}])[0]).get('q', '').startswith('The Gate Ballet, 100 Main St'), tgeo)
 check('the drive went as a form, lon before lat, the token in the URL', len(tdir) == 1 and tdir[0][1].get('content-type') == 'application/x-www-form-urlencoded'
@@ -1312,6 +1313,14 @@ check('ten minutes worse, three minutes before the leave-by: a second push, the 
       dictish(tw.get('next')).get('minutes') == 40 and dictish(tw.get('next')).get('rechecked') is True, tw)
 SLOW = 0
 curl('DELETE', API + '/body/' + TW)
+# every known address gets its point (version 77): a place's address becomes its geo, the ship's
+TGP = 'place/gate-geo-' + TRUN
+observe([{'id': TGP, 'name': 'Gate geo ' + TRUN}], [tobs(TGP, 'address', '7 Gate Way ' + TRUN)])
+curl('POST', API + '/geocode/wake', {})
+tg = gate.wait('the place gets its point', lambda: dictish(dictish(dictish(curl('GET', API + '/body/' + TGP)[1]).get('attrs')).get('geo')) or None, 60) or {}
+check('a place with an address and no point gets its geo from Mapbox, the ship\'s', tg.get('value') == '39.7817,-89.6501' and tg.get('by') == 'ship', tg)
+owner_only('the geocode wake is the owner\'s', 'POST', '/geocode/wake', {})
+curl('DELETE', API + '/body/' + TGP)
 curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
 code, d = curl('GET', API + '/travel')
 check('time to leave is off again, no token', dictish(d).get('enabled') is False and dictish(d).get('token_set') is False, d)
