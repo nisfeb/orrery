@@ -208,6 +208,10 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 74's owner steps
+
+Two clients feed the week, both optional. The phone's health comes from Talon once its Health Connect reader ships (it asks for steps, exercise and sleep). The computer's work comes from orrery-utils' `work` reporter: mint a key with write on the Keys page, put it in `work/config.json` with your ship's URL, and start it from the orrery-utils console. The Sunday review goes out at six either way, saying what it has not received yet.
+
 ### Version 73's owner steps
 
 Nothing for an owner to do. The same Mapbox token serves the place search and the still map. Learning a place's minutes to park waits for the phone's trip mode (a fix a minute while a trip runs): until then the ship learns nothing, by design, since a fix on a 400 m move can come ten minutes after the arrival. A late message goes only to an organizer who is someone else the ship can reach; to have one for events on your own calendar, tell the ship who organizes them.
