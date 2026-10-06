@@ -60,7 +60,7 @@
         %-  pairs:enjs:format
         :~  title+s+'Orrery'
             info+s+'What is going on in your world'
-            color+s+'#101541'
+            color+s+'#1E1B4B'
             image+s+'/grubbery/tiles/icon/orrery'
             href+s+'/apps/orrery'
         ==
