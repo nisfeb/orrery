@@ -30,6 +30,11 @@ def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
 def desk_live(d):
     code, v = curl('GET', HOST + '/grubbery/ball/apps/shell.shell/desks/%s.desk/desk/data?info=1' % d)
     return code == 200 and any(str(dictish(c).get('name', '')).startswith(d + '.') for c in dictish(v).get('children') or [])
+# and orrery itself must have built: a banged instance answers nothing, and every check would time out
+code, info = curl('GET', INSTANCE + '?info=1')
+if code != 200 or dictish(info).get('bang') is not None or curl('GET', API + '/version')[0] != 200:
+    print('orrery is not running on this ship (its instance: %s): fix the build first.' % str(dictish(info).get('bang'))[-300:])
+    sys.exit(2)
 MISSING = [d for d in ('calendar', 'auspex') if not desk_live(d)]
 if MISSING and '--partial' not in sys.argv:
     print('no live %s desk on this ship: the executor, calendar and mail checks cannot pass, and each would wait out its timeout. '
