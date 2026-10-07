@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 81's owner steps
+
+Nothing to do. On trunk wire 14 orrery's notices are named "orrery", so the trunk page has a switch of its own for them and they are batched and capped apart from the calendar's. Until the kernel's `trunk-action` mark takes the named form, the named notice is refused and orrery sends it unnamed, as before.
+
 ### Version 80's owner steps
 
 Nothing to do. A series' `next` moves on as its occurrence starts, not up to an hour later, so the generator no longer proposes "next is already past" pairs for calendar events, and the push for them stops. Dismiss any such pair still open: the calendar has moved it already.
