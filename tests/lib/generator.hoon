@@ -1905,7 +1905,7 @@
     (expect-eq !>(`json`(pairs:enjs:format ~[['kind' s+'calendar'] ['id' s+'home/u-coffee']])) !>((gj:orr (snag 0 (of coffee 'starts')) 'source')))
     ::  the standup: its content at the last occurrence behind (monday
     ::  the 14th), the one last, and the next (monday the 21st) anchored
-    ::  at the 14th's end, until its own end
+    ::  at the 14th's start, until its own end
     (expect-eq !>(`json`s+'weekly') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'value')))
     (expect-eq !>(`json`s+'weekly, work') !>((gj:orr (snag 0 (of 'activity/standup' 'schedule')) 'value')))
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'cadence')) 'at')))
@@ -1915,7 +1915,7 @@
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'last')) 'value')))
     (expect-eq !>(1) !>((lent (of 'activity/standup' 'last'))))
     (expect-eq !>(`json`s+'2026-09-21T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'value')))
-    (expect-eq !>(`json`s+'2026-09-14T13:45:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'at')))
+    (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'at')))
     (expect-eq !>(`json`s+'2026-09-21T13:45:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'until')))
     (expect-eq !>(0) !>((lent (of 'activity/standup' 'location'))))
     ::  the birthday: a series, felix made and in it, its next the 20th

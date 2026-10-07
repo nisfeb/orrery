@@ -8566,7 +8566,10 @@
       =/  n=[idx=@ud l=@da r=@da]  i.ahead
       =/  key=@t  (rap 3 'next/' cal.ev '/' id.ev '/' (crip (a-co:co (ms-of l.n))) ~)
       ?:  (~(has by seen.lasts) key)  [~ seen.lasts]
-      =/  anchor=@da  ?~(behind (sub now (mod now ~d1)) r:(rear behind))
+      ::  from the start of the last occurrence begun, not its end: one
+      ::  under way is not next, and the generator would propose moving it
+      ::  (version 82)
+      =/  anchor=@da  ?~(behind (sub now (mod now ~d1)) l:(rear behind))
       :-  ~[(event-row ev id 'next' s+(en-iso l.n) anchor `r.n 100)]
       (~(put by seen.lasts) key 'x')
     %=  $
