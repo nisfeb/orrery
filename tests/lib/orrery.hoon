@@ -522,6 +522,12 @@
     (expect-eq !>(`(unit @t)`[~ 'claimed by exec-a']) !>((move-refusal:orr mine %claimed 'exec-b' t0)))
     (expect-eq !>(`(unit @t)`[~ 'cannot go from claimed to approved']) !>((move-refusal:orr mine %approved 'user' soon)))
     (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr (held %approved ~[[t0 %proposed 'mcp']]) %claimed 'exec-a' soon)))
+    ::  once the lease is out, anyone may close a claim left unfinished (version 86)
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr mine %done 'user' late)))
+    (expect-eq !>(`(unit @t)`~) !>((move-refusal:orr mine %failed 'exec-b' late)))
+    ::  a stale claim is the ship's own, its lease out
+    =/  ships=action:orr  (held %claimed ~[[t0 %proposed 'mcp'] [at %claimed 'ship']])
+    (expect-eq !>([| & |]) !>([(stale-claim:orr ships soon) (stale-claim:orr ships late) (stale-claim:orr mine late)]))
   ==
 ++  test-encoders-roundtrip
   =/  j=json  (en-obs:orr (r 'x' o1) %live)

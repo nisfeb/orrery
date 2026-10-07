@@ -7310,11 +7310,19 @@
   =/  m  (fiber:fiber:nexus ,exec-tally)
   ^-  form:m
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  now=@da  bind:m  get-time:io
+  ::  a claim the ship never finished, its lease out, is planned again as
+  ::  if approved: a change to the ship's own facts is carried out, and
+  ::  anything that leaves the ship is failed below with why, since it
+  ::  may have gone (version 86)
+  =/  stale=(set @ta)
+    (silt (murn acts |=([id=@ta a=action:orr] ?.((stale-claim:orr a now) ~ `id))))
+  =.  acts
+    (turn acts |=([id=@ta a=action:orr] ?.((~(has in stale) id) [id a] [id a(status %approved)])))
   ::  nothing approved plans nothing, and the tree is not read for it
   ?.  (lien acts |=([* a=action:orr] =(%approved status.a)))  (pure:m *exec-tally)
   ::  an approved merge goes at once, not at reconcile's next pass
   ;<  merged=@ud  bind:m  (run-merges (approved-merges:orr acts) /exec 'ship')
-  ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  tg-json=json  bind:m  (read-json (rf 0 / %'telegram.json'))
@@ -7355,6 +7363,10 @@
   =/  p=exec-plan:orr  i.plans
   =/  was=(unit action:orr)  (act-of acts id.p)
   ?~  was  $(plans t.plans)
+  ?:  &((~(has in stale) id.p) !=(%writer target.p))
+    ;<  *  bind:m
+      (file-ops-on ~[(ship-set-action id.p 'failed' 'interrupted after the ship claimed it: it may have gone; check, and file it again if it did not')] /exec)
+    $(plans t.plans)
   =/  title=@t  title.u.was
   ::  a message with no way out is left approved and noted, before any
   ::  desk is asked for it

@@ -955,7 +955,20 @@
   =/  no=@t  (rap 3 'claimed by ' hold ~)
   ?:  =(%claimed want)  ?:(live `no ~)
   ?.  |(=(%done want) =(%failed want))  ~
-  ?:(=(who hold) ~ `no)
+  ::  done or failed is the claimant's while the lease holds; once it is
+  ::  out, a claim left unfinished (a reload mid-pass) is anyone's to
+  ::  close (version 86)
+  ?:(|(=(who hold) !live) ~ `no)
+::  +stale-claim: a claim the ship took and never finished, its lease out:
+::  the instance reloaded or crashed between the claim and the report
+::  (version 86)
+::
+++  stale-claim
+  |=  [a=action now=@da]
+  ^-  ?
+  ?&  =(%claimed status.a)  =('ship' (claimant a))
+      (gte now (add (claimed-at a) claim-lease))
+  ==
 ++  initial-status
   |=  [kind=@tas auto=(set @t)]
   ^-  @tas
