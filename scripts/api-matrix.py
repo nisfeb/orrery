@@ -1458,6 +1458,30 @@ for b in [WONE, WKID, WTOT]:
 curl('DELETE', API + '/body/' + WHAB)
 
 
+# ---- spheres (version 84): a sphere a model files waits for the owner's tap until they have confirmed three there;
+# the owner's own are kept, and the sphere a row names is made ----
+print('== spheres')
+SRUN = secrets.token_hex(3)
+SPH = 'sphere/gate-llc-' + SRUN
+SB = ['situation/gate-sph-%s-%d' % (SRUN, i) for i in range(5)]
+def sobs(sub, v, by): return {'subject': sub, 'attr': 'sphere', 'value': v, 'at': iso(datetime.now(timezone.utc).replace(microsecond=0)), 'conf': 90, 'source': {'kind': 'user', 'id': 'gate-sph-' + SRUN}, 'by': by}
+def sattr(b): return dictish(dictish(curl('GET', API + '/body/' + b)[1]).get('attrs')).get('sphere')
+observe([{'id': b, 'name': 'Gate sphere thing %s %d' % (SRUN, i)} for i, b in enumerate(SB)], [])
+observe([], [sobs(SB[0], 'Gate LLC ' + SRUN, 'gate-model')])
+held = gate.wait('the model\'s filing waits as a proposal', lambda: [a for a in listish(curl('GET', API + '/actions?status=open')[1]) if isinstance(a, dict) and a.get('kind') == 'fact' and dictish(a.get('payload')).get('subject') == SB[0]] or None, 30) or []
+check('a model\'s first filing under a new sphere is a proposal by the model, naming the sphere as a ref, and no fact yet',
+      len(held) == 1 and held[0].get('by') == 'gate-model' and dictish(dictish(held[0].get('payload')).get('value')).get('ref') == SPH and not sattr(SB[0]), held)
+observe([], [sobs(SB[1], {'ref': SPH}, 'owner'), sobs(SB[2], {'ref': SPH}, 'owner'), sobs(SB[3], {'ref': SPH}, 'owner')])
+code, sp = curl('GET', API + '/body/' + SPH)
+check('the owner\'s filings are kept, and the sphere they name is made, named from its slug', code == 200 and dictish(sp).get('name') == 'Gate llc ' + SRUN and sattr(SB[1]), (code, dictish(sp).get('name')))
+observe([], [sobs(SB[4], {'ref': SPH}, 'gate-model')])
+check('three confirmed, a model\'s filing there stands at once', bool(gate.wait('the trusted filing lands', lambda: sattr(SB[4]), 30)))
+curl('POST', API + '/actions/' + held[0]['id'], {'status': 'approved'}) if held else None
+check('the proposal approved, its filing is the owner\'s', bool(gate.wait('the approved filing lands', lambda: (lambda r: r if dictish(r if not isinstance(r, list) else r[0]).get('by') == 'owner' else None)(sattr(SB[0])), 90)))
+for b in SB + [SPH]:
+    curl('DELETE', API + '/body/' + b)
+
+
 # ---- outdoors (version 76): the weather service and the POTA list through the stub; the brief's weather ----
 print('== outdoors')
 srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)

@@ -179,6 +179,18 @@ ok('the outdoors form shows the settings, the forecast and the parks (version 76
   outSettings.includes('name="weather" checked') && outSettings.includes('name="pota" checked') && outSettings.includes('name="pota_location" value="US-GT"') && outSettings.includes('name="pota_radius_km" value="30"')
   && outSettings.includes(', 1 alert.') && outSettings.includes(': 4 near, 2 new.') && outSettings.includes('data-save-outdoors="1"'));
 ok('outdoors off by default but the weather, which no forecast yet says', weekSettings.includes('name="weather" checked') && !weekSettings.includes('name="pota" checked') && weekSettings.includes('No forecast yet.'));
+const sphState = { bodies: [
+    { id: 'sphere/the-llc', kind: 'sphere', name: 'The llc', attrs: { summary: { value: 'client work' } } },
+    { id: 'situation/client-dinner', kind: 'situation', name: 'Client dinner', attrs: { sphere: [{ value: { ref: 'sphere/the-llc' }, by: 'owner' }] } },
+    { id: 'activity/ballet', kind: 'activity', name: 'Ballet', attrs: { sphere: { value: { ref: 'sphere/home' }, by: 'owner' } } },
+    { id: 'thing/car', kind: 'thing', name: 'Car', attrs: {} }],
+  actions: [{ id: 'a1', kind: 'fact', status: 'proposed', title: 'File invoice under the-llc', payload: { attr: 'sphere', value: { ref: 'sphere/the-llc' } } }] };
+const sph = render.spheres(sphState);
+ok('the spheres page lists home first (made when the ship has none), what each holds and who filed it, and what waits (version 84)',
+  sph.indexOf('<h2>Home</h2>') < sph.indexOf('<h2>The llc</h2>') && sph.includes('Ballet</a> <span class="muted">activity &middot; filed by owner')
+  && sph.includes('And 1 more under no sphere.') && sph.includes('<p>client work</p>') && sph.includes('Client dinner</a>')
+  && sph.includes('1 waiting for you</a>: File invoice under the-llc'));
+ok('a route to the spheres page is its own view', render.route('#spheres').name === 'spheres');
 const weekEmpty = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
 ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review') && weekEmpty.includes('Nudges today: none yet.'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});
