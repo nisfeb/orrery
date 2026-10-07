@@ -320,6 +320,16 @@ Since version 75 the week acts on what it sees. A nudge is a push at a moment th
 
 Since version 76 the week counts shared time: a situation the owner or a reader filed (never the calendar's) with the owner and more than one other counts for each child in it, two points against a one-on-one's three and a drive's one, and the review says "1 shared". The owner's family time is busy time for the habits, so no habit is offered in it.
 
+### Away
+
+Since version 83 the ship knows when the owner is away from home, and while they are, home's trips are others' to make: time to leave says nothing for an appointment near home (one where the owner is, at the trip's end of things, still has its alert, and so does the trip's own start), the nudges wait, the brief's When to leave says "Away: … until …" in their place, and the weather is where the phone is. Nothing to set up. The owner is away:
+
+- for a situation said to be away (`away: yes`): the owner's word, or a model's from what it read ("I'm in Barcelona the 19th to the 24th", a trip plainly abroad), from its `starts` to its `ends`;
+- for a situation they go to of six hours or more at a point forty kilometres or more from home, a sailing trip an hour off as much as a flight, unless it says `away: no`;
+- while the phone's last fix is a hundred and fifty kilometres or more from home, however old: coming home is a move, and the phone says so. Until version 83 a fix older than twelve hours was dropped and the trip planned from home.
+
+The distances need home's point: `place/home`'s `geo`, or its `address`, which the ship geocodes. Without it only `away: yes` counts, and an appointment whose point is not known is taken to be at home.
+
 ### Outdoors
 
 Since version 76 the ship reads the weather for the owner's point (home's `geo`, else the phone's last position, cut to two decimals) from the National Weather Service: the forecast every two hours, the alerts every half hour, kept in `weather.json` and never as facts. It touches three things. Time to leave adds ten minutes when the hour of leaving has storms and five when rain is likely, and says so in the alert. The brief gives the day's weather and any alert in force. And an activity with `wind-mph`, `rain-max` or `temp-f` ("8-18", "30", "60-90") is an outing: the brief names the days ahead whose daytime forecast gives it that weather and whose calendar is light (under four hours booked). The service asks who is calling, so every request says `orrery (github.com/nisfeb/orrery)`; it covers the United States only.

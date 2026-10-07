@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 83's owner steps
+
+Give the ship your home address once (on `place/home`, in your words or the instruction box: "my home address is …"), so it can tell a trip from a drive across town; the ship geocodes it within twelve hours. Without it, only a trip said to be away counts. Say so for a trip it cannot see ("I'm away in Barcelona the 19th to the 24th"); say "not away" for one it counts that you are not on.
+
 ### Version 82's owner steps
 
 Nothing to do. A series' `next` moves to the following occurrence as one starts, not as it ends, so a class under way is not offered to the generator as next.
