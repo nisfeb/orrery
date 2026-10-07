@@ -6608,7 +6608,7 @@
 ::  lets a phone that gets both show one. Only when the kernel types
 ::  trunk-action (a local poke at a mark it cannot type fails in the
 ::  kernel) and %trunk answers wire 12 or later; under 4 KiB, cut; a nack
-::  or silence is no notice
+::  or silence is no notice. Named as orrery on wire 14
 ::
 ++  trunk-notice
   |=  [tag=@t title=@t body=@t]
@@ -6621,12 +6621,19 @@
   ;<  live=(unit ?)  bind:m  (scry-loob /gu/trunk/$)
   ?.  =(`& live)  (pure:m ~)
   ;<  v=(each json @t)  bind:m  (scry-json /gx/trunk/version/json)
-  ?.  &(?=(%& -.v) (gte (fall (gn:orr p.v 'wire') 0) 12))  (pure:m ~)
+  =/  wire=@ud  ?:(?=(%& -.v) (fall (gn:orr p.v 'wire') 0) 0)
+  ?.  (gte wire 12)  (pure:m ~)
   ;<  our=@p  bind:m  get-our:io
-  ;<  *  bind:m
-    %:  gall-poke-wait  our  %trunk  %trunk-action
-      [%push-notice (end [3 200] tag) (end [3 400] title) (end [3 3.000] body) ~]
-    ==
+  =/  [t=@t h=@t b=@t]  [(end [3 200] tag) (end [3 400] title) (end [3 3.000] body)]
+  ::  wire 14 names the sender (version 81): grubbery's apps all poke
+  ::  from %grubbery, and unnamed they share one switch, one five-second
+  ::  batch and one hourly cap with the calendar. A kernel whose mark
+  ::  types only the unnamed notice nacks the named one: then unnamed
+  ;<  err=(unit @t)  bind:m
+    ?.  (gte wire 14)  (pure:(fiber:fiber:nexus ,(unit @t)) `'wire under 14')
+    (gall-poke-wait our %trunk %trunk-action [%push-notice-as 'orrery' t h b ~])
+  ?~  err  (pure:m ~)
+  ;<  *  bind:m  (gall-poke-wait our %trunk %trunk-action [%push-notice t h b ~])
   (pure:m ~)
 ::  +gall-poke-wait: a poke at a local agent through the kernel's gall
 ::  road, waited for: ~ on the agent's ack; the reason on a veto, a
