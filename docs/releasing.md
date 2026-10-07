@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 86's owner steps
+
+Nothing to do. An action the ship claimed and never finished (a release reloads the instance, and one in the middle of a pass was left claimed for good) is finished at the ship's next pass: a fact or a correction is carried out, and a message or a calendar event is marked failed with a note to check whether it went.
+
 ### Version 85's owner steps
 
 Nothing to do. Who drops off and who picks up can now differ by day: say it as you would ("Andrea drops Rose off on Wednesdays and I pick her up; Fridays I do both"), and time to leave follows each day's legs. The schema takes `drop-off` and `pick-up` as multi-valued by itself, and their activity notes are renewed where you have not changed them.

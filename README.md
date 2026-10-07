@@ -152,7 +152,7 @@ post actions/1758110400-9c2e41aa '{"status": "done"}'      # or dismissed, or fa
 
 An executor (the ship itself for `telegram`, `mail`, `calendar` and `task` since version 34; a phone client for `chat`) claims an approved action before it acts, with `{"status": "claimed", "by": "telegram"}`, and the claim holds it for ten minutes.
 
-A second executor's claim inside that lease is refused with `claimed by telegram`, only the claimant reports done or failed, and you unstick a claimed action by dismissing it.
+A second executor's claim inside that lease is refused with `claimed by telegram`, only the claimant reports done or failed, and you unstick a claimed action by dismissing it. Since version 86 a claim left unfinished past its lease (the instance reloaded or crashed between the claim and the report, as a release does) is anyone's to close, and the ship finishes its own: a change to its own facts (a fact, a correction, a preference, a resolve) is carried out, and anything that leaves the ship (a message, a calendar event) is failed with a note saying it may have gone, for the owner to check.
 
 The answer to a move carries the `by` the ship will store, and it comes back before the writer has applied the move, so an executor confirms its claim by reading the action back and acts only when the last claimed step names it.
 
