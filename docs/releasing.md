@@ -214,6 +214,14 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 85's owner steps
+
+Nothing to do. Who drops off and who picks up can now differ by day: say it as you would ("Andrea drops Rose off on Wednesdays and I pick her up; Fridays I do both"), and time to leave follows each day's legs. The schema takes `drop-off` and `pick-up` as multi-valued by itself, and their activity notes are renewed where you have not changed them.
+
+### Version 84's owner steps
+
+Nothing to do. The schema gains the `sphere` kind and the `sphere` attribute by itself. Name a part of your life when you mean it ("the LLC's invoices", "file the boat under sailing"); the first three a model files in each sphere come to your Inbox to confirm.
+
 ### Version 83's owner steps
 
 Give the ship your home address once (on `place/home`, in your words or the instruction box: "my home address is …"), so it can tell a trip from a drive across town; the ship geocodes it within twelve hours. Without it, only a trip said to be away counts. Say so for a trip it cannot see ("I'm away in Barcelona the 19th to the 24th"); say "not away" for one it counts that you are not on.
