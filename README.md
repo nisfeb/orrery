@@ -537,7 +537,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /mail/wake` | run a mail pass now; owner only |
 | `GET /brief/last` | the last daily brief: `day`, `at`, `sent`, `tags` (tag to action id), `text`, `said`, `notes`; owner only |
 | `POST /brief/wake` | send a brief now, whatever the hour; owner only |
-| `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took; `at` is when it last looked, `acted_at` when those counts happened; owner only |
+| `GET /calendar/last` | what the calendar events reader last did: `events` read, bodies `made`, `rows` written, situations `cancelled`, `ops` the writer took; `at` is when it last looked, `acted_at` when those counts happened; `due` the next occurrence to start, when it looks again so a series' `next` moves on as that occurrence starts (version 80); owner only |
 | `POST /reconcile` | run the reconcile passes now, without waiting for the twice-daily run; owner only |
 | `GET /reconcile/last` | what the last run did: of the situations closed in the last thirty days how many were `resolved` (they carry an outcome) and how many only `presumed` over (the clock closed them), and how many proposals about situations now over it `quieted`; then time rows fixed, activities made, people made, participants added, merges proposed and run, retired, expired (presumed delivered), pruned |
 | `POST /merge` | `{"from", "into"}`: fold one body into another and delete it; answers `{"from", "into", "moved", "repointed", "ok"}`; owner only |
