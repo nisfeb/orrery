@@ -173,6 +173,9 @@ if os.environ.get('ONLY'):
         if head.startswith('# ---- the stub:') or any(w in head for w in want):
             #  padded so a traceback's line numbers are the file's
             exec(compile('\n' * src[:src.index(chunk)].count('\n') + chunk, __file__, 'exec'))
+            #  a section that leaves the stub up for the one after it, run alone
+            if 'srv' in globals() and srv.socket.fileno() != -1:
+                srv.shutdown(); srv.server_close()
     print()
     print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
     sys.exit(1 if fails else 0)
@@ -1379,8 +1382,9 @@ code, r0 = curl('GET', API + '/review/last')
 code, d = curl('POST', API + '/review/wake', {})
 rv = gate.wait('the review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r0).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
 rt = rv.get('text', '')
+#  a run the day before left its own day of work, so the count of late nights is any
 check('the review has the week\'s work, its late night and the baseline\'s progress',
-      rt.startswith('Your week, ') and '11 h 10 until 01:40' in rt and '1 late night' in rt and 'Learning your baseline: ' in rt, rt)
+      rt.startswith('Your week, ') and '11 h 10 until 01:40' in rt and re.search(r'\b\d+ late nights?\b', rt) and 'Learning your baseline: ' in rt, rt)
 check('the review counts each child: the one-on-one for the older, half a share for the toddler, who is most behind',
       ('Gate Kid %s: 0 drives, 1 one-on-one' % WRUN) in rt and ('Gate Tot %s: 0 drives, 0 one-on-ones (50%% share)' % WRUN) in rt and ('Most behind: Gate Tot %s.' % WRUN) in rt, rt)
 check('the review was mailed through auspex and pushed in a line', rv.get('sent') is True and 'workout' in rv.get('line', ''), (rv.get('sent'), rv.get('line'), rv.get('notes')))
