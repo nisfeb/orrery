@@ -1842,6 +1842,23 @@
     (expect-eq !>(`(list @da)`~[~2026.9.20 ~2027.9.20]) !>((turn b |=([* l=@da *] l))))
     (expect-eq !>(`(list [@ud @da @da])`~) !>((occurrences:orr 'u-none' cal-order ~2026.9.1 ~2027.12.31)))
   ==
+++  test-soonest-start
+  =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
+  =/  firsts=(list @da)
+    %+  murn  evs
+    |=  ev=cal-event:orr
+    =/  os  (skim (occurrences:orr id.ev cal-order cal-now (add cal-now ~d2)) |=([* l=@da *] (gth l cal-now)))
+    ?~(os ~ `l.i.os)
+  =/  low=@da  (need (roll firsts |=([a=@da b=(unit @da)] ?~(b `a `(min a u.b)))))
+  ;:  weld
+    ::  the soonest start after now among every event's occurrences
+    (expect !>(?=(^ firsts)))
+    (expect-eq !>(`(unit @da)``low) !>((soonest-start:orr evs cal-order cal-now)))
+    (expect !>((gth low cal-now)))
+    ::  nothing within two days, nothing to wake for
+    (expect-eq !>(`(unit @da)`~) !>((soonest-start:orr evs cal-order ~2030.1.1)))
+    (expect-eq !>(`(unit @da)`~) !>((soonest-start:orr ~ cal-order cal-now)))
+  ==
 ++  test-plan-events
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
   =/  all=(list loaded:orr)

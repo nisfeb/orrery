@@ -8232,6 +8232,22 @@
 ::  +occurrences: an event's spans starting between from and to, from
 ::  the calendar's order, oldest first, one per index
 ::
+::  +soonest-start: the first occurrence of any event to start after
+::  now, in the next two days: when the events reader must look again,
+::  so a series' next moves on as the occurrence starts and not up to an
+::  hour later, when the generator would see a next already past and
+::  propose the move itself (version 80)
+::
+++  soonest-start
+  |=  [events=(list cal-event) order=cal-order now=@da]
+  ^-  (unit @da)
+  =/  to=@da  (add now ~d2)
+  %+  roll  events
+  |=  [ev=cal-event best=(unit @da)]
+  =/  ls=(list @da)
+    (murn (occurrences id.ev order now to) |=([* l=@da *] ?:((gth l now) `l ~)))
+  ?~  ls  best
+  ?~(best `i.ls `(min u.best i.ls))
 ++  occurrences
   |=  [id=@t order=cal-order from=@da to=@da]
   ^-  (list [idx=@ud l=@da r=@da])

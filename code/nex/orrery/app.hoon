@@ -509,7 +509,14 @@
         ::  an hour with no news still wakes it: an occurrence crosses
         ::  now on its own, and the events reader must say so
         ;<  now=@da  bind:m  get-time:io
-        ;<  ~  bind:m  (set-timer:io /exec-hour (add now ~h1))
+        ::  and the next occurrence's start, half a minute after it, so
+        ::  its series moves on then (version 80)
+        ;<  rec=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
+        =/  due=(unit @da)  (de-iso:orr (gs:orr rec 'due'))
+        =/  wake=@da
+          ?.  &(?=(^ due) (gth (add u.due ~s30) now))  (add now ~h1)
+          (min (add now ~h1) (add u.due ~s30))
+        ;<  ~  bind:m  (set-timer:io /exec-hour wake)
         ;<  in=gen-in  bind:m  take-exec-in
         ;<  ~  bind:m  (cancel-timer:io /exec-hour)
         ::  news comes in bursts: a sync writing a hundred events, an
@@ -7123,7 +7130,12 @@
     (pure:m [base `todos `[acts-hash cass.u.vw todos now] & store])
   =/  store-moved=?  !=(store.u.seen cass.u.vw)
   =/  acts-moved=?  !=(acts.u.seen acts-hash)
-  =/  hour-up=?  (gte now (add events.u.seen ~h1))
+  ::  the hour, or an occurrence started since the store was last turned
+  ::  (version 80)
+  ;<  rec=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
+  =/  due=(unit @da)  (de-iso:orr (gs:orr rec 'due'))
+  =/  hour-up=?
+    |((gte now (add events.u.seen ~h1)) &(?=(^ due) (gte now u.due) (lth events.u.seen u.due)))
   ?:  &(!store-moved !acts-moved !hour-up)
     (pure:m [base `todos.u.seen seen | ~])
   ?:  &(!store-moved !hour-up)
@@ -7565,9 +7577,11 @@
   ;<  last=json  bind:m  (read-json (rf 0 / %'calendar-events-last.json'))
   =.  last  (del-key:orr last 'note')
   =/  active=?  |(!=(0 rows.plan) !=(0 made.plan) ?=(^ strays))
+  =/  due=(unit @da)  (soonest-start:orr events order.u.cache now)
   =/  saw=(list [@t json])
     :~  ['at' (en-time:orr now)]
         ['events' (numb:enjs:format (lent events))]
+        ['due' ?~(due ~ s+(en-iso:orr u.due))]
     ==
   ?:  &(!active ?=([%o *] last) !=(~ p.last))
     ;<  ~  bind:m  (over:io (rf 0 / %'calendar-events-last.json') [[/ %json] [%o (~(gas by p.last) saw)]])
