@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 79's owner steps
+
+The phone alerts (time to leave, traffic got worse, running late, nudges, the review, a proposed action) also go through %trunk's push-notice, which reaches Talon on an iPhone and on an Android without a UnifiedPush endpoint on grubbery; grubbery's web push still goes, for browsers, with the same tag, so a phone that gets both shows one. It needs two things on the ship, and until both are there orrery sends the web push alone: %trunk at wire 12 or later, and the kernel's typed mark for `trunk-action` at `/code/mar/clay/trunk/trunk-action.hoon` or `trunk/action.hoon` (a kernel release, like the typed chat-DM mark). Turn notices on or off on the trunk page.
+
 ### Version 77's owner steps
 
 Nothing to do. With the Mapbox token set, the ship gives every address it knows a point within a few minutes of the release, and again twice a day for new ones: about half a cent each, once. An appointment whose location is written as text now counts as a wait for the brief's nearby parks when you both drop off and pick up.
