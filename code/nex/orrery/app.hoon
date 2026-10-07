@@ -1846,6 +1846,7 @@
   ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title title.a ~ `'/apps/orrery' `tag]] eny]]
+  ;<  ~  bind:m  (trunk-notice tag title title.a)
   =/  sent=?  ?=(~ err)
   ;<  ~  bind:m  (note-by 'push' sent ?:(sent title.a 'push refused') by.a)
   (pure:m ~)
@@ -5610,6 +5611,7 @@
     ;<  err=(unit tang)  bind:m
       %+  poke-soft:io  push-road:io
       [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
+    ;<  ~  bind:m  (trunk-notice (cat 3 'orrery-leave-' key) title body)
     =/  note=@t  ?~(err (rap 3 'told the owner traffic got worse ' for ~) 'the push road is refused')
     ;<  ~  bind:m  (leave-record last now ~[note] kept alerted quiet)
     (pure:m `(add starts.a ~m1))
@@ -5647,6 +5649,7 @@
   ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-leave-' key)]] eny]]
+  ;<  ~  bind:m  (trunk-notice (cat 3 'orrery-leave-' key) title body)
   =/  note=@t  ?~(err (rap 3 'told the owner to leave ' for ~) 'the push road is refused')
   ;<  ~  bind:m  (leave-record last now ~[note] plan [key alerted] quiet)
   =/  look=@da  (sub leave (min leave ~m3))
@@ -5838,6 +5841,7 @@
   ;<  *  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-late-' (gs:orr t 'key'))]] eny]]
+  ;<  ~  bind:m  (trunk-notice (cat 3 'orrery-late-' (gs:orr t 'key')) title body)
   =/  tell=@t  (gs:orr t 'tell')
   ?:  =('' tell)  (pure:m ~)
   =/  text=@t  (rap 3 'Running about ' (crip (a-co:co late)) ' minutes late, there about ' there '.' ~)
@@ -6112,6 +6116,7 @@
   ;<  err=(unit tang)  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title.u.pick body.u.pick ~ `'/apps/orrery' `(cat 3 'orrery-nudge-' kind.u.pick)]] eny]]
+  ;<  ~  bind:m  (trunk-notice (cat 3 'orrery-nudge-' kind.u.pick) title.u.pick body.u.pick)
   =/  one=json
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]  ['kind' s+kind.u.pick]  ['key' s+key.u.pick]
@@ -6422,6 +6427,7 @@
   ;<  *  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ ['Your week' line ~ `'/apps/orrery' `'orrery-review']] eny]]
+  ;<  ~  bind:m  (trunk-notice 'orrery-review' 'Your week' line)
   %+  over:io  (rf 0 / %'review-last.json')
   :-  [/ %json]
   %-  pairs:enjs:format
@@ -6588,6 +6594,33 @@
   =/  action=*  [%channel [kind u.host u.name] [%post [%add (essay-of text our now)]]]
   (gall-poke-wait our %channels %channel-action-2 action)
 ++  essay-of  essay-of:orr
+::  +trunk-notice: the same push to the owner's phones through %trunk
+::  (version 79), which reaches Talon on an iPhone and on an Android
+::  with no UnifiedPush endpoint on grubbery, where grubbery's web push
+::  does not; the web push still goes, for browsers, and the same tag
+::  lets a phone that gets both show one. Only when the kernel types
+::  trunk-action (a local poke at a mark it cannot type fails in the
+::  kernel) and %trunk answers wire 12 or later; under 4 KiB, cut; a nack
+::  or silence is no notice
+::
+++  trunk-notice
+  |=  [tag=@t title=@t body=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ::  the kernel finds the mark in either segment form, so either will do
+  ;<  one=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /code/mar/clay/trunk %'trunk-action.hoon'] ~)
+  ;<  two=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /code/mar/clay/trunk/trunk %'action.hoon'] ~)
+  ?.  |(?=([~ %file *] one) ?=([~ %file *] two))  (pure:m ~)
+  ;<  live=(unit ?)  bind:m  (scry-loob /gu/trunk/$)
+  ?.  =(`& live)  (pure:m ~)
+  ;<  v=(each json @t)  bind:m  (scry-json /gx/trunk/version/json)
+  ?.  &(?=(%& -.v) (gte (fall (gn:orr p.v 'wire') 0) 12))  (pure:m ~)
+  ;<  our=@p  bind:m  get-our:io
+  ;<  *  bind:m
+    %:  gall-poke-wait  our  %trunk  %trunk-action
+      [%push-notice (end [3 200] tag) (end [3 400] title) (end [3 3.000] body) ~]
+    ==
+  (pure:m ~)
 ::  +gall-poke-wait: a poke at a local agent through the kernel's gall
 ::  road, waited for: ~ on the agent's ack; the reason on a veto, a
 ::  nack, or thirty seconds of silence
