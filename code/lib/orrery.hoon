@@ -1086,6 +1086,7 @@
       [70 ~ ~[['situation' ~['drop-off' 'pick-up']] ['activity' ~['drop-off' 'pick-up']]] ~]
       [75 ~ ~[['person' ~['steps-target' 'sleep-target' 'bedtime-target']] ['activity' ~['per-week' 'minutes']]] ~]
       [76 ~ ~[['activity' ~['wind-mph' 'rain-max' 'temp-f']] ['place' ~['pota' 'activated']]] ~]
+      [83 ~ ~[['situation' ~['away']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1213,8 +1214,9 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away']
           :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+              ['away' 'yes or no: a trip that takes the owner away from home from its starts to its ends (travel, an offsite, a trip on the water, a stay elsewhere), from their word or plainly from what is known ("I\'m in Barcelona the 19th to the 24th"); while it runs the ship leaves home\'s trips to others and holds the nudges. A stay of six hours or more forty kilometres from home counts without it; no says it does not']
               ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
               ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
               ['drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Lena drops the kids off")']
@@ -7525,6 +7527,111 @@
   ?~  pt  ~
   =/  act=(list row)  (fall (~(get by w) 'activated') ~)
   `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  ==  away (version 83): when the owner is away from home, home's
+::  trips are others' and the nudges wait
+::
+::  +away-span: a stretch the owner is away: the situation it is, its
+::  name, when, and why the ship counts it
+::
++$  away-span  [id=@t name=@t from=@da to=@da why=@t]
+::  +known-point: where a body's location is without asking Mapbox: the
+::  place it names, by its geo or its address in the geocache, else the
+::  location as written, in the geocache
+::
+++  known-point
+  |=  [w=(map @t (list row)) all=(list loaded) multi=(set @t) now=@da cache=json]
+  ^-  (unit [lat=@t lon=@t])
+  =/  loc=(list row)  (fall (~(get by w) 'location') ~)
+  ?~  loc  ~
+  ?.  ?=([%o *] value.obs.i.loc)  (geo-of (gj cache (addr-key (ref-or-text value.obs.i.loc))))
+  (place-point (ref-or-text value.obs.i.loc) all multi now cache)
+++  place-point
+  |=  [id=@t all=(list loaded) multi=(set @t) now=@da cache=json]
+  ^-  (unit [lat=@t lon=@t])
+  =/  l=(unit loaded)  (loaded-of all id)
+  ?~  l  ~
+  =/  w=(map @t (list row))  (fold rows.u.l multi now)
+  =/  g=(list row)  (fall (~(get by w) 'geo') ~)
+  ?^  g  (geo-of value.obs.i.g)
+  =/  a=@t  (winner-text w 'address')
+  ?:(=('' a) ~ (geo-of (gj cache (addr-key a))))
+::  +home-point: home's point: place/home's geo, else its address as
+::  the geocache has it; ~ when the ship knows neither
+::
+++  home-point
+  |=  [all=(list loaded) multi=(set @t) now=@da cache=json]
+  (place-point 'place/home' all multi now cache)
+::  +away-spans: the stretches the owner is away, from a day ago to two
+::  months ahead: a situation said to be away (the owner's word, or a
+::  model's from what it read), and, unless said not to be, one the
+::  owner goes to of six hours or more at a point forty kilometres or
+::  more from home: a sailing trip an hour off as much as a flight
+::
+++  away-spans
+  |=  [all=(list loaded) multi=(set @t) now=@da home=(unit [lat=@t lon=@t]) cache=json]
+  ^-  (list away-span)
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit away-span)
+  ?.  =(%situation kind.body.l)  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?:  (is-closed w)  ~
+  =/  said=@t  (lower (trim-cord (winner-text w 'away')))
+  ?:  |(=('no' said) =('false' said))  ~
+  =/  from=(unit @da)  (de-iso-any (winner-text w 'starts'))
+  ?~  from  ~
+  =/  to=@da  (fall (de-iso-any (winner-text w 'ends')) (add u.from ~d1))
+  ?.  &((gth to (sub now ~d1)) (lth u.from (add now ~d60)))  ~
+  ?:  |(=('yes' said) =('true' said))  `[id.l name.body.l u.from to 'said to be away']
+  ?:  =(%no (attends l multi now))  ~
+  ?.  (gte (sub to (min to u.from)) ~h6)  ~
+  ?~  home  ~
+  =/  pt  (known-point w all multi now cache)
+  ?~  pt  ~
+  =/  m  (metres-between u.home u.pt)
+  ?~  m  ~
+  ?.  (gte u.m 40.000)  ~
+  `[id.l name.body.l u.from to (rap 3 (crip (a-co:co (div u.m 1.000))) ' km from home' ~)]
+::  +away-at: the stretch away a moment falls in
+::
+++  away-at
+  |=  [spans=(list away-span) at=@da]
+  ^-  (unit away-span)
+  =/  in=(list away-span)  (skim spans |=(s=away-span &((lte from.s at) (lth at to.s))))
+  ?~(in ~ `i.in)
+::  +far-from-home: how many kilometres the phone's last fix is from
+::  home, when it is a hundred and fifty or more: away, however old the
+::  fix, since the phone reports a move and coming home is one
+::
+++  far-from-home
+  |=  [pos=json home=(unit [lat=@t lon=@t])]
+  ^-  (unit @ud)
+  ?~  home  ~
+  ?.  &((coordinate (gs pos 'lat') 90) (coordinate (gs pos 'lon') 180))  ~
+  =/  m  (metres-between u.home [(gs pos 'lat') (gs pos 'lon')])
+  ?~  m  ~
+  ?.  (gte u.m 150.000)  ~
+  `(div u.m 1.000)
+::  +away-skips: whether time to leave passes an appointment over because
+::  the owner is away then: in a stretch away (not the trip itself), or
+::  with the phone far from home, at a point near home or not known;
+::  one at the trip's end of things still has its alert
+::
+++  away-skips
+  |=  $:  a=appointment  spans=(list away-span)  far=(unit @ud)
+          home=(unit [lat=@t lon=@t])  all=(list loaded)  multi=(set @t)  now=@da  cache=json
+      ==
+  ^-  ?
+  =/  span=(unit away-span)  (away-at spans starts.a)
+  ?:  &(?=(~ span) ?=(~ far))  |
+  ?:  &(?=(^ span) =(id.u.span id.a))  |
+  =/  pt=(unit [lat=@t lon=@t])
+    ?^  place.a  (place-point u.place.a all multi now cache)
+    (geo-of (gj cache (addr-key where.a)))
+  ?~  pt  &
+  ?~  home  &
+  =/  m  (metres-between u.home u.pt)
+  ?~(m & (lth u.m 40.000))
 ::  +known-addresses: every address the ship knows that has no point
 ::  yet (version 77): a place's address when it has no geo (a POTA park
 ::  has its point), and each location written as text on an activity or

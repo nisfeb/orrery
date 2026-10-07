@@ -1048,7 +1048,7 @@
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away']) !>((strings:orr (ga:orr sit 'attrs'))))
     (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 76]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 83]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1246,6 +1246,53 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-away
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a '/' by (en:json:html v) ~) [id a v now ~ 90 ['t' 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  iso  |=(d=@dr `json`s+(en-iso:orr (add now d)))
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  home  (mk 'place/home' %place 'Home' ~[['address' s+'1 Home Rd' 'owner']])
+  =/  cache=json  (pairs:enjs:format ~[['1 home rd' s+'39.78,-89.65'] ['dock 9, lakeside' s+'40.25,-89.65'] ['school, home town' s+'39.79,-89.65']])
+  ::  said to be away, with no place: the trip from the calendar
+  =/  trip  (mk 'situation/trip' %situation 'Team offsite' ~[['starts' (iso ~d1) 'calendar'] ['ends' (iso ~d6) 'calendar'] ['participants' (ref 'person/me') 'calendar'] ['away' s+'yes' 'generator']])
+  ::  a two-day sail 52 km off, the owner on it: away by itself
+  =/  sail  (mk 'situation/sail' %situation 'Sail weekend' ~[['starts' (iso ~d10) 'owner'] ['ends' (iso ~d12) 'owner'] ['participants' (ref 'person/me') 'owner'] ['location' s+'Dock 9, Lakeside' 'owner']])
+  ::  the same sail, said not to be away: not
+  =/  nope  (mk 'situation/nope' %situation 'Day sail' ~[['starts' (iso ~d20) 'owner'] ['ends' (iso ~d21) 'owner'] ['participants' (ref 'person/me') 'owner'] ['location' s+'Dock 9, Lakeside' 'owner'] ['away' s+'no' 'owner']])
+  ::  long, near home: not
+  =/  near  (mk 'situation/near' %situation 'School fair' ~[['starts' (iso ~d2) 'owner'] ['ends' (iso ~d3) 'owner'] ['participants' (ref 'person/me') 'owner'] ['location' s+'School, home town' 'owner']])
+  =/  all=(list loaded:orr)  ~[home trip sail nope near]
+  =/  hp  (home-point:orr all multi now cache)
+  =/  spans  (away-spans:orr all multi now hp cache)
+  =/  game=appointment:orr  ['situation/game' 'Game' (add now ~d2) ~ 'School, home town' ~ %yes %go]
+  =/  there=appointment:orr  ['situation/dinner' 'Dinner' (add now ~d2) ~ 'Dock 9, Lakeside' ~ %yes %go]
+  =/  later=appointment:orr  ['situation/game' 'Game' (add now ~d8) ~ 'School, home town' ~ %yes %go]
+  =/  itself=appointment:orr  ['situation/sail' 'Sail weekend' (add now ~d10) ~ 'Dock 9, Lakeside' ~ %yes %go]
+  ;:  weld
+    (expect-eq !>(`(unit [@t @t])``['39.78' '-89.65']) !>(hp))
+    (expect-eq !>(`(list [@t @t])`~[['situation/trip' 'said to be away'] ['situation/sail' '52 km from home']]) !>((turn spans |=(s=away-span:orr [id.s why.s]))))
+    (expect-eq !>(`(unit @t)``'situation/trip') !>(=/(s (away-at:orr spans (add now ~d3)) ?~(s ~ `id.u.s))))
+    (expect-eq !>(`(unit @t)`~) !>(=/(s (away-at:orr spans (add now ~d8)) ?~(s ~ `id.u.s))))
+    ::  away: a home game is passed over, a dinner where the owner is is not
+    (expect !>((away-skips:orr game spans ~ hp all multi now cache)))
+    (expect !>(!(away-skips:orr there spans ~ hp all multi now cache)))
+    (expect !>(!(away-skips:orr later spans ~ hp all multi now cache)))
+    ::  the trip's own start still has its alert
+    (expect !>(!(away-skips:orr itself spans ~ hp all multi now cache)))
+    ::  the phone far from home: home's games are passed over whenever they are
+    (expect !>((away-skips:orr later spans `7.500 hp all multi now cache)))
+    (expect-eq !>(`(unit @ud)`~) !>((far-from-home:orr (pairs:enjs:format ~[['lat' n+'39.80'] ['lon' n+'-89.60']]) hp)))
+    ::  ponytail: flat over long distances, so far is only far, past 150 km
+    (expect !>(=/(k (far-from-home:orr (pairs:enjs:format ~[['lat' s+'41.38'] ['lon' s+'2.17']]) hp) &(?=(^ k) (gth u.k 7.000)))))
+    (expect-eq !>(`(unit @ud)`~) !>((far-from-home:orr (pairs:enjs:format ~[['lat' s+'41.38'] ['lon' s+'2.17']]) ~)))
   ==
 ++  test-family-busy
   =/  r=rhythm:orr  (de-rhythm:orr (jo '{"family_from": "17:30", "family_to": "20:30"}'))

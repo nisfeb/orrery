@@ -5426,6 +5426,11 @@
   =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
   ?:  &(?=(^ at) (lte u.at now) (lth (sub now u.at) ~h12) (coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))
     (pure:m `['position' (gs:orr pos 'lat') (gs:orr pos 'lon')])
+  ::  a fix far from home holds however old: coming home is a move, and
+  ::  the phone would say (version 83)
+  ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  ?:  &(?=(^ at) (lte u.at now) ?=(^ (far-from-home:orr pos (home-point:orr all multi now gc))))
+    (pure:m `['position' (gs:orr pos 'lat') (gs:orr pos 'lon')])
   =/  here=(list appointment:orr)
     %+  skim  (appointments-ahead:orr all multi (sub now ~h12) ~h12)
     |=  b=appointment:orr
@@ -5480,8 +5485,17 @@
   =/  mine=(list appointment:orr)
     %+  skip  (appointments-ahead:orr all multi now horizon.cfg)
     |=(a=appointment:orr |(=(%no verdict.a) (lien quiet |=(k=@t =(k (appt-key:orr a))))))
+  ::  away: home's appointments are others' to go to (version 83)
+  ;<  away=away-view  bind:m  (away-state all multi now)
+  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away))
+  =/  passed=@ud  (lent (skim mine gone))
+  =.  mine  (skip mine gone)
   ?~  mine
-    ;<  ~  bind:m  (leave-record last now ~['nothing ahead to leave for'] ~ alerted quiet)
+    =/  why=(unit @t)  (away-now away now)
+    =/  note=@t
+      ?:  =(0 passed)  'nothing ahead to leave for'
+      (rap 3 'away' ?~(why '' (cat 3 ': ' u.why)) '; ' (crip (a-co:co passed)) ' at home left to others' ~)
+    ;<  ~  bind:m  (leave-record last now ~[note] ~ alerted quiet)
     (pure:m ~)
   =/  a=appointment:orr  i.mine
   =/  key=@t  (appt-key:orr a)
@@ -5996,13 +6010,23 @@
   ;<  travel-j=json  bind:m  (read-json (rf 0 / %'travel.json'))
   =/  travel=travel-config:orr  (de-travel-config:orr travel-j)
   ::  the stops with their pins and hours, and the map of them (version 73)
+  ::  away, home's trips are not the owner's (version 83)
+  ;<  away=away-view  bind:m  (away-state all multi now)
+  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away))
   ;<  [stops=(list [a=appointment:orr pin=@t hours=@t]) pins=(list [lat=@t lon=@t])]  bind:m
     ?.  &(enabled.travel (gth to now))  (pure:(fiber:fiber:nexus ,[(list [a=appointment:orr pin=@t hours=@t]) (list [lat=@t lon=@t])]) [~ ~])
-    (brief-places travel all multi now tz (appointments-ahead:orr all multi now (sub to now)))
+    (brief-places travel all multi now tz (skip (appointments-ahead:orr all multi now (sub to now)) gone))
   =/  overlay=@t  (static-overlay:orr pins)
   ;<  tg-j=json  bind:m  (read-json (rf 0 / %'telegram.json'))
   =/  public=@t  public-url:(de-tg-config:orr tg-j)
+  =/  away-line=(list @t)
+    =/  on=(list away-span:orr)  (skim spans.away |=(s=away-span:orr &((lth from.s to) (gth to.s from))))
+    =/  tail=@t  '. Home\'s trips are left to others, and the nudges wait.'
+    ?^  on  ~[(rap 3 'Away: ' name.i.on ' until ' (cut 3 [0 10] (local-iso:orr (en-iso:orr to.i.on) tz)) tail ~)]
+    ?~  far.away  ~
+    ~[(rap 3 'Away: your phone is ' (crip (a-co:co u.far.away)) ' km from home' tail ~)]
   =/  leaving=(list @t)
+    %+  weld  away-line
     %+  weld  (brief-leaving:orr stops tz)
     ?:  |(=('' overlay) =('' public))  ~
     ~[(rap 3 'Map of the stops: ' public ?:(=('/' (cut 3 [(dec (max 1 (met 3 public))) 1] public)) '' '/') 'apps/orrery/api/brief/map' ~)]
@@ -6059,6 +6083,9 @@
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  multi=(set @t)  (multi-of:orr schema)
+  ::  away, no nudges: they are for the owner's days at home (version 83)
+  ;<  away=away-view  bind:m  (away-state all multi now)
+  ?^  (away-now away now)  (pure:m ~)
   ;<  work-j=json  bind:m  (read-json (rf 0 / %'work.json'))
   ;<  health-j=json  bind:m  (read-json (rf 0 / %'health.json'))
   =/  mins=@ud  (clock-minutes:orr now tz)
@@ -6161,13 +6188,37 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  =/  home=(unit loaded:orr)  (loaded-of:orr all 'place/home')
-  =/  g=(list row:orr)  ?~(home ~ (fall (~(get by (fold:orr rows.u.home (multi-of:orr schema) now)) 'geo') ~))
-  =/  hp  ?~(g ~ (geo-of:orr value.obs.i.g))
-  ?^  hp  (pure:m hp)
+  ;<  away=away-view  bind:m  (away-state all (multi-of:orr schema) now)
   ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
-  ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  (pure:m ~)
-  (pure:m `[(gs:orr pos 'lat') (gs:orr pos 'lon')])
+  =/  phone=(unit [lat=@t lon=@t])
+    ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  ~
+    `[(gs:orr pos 'lat') (gs:orr pos 'lon')]
+  ::  away, the weather where the owner is (version 83)
+  ?:  &(?=(^ phone) ?=(^ far.away))  (pure:m phone)
+  ?^  home.away  (pure:m home.away)
+  (pure:m phone)
+::  +away-state: the owner away from home (version 83): the stretches
+::  away, how far the phone is when it is far, home's point, and the
+::  geocache they were read with
+::
++$  away-view  [spans=(list away-span:orr) far=(unit @ud) home=(unit [lat=@t lon=@t]) cache=json]
+++  away-state
+  |=  [all=(list loaded:orr) multi=(set @t) now=@da]
+  =/  m  (fiber:fiber:nexus ,away-view)
+  ^-  form:m
+  ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  home  (home-point:orr all multi now gc)
+  (pure:m [(away-spans:orr all multi now home gc) (far-from-home:orr pos home) home gc])
+::  +away-now: why the owner is away now, or ~
+::
+++  away-now
+  |=  [a=away-view now=@da]
+  ^-  (unit @t)
+  =/  s=(unit away-span:orr)  (away-at:orr spans.a now)
+  ?^  s  `(rap 3 name.u.s ' (' why.u.s ')' ~)
+  ?~  far.a  ~
+  `(rap 3 'the phone is ' (crip (a-co:co u.far.a)) ' km from home' ~)
 ::  +weather-pass: the weather for the owner's point, kept in weather.json
 ::  (version 76): the grid once per point, the daily and hourly forecasts
 ::  every two hours (the hourly cut to the next two days), the alerts in
