@@ -1316,6 +1316,30 @@ check('ten minutes worse, three minutes before the leave-by: a second push, the 
       dictish(tw.get('next')).get('minutes') == 40 and dictish(tw.get('next')).get('rechecked') is True, tw)
 SLOW = 0
 curl('DELETE', API + '/body/' + TW)
+# away (version 83): a trip said to be away leaves home's appointments to others, says why, and the brief says so;
+# the owner's no puts them back
+TAW, TAH = 'situation/gate-away-' + TRUN, 'situation/gate-home-' + TRUN
+aw0 = datetime.now(timezone.utc).replace(microsecond=0)
+def nowobs(sub, attr, value): return {'subject': sub, 'attr': attr, 'value': value, 'at': iso(datetime.now(timezone.utc).replace(microsecond=0)), 'conf': 100, 'source': tsrc, 'by': 'owner'}
+observe([{'id': TAW, 'name': 'Gate trip ' + TRUN}, {'id': TAH, 'name': 'Gate home game ' + TRUN}],
+        [tobs(TAW, 'starts', iso(aw0 - timedelta(hours=1))), tobs(TAW, 'ends', iso(aw0 + timedelta(days=2))), tobs(TAW, 'away', 'yes'),
+         tobs(TAH, 'starts', iso(aw0 + timedelta(minutes=50))), tobs(TAH, 'location', TADDR), tobs(TAH, 'attending', 'yes')])
+curl('POST', API + '/travel/wake', {})
+ta = gate.wait('the away note lands', lambda: twn(dictish(curl('GET', API + '/travel/last')[1]), 'away: Gate trip'), 60) or {}
+check('away: the home game the owner said yes to has no plan, and the record says why',
+      not ta.get('next') and any(('away: Gate trip %s (said to be away)' % TRUN) in n and 'at home left to others' in n for n in ta.get('notes', [])), ta)
+code, ab0 = curl('GET', API + '/brief/last')
+curl('POST', API + '/brief/wake', {})
+ab = gate.wait('the brief while away lands', lambda: (lambda b: b if b.get('at') and b.get('at') != dictish(ab0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 90) or {}
+awl = (ab.get('text') or '').split('When to leave', 1)[-1].split('\n\n', 1)[0]
+check('the brief\'s When to leave says the owner is away and leaves the home game out (the day still lists it)',
+      ('Away: Gate trip ' + TRUN) in awl and ('Gate home game ' + TRUN) not in awl, (ab.get('text') or '')[:600])
+observe([], [nowobs(TAW, 'away', 'no')])
+curl('POST', API + '/travel/wake', {})
+tb = gate.wait('not away, the home game is planned', lambda: (lambda l: l if dictish(l.get('next')).get('id') == TAH else None)(dictish(curl('GET', API + '/travel/last')[1])), 60) or {}
+check('the owner\'s no puts the home game back', dictish(tb.get('next')).get('id') == TAH, tb)
+curl('DELETE', API + '/body/' + TAW)
+curl('DELETE', API + '/body/' + TAH)
 # every known address gets its point (version 77): a place's address becomes its geo, the ship's
 TGP = 'place/gate-geo-' + TRUN
 observe([{'id': TGP, 'name': 'Gate geo ' + TRUN}], [tobs(TGP, 'address', '7 Gate Way ' + TRUN)])
