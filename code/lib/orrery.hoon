@@ -1087,6 +1087,13 @@
       [75 ~ ~[['person' ~['steps-target' 'sleep-target' 'bedtime-target']] ['activity' ~['per-week' 'minutes']]] ~]
       [76 ~ ~[['activity' ~['wind-mph' 'rain-max' 'temp-f']] ['place' ~['pota' 'activated']]] ~]
       [83 ~ ~[['situation' ~['away']]] ~]
+      :*  84  ~
+          :~  ['sphere' ~['status' 'summary']]  ['person' ~['sphere']]  ['place' ~['sphere']]
+              ['thing' ~['sphere']]  ['org' ~['sphere']]  ['situation' ~['sphere']]  ['activity' ~['sphere']]
+          ==
+          ~['sphere']
+      ==
+      [85 ~ ~ ~['drop-off' 'pick-up']]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1137,7 +1144,13 @@
       |=  [[kind=@t attrs=(list @t)] ks=_specs]
       ^-  json
       =/  spec=json  (gj ks kind)
-      ?.  ?=([%o *] spec)  ks
+      ::  a kind a release brought in is the starter's, whole, where the
+      ::  stored schema lacks it (version 84); any other kind it lacks the
+      ::  owner took out, and it stays out
+      ?.  ?=([%o *] spec)
+        ?.  (~(has in schema-new-kinds) kind)  ks
+        =/  fresh=json  (gj (gj starter-schema 'kinds') kind)
+        ?.(?=([%o *] fresh) ks (set-key ks kind fresh))
       =/  had=json  (gj spec 'notes')
       =/  notes=json
         %+  roll  attrs
@@ -1161,6 +1174,9 @@
     ?~  said  acc
     (set-key acc 'kinds' (set-key (gj acc 'kinds') kind (set-key spec 'notes' (set-key (gj spec 'notes') attr said))))
   (set-key new 'schema_version' (numb:enjs:format schema-newest))
+::  +schema-new-kinds: the kinds a release brought in after the first
+::
+++  schema-new-kinds  `(set @t)`(sy `(list @t)`~['sphere'])
 ::  +schema-renotes: notes the starter carried once and retired, each
 ::  replaced in a stored schema that still holds it word for word: the
 ::  drop-off note's example named a real person until version 75
@@ -1168,6 +1184,8 @@
 ++  schema-renotes
   ^-  (list [kind=@t attr=@t old=@t])
   :~  ['situation' 'drop-off' 'who takes someone there for the start and leaves, a ref to the person, the owner\'s own body when it is them ("Andrea drops the kids off")']
+      ['activity' 'drop-off' 'who takes someone there for the start of each occurrence, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
+      ['activity' 'pick-up' 'who collects someone as each occurrence ends, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
   ==
 ++  starter-schema
   ^-  json
@@ -1183,8 +1201,9 @@
       %-  pairs:enjs:format
       :~  :-  'person'
           %+  kind
-            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'spouse' 'children' 'parents' 'siblings' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income' 'steps-target' 'sleep-target' 'bedtime-target']
-          :~  ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
+            ~['status' 'location' 'phone' 'email' 'telegram' 'ship' 'birthday' 'relationship' 'spouse' 'children' 'parents' 'siblings' 'employer' 'timezone' 'likes' 'dislikes' 'health' 'income' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']
+          :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
+              ['status' 'what the person is doing or dealing with right now, in plain words, as an observer would put it: on jury duty, stranded waiting for a tow, travelling, sick; never a feeling, a quote or a wish']
               ['location' 'where the person is: a place body as a ref when the ship has one, else a short place name; null when they have left and the new place is unknown']
               ['telegram' 'the Telegram chat id the ship reaches this person at, a number as text; identity, like phone']
               ['relationship' 'how they relate to the owner: wife, son, boss, neighbour']
@@ -1200,22 +1219,25 @@
           ==
           :-  'place'
           %+  kind
-            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated']
-          :~  ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
+            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated' 'sphere']
+          :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
+              ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
               ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
               ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
           %+  kind
-            ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until']
-          :~  ['status' 'the state the thing is in right now: broken down, at the shop, shipped, delivered']
+            ~['type' 'status' 'location' 'owner' 'make' 'model' 'plate' 'last-service' 'warranty-until' 'sphere']
+          :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
+              ['status' 'the state the thing is in right now: broken down, at the shop, shipped, delivered']
               ['location' 'where the thing is: a place body as a ref or a short place name; null when unknown']
           ==
-          ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address'] ~)]
+          ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address' 'sphere'] ~[['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']])]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away']
-          :~  ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere']
+          :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
+              ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
               ['away' 'yes or no: a trip that takes the owner away from home from its starts to its ends (travel, an offsite, a trip on the water, a stay elsewhere), from their word or plainly from what is known ("I\'m in Barcelona the 19th to the 24th"); while it runs the ship leaves home\'s trips to others and holds the nudges. A stay of six hours or more forty kilometres from home counts without it; no says it does not']
               ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
               ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
@@ -1232,12 +1254,13 @@
           ==
           :-  'activity'
           %+  kind
-            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up' 'per-week' 'minutes' 'wind-mph' 'rain-max' 'temp-f']
-          :~  ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
+            ~['status' 'schedule' 'cadence' 'location' 'participants' 'organizer' 'last' 'next' 'skipped' 'attending' 'leave-by' 'drop-off' 'pick-up' 'per-week' 'minutes' 'wind-mph' 'rain-max' 'temp-f' 'sphere']
+          :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
+              ['status' 'active, or cancelled when the whole series has ended; one occurrence that is off goes under skipped']
               ['attending' 'yes or no: whether the owner goes to it themselves, in their own word when they gave it; it holds for every occurrence until they say otherwise']
               ['leave-by' 'when the owner must leave for the next occurrence, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
-              ['drop-off' 'who takes someone there for the start of each occurrence, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
-              ['pick-up' 'who collects someone as each occurrence ends, a ref to the person, the owner\'s own body when it is them; it holds until a message says otherwise']
+              ['drop-off' 'who takes someone there for the start of each occurrence, a ref to the person, the owner\'s own body when it is them. When it differs by day, a row for each with the days: {"ref": "person/lena", "days": ["wednesday"]} ("Lena drops off on Wednesdays, I do Fridays"); a row with no days holds for the rest. Each holds until a message says otherwise']
+              ['pick-up' 'who collects someone as each occurrence ends, a ref to the person, the owner\'s own body when it is them. When it differs by day, a row for each with the days, as for drop-off; a row with no days holds for the rest. Each holds until a message says otherwise']
               ['last' 'the start of the most recent occurrence, ISO 8601 UTC, with at set to that start; for a habit, when the owner last did it ("read tonight")']
               ['per-week' 'a habit: how many times a week the owner wants to do it, a number ("read three times a week"); the ship finds the time for it in their free evenings and weekends']
               ['minutes' 'a habit: how long one time takes, in minutes, a number; thirty when not said']
@@ -1250,8 +1273,14 @@
               ['skipped' 'the start of one occurrence that is off, ISO 8601 UTC, one row per occurrence; the activity itself stays active']
           ==
           ['note' (kind ~['text'] ~)]
+          :-  'sphere'
+          %+  kind
+            ~['status' 'summary']
+          :~  ['summary' 'what this part of the owner\'s life is, one line in their words: the LLC and its clients, weeks on the road, the cruises']
+              ['status' 'active, or closed when that part of their life is over']
+          ==
       ==
-      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped'] |=(t=@t `json`s+t))]
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped' 'sphere' 'drop-off' 'pick-up'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference' 'resolve'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
@@ -4424,7 +4453,7 @@
   ?:(=('' t) ~ `(end [3 max-alias] t))
 ++  sink-attrs       `(set @t)`(sy `(list @t)`~['mood' 'feeling' 'feelings' 'emotion'])
 ++  sensitive-attrs  `(set @t)`(sy `(list @t)`~['health' 'income'])
-++  body-kinds       `(set @t)`(sy `(list @t)`~['person' 'place' 'thing' 'org' 'situation' 'note' 'activity'])
+++  body-kinds       `(set @t)`(sy `(list @t)`~['person' 'place' 'thing' 'org' 'situation' 'note' 'activity' 'sphere'])
 ::  +kind-of: the kind half of a body id, '' when it has no slash
 ::
 ++  kind-of  |=(id=@t ^-(@t (end [3 (fall (find "/" (trip id)) 0)] id)))
@@ -5300,7 +5329,7 @@
   - "fact" states something true, on an attribute the kind's list names.
   - "merge" folds one body into another that is the same person, place or thing.
   - "resolve" closes a situation that is over, with how it ended in a few plain words.
-  - "preference" keeps a standing rule every future proposal follows, in the owner's own words, short. Use it when the instruction says how things should be from now on ("never", "always", "stop").
+  - "preference" keeps a standing rule every future proposal follows, in the owner's own words, short. Use it when the instruction says how things should be from now on ("never", "always", "stop"). Something the schema has an attribute for is a fact, never a preference: who drops off and who picks up are drop-off and pick-up facts on the activity or situation, the owner's own body when it is them, with "days" when it differs by day ("Andrea drops off on Wednesdays, I pick up" is drop-off {"ref": "person/andrea", "days": ["wednesday"]} and pick-up {"ref": "person/me", "days": ["wednesday"]}).
   - "task", "message" and "calendar" are things to do, in their payload shapes.
   When the owner answers an action ("remove her", "that's wrong", "not him"), read the instruction against that action and the facts of the bodies it is about.
   Use only body ids the ship knows. Never invent a body, a fact or an id. When the instruction is unclear, propose nothing and say in the reply what you need to know.
@@ -6250,13 +6279,11 @@
 ::  whether they attend: a trip to go, sure or asked about, or none
 ::
 ++  trips
-  |=  [l=loaded multi=(set @t) now=@da]
+  |=  [l=loaded multi=(set @t) now=@da day=@ud]
   ^-  (list [leg verdict])
   =/  w=(map @t (list row))  (fold rows.l multi now)
-  =/  dr=(list row)  (fall (~(get by w) 'drop-off') ~)
-  =/  pr=(list row)  (fall (~(get by w) 'pick-up') ~)
-  =/  drop=@t  ?~(dr '' (ref-or-text value.obs.i.dr))
-  =/  pick=@t  ?~(pr '' (ref-or-text value.obs.i.pr))
+  =/  drop=@t  (leg-for (fall (~(get by w) 'drop-off') ~) day)
+  =/  pick=@t  (leg-for (fall (~(get by w) 'pick-up') ~) day)
   =/  v=verdict  (attends l multi now)
   ?:  &(=('' drop) =('' pick))
     ?:(=(%no v) ~ ~[[%go v]])
@@ -6267,6 +6294,34 @@
   ?^  legs  legs
   ::  both legs someone else's: no trip, unless the owner said they go
   ?:(=('yes' (lower (trim-cord (winner-text w 'attending')))) ~[[%go %yes]] ~)
+::  +leg-days: the weekdays a leg row names, Sunday 0 (version 85)
+::
+++  leg-days
+  |=  v=json
+  ^-  (list @ud)
+  ?.  ?=([%o *] v)  ~
+  %+  murn  (ga v 'days')
+  |=  d=json
+  ^-  (unit @ud)
+  ?.  ?=([%s *] d)  ~
+  (find ~[(end [3 3] (lower (trim-cord p.d)))] `(list @t)`~['sun' 'mon' 'tue' 'wed' 'thu' 'fri' 'sat'])
+::  +leg-for: who has a leg on a weekday: the newest row naming that
+::  day, else the newest naming none; '' for nobody (version 85)
+::
+++  leg-for
+  |=  [rows=(list row) day=@ud]
+  ^-  @t
+  =/  new=(list row)  (sort rows |=([a=row b=row] (gth at.obs.a at.obs.b)))
+  =/  named=(list row)  (skim new |=(r=row ?=(^ (find ~[day] (leg-days value.obs.r)))))
+  ?^  named  (ref-or-text value.obs.i.named)
+  =/  plain=(list row)  (skim new |=(r=row =(~ (leg-days value.obs.r))))
+  ?~(plain '' (ref-or-text value.obs.i.plain))
+::  +day-in: an instant's weekday on the owner's clock, Sunday 0
+::
+++  day-in
+  |=  [at=@da tz=@t]
+  ^-  @ud
+  (dow-of (cut 3 [0 10] (local-iso (en-iso at) ?:(=('' tz) 'UTC' tz))))
 ::  +online: a location that is a link or a call, not a place to drive to
 ::
 ++  online
@@ -6281,6 +6336,7 @@
 ++  appointments-ahead
   |=  [all=(list loaded) multi=(set @t) now=@da horizon=@dr]
   ^-  (list appointment)
+  =/  tz=@t  (attr-text all multi now 'person/me' 'timezone')
   ::  joined under a type before the sort: sort straight over zing
   ::  sends the compiler into a loop (fuse-loop)
   =/  each=(list appointment)
@@ -6323,7 +6379,7 @@
     ::  pick-up; one with no end known is left out
     =/  start=@da  u.begins
     =/  end=(unit @da)  ends
-    %+  murn  (trips l multi now)
+    %+  murn  (trips l multi now (day-in start tz))
     |=  [lg=leg vd=verdict]
     ^-  (unit appointment)
     =/  at=(unit @da)  ?:(=(%pick lg) end `start)
@@ -7168,7 +7224,7 @@
     =/  e=(unit @da)  ?.(sit ~ (de-iso (winner-text w 'ends')))
     ?:(&(?=(^ e) (gth u.e u.begins)) u.e (add u.begins ~h1))
   ?.  &((lth (sub u.begins (min u.begins ~m30)) to) (gth (add ends ~m15) from))  ~
-  %+  turn  (trips l multi now)
+  %+  turn  (trips l multi now (day-in u.begins (attr-text all multi now 'person/me' 'timezone')))
   |=  [lg=leg vd=verdict]
   ^-  [@da @da]
   ?-  lg
@@ -7527,6 +7583,78 @@
   ?~  pt  ~
   =/  act=(list row)  (fall (~(get by w) 'activated') ~)
   `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  ==  spheres (version 84): the parts of the owner's life
+::
+::  +sphere-of: the sphere body a sphere row names: a ref, or a name as
+::  written ("Home", "the LLC") as sphere/<its slug>; ~ for neither
+::
+++  sphere-of
+  |=  v=json
+  ^-  (unit @t)
+  =/  t=@t  (trim-cord (ref-or-text v))
+  ?:  =('' t)  ~
+  ?:  =('sphere/' (end [3 7] t))  ?~((parse-bid t) ~ `t)
+  ?:  ?=([%o *] v)  ~
+  =/  s=@t  (slug t)
+  ?:(=('' s) ~ `(cat 3 'sphere/' s))
+::  +owner-by: a row the owner wrote, on the page, through a key as
+::  themselves, or by approving an action
+::
+++  owner-by  |=(by=@t |(=('owner' by) =('user' by)))
+::  +sphere-trusted: the owner confirms the first three a model files in
+::  each sphere; after that a model's word stands (the owner's choice,
+::  2026-10-07: wait for a few taps while we learn what works)
+::
+++  sphere-trusted  3
+::  +sphere-hold: a batch's rows sorted for the spheres: the owner's own
+::  sphere rows kept and counted toward trust, a model's kept when the
+::  sphere is trusted, held for the owner's tap when not; every other row
+::  kept as it came. A sphere row's value is made a ref
+::
+++  sphere-hold
+  |=  [rows=(list (each obs @t)) trust=(map @t @ud)]
+  ^-  [kept=(list (each obs @t)) held=(list obs) confirmed=(list @t)]
+  =|  kept=(list (each obs @t))
+  =|  held=(list obs)
+  =|  conf=(list @t)
+  |-
+  ?~  rows  [(flop kept) (flop held) (flop conf)]
+  ?.  ?=(%& -.i.rows)  $(rows t.rows, kept [i.rows kept])
+  =/  o=obs  p.i.rows
+  ?.  =('sphere' attr.o)  $(rows t.rows, kept [i.rows kept])
+  =/  s=(unit @t)  (sphere-of value.o)
+  ?~  s  $(rows t.rows, kept [[%| (cat 3 'not a sphere: ' (ref-or-text value.o))] kept])
+  =.  value.o  (pairs:enjs:format ~[['ref' s+u.s]])
+  ?:  (owner-by by.o)  $(rows t.rows, kept [[%& o] kept], conf [u.s conf])
+  ?:  (gte (~(gut by trust) u.s 0) sphere-trusted)  $(rows t.rows, kept [[%& o] kept])
+  $(rows t.rows, held [o held])
+::  +sphere-ask: the proposal a held sphere row becomes: a fact action
+::  about its subject, by whoever filed it
+::
+++  sphere-ask
+  |=  o=obs
+  ^-  json
+  =/  s=@t  (ref-or-text value.o)
+  %-  pairs:enjs:format
+  :~  ['kind' s+'fact']
+      ['title' s+(rap 3 'File ' (rear `(list @t)`(turn (split-char '/' (trip subject.o)) crip)) ' under ' (rear `(list @t)`(turn (split-char '/' (trip s)) crip)) ~)]
+      ['about' a+~[s+subject.o]]
+      ['by' s+by.o]
+      ['payload' (pairs:enjs:format ~[['subject' s+subject.o] ['attr' s+'sphere'] ['value' value.o] ['why' s+(rap 3 by.o ' filed it under ' s '; the first few in each sphere wait for the owner' ~)]])]
+  ==
+::  +de-trust, +en-trust: sphere-trust.json, how many of each sphere's
+::  rows the owner has written
+::
+++  de-trust
+  |=  j=json
+  ^-  (map @t @ud)
+  ?.  ?=([%o *] j)  ~
+  %-  ~(gas by *(map @t @ud))
+  (murn ~(tap by p.j) |=([k=@t v=json] ?.(?=([%n *] v) ~ `[k (fall (rush p.v dem) 0)])))
+++  en-trust
+  |=  m=(map @t @ud)
+  ^-  json
+  [%o (~(run by m) |=(n=@ud (numb:enjs:format n)))]
 ::  ==  away (version 83): when the owner is away from home, home's
 ::  trips are others' and the nudges wait
 ::
@@ -8375,12 +8503,34 @@
 ::  them by: a whole word, case aside
 ::
 ++  people-named
-  |=  [text=@t known=(map @t bid)]
+  |=  [text=@t known=(map @t bid) but=(set @t)]
   ^-  (list bid)
-  =/  words=(set @t)  (sy (tokens text))
+  ::  a filter, not ~(dif in (sy …)): that spelling loops the compiler
+  =/  words=(set @t)  (sy (skip (tokens text) |=(w=@t (~(has in but) w))))
   %-  dedupe
   %+  murn  ~(tap by known)
   |=([w=@t id=bid] ?:(&(!=('me' w) !=('i' w) (~(has in words) w)) `id ~))
+::  +possessed: the words a text names only as owning something, a
+::  word right before 's or the curly 's; ponytail: a name both owning
+::  and plain in one note goes too, split the uses if that bites
+::
+++  possessed
+  |=  t=@t
+  ^-  (set @t)
+  =/  s=tape  (trip (lower t))
+  =/  word  |=(c=@ |(&((gte c 'a') (lte c 'z')) &((gte c '0') (lte c '9'))))
+  =|  out=(set @t)
+  =|  cur=tape
+  |-
+  ?~  s  out
+  ?:  (word i.s)  $(s t.s, cur [i.s cur])
+  =/  rest=tape
+    ?:  =('\'' i.s)  t.s
+    ?.  &(=(0xe2 i.s) ?=([@ @ *] t.s) =(0x80 i.t.s) =(0x99 i.t.t.s))  ~[i.s]
+    t.t.t.s
+  ?:  &(!=(~ cur) ?=([%s *] rest) |(?=(~ t.rest) !(word i.t.rest)))
+    $(s t.rest, cur ~, out (~(put in out) (crip (flop cur))))
+  $(s t.s, cur ~)
 ::  +cast: everyone the event names: the title's certain names, made
 ::  as person bodies when the ship lacks them; its leading name only
 ::  when the ship knows it; and whoever the ship knows named in the
@@ -8401,7 +8551,11 @@
   =/  lead=(list bid)
     ?.  &(?=(~ sure.ni) ?=(^ lead.ni))  ~
     (drop (~(get by known) (lower u.lead.ni)))
-  =/  named=(list bid)  (weld (people-named name.ev known) (people-named note.ev known))
+  ::  a name a note uses only to own something ("before Magnus's
+  ::  gymnastics") is context, not someone there (version 85)
+  ::  a name a note uses only to own something ("before Magnus's
+  ::  gymnastics") is context, not someone there (version 85)
+  =/  named=(list bid)  (weld (people-named name.ev known ~) (people-named note.ev known (possessed note.ev)))
   =/  every=(list bid)  (dedupe :(weld ids.sure lead named))
   :+  (skip every |=(b=bid =('person/me' b)))
     made.sure
@@ -8748,7 +8902,7 @@
   ?~  mine  ~
   =/  w=(map @t (list row))  (fold rows.l multi now)
   ?.  (lien (fall (~(get by w) 'participants') ~) |=(r=row !=('person/me' (ref-or-text value.obs.r))))  ~
-  ?:  (lien (people-named name.body.l known) |=(b=bid =('person/me' b)))  ~
+  ?:  (lien (people-named name.body.l known ~) |=(b=bid =('person/me' b)))  ~
   (turn `(list row)`mine |=(r=row (retract-op id.r 'calendar: the event does not name the owner' 'calendar')))
 ::  ==  the daily brief (version 52): one mail each morning from the
 ::  owner to the owner, the way the phone client's brief was, and the

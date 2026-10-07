@@ -1083,8 +1083,22 @@
   =/  prep  (prep-observe:orr jon now 'writer')
   ::  a row that says what the owner struck is not written, whoever sent it
   =.  obs.prep  (strike-obs:orr obs.prep (de-corrections:orr cs))
+  ::  a sphere a model files waits for the owner's tap until they have
+  ::  confirmed a few in that sphere; each sphere a row names exists
+  ::  (version 84)
+  ;<  trust-j=json  bind:m  (read-json (rf 0 / %'sphere-trust.json'))
+  =/  trust=(map @t @ud)  (de-trust:orr trust-j)
+  =/  split  (sphere-hold:orr obs.prep trust)
+  =.  obs.prep  kept.split
+  ;<  ~  bind:m  (ensure-spheres now kept.split)
   ;<  c1=?  bind:m  (write-bodies bodies.prep |)
   ;<  c2=?  bind:m  (write-obs obs.prep (sensitive-of:orr policy) |)
+  ;<  ~  bind:m
+    ?:  =(~ confirmed.split)  (pure:(fiber:fiber:nexus ,~) ~)
+    =/  more=(map @t @ud)
+      (roll confirmed.split |=([s=@t t=_trust] (~(put by t) s +((~(gut by t) s 0)))))
+    (over:io (rf 0 / %'sphere-trust.json') [[/ %json] (en-trust:orr more)])
+  ;<  ~  bind:m  (ask-spheres held.split)
   =/  subjects=(list bid:orr)
     %~  tap  in
     %-  sy
@@ -1100,6 +1114,41 @@
     ?:  =('ship' (gs:orr jon 'via'))  (note-inbox 'observe' & '' who)
     (note-by 'observe' & '' who)
   (pure:m |(c1 c2))
+::  +ensure-spheres: a sphere body for each sphere a batch's rows name,
+::  named from its slug ("the-llc" is "The llc"), when the ship has none;
+::  sphere/home is "Home" (version 84)
+::
+++  ensure-spheres
+  |=  [now=@da rows=(list (each obs:orr @t))]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  ids=(list @t)
+    %~  tap  in
+    %-  sy
+    %+  murn  rows
+    |=  e=(each obs:orr @t)
+    ?.  &(?=(%& -.e) =('sphere' attr.p.e))  ~
+    `(ref-or-text:orr value.p.e)
+  |-
+  ?~  ids  (pure:m ~)
+  =/  pk  (parse-bid:orr i.ids)
+  ?~  pk  $(ids t.ids)
+  ;<  ex=?  bind:m  (peek-exists:io (rf 0 (body-dir %sphere slug.u.pk) %body))
+  ?:  ex  $(ids t.ids)
+  =/  words=tape  (turn (trip slug.u.pk) |=(c=@ ?:(=('-' c) ' ' c)))
+  =/  name=@t  (crip ?~(words ~ [(sub i.words ?:(&((gte i.words 'a') (lte i.words 'z')) 32 0)) t.words]))
+  ;<  *  bind:m  (write-body 0 %sphere slug.u.pk [%sphere name ~ now ~])
+  $(ids t.ids)
+::  +ask-spheres: a held sphere row is the owner's to confirm: a fact
+::  action, proposed by whoever filed it (version 84)
+::
+++  ask-spheres
+  |=  held=(list obs:orr)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  held  (pure:m ~)
+  ;<  *  bind:m  (do-act (pairs:enjs:format ~[['action' (sphere-ask:orr i.held)]]))
+  $(held t.held)
 ::  +write-bodies: one grub per body in a batch. A refused item or an
 ::  id that will not parse is skipped, so one bad row never stops the
 ::  rest of the batch.

@@ -822,6 +822,41 @@
     return out;
   }
 
+  // the parts of the owner's life (version 84): each sphere, what is
+  // filed under it and who filed it, and the filings a model made that
+  // wait for the owner; whatever is under no sphere is home's
+  function spheres(state) {
+    state = state || {};
+    var all = state.bodies || [], byId = {};
+    all.forEach(function (b) { byId[b.id] = b; });
+    var rowsOf = function (b) { var v = b.attrs && b.attrs.sphere; return !v ? [] : Array.isArray(v) ? v : [v]; };
+    var refOf = function (r) { return r && r.value && typeof r.value === 'object' ? String(r.value.ref || '') : ''; };
+    var list = all.filter(function (b) { return b.kind === 'sphere'; });
+    if (!byId['sphere/home']) list.unshift({ id: 'sphere/home', kind: 'sphere', name: 'Home', attrs: {} });
+    list.sort(function (a, b) { return a.id === 'sphere/home' ? -1 : b.id === 'sphere/home' ? 1 : String(a.name).localeCompare(String(b.name)); });
+    var waiting = (state.actions || []).filter(function (a) { return a.kind === 'fact' && a.status === 'proposed' && a.payload && a.payload.attr === 'sphere'; });
+    var unfiled = all.filter(function (b) { return b.kind !== 'sphere' && b.kind !== 'note' && b.id !== 'person/me' && !rowsOf(b).length; }).length;
+    var out = '<h1>Spheres</h1><p class="muted">The parts of your life. Whatever is filed under none is home\'s. ' +
+      'What a model files under a sphere waits for you in the Inbox until you have confirmed three there.</p>';
+    list.forEach(function (s) {
+      var members = all.filter(function (b) { return rowsOf(b).some(function (r) { return refOf(r) === s.id; }); });
+      var asks = waiting.filter(function (a) { return a.payload.value && a.payload.value.ref === s.id; });
+      var summary = s.attrs && s.attrs.summary && s.attrs.summary.value;
+      out += '<div class="card"><h2>' + esc(s.name || s.id) + '</h2>' + (summary ? '<p>' + esc(summary) + '</p>' : '');
+      if (!members.length) out += '<p class="muted">' + (s.id === 'sphere/home' ? 'Nothing filed here by name.' : 'Nothing filed here yet.') + '</p>';
+      else {
+        out += '<ul>' + members.map(function (b) {
+          var r = rowsOf(b).filter(function (x) { return refOf(x) === s.id; })[0] || {};
+          return '<li><a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) + '</a> <span class="muted">' + esc(b.kind) + ' &middot; filed by ' + esc(r.by || '') + '</span></li>';
+        }).join('') + '</ul>';
+      }
+      if (s.id === 'sphere/home' && unfiled) out += '<p class="muted">And ' + unfiled + ' more under no sphere.</p>';
+      if (asks.length) out += '<p><a href="#inbox">' + asks.length + ' waiting for you</a>: ' + asks.map(function (a) { return esc(a.title); }).join('; ') + '</p>';
+      out += '</div>';
+    });
+    return out;
+  }
+
   function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function route(hash) {
     var h = String(hash || '').replace(/^#/, '') || 'bodies';
@@ -841,7 +876,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
@@ -1165,7 +1200,7 @@
   var refreshing = false, again = false, drawn = '', seen = Object.create(null), lastState = null;
   function viewNow() {
     var r = route(location.hash);
-    var name = r.name === 'body' || r.name === 'inbox' || r.name === 'settings' || r.name === 'keys' ? r.name : 'bodies';
+    var name = r.name === 'body' || r.name === 'inbox' || r.name === 'settings' || r.name === 'keys' || r.name === 'spheres' ? r.name : 'bodies';
     return { r: r, name: name, here: name + ' ' + (r.id || ''), cached: name !== 'settings' && name !== 'keys' };
   }
   // one view drawn from its answer, through show, which may hold it
@@ -1181,6 +1216,7 @@
       return drew;
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
+    if (v.name === 'spheres') return show(spheres(d));
     // the graph drawn already takes the new state in place: a redraw
     // would drop the hand on it and the find box's words
     if (drawn === v.here && document.getElementById('graph')) {

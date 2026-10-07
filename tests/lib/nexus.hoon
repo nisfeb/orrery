@@ -1048,23 +1048,25 @@
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away']) !>((strings:orr (ga:orr sit 'attrs'))))
-    (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
     (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
     (expect-eq !>('mine') !>((gs:orr (gj:orr (gj:orr (gj:orr new 'kinds') 'person') 'notes') 'status')))
-    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings']) !>((strings:orr (ga:orr new 'multi'))))
+    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 83]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 85]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
     (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
-    (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
-    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings']) !>((strings:orr (ga:orr bare 'multi'))))
+    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr bare 'multi'))))
+    ::  but a kind a release brought in is made whole
+    (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'kinds') 'sphere')) !>((gj:orr (gj:orr bare 'kinds') 'sphere')))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
     ::  the ledger names nothing the starter lacks: a release that adds
     ::  a row without the starter's shape or note fails here
@@ -1246,6 +1248,83 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-legs-by-day
+  =/  mkr
+    |=  [a=@t v=json at=@da]
+    ^-  row:orr
+    [(rap 3 'activity/ballet/' a (en:json:html v) ~) ['activity/ballet' a v at ~ 90 ['t' 'x'] 'owner' at | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  on  |=([b=@t d=@t] `json`(pairs:enjs:format ~[['ref' s+b] ['days' a+~[s+d]]]))
+  ::  a Wednesday and a Friday at 4:45 PM in New York, a week out
+  =/  wed=@da  ~2026.10.14..20.45.00
+  =/  fri=@da  ~2026.10.16..20.45.00
+  =/  drops=(list row:orr)
+    :~  (mkr 'drop-off' (ref 'person/lena') ~2026.9.1)
+        (mkr 'drop-off' (on 'person/andrea' 'Wednesday') ~2026.10.7)
+        (mkr 'drop-off' (on 'person/me' 'fri') ~2026.10.7)
+    ==
+  =/  body
+    |=  next=@da
+    ^-  loaded:orr
+    :+  'activity/ballet'  ['activity' 'Ballet' ~ ~2026.9.1 ~]
+    %+  weld  drops
+    :~  (mkr 'pick-up' (ref 'person/me') ~2026.10.7)
+        ['activity/ballet/next' ['activity/ballet' 'next' s+(en-iso:orr next) ~2026.10.7 `(add next ~h1) 100 ['calendar' 'u-ballet'] 'calendar' ~2026.10.7 | '']]
+        (mkr 'location' s+'1 Studio Rd' ~2026.10.7)
+    ==
+  =/  me=loaded:orr  ['person/me' ['person' 'me' ~ ~2026.9.1 ~] ~[['person/me/tz' ['person/me' 'timezone' s+'America/New_York' ~2026.9.1 ~ 100 ['t' 'x'] 'owner' ~2026.9.1 | '']]]]
+  =/  multi=(set @t)  (sy ~['participants' 'drop-off' 'pick-up'])
+  =/  legs
+    |=  b=loaded:orr
+    (turn (appointments-ahead:orr ~[me b] multi ~2026.10.8 ~d30) |=(a=appointment:orr leg.a))
+  ;:  weld
+    (expect-eq !>(`(list @ud)`~[3]) !>((leg-days:orr (on 'person/andrea' 'Wednesday'))))
+    (expect-eq !>(`(list @ud)`~) !>((leg-days:orr (ref 'person/lena'))))
+    ::  the day's own row, else the newest with no day
+    (expect-eq !>('person/andrea') !>((leg-for:orr drops 3)))
+    (expect-eq !>('person/me') !>((leg-for:orr drops 5)))
+    (expect-eq !>('person/lena') !>((leg-for:orr drops 1)))
+    (expect-eq !>(3) !>((day-in:orr wed 'America/New_York')))
+    ::  Wednesdays the owner only picks up; Fridays both legs
+    (expect-eq !>(`(list leg:orr)`~[%pick]) !>((legs (body wed))))
+    (expect-eq !>(`(list leg:orr)`~[%drop %pick]) !>((legs (body fri))))
+  ==
+++  test-spheres
+  =/  row
+    |=  [sub=@t v=json by=@t]
+    ^-  (each obs:orr @t)
+    [%& [sub 'sphere' v now ~ 90 ['t' 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  other=(each obs:orr @t)  [%& ['situation/a' 'starts' s+'2026-10-09' now ~ 90 ['t' 'x'] 'mail' now | '']]
+  =/  rows=(list (each obs:orr @t))
+    :~  (row 'situation/a' (ref 'sphere/home') 'owner')
+        (row 'situation/b' s+'The LLC' 'mail')
+        (row 'situation/c' (ref 'sphere/road') 'generator')
+        other
+        (row 'situation/d' s+'' 'mail')
+    ==
+  =/  got  (sphere-hold:orr rows (my ~[['sphere/road' 3]]))
+  ;:  weld
+    ::  a ref, a name made one, nothing for nothing
+    (expect-eq !>(`(unit @t)``'sphere/home') !>((sphere-of:orr (ref 'sphere/home'))))
+    (expect-eq !>(`(unit @t)``'sphere/the-llc') !>((sphere-of:orr s+'The LLC')))
+    (expect-eq !>(`(unit @t)`~) !>((sphere-of:orr s+'')))
+    (expect-eq !>(`(unit @t)`~) !>((sphere-of:orr (ref 'person/me'))))
+    ::  the owner's row kept and counted; a model's held while the sphere is new, kept once it is trusted; the rest as it came
+    (expect-eq !>(`(list @t)`~['sphere/home']) !>(confirmed.got))
+    (expect-eq !>(`(list [@t json])`~[['situation/b' (ref 'sphere/the-llc')]]) !>((turn held.got |=(o=obs:orr [subject.o value.o]))))
+    (expect-eq !>(4) !>((lent kept.got)))
+    (expect-eq !>(`(list @t)`~['situation/a' 'situation/c' 'situation/a']) !>((murn kept.got |=(e=(each obs:orr @t) ?:(?=(%& -.e) `subject.p.e ~)))))
+    (expect-eq !>(`(list @t)`~['not a sphere: ']) !>((murn kept.got |=(e=(each obs:orr @t) ?:(?=(%| -.e) `p.e ~)))))
+    ::  the proposal a held row becomes
+    =/  ask=json  (sphere-ask:orr (snag 0 held.got))
+    (expect-eq !>(['fact' 'File b under the-llc' 'mail']) !>([(gs:orr ask 'kind') (gs:orr ask 'title') (gs:orr ask 'by')]))
+    (expect-eq !>(`(map @t @ud)`(my ~[['sphere/home' 2]])) !>((de-trust:orr (en-trust:orr (my ~[['sphere/home' 2]])))))
+    ::  an old schema gains the sphere kind whole, and the sphere attribute
+    =/  old=json  (set-key:orr (del-key:orr starter-schema:orr 'schema_version') 'kinds' (del-key:orr (gj:orr starter-schema:orr 'kinds') 'sphere'))
+    =/  new=json  (schema-upgrade:orr (set-key:orr old 'schema_version' (numb:enjs:format 83)))
+    (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'kinds') 'sphere')) !>((gj:orr (gj:orr new 'kinds') 'sphere')))
   ==
 ++  test-away
   =/  mk

@@ -1842,6 +1842,24 @@
     (expect-eq !>(`(list @da)`~[~2026.9.20 ~2027.9.20]) !>((turn b |=([* l=@da *] l))))
     (expect-eq !>(`(list [@ud @da @da])`~) !>((occurrences:orr 'u-none' cal-order ~2026.9.1 ~2027.12.31)))
   ==
+++  test-possessed
+  =/  known=(map @t bid:orr)  (my ~[['magnus' 'person/magnus'] ['linus' 'person/linus'] ['jackson' 'person/me']])
+  =/  ev=cal-event:orr  (snag 0 (events-of:orr cal-store))
+  =/  with
+    |=  [name=@t note=@t]
+    ^-  (list @t)
+    =/  c  (cast:orr ev(name name, note note) known)
+    (weld ids.c ?:(me.c ~['person/me'] ~))
+  ;:  weld
+    (expect-eq !>(`(set @t)`(sy ~['magnus'])) !>((possessed:orr 'Before you leave for Magnus\'s gymnastics')))
+    (expect-eq !>(`(set @t)`(sy ~['magnus'])) !>((possessed:orr 'before Magnus’s class')))
+    ::  a contraction reads as owning too: harmless, "it" names nobody
+    (expect-eq !>(`(set @t)`(sy ~['it'])) !>((possessed:orr 'Magnus says it\'s fine')))
+    ::  a note's possessive is context; a plain mention, or the owner's name, is someone there
+    (expect-eq !>(`(list @t)`~['person/linus']) !>((with 'Supervise Linus nailing wood' 'the half hour before Magnus\'s gymnastics')))
+    (expect-eq !>(`(list @t)`~['person/linus' 'person/magnus']) !>((with 'Supervise Linus nailing wood' 'Magnus helps too')))
+    (expect-eq !>(`(list @t)`~['person/linus' 'person/me']) !>((with 'Supervise Linus nailing wood' 'Jackson supervises')))
+  ==
 ++  test-soonest-start
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
   =/  firsts=(list @da)
