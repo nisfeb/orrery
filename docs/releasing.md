@@ -216,35 +216,18 @@ A release that raises the consent prompt leaves the new roads refused until the 
 
 ### Version 95's owner steps
 
-Nothing to do. There is a Sharing page in the menu. Location sharing moved there from Settings.
+Version 95 is one release of the shared-households work built as 88 to 95; none of those numbers shipped alone. It asks for no new roads, so no consent prompt.
 
-### Version 94's owner steps
+Nothing to do. The schema gains, by itself, `twin` (multi-valued), a task's `assignee`, and `shared-with` on situations (multi-valued). What it brings:
 
-Nothing to do. The schema gains `shared-with` on situations, multi-valued, by itself. Share a party or a visit by saying who it is shared with; an invitation to someone without orrery waits in your Inbox as any message does.
+- **A Sharing page** in the menu: offers to accept or decline, spheres you share and follow, bodies and situations shared alone, the "to pair" list, and location sharing (moved from Settings).
+- **Location for a time:** share where you are with someone whose ship runs orrery (a person here with a `ship`), for some hours or until you are home, to about a kilometre unless you tick exact.
+- **Whole spheres:** share one, read only or editable both ways. On accepting, say same or different for each name that may be one you already keep. Sharing `sphere/home` shares every body filed under nothing, so try a small sphere first.
+- **Shared actions:** a task you assign to someone with their own orrery, in a sphere you share with them, waits for your approval here and then goes to their Inbox.
+- **One situation:** share a party or a visit by saying who it is shared with. Someone without orrery gets an invitation that waits in your Inbox as any message does.
+- **Pushes:** a leg that becomes yours (a drop-off, a pickup) reaches your phone at once. To have every change from a shared sphere reach it too, set `"peer_push": "all"` in policy.json on the settings page.
 
-### Version 93's owner steps
-
-Nothing to do. To have every change from a shared sphere reach your phone, not only what asks something of you, set `"peer_push": "all"` in policy.json on the settings page.
-
-### Version 92's owner steps
-
-Nothing to do. The schema's task shape gains `assignee` by itself. A task you assign to someone with their own orrery, in a sphere you share with them, waits for your approval here and then goes to their Inbox.
-
-### Version 91's owner steps
-
-Nothing to do. When a sphere is shared with you, the Spheres page may ask "To pair": the same name here and there. Say same or different for each, and the sphere comes in after.
-
-### Version 90's owner steps
-
-Nothing to do. Sharing a whole sphere is there to be used by hand (`POST /sphere-share`, accepted with `POST /sphere-accept`); pairing in a later version brings the page and the match list. Sharing `sphere/home` shares every body filed under nothing, so try it first with a small sphere.
-
-### Version 89's owner steps
-
-Nothing to do. The schema takes `twin` as multi-valued by itself. A shared body's references now mean the right body on each ship once both run 89; to have a shared activity's legs name the other owner as themselves on their ship, also share the person you keep for them.
-
-### Version 88's owner steps
-
-Nothing to do. Settings gains a Location card: share where you are with someone whose ship runs orrery (a person here with a `ship`), for some hours or until you are home, to about a kilometre unless you tick exact. Their ship needs version 88 to show it.
+Sharing between two ships needs both on version 95.
 
 ### Version 87's owner steps
 
