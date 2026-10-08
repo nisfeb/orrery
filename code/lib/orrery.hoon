@@ -1107,6 +1107,7 @@
           ~['sphere']
       ==
       [85 ~ ~ ~['drop-off' 'pick-up']]
+      [87 ~ ~[['place' ~['website']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1232,10 +1233,11 @@
           ==
           :-  'place'
           %+  kind
-            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated' 'sphere']
+            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated' 'sphere' 'website']
           :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
               ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
               ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
+              ['website' 'the place\'s own website, a URL']
               ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
@@ -7596,6 +7598,124 @@
   ?~  pt  ~
   =/  act=(list row)  (fall (~(get by w) 'activated') ~)
   `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  ==  place lookups (version 87): Brave Search fills in a place
+::
+::  +search-config: search.json. Off until the owner turns it on with a
+::  Brave Search API key; the key is never answered back. A month's
+::  lookups stop at the cap
+::
++$  search-config  [enabled=? key=@t api=@t cap=@ud]
+++  de-search
+  |=  j=json
+  ^-  search-config
+  =/  api=@t  (gs j 'api_url')
+  :*  ?=([%b %.y] (gj j 'enabled'))
+      (trim-cord (gs j 'api_key'))
+      ?:(=('' api) 'https://api.search.brave.com' api)
+      (max 1 (min 100.000 (fall (gn j 'monthly_cap') 500)))
+  ==
+++  en-search-masked
+  |=  c=search-config
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.c]  ['api_key_set' b+!=('' key.c)]  ['api_url' s+api.c]
+      ['monthly_cap' (numb:enjs:format cap.c)]
+  ==
+::  +thin-places: the places worth a lookup, a place missing its address,
+::  phone, hours or website; never home or a POTA park (the POTA list has
+::  its point), never one looked up in the last month
+::
+++  thin-places
+  |=  [all=(list loaded) multi=(set @t) now=@da seen=(map @t @da)]
+  ^-  (list [id=@t name=@t])
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [id=@t name=@t])
+  ?.  =(%place kind.body.l)  ~
+  ?:  |(=('place/home' id.l) =('place/pota-' (end [3 11] id.l)))  ~
+  =/  at=(unit @da)  (~(get by seen) id.l)
+  ?:  &(?=(^ at) (lth now (add u.at ~d30)))  ~
+  =/  w=(map @t (list row))  (fold rows.l multi now)
+  ?.  (lien `(list @t)`~['address' 'phone' 'hours' 'website'] |=(a=@t =(~ (fall (~(get by w) a) ~))))  ~
+  `[id.l name.body.l]
+::  +place-search-url: Brave's Place Search for a name near a point,
+::  the query encoded twice: the ship's HTTP client decodes a query once
+::  before sending (+searchbox-url)
+::
+++  place-search-url
+  |=  [api=@t q=@t at=[lat=@t lon=@t]]
+  ^-  @t
+  =/  enc  |=(t=@t (crip (en-urlt:html (en-urlt:html (trip (end [3 200] t))))))
+  (rap 3 api '/res/v1/local/place_search?q=' (enc q) '&latitude=' lat.at '&longitude=' lon.at '&radius=80000&count=5' ~)
+::  +found-place: what a place search found for a name: the first result
+::  whose title holds every word of the shorter of the two names, its
+::  address, phone, hours as one line, website and point; ~ when none
+::  matches
+::
++$  found-place  [title=@t address=@t phone=@t hours=@t website=@t lat=@t lon=@t]
+++  found-of
+  |=  [j=json name=@t]
+  ^-  (unit found-place)
+  =/  hits=(list json)
+    %+  skim  (ga j 'results')
+    |=(r=json (token-hit (tokens name) (tokens (gs r 'title'))))
+  ?~  hits  ~
+  =/  r=json  i.hits
+  =/  pa=json  (gj r 'postal_address')
+  =/  addr=@t
+    =/  d=@t  (gs pa 'displayAddress')
+    ?.  =('' d)  d
+    =/  parts=(list @t)
+      (skip `(list @t)`~[(gs pa 'streetAddress') (gs pa 'addressLocality') (gs pa 'addressRegion') (gs pa 'postalCode')] |=(t=@t =('' t)))
+    (join-cords ', ' parts)
+  =/  url=@t  (gs r 'url')
+  =/  site=@t  ?:(|(=('' url) ?=(^ (find "search.brave.com" (trip url)))) '' url)
+  =/  pt=(list json)  (ga r 'coordinates')
+  =/  [la=@t lo=@t]  ?.(?=([[%n *] [%n *] *] pt) ['' ''] [p.i.pt p.i.t.pt])
+  `[(gs r 'title') addr (gs (gj r 'contact') 'telephone') (hours-line (gj r 'opening_hours')) site la lo]
+::  +hours-line: opening hours as one line, "Mon 09:00-17:00, Tue …",
+::  from Brave's days, each a day or a list of a day's spans
+::
+++  hours-line
+  |=  oh=json
+  ^-  @t
+  =/  one
+    |=  d=json
+    ^-  @t
+    =/  nm=@t  (gs d 'abbr_name')
+    =/  op=@t  (gs d 'opens')
+    =/  cl=@t  (gs d 'closes')
+    ?:  |(=('' nm) =('' op))  ''
+    (rap 3 nm ' ' op '-' cl ~)
+  =/  each=(list @t)
+    %-  zing
+    %+  turn  (ga oh 'days')
+    |=  d=json
+    ^-  (list @t)
+    ?:  ?=([%a *] d)  (turn p.d one)
+    ~[(one d)]
+  (join-cords ', ' (skip each |=(t=@t =('' t))))
+::  +place-facts: the rows a lookup files for a place: only what it
+::  lacks, by the search, at confidence 60, the source the result's page;
+::  hours and phone held ninety days, then looked up again
+::
+++  place-facts
+  |=  [id=@t w=(map @t (list row)) f=found-place now=@da]
+  ^-  (list json)
+  =/  src=source  ['search' ?:(=('' website.f) 'brave-place-search' website.f)]
+  =/  lacks  |=(a=@t =(~ (fall (~(get by w) a) ~)))
+  =/  put
+    |=  [a=@t v=@t keep=(unit @da)]
+    ^-  (list json)
+    ?:  |(=('' v) !(lacks a))  ~
+    ~[(obs-row id a s+v now keep 60 src 'search')]
+  ;:  weld
+    (put 'address' address.f ~)
+    (put 'phone' phone.f `(add now ~d90))
+    (put 'hours' hours.f `(add now ~d90))
+    (put 'website' website.f ~)
+    ?:(|(=('' lat.f) !(lacks 'geo')) ~ (put 'geo' (rap 3 lat.f ',' lon.f ~) ~))
+  ==
 ::  ==  spheres (version 84): the parts of the owner's life
 ::
 ::  +sphere-of: the sphere body a sphere row names: a ref, or a name as
@@ -9427,6 +9547,7 @@
     %'set-travel'     %'travel.json'
     %'set-rhythm'     %'rhythm.json'
     %'set-outdoors'   %'outdoors.json'
+    %'set-search'     %'search.json'
   ==
 ++  settings-view
   |=  [op=@t doc=json]
@@ -9440,6 +9561,7 @@
     %'set-travel'     (en-travel-config-masked (de-travel-config doc))
     %'set-rhythm'     (en-rhythm (de-rhythm doc))
     %'set-outdoors'   (en-outdoors (de-outdoors doc))
+    %'set-search'     (en-search-masked (de-search doc))
   ==
 ++  list-json
   |=  [items=(list [id=@t name=@t]) note=@t]
@@ -9787,6 +9909,8 @@
   ?:  &(=('PUT' meth) ?=([%api %outdoors ~] suffix))            `[%put-outdoors %own]
   ?:  &(=('GET' meth) ?=([%api %weather ~] suffix))             `[%get-weather %own]
   ?:  &(=('POST' meth) ?=([%api %geocode %wake ~] suffix))      `[%post-geocode-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %search ~] suffix))              `[%get-search %own]
+  ?:  &(=('PUT' meth) ?=([%api %search ~] suffix))              `[%put-search %own]
   ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
   ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
   ?:  &(=('POST' meth) ?=([%api %brief %wake ~] suffix))        `[%post-brief-wake %own]

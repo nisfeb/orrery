@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 85]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 87]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1248,6 +1248,36 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-place-search
+  =/  res=json
+    %-  jo
+    '{"type": "locations", "results": [{"title": "Lakeside Diner", "url": "https://search.brave.com/x"}, {"title": "The Gate Ballet School", "url": "https://gateballet.example", "coordinates": [39.79, -89.65], "postal_address": {"displayAddress": "100 Main St, Riverton, IL 62701"}, "contact": {"telephone": "+12175550100"}, "opening_hours": {"days": [[{"abbr_name": "Mon", "opens": "09:00", "closes": "17:00"}], [{"abbr_name": "Tue", "opens": "09:00", "closes": "12:00"}, {"abbr_name": "Tue", "opens": "13:00", "closes": "17:00"}]]}}]}'
+  =/  f  (found-of:orr res 'Gate Ballet')
+  =/  mk
+    |=  [id=@t name=@t attrs=(list [a=@t v=json])]
+    ^-  loaded:orr
+    :+  id  [%place name ~ now ~]
+    (turn attrs |=([a=@t v=json] ^-(row:orr [(rap 3 id '/' a ~) [id a v now ~ 90 ['t' 'x'] 'owner' now | '']])))
+  =/  studio  (mk 'place/gate-ballet' 'Gate Ballet' ~[['phone' s+'+12175550199']])
+  =/  w  (fold:orr rows.studio (sy ~['participants']) now)
+  =/  rows  ?~(f ~ (place-facts:orr 'place/gate-ballet' w u.f now))
+  ;:  weld
+    ::  the first result whose title holds the name's words, never a search page as a website
+    (expect-eq !>(`(unit [@t @t @t @t @t @t @t])``['The Gate Ballet School' '100 Main St, Riverton, IL 62701' '+12175550100' 'Mon 09:00-17:00, Tue 09:00-12:00, Tue 13:00-17:00' 'https://gateballet.example' '39.79' '-89.65']) !>(f))
+    (expect-eq !>(~) !>((found-of:orr res 'Nowhere Cafe')))
+    ::  only what the place lacks: its own phone stands; hours held ninety days
+    (expect-eq !>(`(list @t)`~['address' 'hours' 'website' 'geo']) !>((turn rows |=(r=json (gs:orr r 'attr')))))
+    (expect-eq !>(['search' 'search' 60]) !>(=/(r (snag 0 rows) [(gs:orr r 'by') (gs:orr (gj:orr r 'source') 'kind') (fall (gn:orr r 'conf') 0)])))
+    ::  thin places: never home, never a POTA park, never one looked up this month
+    =/  full  (mk 'place/full' 'Full' ~[['address' s+'a'] ['phone' s+'p'] ['hours' s+'h'] ['website' s+'w']])
+    =/  park  (mk 'place/pota-us-0001' 'Park' ~)
+    =/  home  (mk 'place/home' 'Home' ~)
+    (expect-eq !>(`(list @t)`~['place/gate-ballet']) !>((turn (thin-places:orr ~[studio full park home] (sy ~['participants']) now ~) |=([i=@t *] i))))
+    (expect-eq !>(`(list @t)`~) !>((turn (thin-places:orr ~[studio] (sy ~['participants']) now (my ~[['place/gate-ballet' (sub now ~d3)]])) |=([i=@t *] i))))
+    ::  off by default, the key never answered
+    (expect-eq !>([| 'https://api.search.brave.com' 500]) !>(=/(c (de-search:orr ~) [enabled.c api.c cap.c])))
+    (expect-eq !>(|) !>(?=(^ (gj:orr (en-search-masked:orr (de-search:orr (jo '{"api_key": "k"}'))) 'api_key'))))
   ==
 ++  test-legs-by-day
   =/  mkr

@@ -576,6 +576,12 @@ class Stub(http.server.BaseHTTPRequestHandler):
                    for h in ((range(-1, 60) if hourly else range(-1, 80, 6)))]}}
         elif self.path.startswith('/alerts/active?point='):
             out = {'features': [{'properties': {'event': 'Gate Advisory', 'ends': None, 'expires': '2099-01-01T00:00:00Z', 'headline': 'Gate Advisory in force'}}]}
+        elif self.path.startswith('/res/v1/local/place_search?'):
+            # Brave's place search (version 87): one place named after the query, with its facts
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('q', [''])[0]
+            out = {'type': 'locations', 'results': [{'title': q + ' School', 'url': 'https://gate.example', 'coordinates': [39.79, -89.65],
+                   'postal_address': {'displayAddress': '1 Gate Rd, Riverton, IL 62701'}, 'contact': {'telephone': '+12175550100'},
+                   'opening_hours': {'days': [[{'abbr_name': 'Mon', 'opens': '09:00', 'closes': '17:00'}]]}}]}
         elif self.path.startswith('/locations/US-GT'):
             # the POTA list for a location: one park beside the gate's place, one far off
             out = [{'reference': 'US-0001', 'name': 'Gate Lake Park', 'latitude': 39.79, 'longitude': -89.65},
@@ -1512,6 +1518,40 @@ bl = gate.wait('the brief with the weather lands', lambda: (lambda b: b if b.get
 check('the brief gives the day\'s weather and the alert', 'Weather: 71F, Gate Thunderstorms' in (bl.get('text') or '') and 'Alert: Gate Advisory in force' in (bl.get('text') or ''), (bl.get('text') or '')[:800])
 curl('PUT', API + '/outdoors', {'nws_api': '', 'pota': False, 'pota_location': '', 'pota_api': ''})
 curl('DELETE', API + '/body/place/pota-us-0001')
+srv.shutdown()
+srv.server_close()
+
+
+# ---- place lookups (version 87): Brave Search fills in what a thin place lacks, through the stub, never over the
+# owner's facts; the key goes in the header and is never answered back ----
+print('== place lookups')
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+LRUN = secrets.token_hex(3)
+LP, LNAME = 'place/gate-lookup-' + LRUN, 'Gate Lookup ' + LRUN
+lnow = datetime.now(timezone.utc).replace(microsecond=0)
+def lobs(sub, attr, value): return {'subject': sub, 'attr': attr, 'value': value, 'at': iso(lnow), 'conf': 100, 'source': {'kind': 'user', 'id': 'gate-lookup-' + LRUN}, 'by': 'owner'}
+code, hd = curl('POST', API + '/observe', {'bodies': [{'id': 'place/home', 'name': 'Home'}, {'id': LP, 'name': LNAME}],
+                                           'observations': [lobs('place/home', 'geo', '39.7817,-89.6501'), lobs(LP, 'phone', '+12175550199')]})
+home_geo = (dictish(hd).get('observations') or [{}])[0].get('id')
+#  saving the settings wakes the lookups, so the stub's log is cleared before
+seen.clear()
+code, d = curl('PUT', API + '/search', {'enabled': True, 'api_key': 'brave-gate', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'monthly_cap': 50})
+check('the lookup settings answer with the key masked', code == 200 and dictish(d).get('api_key_set') is True and 'api_key' not in dictish(d) and dictish(d).get('monthly_cap') == 50, (code, d))
+owner_only('the lookup settings are the owner\'s', 'GET', '/search')
+curl('POST', API + '/geocode/wake', {})
+def lattrs(): return dictish(dictish(curl('GET', API + '/body/' + LP)[1]).get('attrs'))
+la = gate.wait('the lookup fills the place', lambda: (lambda a: a if dictish(a.get('address')).get('value') else None)(lattrs()), 90) or {}
+check('what the place lacked is filed by the search at 60, the owner\'s phone untouched',
+      dictish(la.get('address')).get('value') == '1 Gate Rd, Riverton, IL 62701' and dictish(la.get('address')).get('by') == 'search' and dictish(la.get('address')).get('conf') == 60
+      and dictish(la.get('hours')).get('value') == 'Mon 09:00-17:00' and dictish(la.get('website')).get('value') == 'https://gate.example'
+      and dictish(la.get('phone')).get('value') == '+12175550199' and dictish(la.get('phone')).get('by') == 'owner', la)
+ls = [x for x in seen if x[0].startswith('/res/v1/local/place_search?')]
+check('the search was asked with the key in its header, for the place by name, near home', ls and all(x[1].get('x-subscription-token') == 'brave-gate' for x in ls)
+      and any(LNAME.replace(' ', '%20') in x[0] for x in ls) and all('latitude=' in x[0] for x in ls), [x[0] for x in ls])
+curl('PUT', API + '/search', {'enabled': False, 'api_url': ''})
+curl('DELETE', API + '/body/' + LP)
+if home_geo: curl('POST', API + '/retract', {'id': home_geo, 'note': 'gate'})
 srv.shutdown()
 srv.server_close()
 

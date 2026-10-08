@@ -755,6 +755,14 @@
       '<label class="field">location <input name="pota_location" value="' + esc(od.pota_location || '') + '" placeholder="US-CO"></label> ' +
       '<label class="field">within, km <input name="pota_radius_km" value="' + esc(od.pota_radius_km != null ? String(od.pota_radius_km) : '') + '" placeholder="40"></label></p>' +
       '<p><button data-save-outdoors="1">save outdoors</button></p></div>';
+    // place lookups (version 87): Brave Search fills in a place's address, phone, hours and website
+    var sc = w.search || {}, sl = w.searchLast || {};
+    out += '<div id="search"><p class="muted">Place lookups: Brave Search fills in what a place is missing (address, phone, hours, website), ten at most twice a day, never over your facts. ' +
+      'Each lookup sends Brave the place\'s name and your home\'s area; never a person. ' + (sl.at ? 'Last ' + fmtTime(sl.at) + ': ' + (sl.looked || 0) + ' looked up, ' + (sl.filled || 0) + ' facts, ' + (sl.used || 0) + ' this month' + (sl.note ? ' (' + esc(sl.note) + ')' : '') + '.' : '') + '</p>' +
+      '<p><label class="field"><input type="checkbox" name="enabled"' + (sc.enabled ? ' checked' : '') + '> on</label> ' +
+      '<label class="field">Brave Search API key <input name="api_key" type="password" placeholder="' + (sc.api_key_set ? 'set; blank keeps it' : 'not set') + '"></label> ' +
+      '<label class="field">a month at most <input name="monthly_cap" value="' + esc(sc.monthly_cap != null ? String(sc.monthly_cap) : '') + '" placeholder="500"></label></p>' +
+      '<p><button data-save-search="1">save place lookups</button></p></div>';
     out += '<p><button data-review-wake="1">send the review now</button></p>';
     if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
     return out + '</div>';
@@ -1211,7 +1219,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1494,6 +1502,12 @@
       ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
       say('saving your day');
       post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
+    } else if (b.dataset.saveSearch) {
+      var sv = function (name) { return field('#search', name); };
+      var sf = { enabled: !!view.querySelector('#search input[name="enabled"]:checked'), monthly_cap: numOrNull(sv('monthly_cap')) };
+      if (sv('api_key')) sf.api_key = sv('api_key');
+      say('saving place lookups');
+      post('/search', sf, 'PUT').then(function () { dirty = false; say('place lookups saved'); }).catch(oops);
     } else if (b.dataset.saveOutdoors) {
       var ov = function (name) { return field('#outdoors', name); };
       var of = { weather: !!view.querySelector('#outdoors input[name="weather"]:checked'), pota: !!view.querySelector('#outdoors input[name="pota"]:checked'),

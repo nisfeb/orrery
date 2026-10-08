@@ -420,6 +420,7 @@
         |-
         ;<  ~  bind:m  parks-pass
         ;<  ~  bind:m  geocode-known
+        ;<  ~  bind:m  search-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /parks (add now ~h12))
         ;<  ~  bind:m  (idle-until-poke /parks)
@@ -833,6 +834,7 @@
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
   ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
   ?:  =('set-outdoors' op)  (do-set-outdoors jon)
+  ?:  =('set-search' op)  (do-set-search jon)
   ?:  =('set-travel' op)  (do-set-travel jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
@@ -1418,6 +1420,8 @@
     %put-outdoors           (serve-set-doc eyre-id 'set-outdoors' jon)
     %get-weather            (serve-weather eyre-id)
     %post-geocode-wake      (serve-prod eyre-id %'parks.sig' 'geocode')
+    %get-search             (serve-search eyre-id)
+    %put-search             (serve-set-doc eyre-id 'set-search' jon)
     %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
     %get-exec-last          (serve-doc eyre-id %'exec-last.json')
@@ -2939,6 +2943,7 @@
       %'set-mail'       [%o (merge-settings:orr base p.jon ~)]
       %'set-read'       [%o (merge-settings:orr base p.jon ~)]
       %'set-travel'     [%o (merge-settings:orr base p.jon (sy ~['token']))]
+      %'set-search'     [%o (merge-settings:orr base p.jon (sy ~['api_key']))]
       %'set-rhythm'     [%o (merge-settings:orr base p.jon ~)]
       %'set-outdoors'   [%o (merge-settings:orr base p.jon ~)]
     ==
@@ -3984,6 +3989,20 @@
   ;<  ~  bind:m  (note-by 'set-travel' & '' 'http')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'leave.sig') [[/ %sig] ~])
   (pure:m |)
+::  +do-set-search: the place lookups' settings, merged; a blank key keeps
+::  the stored one; the places loop wakes to take them (version 87)
+::
+++  do-set-search
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-search' 'doc: expected an object')
+  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'search.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] [%o (merge-settings:orr base p.doc (sy ~['api_key']))]])
+  ;<  ~  bind:m  (note-by 'set-search' & '' 'http')
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'parks.sig') [[/ %sig] ~])
+  (pure:m |)
 ::  +do-set-outdoors: the weather and parks settings, merged; both
 ::  loops wake to take them (version 76)
 ::
@@ -4383,6 +4402,8 @@
   ;<  outdoors=json  bind:m  (doc %'outdoors.json')
   ;<  weather=json  bind:m  (doc %'weather.json')
   ;<  parks-last=json  bind:m  (doc %'parks-last.json')
+  ;<  search=json  bind:m  (doc %'search.json')
+  ;<  search-last=json  bind:m  (doc %'search-last.json')
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -4428,6 +4449,8 @@
       ['outdoors' (en-outdoors:orr (de-outdoors:orr outdoors))]
       ['weather_last' (pairs:enjs:format ~[['forecast_at' s+(gs:orr weather 'forecast_at')] ['note' s+(gs:orr weather 'note')] ['alerts' (numb:enjs:format (lent (ga:orr weather 'alerts')))]])]
       ['parks_last' parks-last]
+      ['search' (en-search-masked:orr (de-search:orr search))]
+      ['search_last' (del-key:orr search-last 'seen')]
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not
@@ -5408,6 +5431,75 @@
     (pure:m [~ 'Mapbox found no such address'])
   ;<  ~  bind:m  (over:io (rf 0 / %'geocache.json') [[/ %json] (set-key:orr cache key s+(rap 3 lat.u.pt ',' lon.u.pt ~))])
   (pure:m [pt ''])
+::  +serve-search: the place lookups' settings, the key masked
+::
+++  serve-search
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'search.json'))
+  (send-json eyre-id 200 (en-search-masked:orr (de-search:orr doc)))
+::  +search-pass: Brave Search fills in thin places (version 87): ten at
+::  most a pass, a second apart, each looked up once a month, the
+::  month's lookups under the cap; only what a place lacks is filed, by
+::  the search, the owner's facts never touched. Nothing without the
+::  owner's key and switch, and nothing but a place's name and home's
+::  point is sent. A 401 or a 429 stops the pass and is noted
+::
+++  search-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'search.json'))
+  =/  cfg=search-config:orr  (de-search:orr cfg-j)
+  ?.  &(enabled.cfg !=('' key.cfg))  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'search-last.json'))
+  =/  month=@t  (end [3 7] (en-iso:orr now))
+  =/  used=@ud  ?:(=(month (gs:orr last 'month')) (fall (gn:orr last 'used') 0) 0)
+  =/  seen=(map @t @da)
+    =/  sj=json  (gj:orr last 'seen')
+    ?.  ?=([%o *] sj)  ~
+    %-  ~(gas by *(map @t @da))
+    (murn ~(tap by p.sj) |=([k=@t v=json] =/(d (de-iso:orr ?:(?=([%s *] v) p.v '')) ?~(d ~ `[k u.d]))))
+  =/  record
+    |=  [note=@t used=@ud seen=(map @t @da) looked=@ud filled=@ud]
+    %+  over:io  (rf 0 / %'search-last.json')
+    :-  [/ %json]
+    %-  pairs:enjs:format
+    :~  ['at' s+(en-iso:orr now)]  ['month' s+month]  ['used' (numb:enjs:format used)]
+        ['looked' (numb:enjs:format looked)]  ['filled' (numb:enjs:format filled)]  ['note' s+note]
+        ['seen' [%o (~(run by seen) |=(d=@da `json`s+(en-iso:orr d)))]]
+    ==
+  ?:  (gte used cap.cfg)  (record 'the month\'s lookups are used up' used seen 0 0)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  home  (home-point:orr all multi now gc)
+  ?~  home  (record 'no point for home: the lookups search near home' used seen 0 0)
+  =/  todo=(list [id=@t name=@t])  (scag (min 10 (sub cap.cfg used)) (thin-places:orr all multi now seen))
+  =|  rows=(list json)
+  =|  looked=@ud
+  =|  note=@t
+  |-
+  ?~  todo
+    ;<  *  bind:m  ?~(rows (pure:(fiber:fiber:nexus ,@ud) 0) (file-ops-on (observe-ops:orr ~ rows) /search))
+    (record note (add used looked) seen looked (lent rows))
+  =/  hdrs=(list [key=@t value=@t])  ~[['x-subscription-token' key.cfg] ['accept' 'application/json']]
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    (fetch-json [%'GET' (place-search-url:orr api.cfg name.i.todo u.home) hdrs ~] ~s30 %search)
+  ?:  |(=(401 status.got) =(403 status.got) =(429 status.got))
+    $(todo ~, note (cat 3 'Brave Search answered ' (crip (a-co:co status.got))), looked +(looked))
+  =/  w=(map @t (list row:orr))
+    =/  l=(unit loaded:orr)  (loaded-of:orr all id.i.todo)
+    ?~(l ~ (fold:orr rows.u.l multi now))
+  =/  found=(unit found-place:orr)
+    ?.  =(200 status.got)  ~
+    (found-of:orr (fall (de:json:html body.got) ~) name.i.todo)
+  =/  more=(list json)  ?~(found ~ (place-facts:orr id.i.todo w u.found now))
+  ;<  ~  bind:m  ?~(t.todo (pure:(fiber:fiber:nexus ,~) ~) (send-wait:io (add now ~s1)))
+  ;<  now2=@da  bind:m  get-time:io
+  $(todo t.todo, rows (weld rows more), looked +(looked), seen (~(put by seen) id.i.todo now2))
 ::  +geocode-known: a point for every address the ship knows (version
 ::  77): a place's address becomes its geo, the ship's, and a location
 ::  written as text goes into the geocache, where the leave fiber and the
