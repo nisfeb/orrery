@@ -1431,6 +1431,125 @@
   ^-  (unit @t)
   =/  u=@t  (uid-of-source source.obs.r)
   ?:(|(=('' u) (gth (met 3 u) 200)) ~ `u)
+::  ==  the sphere feed (version 90): a shared sphere's rows, in order
+::
+::  +sphere-members: the bodies in a sphere: filed under it, and for
+::  sphere/home every body filed under nothing; the sphere's own body,
+::  and no other sphere's
+::
+++  sphere-members
+  |=  [all=(list loaded) sphere=bid now=@da]
+  ^-  (set bid)
+  %-  silt
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit bid)
+  ?:  =(id.l sphere)  `id.l
+  ?:  =(%sphere kind.body.l)  ~
+  =/  in=(list @t)
+    ?.  (lien rows.l |=(r=row =('sphere' attr.obs.r)))  ~
+    %+  turn  (fall (~(get by (fold rows.l (sy ~['sphere']) now)) 'sphere') ~)
+    |=(r=row (ref-or-text value.obs.r))
+  ?:  (lien in |=(s=@t =(s sphere)))  `id.l
+  ?:(&(=(~ in) =('sphere/home' sphere)) `id.l ~)
+::  +feed-rows: a member's rows the feed may carry: this ship's own (a
+::  row from a ship never goes back out), no twin, no attribute the
+::  policy keeps back, no row the owner keeps private, and of its sphere
+::  rows only the one naming this sphere, so no other sphere is told
+::
+++  feed-rows
+  |=  [l=loaded sphere=bid hide=(set @t) private=(set @t)]
+  ^-  (list row)
+  %+  skim  rows.l
+  |=  r=row
+  ?&  (is-local obs.r)
+      !=('twin' attr.obs.r)
+      !(~(has in hide) attr.obs.r)
+      !(~(has in private) id.r)
+      |(!=('sphere' attr.obs.r) =(sphere (ref-or-text value.obs.r)))
+  ==
+::  +feed-due: the rows not fed yet, and the fed ones retracted since;
+::  fed maps a row to the retracted flag it went out with. A row never
+::  fed and retracted already is nothing to the peer.
+::
+++  feed-due
+  |=  [rows=(list row) fed=(map @t ?)]
+  ^-  (list row)
+  %+  skim  rows
+  |=  r=row
+  =/  was=(unit ?)  (~(get by fed) id.r)
+  ?~  was  !retracted.obs.r
+  !=(u.was retracted.obs.r)
+::  +feed-corrections: the owner's corrections on members not fed yet; a
+::  correction a ship made (carried here from it) never goes back out
+::
+++  feed-corrections
+  |=  [cs=(list correction) members=(set bid) done=(set @t)]
+  ^-  (list correction)
+  %+  skim  cs
+  |=  c=correction
+  ?&  (~(has in members) subject.c)
+      ?=(~ (slaw %p by.c))
+      !(~(has in done) (correction-key c))
+  ==
+::  +body-twins: a body's twins, ship to that ship's id, as an entry
+::  carries them so a peer lands it on the body it already knows
+::
+++  body-twins
+  |=  [l=loaded now=@da]
+  ^-  json
+  ?.  (lien rows.l |=(r=row =('twin' attr.obs.r)))  [%o ~]
+  :-  %o
+  %-  ~(gas by *(map @t json))
+  %+  murn  (fall (~(get by (fold rows.l (sy ~['twin']) now)) 'twin') ~)
+  |=  r=row
+  ^-  (unit [@t json])
+  =/  s=@t  (gs value.obs.r 'ship')
+  ?~  (slaw %p s)  ~
+  `[s s+(gs value.obs.r 'id')]
+++  en-feed-row
+  |=  [seq=@ud l=loaded r=row as=json]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['seq' (numb:enjs:format seq)]  ['op' s+'row']  ['name' s+name.body.l]
+      ['as' as]  ['row' (carry-obs id.l r)]
+  ==
+++  en-feed-correct
+  |=  [seq=@ud c=correction as=json]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['seq' (numb:enjs:format seq)]  ['op' s+'correct']  ['as' as]
+      ['subject' s+subject.c]  ['attr' s+attr.c]  ['value' s+value.c]  ['why' s+why.c]
+  ==
+::  +feed-page: the page grub an entry is kept in, a hundred to a page
+::
+++  feed-page  |=(seq=@ud ^-(@ta (crip "p{(a-co:co (div (dec (max 1 seq)) 100))}.json")))
+::  +land-subject: the body here an entry is about: the one the sender
+::  says it is here (its twin for this ship), else its id read as a ref
+::
+++  land-subject
+  |=  [subject=bid as=json src=@p our=@p twins=(map [@p bid] bid) ships=(map @p bid)]
+  ^-  bid
+  =/  said=@t  (gs as (scot %p our))
+  ?^  (parse-bid said)  said
+  (translate-ref subject src our twins ships)
+::  +feed-takes: whether an entry lands: about a body this ship does not
+::  hold yet, it does (the body is new to the sphere); about one it
+::  holds, when that body is in the sphere here or the row files it
+::  there. A body filed out on one side takes no more from the other.
+::
+++  feed-takes
+  |=  [landed=bid held=? members=(set bid) attr=@t value=json sphere=bid]
+  ^-  ?
+  ?.  held  &
+  ?:  (~(has in members) landed)  &
+  &(=('sphere' attr) =(sphere (ref-or-text value)))
+++  de-fed
+  |=  j=json
+  ^-  (map @t ?)
+  ?.  ?=([%o *] j)  ~
+  (~(run by p.j) |=(v=json ?=([%b %.y] v)))
+++  en-fed  |=(f=(map @t ?) ^-(json [%o (~(run by f) |=(b=? `json`b+b))]))
 ::  +group-name: the usergroup that may read one shared body
 ::
 ::    Kind and slug are joined with a dot, which neither may contain, so
@@ -7886,6 +8005,9 @@
   ?~  s  $(rows t.rows, kept [[%| (cat 3 'not a sphere: ' (ref-or-text value.o))] kept])
   =.  value.o  (pairs:enjs:format ~[['ref' s+u.s]])
   ?:  (owner-by by.o)  $(rows t.rows, kept [[%& o] kept], conf [u.s conf])
+  ::  a row carried from a ship is that ship's owner's filing, in a sphere
+  ::  shared with it, not a model's guess (version 90)
+  ?:  =('ship' kind.source.o)  $(rows t.rows, kept [[%& o] kept])
   ?:  (gte (~(gut by trust) u.s 0) sphere-trusted)  $(rows t.rows, kept [[%& o] kept])
   $(rows t.rows, held [o held])
 ::  +sphere-ask: the proposal a held sphere row becomes: a fact action
@@ -10038,6 +10160,10 @@
   ?:  &(=('POST' meth) ?=([%api %geocode %wake ~] suffix))      `[%post-geocode-wake %own]
   ?:  &(=('GET' meth) ?=([%api %search ~] suffix))              `[%get-search %own]
   ?:  &(=('GET' meth) ?=([%api %location ~] suffix))            `[%get-location %own]
+  ?:  &(=('POST' meth) ?=([%api %sphere-share ~] suffix))       `[%post-sphere-share %own]
+  ?:  &(=('DELETE' meth) ?=([%api %sphere-share @ @ @ ~] suffix))  `[%delete-sphere-share %own]
+  ?:  &(=('POST' meth) ?=([%api %sphere-accept ~] suffix))      `[%post-sphere-accept %own]
+  ?:  &(=('POST' meth) ?=([%api %private ~] suffix))            `[%post-private %own]
   ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
   ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]
   ?:  &(=('PUT' meth) ?=([%api %search ~] suffix))              `[%put-search %own]

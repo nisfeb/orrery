@@ -34,6 +34,9 @@
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
+::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
+::    /feeds/<sphere>/head.json  /feeds/<sphere>/p<n>.json  a shared sphere's feed, a hundred entries a page; /feed-state.json what went in it
+::    /feed.sig   the feed writer; /private.json  the rows the owner keeps to themselves (version 90)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -185,6 +188,13 @@
           [%fall %& [/ %'weather.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'parks.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'location.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'sphere-shares.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'sphere-offers.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'sphere-follows.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'feed-state.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'private.json'] [[/ %json] [%a ~]]]
+          [%fall %| /feeds empty-dir:loader]
+          [%fall %& [/ %'feed.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'location.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
@@ -263,6 +273,7 @@
         |-
         ;<  ~  bind:m  prod-inbox-road
         ;<  ~  bind:m  sync-pass
+        ;<  ~  bind:m  sphere-follow-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /tick (add now ~m5))
         ;<  *  bind:m  take-poke-from:io
@@ -418,6 +429,25 @@
         $
           ::  the weather (version 76): the forecast every two hours and
           ::  the alerts every half hour, for the owner's point
+          [~ %'feed.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery feed: failed")
+        ;<  *  bind:m  (keep:io /feed (rf 0 /beacon %rev) ~)
+        |-
+        ;<  more=?  bind:m  feed-pass
+        ?:  more  $
+        ;<  in=gen-in  bind:m  (take-gen-in /feed)
+        ?.  ?=(%news -.in)  $
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /feed-settle (add now ~s20))
+        ;<  ~  bind:m  (settle-feed now)
+        ;<  ~  bind:m  (cancel-timer:io /feed-settle)
+        $
+          ::  the sphere feed (version 90): on the beacon, once a burst of
+          ::  writes has been still for twenty seconds (two minutes at
+          ::  most), each shared sphere's new rows go into its feed and the
+          ::  ships that read it are woken; a poke (a share made, a follow
+          ::  accepted) runs a pass at once. A pass that hit its cap runs
+          ::  again at once.
           [~ %'location.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery location: failed")
         |-
@@ -1436,6 +1466,10 @@
     %get-weather            (serve-weather eyre-id)
     %post-geocode-wake      (serve-prod eyre-id %'parks.sig' 'geocode')
     %get-search             (serve-search eyre-id)
+    %post-sphere-share      (serve-sphere-share eyre-id jon)
+    %delete-sphere-share    (serve-sphere-unshare eyre-id s2 s3 s4)
+    %post-sphere-accept     (serve-sphere-accept eyre-id jon)
+    %post-private           (serve-private eyre-id jon)
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
     %delete-location-share  (serve-location-unshare eyre-id (rear suffix))
@@ -3180,6 +3214,10 @@
   =/  id=@t  (gs:orr jon 'id')
   ?:  =('position' act)  (take-position src jon)
   ?:  =('position-end' act)  (take-position-end src)
+  ?:  =('sphere-offer' act)  (take-sphere-offer src jon)
+  ?:  =('sphere-accept' act)  (take-sphere-accept src jon)
+  ?:  =('sphere-revoke' act)  (take-sphere-revoke src jon)
+  ?:  =('feed-moved' act)  (take-feed-moved src)
   ?:  =(~ (parse-bid:orr id))
     (note-inbox 'inbox' | 'id: expected <kind>/<slug>' (scot %p src))
   =/  key=@t  (share-key:orr src id)
@@ -3220,6 +3258,544 @@
   =/  in=json  (gj:orr doc 'in')
   ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' ?:(?=([%o *] in) (del-key:orr in (scot %p src)) [%o ~]))])
   (note-inbox 'position-end' & '' (scot %p src))
+::  ==  the sphere feed (version 90)
+::
+::  +take-sphere-offer: a ship offers a sphere: it waits to be accepted
+::
+++  take-sphere-offer
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  pk  (parse-bid:orr sphere)
+  ?.  &(?=(^ pk) =(%sphere kind.u.pk))  (note-inbox 'sphere-offer' | 'sphere: expected sphere/<slug>' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-inbox 'sphere-offer' | 'name: over 200 bytes' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-inbox 'sphere-offer' | 'base: over 200 bytes' (scot %p src))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
+  =/  key=@t  (rap 3 (scot %p src) '|' sphere ~)
+  ?:  &(!(~(has by cur) key) (gte ~(wyt by cur) 50))  (note-inbox 'sphere-offer' | 'fifty offers wait already' (scot %p src))
+  =/  offer=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p src)]  ['sphere' s+sphere]  ['name' s+(gs:orr jon 'name')]
+        ['mode' s+?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')]  ['base' s+(gs:orr jon 'base')]  ['at' (en-time:orr now)]
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
+  (note-inbox 'sphere-offer' & key (scot %p src))
+::  +take-sphere-accept: a ship we shared a sphere with in edit mode
+::  accepted it and says where its own feed of the sphere is: we read
+::  it, while we still share the sphere with it in edit mode
+::
+++  take-sphere-accept
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  feed=@t  (gs:orr jon 'feed')
+  ?.  &(?=(^ (parse-bid:orr sphere)) ?=(^ (parse-bid:orr feed)))  (note-inbox 'sphere-accept' | 'sphere, feed: expected sphere/<slug>' (scot %p src))
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-inbox 'sphere-accept' | 'base: over 200 bytes' (scot %p src))
+  ;<  sh=json  bind:m  (read-json (rf 0 / %'sphere-shares.json'))
+  ?.  =('edit' (gs:orr (gj:orr sh sphere) (scot %p src)))  (note-inbox 'sphere-accept' | 'not shared in edit mode' (scot %p src))
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  key=@t  (rap 3 (scot %p src) '|' feed ~)
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p src)]  ['sphere' s+feed]  ['local' s+sphere]  ['base' s+(gs:orr jon 'base')]
+        ['mode' s+'edit']  ['role' s+'host']  ['seq' (numb:enjs:format 0)]  ['last' s+'']  ['error' s+'']
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-follows.json') [[/ %json] [%o (~(put by fl) key row)]])
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'sync.sig') [[/ %sig] ~])
+  (note-inbox 'sphere-accept' & key (scot %p src))
+::  +take-sphere-revoke: a ship stops sharing a sphere with us: its
+::  offer and our following of it go; what we hold stays
+::
+++  take-sphere-revoke
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  key=@t  (rap 3 (scot %p src) '|' (gs:orr jon 'sphere') ~)
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-follows.json') [[/ %json] [%o (~(del by fl) key)]])
+  ::  our own feed of the sphere, kept for it in edit mode, closes to it
+  =/  local=@t  (gs:orr (fall (~(get by fl) key) ~) 'local')
+  =/  lpk  (parse-bid:orr local)
+  ;<  base=(unit path)  bind:m  self-base
+  ;<  ~  bind:m
+    ?.  &(?=(^ lpk) ?=(^ base))  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,~)  (read-map (rf 0 / %'sphere-shares.json'))
+    =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
+    ?.  (~(has by mine) (scot %p src))  (pure:(fiber:fiber:nexus ,~) ~)
+    =.  mine  (~(del by mine) (scot %p src))
+    ;<  ~  bind:(fiber:fiber:nexus ,~)
+      (over:io (rf 0 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
+    (set-feed-group u.base slug.u.lpk mine)
+  ;<  so=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-offers.json') [[/ %json] [%o (~(del by so) key)]])
+  (note-inbox 'sphere-revoke' & key (scot %p src))
+::  +take-feed-moved: a ship we follow wrote to its feed: read it now.
+::  Only a ship we follow wakes the follower, and nothing is taken from
+::  what it sent
+::
+++  take-feed-moved
+  |=  src=@p
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  ?.  (lien ~(val by fl) |=(r=json =((scot %p src) (gs:orr r 'host'))))  (pure:m ~)
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'sync.sig') [[/ %sig] ~])
+  (pure:m ~)
+::  +set-feed-group: the ships that may read a sphere's feed, one peek
+::  grant on its directory and nothing else
+::
+++  set-feed-group
+  |=  [base=path slug=@ta mine=(map @t json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  ships=(set @p)  (~(gas in *(set @p)) (murn ~(tap by mine) |=([s=@t *] (slaw %p s))))
+  (ug-set (rap 3 'orrery-feed.' slug ~) ships (sy ~[`road:tarball`[%& %| (weld base /feeds/[slug])]]) ~)
+::  +serve-sphere-share: share a sphere with a ship: {"sphere", "ship",
+::  "mode": "read" or "edit"}. The ship may read the sphere's feed, and
+::  is offered it
+::
+++  serve-sphere-share
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  pk  (parse-bid:orr sphere)
+  ?.  &(?=(^ pk) =(%sphere kind.u.pk))  (send-err eyre-id 400 'sphere: expected sphere/<slug>')
+  =/  shp=(unit @p)  (slaw %p (gs:orr jon 'ship'))
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  our=@p  bind:m  get-our:io
+  ?:  =(u.shp our)  (send-err eyre-id 400 'ship: that is this ship')
+  ;<  cur=view:nexus  bind:m  (peek:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body) ~)
+  ?.  ?=([%file *] cur)  (send-err eyre-id 404 'no such sphere')
+  =/  b=(unit body:orr)  (read-body:orr (sang-noun:tarball sang.cur))
+  ?~  b  (send-err eyre-id 500 'unreadable body')
+  =/  mode=@t  ?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
+  ;<  sh=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-shares.json'))
+  =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
+  =.  mine  (~(put by mine) (scot %p u.shp) s+mode)
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) sphere [%o mine])]])
+  ::  the feed's directory exists before any group is granted it
+  ;<  ~  bind:m  (ensure-dirs 1 / `(list @ta)`~[%feeds slug.u.pk])
+  ;<  ~  bind:m  (set-feed-group u.base slug.u.pk mine)
+  ;<  told=?  bind:m
+    %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
+    %-  pairs:enjs:format
+    :~  ['action' s+'sphere-offer']  ['sphere' s+sphere]  ['name' s+name.u.b]
+        ['mode' s+mode]  ['base' s+(spat u.base)]
+    ==
+  ;<  ~  bind:m  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['notified' b+told]]))
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'feed.sig') [[/ %sig] ~])
+  (pure:m ~)
+::  +serve-sphere-unshare: stop sharing a sphere with a ship: it can no
+::  longer read the feed, is told, and we stop reading its own
+::
+++  serve-sphere-unshare
+  |=  [eyre-id=@ta kind=@ta slug=@ta ship=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sphere=@t  (rap 3 kind '/' slug ~)
+  =/  shp=(unit @p)  (slaw %p ship)
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
+  ;<  sh=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-shares.json'))
+  =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
+  ?.  (~(has by mine) ship)  (send-err eyre-id 404 'not shared with that ship')
+  =.  mine  (~(del by mine) ship)
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) sphere) (~(put by sh) sphere [%o mine]))]])
+  ;<  ~  bind:m  (set-feed-group u.base slug mine)
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
+  =/  kept=(map @t json)
+    %-  ~(gas by *(map @t json))
+    %+  skip  ~(tap by fl)
+    |=([k=@t r=json] &(=(ship (gs:orr r 'host')) =(sphere (gs:orr r 'local'))))
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o kept]])
+  ;<  told=?  bind:m
+    (remote-poke-wait u.shp [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'sphere-revoke'] ['sphere' s+sphere]]))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
+::  +serve-sphere-accept: an offered sphere becomes ours to follow: it
+::  lands on our own sphere body for it (its twin, else the same id), the
+::  twin is written, and in edit mode our own rows on it go back through
+::  a feed of ours the host is told of
+::
+++  serve-sphere-accept
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
+  ?~  host  (send-err eyre-id 400 'host: expected an @p')
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  key=@t  (rap 3 (scot %p u.host) '|' sphere ~)
+  ;<  offers=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-offers.json'))
+  =/  offer=(unit json)  (~(get by offers) key)
+  ?~  offer  (send-err eyre-id 404 'no such offer')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  local=bid:orr  (translate-ref:orr sphere u.host our (twin-index:orr all now) (ship-index:orr all))
+  =/  lpk  (parse-bid:orr local)
+  ?.  &(?=(^ lpk) =(%sphere kind.u.lpk))  (send-err eyre-id 400 'sphere: bad')
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir %sphere slug.u.lpk) %body))
+  ;<  ~  bind:m
+    ?:  ex  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  poke-writer  1
+    %-  pairs:enjs:format
+    :~  ['op' s+'upsert-body']
+        ['body' (pairs:enjs:format ~[['id' s+local] ['name' s+(gs:orr u.offer 'name')]])]
+    ==
+  ;<  ~  bind:m
+    %+  poke-writer  1
+    (pairs:enjs:format ~[['op' s+'observe'] ['bodies' [%a ~]] ['observations' a+~[(twin-row:orr local u.host sphere now)]]])
+  =/  mode=@t  (gs:orr u.offer 'mode')
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
+  =/  row=json
+    %-  pairs:enjs:format
+    :~  ['host' s+(scot %p u.host)]  ['sphere' s+sphere]  ['local' s+local]  ['base' s+(gs:orr u.offer 'base')]
+        ['mode' s+mode]  ['role' s+'peer']  ['seq' (numb:enjs:format 0)]  ['last' s+'']  ['error' s+'']
+    ==
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o (~(put by fl) key row)]])
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-offers.json') [[/ %json] [%o (~(del by offers) key)]])
+  ;<  told=?  bind:m
+    ?.  =('edit' mode)  (pure:(fiber:fiber:nexus ,?) |)
+    ;<  base=(unit path)  bind:(fiber:fiber:nexus ,?)  self-base
+    ?~  base  (pure:(fiber:fiber:nexus ,?) |)
+    ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,?)  (read-map (rf 1 / %'sphere-shares.json'))
+    =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
+    =.  mine  (~(put by mine) (scot %p u.host) s+'edit')
+    ;<  ~  bind:(fiber:fiber:nexus ,?)  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) local [%o mine])]])
+    ;<  ~  bind:(fiber:fiber:nexus ,?)  (ensure-dirs 1 / `(list @ta)`~[%feeds slug.u.lpk])
+    ;<  ~  bind:(fiber:fiber:nexus ,?)  (set-feed-group u.base slug.u.lpk mine)
+    %^  remote-poke-wait  u.host  [%& orrery-instance %'shares.sig']
+    %-  pairs:enjs:format
+    :~  ['action' s+'sphere-accept']  ['sphere' s+sphere]  ['feed' s+local]  ['base' s+(spat u.base)]  ==
+  ;<  ~  bind:m  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['local' s+local] ['told' b+told]]))
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'feed.sig') [[/ %sig] ~])
+  (pure:m ~)
+::  +serve-private: a row the owner keeps to themselves, or no longer:
+::  {"id", "private"}. A private row never enters a sphere's feed
+::
+++  serve-private
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ?:  |(=('' id) (gth (met 3 id) 100))  (send-err eyre-id 400 'id: a row id is required')
+  ;<  cur=json  bind:m  (read-json (rf 1 / %'private.json'))
+  =/  have=(list @t)  (skip (strings:orr ?:(?=([%a *] cur) p.cur ~)) |=(t=@t =(t id)))
+  =/  next=(list @t)  ?:(?=([%b %.n] (gj:orr jon 'private')) have [id have])
+  ;<  ~  bind:m  (over:io (rf 1 / %'private.json') [[/ %json] a+(turn next |=(t=@t `json`s+t))])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['private' b+(lien next |=(t=@t =(t id)))]]))
+::  +settle-feed: wait until the beacon has been still for twenty
+::  seconds, two minutes at most, or a poke comes
+::
+++  settle-feed
+  |=  start=@da
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  |-
+  ;<  in=gen-in  bind:m  (take-gen-in /feed)
+  ?.  ?=(%news -.in)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ?:  (gte now (add start ~m2))  (pure:m ~)
+  ;<  ~  bind:m  (cancel-timer:io /feed-settle)
+  ;<  ~  bind:m  (set-timer:io /feed-settle (add now ~s20))
+  $
+::  +feed-pass: every shared sphere's new rows and corrections into its
+::  feed. Answers whether a sphere had more than one pass takes.
+::
+++  feed-pass
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  shared=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-shares.json'))
+  =/  spheres=(list [s=@t ships=(list @p)])
+    %+  murn  ~(tap by shared)
+    |=  [s=@t v=json]
+    ^-  (unit [@t (list @p)])
+    =/  ships=(list @p)  ?.(?=([%o *] v) ~ (murn ~(tap in ~(key by p.v)) |=(k=@t (slaw %p k))))
+    ?~(ships ~ `[s ships])
+  ?~  spheres  (pure:m |)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ;<  pv=json  bind:m  (read-json (rf 0 / %'private.json'))
+  ;<  cs=json  bind:m  (read-json (rf 0 / %'corrections.json'))
+  =/  hide=(set @t)  (sensitive-of:orr policy)
+  =/  private=(set @t)  (silt (strings:orr ?:(?=([%a *] pv) p.pv ~)))
+  =/  corr=(list correction:orr)  (de-corrections:orr cs)
+  ::  a fresh ? is %.y: the flag starts no, or the fiber runs its pass
+  ::  again and again inside one event (the hang of 2026-10-08)
+  =/  more=?  |
+  =/  todo=(list [s=@t ships=(list @p)])  spheres
+  |-
+  ?~  todo  (pure:m more)
+  ;<  m1=?  bind:m  (feed-one s.i.todo ships.i.todo all now hide private corr)
+  $(todo t.todo, more |(more m1))
+::  +feed-one: one sphere: its due rows and corrections as entries, a
+::  thousand at most, appended to its pages; the head moved, the state
+::  kept, and the ships that read it woken
+::
+++  feed-one
+  |=  $:  sphere=@t  ships=(list @p)  all=(list loaded:orr)  now=@da
+          hide=(set @t)  private=(set @t)  corr=(list correction:orr)
+      ==
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  pk  (parse-bid:orr sphere)
+  ?~  pk  (pure:m |)
+  ;<  st=json  bind:m  (read-json (rf 0 / %'feed-state.json'))
+  =/  mine=json  (gj:orr st sphere)
+  =/  seq=@ud  (fall (gn:orr mine 'seq') 0)
+  =/  fed=(map @t ?)  (de-fed:orr (gj:orr mine 'fed'))
+  =/  done=(set @t)  (silt (strings:orr (ga:orr mine 'corrected')))
+  =/  members=(set bid:orr)  (sphere-members:orr all sphere now)
+  =/  due=(list [l=loaded:orr r=row:orr])
+    %-  zing
+    %+  turn  (skim all |=(l=loaded:orr (~(has in members) id.l)))
+    |=  l=loaded:orr
+    (turn (feed-due:orr (feed-rows:orr l sphere hide private) fed) |=(r=row:orr [l r]))
+  =/  cuts=(list correction:orr)  (feed-corrections:orr corr members done)
+  ?:  &(=(~ due) =(~ cuts))  (pure:m |)
+  ::  ponytail: a thousand entries a pass and the fed map rewritten whole;
+  ::  a ship whose first fill is tens of thousands wants a lighter state
+  =/  take=(list [l=loaded:orr r=row:orr])  (scag 1.000 due)
+  =/  es=(list json)
+    =|  i=@ud
+    =|  acc=(list json)
+    |-  ^-  (list json)
+    ?~  take  (flop acc)
+    =/  e=json  (en-feed-row:orr :(add seq i 1) l.i.take r.i.take (body-twins:orr l.i.take now))
+    $(take t.take, i +(i), acc [e acc])
+  =/  n0=@ud  (add seq (lent es))
+  =/  ces=(list json)
+    =|  i=@ud
+    =|  acc=(list json)
+    =/  cl=(list correction:orr)  cuts
+    |-  ^-  (list json)
+    ?~  cl  (flop acc)
+    =/  as=json  (fall (bind (loaded-of:orr all subject.i.cl) |=(l=loaded:orr (body-twins:orr l now))) [%o ~])
+    $(cl t.cl, i +(i), acc [(en-feed-correct:orr :(add n0 i 1) i.cl as) acc])
+  =/  last=@ud  (add n0 (lent ces))
+  ;<  ~  bind:m  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
+  ;<  ~  bind:m  (append-pages slug.u.pk (weld es ces))
+  ;<  ~  bind:m  (over:io (rf 0 /feeds/[slug.u.pk] %'head.json') [[/ %json] (pairs:enjs:format ~[['seq' (numb:enjs:format last)]])])
+  =/  fed2=(map @t ?)  (roll (scag 1.000 due) |=([[l=loaded:orr r=row:orr] f=_fed] (~(put by f) id.r retracted.obs.r)))
+  =/  done2=(set @t)  (~(gas in done) (turn cuts correction-key:orr))
+  =/  next=json
+    %-  pairs:enjs:format
+    :~  ['seq' (numb:enjs:format last)]  ['fed' (en-fed:orr fed2)]
+        ['corrected' a+(turn ~(tap in done2) |=(k=@t `json`s+k))]
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'feed-state.json') [[/ %json] (set-key:orr ?:(?=([%o *] st) st [%o ~]) sphere next)])
+  ;<  ~  bind:m  (wake-readers ships sphere last)
+  (pure:m (gth (lent due) 1.000))
+::  +append-pages: entries onto the pages they belong to
+::
+++  append-pages
+  |=  [slug=@ta es=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  es  (pure:m ~)
+  =/  pg=@ta  (feed-page:orr (fall (gn:orr i.es 'seq') 0))
+  =/  on  |=(e=json =(pg (feed-page:orr (fall (gn:orr e 'seq') 0))))
+  ;<  cur=json  bind:m  (read-json (rf 0 /feeds/[slug] pg))
+  =/  old=(list json)  ?:(?=([%a *] cur) p.cur ~)
+  ;<  ~  bind:m  (over:io (rf 0 /feeds/[slug] pg) [[/ %json] a+(weld old (skim `(list json)`es on))])
+  $(es (skip `(list json)`es on))
+::  +wake-readers: each ship that reads a sphere's feed hears it moved
+::
+++  wake-readers
+  |=  [ships=(list @p) sphere=@t seq=@ud]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  ships  (pure:m ~)
+  ;<  *  bind:m
+    %^  remote-poke-wait  i.ships  [%& orrery-instance %'shares.sig']
+    (pairs:enjs:format ~[['action' s+'feed-moved'] ['sphere' s+sphere] ['seq' (numb:enjs:format seq)]])
+  $(ships t.ships)
+::  +sphere-follow-pass: every sphere we follow, read from where we left off
+::
+++  sphere-follow-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  keys=(list @t)  ~(tap in ~(key by fl))
+  |-
+  ?~  keys  (pure:m ~)
+  ;<  ~  bind:m  (follow-one i.keys)
+  $(keys t.keys)
+::  +follow-one: one followed sphere, a page at a time to its head, the
+::  place kept after each page so a long first fill picks up where it
+::  stopped. A peer that edits a sphere of ours is read only while we
+::  still share the sphere with it in edit mode.
+::
+++  follow-one
+  |=  key=@t
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  row=(unit json)  (~(get by fl) key)
+  ?~  row  (pure:m ~)
+  =/  host=(unit @p)  (slaw %p (gs:orr u.row 'host'))
+  =/  pk  (parse-bid:orr (gs:orr u.row 'sphere'))
+  =/  local=@t  (gs:orr u.row 'local')
+  ?:  |(?=(~ host) ?=(~ pk) ?=(~ (parse-bid:orr local)))  (pure:m ~)
+  =/  base=path  (fall (mole |.((stab (gs:orr u.row 'base')))) orrery-instance)
+  =/  seq=@ud  (fall (gn:orr u.row 'seq') 0)
+  ;<  sh=json  bind:m  (read-json (rf 0 / %'sphere-shares.json'))
+  ?:  &(=('host' (gs:orr u.row 'role')) !=('edit' (gs:orr (gj:orr sh local) (scot %p u.host))))
+    (follow-mark key seq 'not shared in edit mode any more')
+  =/  dir=path  (weld base /feeds/[slug.u.pk])
+  ;<  head=(unit json)  bind:m  (remote-json u.host dir %'head.json')
+  ?~  head  (follow-mark key seq 'the feed could not be read (the ship is down, or no longer shares it)')
+  =/  top=@ud  (fall (gn:orr u.head 'seq') 0)
+  ?:  (lte top seq)  (follow-mark key seq '')
+  ;<  page=(unit json)  bind:m  (remote-json u.host dir (feed-page:orr +(seq)))
+  ?~  page  (follow-mark key seq 'a page of the feed could not be read')
+  =/  es=(list json)
+    (skim ?:(?=([%a *] u.page) p.u.page ~) |=(e=json (gth (fall (gn:orr e 'seq') 0) seq)))
+  ?~  es  (follow-mark key seq 'the feed is missing entries')
+  ;<  done=?  bind:m  (apply-entries u.host local es)
+  ?.  done  (follow-mark key seq 'the bodies a page names were not made in time; it is read again')
+  ;<  ~  bind:m  (follow-mark key (roll (turn `(list json)`es |=(e=json (fall (gn:orr e 'seq') 0))) max) '')
+  $
+::  +remote-json: one JSON grub on another ship, or ~. The one road the
+::  follower reads by: a file under the feed's directory grant
+::
+++  remote-json
+  |=  [ship=@p dir=path name=@ta]
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  ;<  vw=(unit view:nexus)  bind:m  (peek-remote-wait ship [%& %& dir name])
+  ?.  ?=([~ %file *] vw)  (pure:m ~)
+  =/  v  (mole |.(!<(json (need-vase:tarball sang.u.vw))))
+  ?^  v  (pure:m v)
+  (pure:m (mole |.(;;(json (sang-noun:tarball sang.u.vw)))))
+::  +follow-mark: a followed sphere's place, last read and error
+::
+++  follow-mark
+  |=  [key=@t seq=@ud err=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  row=(unit json)  (~(get by fl) key)
+  ?.  ?=([~ %o *] row)  (pure:m ~)
+  =/  next=json  [%o (~(gas by p.u.row) ~[['seq' (numb:enjs:format seq)] ['last' (en-time:orr now)] ['error' s+err]])]
+  (over:io (rf 0 / %'sphere-follows.json') [[/ %json] [%o (~(put by fl) key next)]])
+::  +apply-entries: a page of another ship's feed, here: each entry's
+::  body found (or made, with its twin), refused when it is a body here
+::  that is not in the sphere, then its rows carried in as that ship's
+::  and its corrections made as that ship's
+::
+++  apply-entries
+  |=  [src=@p sphere=@t es=(list json)]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  twins  (twin-index:orr all now)
+  =/  ships  (ship-index:orr all)
+  =/  members=(set bid:orr)  (sphere-members:orr all sphere now)
+  =/  held=(set bid:orr)  (silt (turn all |=(l=loaded:orr id.l)))
+  =/  landed=(list [b=bid:orr from=bid:orr e=json])
+    %+  murn  es
+    |=  e=json
+    ^-  (unit [bid:orr bid:orr json])
+    =/  row=?  =('row' (gs:orr e 'op'))
+    =/  subj=@t  ?:(row (gs:orr (gj:orr e 'row') 'subject') (gs:orr e 'subject'))
+    ?~  (parse-bid:orr subj)  ~
+    =/  b=bid:orr  (land-subject:orr subj (gj:orr e 'as') src our twins ships)
+    =/  r=json  ?:(row (translate-carried:orr (gj:orr e 'row') src our twins ships) ~)
+    ?.  (feed-takes:orr b (~(has in held) b) members (gs:orr r 'attr') (gj:orr r 'value') sphere)  ~
+    `[b subj e]
+  ::  a body new here is made under the sender's name for it, and every
+  ::  body an entry lands on knows its twin
+  =/  fresh=(list [b=bid:orr from=bid:orr name=@t])
+    %~  tap  in
+    %-  silt
+    %+  murn  landed
+    |=  [b=bid:orr from=bid:orr e=json]
+    ^-  (unit [bid:orr bid:orr @t])
+    ?:  &((~(has in held) b) =(`b (~(get by twins) [src from])))  ~
+    `[b from (gs:orr e 'name')]
+  ;<  ~  bind:m
+    ?:  =(~ fresh)  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  poke-writer  0
+    %-  pairs:enjs:format
+    :~  ['op' s+'observe']
+        :-  'bodies'
+        :-  %a
+        %+  murn  fresh
+        |=  [b=bid:orr from=bid:orr name=@t]
+        ?:  (~(has in held) b)  ~
+        `(pairs:enjs:format ~[['id' s+b] ['name' s+?:(=('' name) b name)]])
+        :-  'observations'
+        a+(turn fresh |=([b=bid:orr from=bid:orr name=@t] (twin-row:orr b src from now)))
+    ==
+  ::  the writer took the poke, which is not the same as having made the
+  ::  bodies: a row applied to a body not there yet is dropped unseen
+  ;<  made=?  bind:m
+    (await-bodies (murn fresh |=([b=bid:orr *] ?:((~(has in held) b) ~ `b))))
+  ?.  made  (pure:m |)
+  ;<  bodies=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  idx  [our (twin-index:orr bodies now) (ship-index:orr bodies)]
+  =/  subjects=(list bid:orr)  ~(tap in (silt (turn landed |=([b=bid:orr *] b))))
+  |-
+  ?~  subjects  (pure:m &)
+  =/  mine=(list [b=bid:orr from=bid:orr e=json])  (skim landed |=([b=bid:orr *] =(b i.subjects)))
+  =/  rows=(list json)
+    %+  murn  mine
+    |=  [b=bid:orr from=bid:orr e=json]
+    ?.  =('row' (gs:orr e 'op'))  ~
+    `(set-key:orr (gj:orr e 'row') 'subject' s+b)
+  ;<  got=[pokes=@ud refused=(list [oid=@t why=@t])]  bind:m  (apply-carried-in 0 src rows idx)
+  ;<  ~  bind:m  (note-refusals 'feed' (scot %p src) refused.got)
+  ;<  ~  bind:m
+    =/  cuts=(list json)  (skim (turn mine |=([* * e=json] e)) |=(e=json =('correct' (gs:orr e 'op'))))
+    =/  n  (fiber:fiber:nexus ,~)
+    |-  ^-  form:n
+    ?~  cuts  (pure:n ~)
+    =/  v=@t  (gs:orr i.cuts 'value')
+    =/  vt=@t  ?~((parse-bid:orr v) v (translate-ref:orr v src our twins ships))
+    ;<  ~  bind:n
+      %+  poke-writer  0
+      %-  pairs:enjs:format
+      :~  ['op' s+'correct']  ['subject' s+i.subjects]  ['attr' s+(gs:orr i.cuts 'attr')]
+          ['value' s+vt]  ['why' s+(gs:orr i.cuts 'why')]  ['by' s+(scot %p src)]
+      ==
+    $(cuts t.cuts)
+  $(subjects t.subjects)
+::  +await-bodies: wait, twenty seconds at most, until each body exists;
+::  answers whether they all do
+::
+++  await-bodies
+  |=  ids=(list bid:orr)
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  tries=@ud  20
+  |-
+  =/  todo=(list bid:orr)  ids
+  =|  missing=(list bid:orr)
+  ;<  gone=(list bid:orr)  bind:m
+    =/  n  (fiber:fiber:nexus ,(list bid:orr))
+    |-  ^-  form:n
+    ?~  todo  (pure:n missing)
+    =/  pk  (parse-bid:orr i.todo)
+    ?~  pk  $(todo t.todo)
+    ;<  ex=?  bind:n  (peek-exists:io (rf 0 (body-dir kind.u.pk slug.u.pk) %body))
+    $(todo t.todo, missing ?:(ex missing [i.todo missing]))
+  ?~  gone  (pure:m &)
+  ?:  =(0 tries)  (pure:m |)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (wait:io (add now ~s1))
+  $(tries (dec tries), ids gone)
 ::  +location-pass: each live grant gets the phone's newest fix, exact or
 ::  cut, once; a grant whose time ran out, or one until home whose fix is
 ::  now home, is ended and its ship told; a peer's entry whose time ran
@@ -3474,6 +4050,18 @@
   =/  m  (fiber:fiber:nexus ,[pokes=@ud refused=(list [oid=@t why=@t])])
   ^-  form:m
   ?~  rows  (pure:m [0 ~])
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  bodies=(list loaded:orr)  bind:m  (load-bodies up)
+  (apply-carried-in up src rows [our (twin-index:orr bodies now) (ship-index:orr bodies)])
+::  +apply-carried-in: the same, with the ship's twins and the bodies
+::  carrying ships read once by the caller (the feed applies a page)
+::
+++  apply-carried-in
+  |=  [up=@ud src=@p rows=(list json) idx=[our=@p twins=(map [@p bid:orr] bid:orr) ships=(map @p bid:orr)]]
+  =/  m  (fiber:fiber:nexus ,[pokes=@ud refused=(list [oid=@t why=@t])])
+  ^-  form:m
+  ?~  rows  (pure:m [0 ~])
   =/  subject=bid:orr  (gs:orr i.rows 'subject')
   =/  pk  (parse-bid:orr subject)
   ?~  pk  (pure:m [0 ~])
@@ -3491,10 +4079,9 @@
     ?:  &(?=(^ was) !retracted.u.was)  acc
     (~(put by acc) k [id.r retracted.obs.r value.obs.r])
   ;<  now=@da  bind:m  get-time:io
-  ;<  our=@p  bind:m  get-our:io
-  ;<  bodies=(list loaded:orr)  bind:m  (load-bodies up)
-  =/  twins  (twin-index:orr bodies now)
-  =/  ships  (ship-index:orr bodies)
+  =/  our=@p  our.idx
+  =/  twins  twins.idx
+  =/  ships  ships.idx
   ::  refs are read the way this ship names its bodies, and a twin fact
   ::  is the sender's own: it never lands here (version 89)
   =/  all=(list json)
@@ -3668,7 +4255,14 @@
   ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
   ;<  offers=json  bind:m  (read-json (rf 1 / %'share-offers.json'))
   ;<  rows=json  bind:m  (read-json (rf 1 / %'ship-remotes.json'))
-  (send-json eyre-id 200 (pairs:enjs:format ~[['shares' shares] ['offers' offers] ['accepted' rows]]))
+  ;<  ss=json  bind:m  (read-json (rf 1 / %'sphere-shares.json'))
+  ;<  so=json  bind:m  (read-json (rf 1 / %'sphere-offers.json'))
+  ;<  sf=json  bind:m  (read-json (rf 1 / %'sphere-follows.json'))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['shares' shares]  ['offers' offers]  ['accepted' rows]
+      ['sphere_shares' ss]  ['sphere_offers' so]  ['sphere_follows' sf]
+  ==
 ::  +serve-accept: an offered body becomes ours to follow. The target is
 ::  a local body that already carries the offered ship, else where
 ::  +mirror-target puts it; the body is laid through the writer only
