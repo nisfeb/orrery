@@ -220,7 +220,7 @@ ok('the sharing page offers what waits: a sphere and a body, each to accept or d
   && shHtml.includes('data-decline-sphere="1"') && shHtml.includes('<strong>Kayak</strong>') && shHtml.includes('data-accept-body="1" data-host="~zod" data-id="thing/kayak"'));
 ok('spheres you share, with whom, their edits read, a stop; the feed kept back for a host is not listed as yours',
   shHtml.includes('data-unshare-sphere="sphere/home" data-ship="~zod"') && shHtml.includes("their edits: last read") && !shHtml.includes('data-unshare-sphere="sphere/sail"')
-  && shHtml.includes('data-share-sphere="1"') && shHtml.includes('<option value="~zod">Sam (~zod)</option>'));
+  && shHtml.includes('data-share-sphere="1"') && shHtml.includes('class="picker"') && shHtml.includes('<input type="hidden" name="ship" value="">'));
 ok('spheres shared with you: from whom, the error, what waits to pair, read now and leave',
   shHtml.includes('the feed could not be read') && shHtml.includes('1 to pair') && shHtml.includes('data-sphere-leave="1" data-host="~nec" data-sphere="sphere/sail"') && shHtml.includes('data-sync="1"'));
 ok('bodies shared alone, both ways, situations by how each person is reached, the pushes and the count kept back',
@@ -243,7 +243,27 @@ ok('a body filed only in a sphere not shared offers nothing to keep back', !notS
 ok('the Inbox says whose an action is: for someone, or from another ship for you',
   render.forWhom({ status: 'approved', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('for Sam') && render.forWhom({ status: 'approved', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('open here until they finish it')
   && render.forWhom({ payload: { twin: { ship: '~zod', id: 'a1' }, assignee: { ref: 'person/me' } } }, shState).includes('from Sam, for you') && render.forWhom({ payload: {} }, shState) === '');
-ok('a proposed task can be assigned to anyone, those with orrery marked', render.assignBox({ id: 'a1', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('<option value="person/sam" selected>Sam (their orrery)</option>'));
+ok('a proposed task can be assigned to anyone, those with orrery marked, the one assigned shown',
+  render.assignBox({ id: 'a1', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('value="Sam (their orrery)"') && render.assignBox({ id: 'a1', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('name="assign-who" value="person/sam"'));
+// the person picker: found as typed, by name, nickname, ship or id, close first
+const pk = [{ v: 'person/sam', t: 'Samantha Lee', s: '~zod', a: ['Sam', 'mom'], id: 'person/sam' }, { v: 'person/gran', t: 'Granny Rose', s: '', a: ['nana'], id: 'person/gran' },
+  { v: 'person/simon', t: 'Simon', s: '~nec', a: [], id: 'person/simon' }];
+const names = q => render.pickMatches(pk, q).map(d => d.t);
+ok('the picker finds by name, a word\'s start, a nickname, a ship, and letters in order, close matches first',
+  names('sam')[0] === 'Samantha Lee' && names('rose')[0] === 'Granny Rose' && names('nana')[0] === 'Granny Rose' && names('~nec')[0] === 'Simon'
+  && names('zod')[0] === 'Samantha Lee' && names('smn').indexOf('Simon') >= 0 && names('xyz').length === 0, [names('sam'), names('smn')]);
+ok('an empty box lists everyone, by name, the blank choice first', render.pickMatches([{ v: '', t: 'me', s: '', a: [], id: '' }].concat(pk), '').map(d => d.t).join('|') === 'me|Granny Rose|Samantha Lee|Simon');
+ok('the list says how each was found, and no one when no one is', render.pickList(pk, 'mom').includes('data-pick="person/sam"') && render.pickList(pk, 'mom').includes('~zod &middot; Sam &middot; mom') && render.pickList(pk, 'qqq').includes('no one by that'));
+ok('a picker carries its people and the field it fills, in phrasing markup a <p> keeps whole', render.personPicker('who', [{ id: 'person/sam', name: 'Sam', ship: '~zod', aliases: ['Sammy'] }]).includes('name="who"')
+  && !/<(ul|li|div|p)\b/.test(render.personPicker('who', [{ id: 'person/sam', name: 'Sam' }]) + render.pickList(pk, 'sam') + render.pickList(pk, 'qqq'))
+  && render.personPicker('ship', [{ id: 'person/sam', name: 'Sam', ship: '~zod' }], { ships: true }).includes('&quot;v&quot;:&quot;~zod&quot;'));
+// the inbox: names for what an action names, the id when there is none
+const byIdSh = { 'person/sam': { id: 'person/sam', name: 'Sam' }, 'thing/boat': { id: 'thing/boat', name: 'The boat' } };
+const pl = render.payloadLine({ assignee: { ref: 'person/sam' }, subject: 'thing/boat', value: 'sphere/unknown-x', text: 'wax it', twin: { ship: '~zod', id: 'a1' } }, byIdSh);
+ok('the inbox names the bodies an action names, links them, keeps an unknown id, and leaves the twin to the from label',
+  pl.includes('>Sam</a>') && pl.includes('>The boat</a>') && pl.includes('sphere/unknown-x') && pl.includes('wax it') && !pl.includes('twin'), pl);
+const tt = render.namedText('Merge person/sam into person/sam-2 <b>', byIdSh);
+ok('a title reads by name, keeps an id it has no name for, and stays escaped', tt === 'Merge Sam into person/sam-2 &lt;b&gt;', tt);
 const locHtml = render.locationCard({ out: [{ ship: '~sampel', until: '2026-10-08T22:00:00Z', home: true, exact: false }], in: [{ ship: '~zod', name: 'Lena', km_from_home: 3, at: '2026-10-08T20:00:00Z' }],
   peers: [{ id: 'person/lena', name: 'Lena', ship: '~zod' }, { id: 'person/sam', name: 'Sam', ship: '~sampel' }] });
 ok('the location card says who you share with and until when, who shares with you and how far, and offers the people with a ship (version 88)',

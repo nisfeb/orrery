@@ -40,6 +40,14 @@
       return '<a href="#body/' + esc(b) + '" title="' + esc(b) + '">' + esc(known && known.name ? known.name : b) + '</a>';
     }).join(', ');
   }
+  // free text, such as an action's title, escaped, each id in it the ship
+  // has a name for read as that name
+  function namedText(t, byId) {
+    return esc(t).replace(/\b[a-z]+\/[a-z0-9][a-z0-9.-]*/g, function (id) {
+      var known = byId && byId[id];
+      return known && known.name ? esc(known.name) : id;
+    });
+  }
   function badge(s) { return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>'; }
   // a table: its head row, then labelled cells, so that on a phone, where
   // the table stacks one row per card, each cell still says which column
@@ -358,7 +366,8 @@
     out += '<div class="card" id="body-sharing" data-id="' + esc(v.id) + '"><h2>Sharing</h2><p class="muted">Loading who this is shared with.</p></div>';
     if (v.actions && v.actions.length) {
       out += '<div class="card"><h2>Open actions</h2><ul class="actions">';
-      v.actions.forEach(function (a) { out += '<li>' + badge(a.status) + ' ' + esc(a.title) + ' <span class="muted">' + esc(a.kind) + '</span></li>'; });
+      var named = index(state);
+      v.actions.forEach(function (a) { out += '<li>' + badge(a.status) + ' ' + namedText(a.title, named) + ' <span class="muted">' + esc(a.kind) + '</span></li>'; });
       out += '</ul></div>';
     }
     out += '<div class="card"><h2>Timeline</h2>';
@@ -410,9 +419,9 @@
   function assignBox(a, state) {
     var cur = (a.payload && a.payload.assignee && a.payload.assignee.ref) || '';
     var people = ((state && state.bodies) || []).filter(function (b) { return b.kind === 'person' && b.id !== 'person/me'; });
-    return '<p class="assign"><label class="field">who does it <select data-assign-who="' + esc(a.id) + '"><option value="">me</option>' +
-      people.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name || p.id) + (p.ship ? ' (their orrery)' : '') + '</option>'; }).join('') +
-      '</select></label> <button class="small" data-assign="' + esc(a.id) + '">assign</button></p>';
+    var shown = people.map(function (p) { return Object.assign({}, p, { name: (p.name || p.id) + (p.ship ? ' (their orrery)' : '') }); });
+    return '<p class="assign"><label class="field">who does it ' + personPicker('assign-who', shown, { blank: 'me', current: cur }) +
+      '</label> <button class="small" data-assign="' + esc(a.id) + '">assign</button></p>';
   }
   var REFINABLE = ['task', 'calendar', 'message'];
   // the claimant is the by of the last claimed step in the history
@@ -426,13 +435,18 @@
   // cancel. A title says what the proposer meant; the payload is what
   // the executor sends.
   function payloadLine(p, byId) {
-    var keys = Object.keys(p || {}).filter(function (k) { return k !== 'why'; }).sort();
+    var keys = Object.keys(p || {}).filter(function (k) { return k !== 'why' && k !== 'twin'; }).sort();
     if (!keys.length) return '';
     return '<div class="payload">' + keys.map(function (k) {
-      var v = p[k];
-      var shown = (k === 'to' && typeof v === 'string' && v.indexOf('/') > 0) ? links([v], byId) : fmtValue(v);
-      return '<span class="muted">' + esc(k) + '</span> ' + shown;
+      return '<span class="muted">' + esc(k) + '</span> ' + namedValue(p[k], byId);
     }).join(' &middot; ') + '</div>';
+  }
+  // a value as a person reads it: a body it names by that body's name (its
+  // id when the ship has no name for it), linked; anything else as it is
+  function namedValue(v, byId) {
+    var id = typeof v === 'string' ? v : (v && typeof v === 'object' && typeof v.ref === 'string' ? v.ref : '');
+    if (id && /^[a-z0-9-]+\/[^\s]+$/.test(id) && (byId[id] || typeof v === 'object' || id.indexOf('person/') === 0)) return links([id], byId);
+    return fmtValue(v);
   }
   function inbox(actions, state) {
     var out = '<h1>Inbox</h1>' + instructBox('', '', 'Tell the ship anything: "Dana was not in Barcelona", "Sam and Samuel are one person", "never propose calls"');
@@ -442,7 +456,7 @@
     actions.forEach(function (a) {
       out += '<li class="card">' + badge(a.status) +
         (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
-        ' <strong>' + esc(a.title) + '</strong> <span class="muted">' + esc(a.kind) +
+        ' <strong>' + namedText(a.title, byId) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + byWho(a.by, state) + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' + forWhom(a, state) +
         (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + payloadLine(a.payload, byId) + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
@@ -893,7 +907,7 @@
         }).join('') + '</ul>';
       }
       if (s.id === 'sphere/home' && unfiled) out += '<p class="muted">And ' + unfiled + ' more under no sphere.</p>';
-      if (asks.length) out += '<p><a href="#inbox">' + asks.length + ' waiting for you</a>: ' + asks.map(function (a) { return esc(a.title); }).join('; ') + '</p>';
+      if (asks.length) out += '<p><a href="#inbox">' + asks.length + ' waiting for you</a>: ' + asks.map(function (a) { return namedText(a.title, byId); }).join('; ') + '</p>';
       out += '<p><a href="#body/' + esc(s.id) + '">share or stop sharing it</a> &middot; <a href="#sharing">all sharing</a></p>';
       out += '</div>';
     });
@@ -919,7 +933,8 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox,
+    personPicker: personPicker, matchScore: matchScore, pickMatches: pickMatches, pickList: pickList, payloadLine: payloadLine, namedText: namedText, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
@@ -1387,6 +1402,50 @@
     return b ? (b.name || b.id) : id;
   }
   function bodyLink(id, state) { return '<a href="#body/' + esc(id) + '">' + esc(nameOfBody(id, state)) + '</a>'; }
+  // a person picker (version 95): a box that finds people as you type, by
+  // name, nickname, ship or id, close matches first; the one picked rides
+  // in a hidden field of the given name. Long lists stay usable. All spans:
+  // a picker sits in a <p>, which a <ul> would close and leave behind.
+  function personPicker(name, people, opts) {
+    opts = opts || {};
+    var data = (opts.blank ? [{ v: '', t: opts.blank, s: '', a: [], id: '' }] : []).concat(people.map(function (p) {
+      return { v: opts.ships ? (p.ship || '') : p.id, t: p.name || p.id, s: p.ship || '', a: (p.aliases || []).filter(function (x) { return x && x !== p.name; }).slice(0, 6), id: p.id };
+    }));
+    var cur = data.filter(function (d) { return opts.current != null && d.v === opts.current; })[0];
+    return '<span class="picker" data-picker="' + esc(JSON.stringify(data)) + '">' +
+      '<input class="picker-q" aria-label="find a person" placeholder="' + esc(opts.placeholder || 'type a name, nickname or ship') + '" autocomplete="off" value="' + esc(cur ? cur.t : '') + '">' +
+      '<input type="hidden" name="' + esc(name) + '" value="' + esc(cur ? cur.v : '') + '">' +
+      '<span class="picker-list" role="listbox" hidden></span></span>';
+  }
+  // how well a typed phrase finds a person: the whole word, a word's start,
+  // inside a word, or its letters in order; 0 when it does not
+  function matchScore(q, text) {
+    q = String(q || '').trim().toLowerCase(); text = String(text || '').toLowerCase();
+    if (!q || !text) return 0;
+    if (text === q) return 100;
+    if (text.indexOf(q) === 0) return 80;
+    if (text.split(/[^a-z0-9~]+/).some(function (w) { return w.indexOf(q) === 0; })) return 70;
+    if (text.indexOf(q) >= 0) return 60;
+    var i = 0, gaps = 0, last = -1;
+    for (var j = 0; j < text.length && i < q.length; j++) if (text.charAt(j) === q.charAt(i)) { if (last >= 0) gaps += j - last - 1; last = j; i += 1; }
+    return i === q.length ? Math.max(1, 30 - gaps) : 0;
+  }
+  function pickMatches(data, q, n) {
+    n = n || 8;
+    if (!String(q || '').trim()) return data.slice().sort(function (a, b) { return a.v === '' ? -1 : b.v === '' ? 1 : String(a.t).localeCompare(String(b.t)); }).slice(0, n);
+    return data.map(function (d) {
+      var best = Math.max.apply(null, [matchScore(q, d.t), matchScore(q, d.s) - 5, matchScore(q, d.id) - 10].concat(d.a.map(function (x) { return matchScore(q, x) - 2; })));
+      return { d: d, s: best };
+    }).filter(function (x) { return x.s > 0; }).sort(function (a, b) { return b.s - a.s || String(a.d.t).localeCompare(String(b.d.t)); }).slice(0, n).map(function (x) { return x.d; });
+  }
+  function pickList(data, q) {
+    var hits = pickMatches(data, q);
+    if (!hits.length) return '<span class="pick muted">no one by that</span>';
+    return hits.map(function (d, i) {
+      var also = [d.s].concat(d.a).filter(Boolean).map(esc).join(' &middot; ');
+      return '<span role="option" data-pick="' + esc(d.v) + '" data-pick-text="' + esc(d.t) + '" class="pick' + (i === 0 ? ' on' : '') + '">' + esc(d.t) + (also ? ' <span class="muted">' + also + '</span>' : '') + '</span>';
+    }).join('');
+  }
   function personOptions(people, blank) {
     return (blank ? '<option value="">' + esc(blank) + '</option>' : '') +
       people.map(function (p) { return '<option value="' + esc(p.ship || p.id) + '">' + esc(p.name || p.id) + (p.ship ? ' (' + esc(p.ship) + ')' : '') + '</option>'; }).join('');
@@ -1440,7 +1499,7 @@
     }).join('') + '</ul>';
     if (!people.length) out += '<p class="muted">To share, add a person with their ship: a person body with a ship.</p>';
     else out += '<div id="share-sphere-form"><p><label class="field">sphere <select name="sphere"><option value="">choose a sphere</option>' + spheresHere.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.name || s.id) + (s.id === 'sphere/home' ? ' (every body filed under none)' : '') + '</option>'; }).join('') + '</select></label> ' +
-      '<label class="field">with <select name="ship">' + personOptions(people) + '</select></label> <label class="field">' + modeSelect('mode') + '</label> ' +
+      '<label class="field">with ' + personPicker('ship', people, { ships: true }) + '</label> <label class="field">' + modeSelect('mode') + '</label> ' +
       '<button data-share-sphere="1">share the sphere</button></p>' +
       '<p class="muted">Sharing Home shares every body filed under no sphere. They are offered it and must accept; what is kept private, and sensitive attributes, stay here.</p></div>';
     out += '</div>';
@@ -1512,7 +1571,7 @@
       out += ships.length ? '<p>This sphere is shared with ' + ships.map(function (s) {
         return esc(nameOfShip(s, state)) + ' <span class="muted">' + (with_[s] === 'edit' ? 'can edit' : 'read only') + '</span> <button class="small danger" data-unshare-sphere="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
       }).join('; ') + '</p>' : '<p class="muted">Not shared.</p>';
-      if (people.length) out += '<div id="share-sphere-form"><input type="hidden" name="sphere" value="' + esc(v.id) + '"><p><label class="field">share it with <select name="ship">' + personOptions(people) + '</select></label> ' +
+      if (people.length) out += '<div id="share-sphere-form"><input type="hidden" name="sphere" value="' + esc(v.id) + '"><p><label class="field">share it with ' + personPicker('ship', people, { ships: true }) + '</label> ' +
         '<label class="field">' + modeSelect('mode') + '</label> <button data-share-sphere="1">share the sphere</button></p></div>';
       return out + '</div>';
     }
@@ -1523,7 +1582,7 @@
       out += bs.length ? '<p>Shared alone with ' + bs.map(function (s) {
         return esc(nameOfShip(s, state)) + ' <span class="muted">' + (bw[s] === 'edit' ? 'can edit' : 'read only') + '</span> <button class="small danger" data-unshare-body="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
       }).join('; ') + '</p>' : '';
-      if (people.length) out += '<div id="share-body-form"><p><label class="field">share this alone with <select name="ship">' + personOptions(people) + '</select></label> ' +
+      if (people.length) out += '<div id="share-body-form"><p><label class="field">share this alone with ' + personPicker('ship', people, { ships: true }) + '</label> ' +
         '<label class="field">' + modeSelect('mode') + '</label> <button data-share-body="' + esc(v.id) + '">share</button></p></div>';
     }
     if (v.kind === 'situation') {
@@ -1535,8 +1594,7 @@
         return '<li>' + bodyLink(p, state) + ' <span class="muted">' + (e.ship ? 'on their orrery' : e.via ? 'invited by ' + esc(e.via === 'mail' ? 'email' : e.via) : e.note ? esc(e.note) : 'on the next pass') + '</span> ' +
           '<button class="small danger" data-unshare-situation="' + esc(r.obs || '') + '">remove</button></li>';
       }).join('') + '</ul>' : '<p class="muted">With no one. Someone with orrery is offered it; anyone else gets an invitation, sent again when the time, place or what is needed changes. It ends a day after the situation does.</p>';
-      if (everyone.length) out += '<div id="share-situation-form"><p><label class="field">share with <select name="who">' +
-        everyone.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>'; }).join('') + '</select></label> ' +
+      if (everyone.length) out += '<div id="share-situation-form"><p><label class="field">share with ' + personPicker('who', everyone) + '</label> ' +
         '<button data-share-situation="' + esc(v.id) + '">add</button></p></div>';
     }
     // a body in a shared sphere: the owner's own rows may be kept back
@@ -1640,6 +1698,59 @@
   // refresh after, and the page stopped updating (6de6141 to 90d8086).
   function later(gone) { dirty = typedNote(); awaitGone = Array.isArray(gone) ? gone : null; awaitMove = awaitGone ? 20 : 10; setTimeout(function () { refresh(!dirty); }, 300); }
 
+  // the person pickers: the list follows what is typed; a click or Enter
+  // picks; leaving the box closes it. Typing clears the pick, so a share
+  // goes only to someone picked.
+  function pickerOf(el) { return el && el.closest ? el.closest('.picker') : null; }
+  function pickerData(pk) { try { return JSON.parse(pk.dataset.picker || '[]'); } catch (e) { return []; } }
+  function pickerShow(pk) {
+    var list = pk.querySelector('.picker-list');
+    list.innerHTML = pickList(pickerData(pk), pk.querySelector('.picker-q').value);
+    list.hidden = false;
+  }
+  function pickerPick(pk, li) {
+    if (!li || !li.hasAttribute('data-pick')) return;
+    pk.querySelector('input[type="hidden"]').value = li.getAttribute('data-pick');
+    pk.querySelector('.picker-q').value = li.getAttribute('data-pick-text');
+    pk.querySelector('.picker-list').hidden = true;
+  }
+  view.addEventListener('input', function (ev) {
+    var pk = pickerOf(ev.target);
+    if (!pk || !ev.target.classList.contains('picker-q')) return;
+    pk.querySelector('input[type="hidden"]').value = '';
+    pickerShow(pk);
+  });
+  view.addEventListener('focusin', function (ev) {
+    var pk = pickerOf(ev.target);
+    if (pk && ev.target.classList.contains('picker-q')) pickerShow(pk);
+  });
+  view.addEventListener('focusout', function (ev) {
+    var pk = pickerOf(ev.target);
+    if (pk) setTimeout(function () { if (!pk.contains(document.activeElement)) pk.querySelector('.picker-list').hidden = true; }, 150);
+  });
+  view.addEventListener('keydown', function (ev) {
+    var pk = pickerOf(ev.target);
+    if (!pk || !ev.target.classList.contains('picker-q')) return;
+    var list = pk.querySelector('.picker-list'), items = Array.prototype.slice.call(list.querySelectorAll('.pick[data-pick]'));
+    var at = items.findIndex(function (li) { return li.classList.contains('on'); });
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      if (list.hidden) pickerShow(pk);
+      items = Array.prototype.slice.call(list.querySelectorAll('.pick[data-pick]'));
+      if (!items.length) return;
+      var next = ev.key === 'ArrowDown' ? Math.min(items.length - 1, at + 1) : Math.max(0, at - 1);
+      items.forEach(function (li, i) { li.classList.toggle('on', i === next); });
+    } else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      pickerPick(pk, items[at >= 0 ? at : 0]);
+    } else if (ev.key === 'Escape') {
+      list.hidden = true;
+    }
+  });
+  view.addEventListener('mousedown', function (ev) {
+    var li = ev.target.closest && ev.target.closest('.picker-list [data-pick]');
+    if (li) { ev.preventDefault(); pickerPick(pickerOf(li), li); }
+  });
   view.addEventListener('click', function (ev) {
     var b = ev.target.closest('button');
     if (!b) return;
@@ -1808,6 +1919,7 @@
       var sf = b.closest('#share-sphere-form') || view;
       var sphere = (sf.querySelector('[name="sphere"]') || {}).value, sship = (sf.querySelector('[name="ship"]') || {}).value, smode = (sf.querySelector('[name="mode"]') || {}).value;
       if (!sphere) { say('choose a sphere first', true); return; }
+      if (!sship) { say('choose who to share it with: type a name and pick one', true); return; }
       say('sharing the sphere');
       post('/sphere-share', { sphere: sphere, ship: sship, mode: smode }).then(function (r) { shared(r && r.notified ? 'shared: they are offered it' : 'shared, but their ship did not answer; it is offered when it does'); }).catch(oops);
     } else if (b.dataset.unshareSphere) {
@@ -1818,6 +1930,7 @@
       post('/sphere-leave', { host: b.dataset.host, sphere: b.dataset.sphere }).then(function () { shared('left the sphere'); }).catch(oops);
     } else if (b.dataset.shareBody) {
       var bf = b.closest('#share-body-form') || view;
+      if (!(bf.querySelector('[name="ship"]') || {}).value) { say('choose who to share it with: type a name and pick one', true); return; }
       post('/share', { id: b.dataset.shareBody, ship: (bf.querySelector('[name="ship"]') || {}).value, mode: (bf.querySelector('[name="mode"]') || {}).value })
         .then(function (r) { shared(r && r.notified ? 'shared: they are offered it' : 'shared, but their ship did not answer'); }).catch(oops);
     } else if (b.dataset.unshareBody) {
@@ -1830,6 +1943,7 @@
       post('/sync', {}).then(function () { shared('reading now'); }).catch(oops);
     } else if (b.dataset.shareSituation) {
       var who = ((b.closest('#share-situation-form') || view).querySelector('[name="who"]') || {}).value;
+      if (!who) { say('choose who to share it with: type a name and pick one', true); return; }
       post('/observe', { bodies: [], observations: [{ subject: b.dataset.shareSituation, attr: 'shared-with', value: { ref: who }, at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'), by: 'owner', source: { kind: 'user', id: 'page' }, conf: 100 }] })
         .then(function () { shared('shared: they are reached on the next pass'); }).catch(oops);
     } else if (b.dataset.unshareSituation) {
@@ -1840,7 +1954,7 @@
       var choice = (view.querySelector('input[name="peer_push"]:checked') || {}).value || 'asks';
       api('/policy').then(function (pol) { pol.peer_push = choice; return post('/policy', pol, 'PUT'); }).then(function () { say('saved'); }).catch(oops);
     } else if (b.dataset.assign) {
-      var sel = view.querySelector('select[data-assign-who="' + b.dataset.assign + '"]');
+      var sel = (b.closest('.assign') || view).querySelector('[name="assign-who"]');
       post('/actions/' + seg(b.dataset.assign) + '/assign', { assignee: sel ? sel.value : '' }).then(function () { say('assigned'); later(); }).catch(oops);
     } else if (b.dataset.pairThere) {
       post('/pairing', { key: b.dataset.pairKey, there: b.dataset.pairThere, same: b.dataset.pairSame === '1' })

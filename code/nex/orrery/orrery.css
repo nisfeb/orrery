@@ -5,10 +5,6 @@
 :root { color-scheme: light dark; }
 @media (prefers-color-scheme: dark) {
   :root { --ink: #e8eaf4; --muted: #a3a8bb; --line: #30344a; --bg: #11131c; --card: #1a1d2b; --bad: #ff8a80; }
-  .badge.live, .badge.approved { background: #1f3b27; }
-  .badge.proposed { background: #4a3d12; }
-  .badge.failed, .badge.retracted { background: #4a1f1c; }
-  .count:not(:empty) { color: #101541; }
   a { color: #9fb4ff; }
 }
 * { box-sizing: border-box; }
@@ -116,3 +112,20 @@ details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }
 
 /* a row another ship sent (version 93) */
 .peer { border-bottom: 1px dotted currentColor; font-style: italic; }
+
+/* the person picker (version 95) */
+.picker { position: relative; display: inline-block; }
+.picker-q { min-width: 16em; }
+.picker-list { position: absolute; z-index: 20; left: 0; top: 100%; min-width: 100%; margin: 2px 0 0; padding: .2rem 0; display: block;
+  background: var(--card); border: 1px solid var(--line); border-radius: 6px; max-height: 18em; overflow: auto; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.picker-list[hidden] { display: none; }
+.picker-list .pick { display: block; padding: .3rem .7rem; cursor: pointer; white-space: nowrap; }
+.picker-list .pick.on, .picker-list .pick:hover { background: var(--line); }
+/* dark overrides last: the light defaults above would win over them in the
+   block at the top, which left the proposed badge cream behind light text */
+@media (prefers-color-scheme: dark) {
+  .badge.live, .badge.approved { background: #1f3b27; }
+  .badge.proposed { background: #4a3d12; }
+  .badge.failed, .badge.retracted { background: #4a1f1c; }
+  .count:not(:empty) { color: #101541; }
+}
