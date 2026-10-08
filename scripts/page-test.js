@@ -200,6 +200,50 @@ ok('with nothing to pair, the card is empty', render.pairingCard([]) === '<div i
 ok('a row from another ship names the person carrying it, marked as theirs (version 93)',
   render.byWho('~zod', { bodies: [{ id: 'person/sam', name: 'Sam', ship: '~zod' }] }) === '<span class="peer" title="from ~zod">Sam</span>'
   && render.byWho('~nec', { bodies: [] }) === '<span class="peer" title="from ~nec">~nec</span>' && render.byWho('owner', {}) === 'owner');
+// the sharing page and card (version 95)
+const shState = { bodies: [
+  { id: 'person/sam', kind: 'person', name: 'Sam', ship: '~zod' }, { id: 'person/gran', kind: 'person', name: 'Gran' },
+  { id: 'sphere/home', kind: 'sphere', name: 'Home' }, { id: 'sphere/sail', kind: 'sphere', name: 'Sailing' },
+  { id: 'thing/boat', kind: 'thing', name: 'Boat' }, { id: 'situation/party', kind: 'situation', name: 'Party' }] };
+const shShares = {
+  sphere_shares: { 'sphere/home': { '~zod': 'edit' }, 'sphere/sail': { '~nec': 'edit' } },
+  sphere_follows: { '~zod|sphere/home': { role: 'host', host: '~zod', sphere: 'sphere/home', local: 'sphere/home', last: '2026-10-08T12:00:00Z', error: '' },
+    '~nec|sphere/sail': { role: 'peer', host: '~nec', sphere: 'sphere/sail', local: 'sphere/sail', mode: 'edit', last: '2026-10-08T12:00:00Z', error: 'the feed could not be read', pending: [{}] } },
+  sphere_offers: { '~nec|sphere/garden': { host: '~nec', sphere: 'sphere/garden', name: 'Garden', mode: 'read' } },
+  offers: { '~zod/thing/kayak': { host: '~zod', id: 'thing/kayak', name: 'Kayak', mode: 'edit' } },
+  shares: { 'thing/boat': { '~zod': 'read' } },
+  accepted: { '~nec/person/me': { host: '~nec', id: 'person/me', target: 'person/nec', mode: 'read', last: '', error: '' } },
+  situation_shares: { 'situation/party': { 'person/gran': { digest: 'x', via: 'mail' }, 'person/sam': { ship: '~zod' } } } };
+const shHtml = render.sharing(shState, shShares, {}, [], { peer_push: 'all' }, { ids: ['r1', 'r2'] });
+ok('the sharing page offers what waits: a sphere and a body, each to accept or decline',
+  shHtml.includes('The sphere <strong>Garden</strong> from ~nec') && shHtml.includes('data-accept-sphere="1" data-host="~nec" data-sphere="sphere/garden"')
+  && shHtml.includes('data-decline-sphere="1"') && shHtml.includes('<strong>Kayak</strong>') && shHtml.includes('data-accept-body="1" data-host="~zod" data-id="thing/kayak"'));
+ok('spheres you share, with whom, their edits read, a stop; the feed kept back for a host is not listed as yours',
+  shHtml.includes('data-unshare-sphere="sphere/home" data-ship="~zod"') && shHtml.includes("their edits: last read") && !shHtml.includes('data-unshare-sphere="sphere/sail"')
+  && shHtml.includes('data-share-sphere="1"') && shHtml.includes('<option value="~zod">Sam (~zod)</option>'));
+ok('spheres shared with you: from whom, the error, what waits to pair, read now and leave',
+  shHtml.includes('the feed could not be read') && shHtml.includes('1 to pair') && shHtml.includes('data-sphere-leave="1" data-host="~nec" data-sphere="sphere/sail"') && shHtml.includes('data-sync="1"'));
+ok('bodies shared alone, both ways, situations by how each person is reached, the pushes and the count kept back',
+  shHtml.includes('data-unshare-body="thing/boat" data-ship="~zod"') && shHtml.includes('data-leave-body="1" data-host="~nec" data-id="person/me"')
+  && shHtml.includes('invited by email') && shHtml.includes('on their orrery') && shHtml.includes('value="all" checked') && shHtml.includes('2 rows are kept to yourself'));
+const viaSit = render.sharing(shState, Object.assign({}, shShares, { shares: { 'situation/party': { '~zod': 'edit' } } }), {}, [], {}, {});
+ok("a situation's own share is not stopped from the bodies list: the next pass would share it again",
+  viaSit.includes("through the situation's shared-with") && !viaSit.includes('data-unshare-body="situation/party"'));
+ok('the sphere form chooses nothing by itself, and says what home shares', shHtml.includes('<option value="">choose a sphere</option>') && shHtml.includes('Home (every body filed under none)'));
+const sphCard = render.bodySharingCard({ id: 'sphere/home', kind: 'sphere', attrs: {} }, shState, shShares, {});
+ok("a sphere's card shares the whole sphere", sphCard.includes('This sphere is shared with Sam') && sphCard.includes('<input type="hidden" name="sphere" value="sphere/home">'));
+const boatCard = render.bodySharingCard({ id: 'thing/boat', kind: 'thing', attrs: { likes: { value: 'wax', by: 'owner', obs: 'r1' }, note: { value: 'x', by: '~zod', obs: 'r9' } } }, shState, shShares, { ids: ['r1'] });
+ok("a body's card: who it is shared with alone, the form, and in a shared sphere its own rows to keep back (another ship's not)",
+  boatCard.includes('Shared alone with Sam') && boatCard.includes('data-share-body="thing/boat"') && boatCard.includes('data-private="r1" data-keep="0"') && boatCard.includes('share it') && !boatCard.includes('r9'));
+const partyCard = render.bodySharingCard({ id: 'situation/party', kind: 'situation', attrs: { 'shared-with': [{ value: { ref: 'person/gran' }, obs: 'w1' }] } }, shState, shShares, {});
+ok("a situation's card: who it is shared with alone and how, remove, and add anyone",
+  partyCard.includes('Shared with, just this situation') && partyCard.includes('invited by email') && partyCard.includes('data-unshare-situation="w1"') && partyCard.includes('data-share-situation="situation/party"'));
+const notShared = render.bodySharingCard({ id: 'thing/boat', kind: 'thing', attrs: { sphere: { value: { ref: 'sphere/work' } }, likes: { value: 'wax', by: 'owner', obs: 'r1' } } }, shState, shShares, {});
+ok('a body filed only in a sphere not shared offers nothing to keep back', !notShared.includes('data-private'));
+ok('the Inbox says whose an action is: for someone, or from another ship for you',
+  render.forWhom({ status: 'approved', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('for Sam') && render.forWhom({ status: 'approved', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('open here until they finish it')
+  && render.forWhom({ payload: { twin: { ship: '~zod', id: 'a1' }, assignee: { ref: 'person/me' } } }, shState).includes('from Sam, for you') && render.forWhom({ payload: {} }, shState) === '');
+ok('a proposed task can be assigned to anyone, those with orrery marked', render.assignBox({ id: 'a1', payload: { assignee: { ref: 'person/sam' } } }, shState).includes('<option value="person/sam" selected>Sam (their orrery)</option>'));
 const locHtml = render.locationCard({ out: [{ ship: '~sampel', until: '2026-10-08T22:00:00Z', home: true, exact: false }], in: [{ ship: '~zod', name: 'Lena', km_from_home: 3, at: '2026-10-08T20:00:00Z' }],
   peers: [{ id: 'person/lena', name: 'Lena', ship: '~zod' }, { id: 'person/sam', name: 'Sam', ship: '~sampel' }] });
 ok('the location card says who you share with and until when, who shares with you and how far, and offers the people with a ship (version 88)',
@@ -272,7 +316,7 @@ ok('a view seen before draws at once, even while another answer is out, except t
   src.includes("cached: name !== 'settings' && name !== 'keys'") && src.includes("if (v.here === drawn || !v.cached || !seen[v.here]) return;")
   && src.includes("if (refreshing) { again = true; drawSeen(v); return; }"));
 ok('an answer that lands after the owner moved to another view is kept, not drawn over it',
-  src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here || again) { if (!held) say(''); return; }") > src.indexOf("seen[v.here] = d;"));
+  src.includes("seen[v.here] = d;") && src.indexOf("if (viewNow().here !== v.here || again) { if (!held) { say(pending); pending = ''; } return; }") > src.indexOf("seen[v.here] = d;"));
 ok('the state is asked for only if it moved: the page names its rev, and "same" keeps what it holds, drawn once',
   src.includes("var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';") && src.includes("return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });")
   && src.includes('var again = seen[v.here] === d && drawn === v.here;')
@@ -415,7 +459,7 @@ ok('a refresh whose fetches were out while the owner typed on the same view does
   && src.includes("if ((edits !== mark || graphView.touching) && v.here === drawn) { held = true; say('not refreshed: a form holds unsaved changes'); return false; }")
   && (src.match(/view\.innerHTML = /g) || []).length === 2
   && src.includes("drawView(v, seen[v.here], function (html) { view.innerHTML = html; drawn = v.here; return true; });")
-  && src.includes("show(settings(") && src.includes("if (!held) say('');"));
+  && src.includes("show(settings(") && src.includes("if (!held) { say(pending); pending = ''; }"));
 ok('a refine keeps the page-wide dirty flag on submit and fetches the revised row on success',
   src.indexOf("dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]')") > src.indexOf("post('/actions/' + seg(rid) + '/refine'")
   && src.indexOf("refresh(true);", src.indexOf("post('/actions/' + seg(rid) + '/refine'")) < src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")
