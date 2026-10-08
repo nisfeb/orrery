@@ -30,6 +30,11 @@ A sphere is shared whole: every body filed under it (for `sphere/home`, every bo
   - **Crossing.** On the reading ship, an action assigned to its owner (the ref read its way) and approved where it was proposed is filed as a proposal from that ship, with `payload.twin` naming the original. It waits for the owner whatever the policy says.
   - **Status both ways.** When either copy ends (done, failed, dismissed), the other is moved to the same end, by the ship that ended it, where the move is legal; a copy already ended is left alone, so nothing echoes.
   - **The other ship's open actions** are kept in `peer-actions.json`. The writer will not file one of the same kind and title, unless it is that action crossing. The generator is shown them as their own part, untagged, as the other owner's.
+- What the owner sees (version 93): every change replicates, and only what asks something of the owner reaches the phone.
+  - **What pushes:** a task assigned to them arrives as a proposal (pushed as any proposal is), and a leg that is now theirs (a drop-off or pick-up naming `person/me` once read their way) is pushed at once.
+  - **Widening:** `policy.peer_push` set to `"all"` pushes each page of another ship's changes as one notification.
+  - **On the page:** a row another ship sent shows the name of the person carrying that ship, marked as theirs.
+  - **In the brief:** one line per ship whose rows came in over the last day ("Sam changed 4 things in the last day").
 - Edit mode is two feeds, not a push: the ship that accepts keeps a feed of the sphere for the host and tells it where (`{"action": "sphere-accept"}`), and the host reads it only while its own record still shares the sphere with that ship in edit mode. The design's `share-rows` inbox operation is not used; the inbox carries only the offer, the accept, the revoke and the wake.
 - The two-ship check is `scripts/sphere-matrix.py`, on a test sphere: never `sphere/home`, which is every unfiled body.
 

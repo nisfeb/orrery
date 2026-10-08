@@ -391,6 +391,8 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
+Since version 93 a sphere shared both ways is quiet unless it asks something of you: a leg that is now yours (a drop-off or pick-up naming you) is pushed to your phone, the morning brief says who changed how many things, and the page names the other person on each row they sent. Set `"peer_push": "all"` in policy.json to be told of every change.
+
 Since version 92 a task can name who does it (`"assignee": {"ref": "person/sarah"}` in its payload). When Sarah runs orrery and shares the sphere, approving it here sends it to her Inbox as a proposal from your ship; it stays open here, not carried out, until she marks it done (or you dismiss it, which dismisses hers). Neither ship proposes what the other already has open on a shared body.
 
 Since version 91 the ship that accepts a sphere first matches what the other ship holds to its own: the other owner's body for you is your `person/me`, an event both read from one calendar is one, and a person or place by the same name waits on the Spheres page for you to say whether it is the same. Nothing comes in until you have.
