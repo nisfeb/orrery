@@ -11,6 +11,20 @@ A body and its observations can be shared with another ship: read mode mirrors w
 - In edit mode the follower also sends the local observations on that body (the ones not mirrored from a ship) to the host's inbox, where they land with `by` set to the sender and the same source shape. Retractions travel the same way. The host's inbox checks the share record before it applies anything; the sender is the transport's, never the payload's.
 - `DELETE /apps/orrery/api/share/person/sarah/~sampel-palnet` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
 
+## Sharing one situation (version 94)
+
+A single situation (a party, a visit, a recital) can be shared with people outside the household for as long as it matters, by a `shared-with` fact on it, a ref per person.
+
+- **To someone whose ship runs orrery** (a person here carrying a ship), the follower shares the situation body itself in edit mode, today's body share.
+  - The offer carries the bodies the situation names, thin: each one's name, and a place's address and point. The accept makes them where they are missing, those rows by the host.
+  - Nothing else about those bodies crosses.
+  - Their rows on the situation come back under their name ("we bring the cake").
+- **To anyone else** it is an invitation: a message action (Telegram if the person has a `telegram`, else mail if an `email`) with the situation in plain words: its name, when, where, what is needed.
+  - It is filed by whoever wrote the `shared-with` row, so a model's waits for the owner as any message does.
+  - When those words change, the open invitation is dismissed and a new one filed. `situation-shares.json` keeps who has what.
+- **Taking back a row** revokes that person's share.
+- **A day after the situation ends**, every share it has closes by itself. What each side holds stays.
+
 ## Sharing a sphere (version 90)
 
 A sphere is shared whole: every body filed under it (for `sphere/home`, every body filed under nothing as well), every row on them, both ways in edit mode, each row keeping its author.

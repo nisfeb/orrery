@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 94's owner steps
+
+Nothing to do. The schema gains `shared-with` on situations, multi-valued, by itself. Share a party or a visit by saying who it is shared with; an invitation to someone without orrery waits in your Inbox as any message does.
+
 ### Version 93's owner steps
 
 Nothing to do. To have every change from a shared sphere reach your phone, not only what asks something of you, set `"peer_push": "all"` in policy.json on the settings page.
