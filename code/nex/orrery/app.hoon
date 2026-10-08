@@ -193,6 +193,7 @@
           [%fall %& [/ %'sphere-follows.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'feed-state.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'private.json'] [[/ %json] [%a ~]]]
+          [%fall %& [/ %'peer-actions.json'] [[/ %json] [%o ~]]]
           [%fall %| /feeds empty-dir:loader]
           [%fall %& [/ %'feed.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'location.sig'] [[/ %sig] ~]]
@@ -1924,9 +1925,19 @@
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
-  ::  a todo the owner typed is approved as it is filed (+own-todo)
+  ::  the other ship's open ones count too, but not for the action that is
+  ::  one of them crossing (version 92)
+  =/  crossing=?  ?=(^ (act-twin:orr p.got))
+  ;<  peer=(map @t json)  bind:m  (read-map (rf 0 / %'peer-actions.json'))
+  ?:  ?&  !crossing
+          %+  lien  ~(val by peer)
+          |=(v=json &(=(`@t`kind.p.got (gs:orr v 'kind')) =(title.p.got (gs:orr v 'title'))))
+      ==
+    (note-then-no 'act' 'an open action with this kind and title exists on the other ship')
+  ::  a todo the owner typed is approved as it is filed (+own-todo); one
+  ::  another ship sent waits for the owner here, whatever the policy
   =/  own=?  (own-todo:orr p.got)
-  =/  auto=?  |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy))))
+  =/  auto=?  &(!crossing |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))))
   =/  a=action:orr
     ?.  auto  p.got
     ?:  own  (transition:orr p.got %approved 'calendar' 'typed in the calendar' now)
@@ -3530,21 +3541,22 @@
   =/  hide=(set @t)  (sensitive-of:orr policy)
   =/  private=(set @t)  (silt (strings:orr ?:(?=([%a *] pv) p.pv ~)))
   =/  corr=(list correction:orr)  (de-corrections:orr cs)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ::  a fresh ? is %.y: the flag starts no, or the fiber runs its pass
   ::  again and again inside one event (the hang of 2026-10-08)
   =/  more=?  |
   =/  todo=(list [s=@t ships=(list @p)])  spheres
   |-
   ?~  todo  (pure:m more)
-  ;<  m1=?  bind:m  (feed-one s.i.todo ships.i.todo all now hide private corr)
+  ;<  m1=?  bind:m  (feed-one s.i.todo ships.i.todo all acts now hide private corr)
   $(todo t.todo, more |(more m1))
 ::  +feed-one: one sphere: its due rows and corrections as entries, a
 ::  thousand at most, appended to its pages; the head moved, the state
 ::  kept, and the ships that read it woken
 ::
 ++  feed-one
-  |=  $:  sphere=@t  ships=(list @p)  all=(list loaded:orr)  now=@da
-          hide=(set @t)  private=(set @t)  corr=(list correction:orr)
+  |=  $:  sphere=@t  ships=(list @p)  all=(list loaded:orr)  acts=(list [id=@ta a=action:orr])
+          now=@da  hide=(set @t)  private=(set @t)  corr=(list correction:orr)
       ==
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
@@ -3555,6 +3567,7 @@
   =/  seq=@ud  (fall (gn:orr mine 'seq') 0)
   =/  fed=(map @t ?)  (de-fed:orr (gj:orr mine 'fed'))
   =/  done=(set @t)  (silt (strings:orr (ga:orr mine 'corrected')))
+  =/  fed-acts=(map @t @t)  =/(j (gj:orr mine 'acts') ?.(?=([%o *] j) ~ (~(run by p.j) |=(v=json ?:(?=([%s *] v) p.v '')))))
   =/  members=(set bid:orr)  (sphere-members:orr all sphere now)
   =/  due=(list [l=loaded:orr r=row:orr])
     %-  zing
@@ -3571,7 +3584,9 @@
     ?:  &(rostered =(~ due))  (pure:(fiber:fiber:nexus ,~) ~)
     ;<  ~  bind:(fiber:fiber:nexus ,~)  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
     (over:io (rf 0 /feeds/[slug.u.pk] %'roster.json') [[/ %json] roster])
-  ?:  &(=(~ due) =(~ cuts))  (pure:m |)
+  ::  the actions about the sphere's bodies, whose status moved (version 92)
+  =/  moved=(list [id=@ta a=action:orr])  (feed-acts:orr acts members fed-acts)
+  ?:  &(=(~ due) =(~ cuts) =(~ moved))  (pure:m |)
   ::  ponytail: a thousand entries a pass and the fed map rewritten whole;
   ::  a ship whose first fill is tens of thousands wants a lighter state
   =/  take=(list [l=loaded:orr r=row:orr])  (scag 1.000 due)
@@ -3591,16 +3606,26 @@
     ?~  cl  (flop acc)
     =/  as=json  (fall (bind (loaded-of:orr all subject.i.cl) |=(l=loaded:orr (body-twins:orr l now))) [%o ~])
     $(cl t.cl, i +(i), acc [(en-feed-correct:orr :(add n0 i 1) i.cl as) acc])
-  =/  last=@ud  (add n0 (lent ces))
+  =/  n1=@ud  (add n0 (lent ces))
+  =/  aes=(list json)
+    =|  i=@ud
+    =|  acc=(list json)
+    =/  ml=(list [id=@ta a=action:orr])  moved
+    |-  ^-  (list json)
+    ?~  ml  (flop acc)
+    $(ml t.ml, i +(i), acc [(en-feed-act:orr :(add n1 i 1) id.i.ml a.i.ml) acc])
+  =/  last=@ud  (add n1 (lent aes))
   ;<  ~  bind:m  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
-  ;<  ~  bind:m  (append-pages slug.u.pk (weld es ces))
+  ;<  ~  bind:m  (append-pages slug.u.pk :(weld es ces aes))
   ;<  ~  bind:m  (over:io (rf 0 /feeds/[slug.u.pk] %'head.json') [[/ %json] (pairs:enjs:format ~[['seq' (numb:enjs:format last)]])])
   =/  fed2=(map @t ?)  (roll (scag 1.000 due) |=([[l=loaded:orr r=row:orr] f=_fed] (~(put by f) id.r retracted.obs.r)))
   =/  done2=(set @t)  (~(gas in done) (turn cuts correction-key:orr))
+  =/  acts2=(map @t @t)  (roll moved |=([[id=@ta a=action:orr] f=_fed-acts] (~(put by f) id status.a)))
   =/  next=json
     %-  pairs:enjs:format
     :~  ['seq' (numb:enjs:format last)]  ['fed' (en-fed:orr fed2)]
         ['corrected' a+(turn ~(tap in done2) |=(k=@t `json`s+k))]
+        ['acts' [%o (~(run by acts2) |=(s=@t `json`s+s))]]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'feed-state.json') [[/ %json] (set-key:orr ?:(?=([%o *] st) st [%o ~]) sphere next)])
   ;<  ~  bind:m  (wake-readers ships sphere last)
@@ -3890,7 +3915,8 @@
   =/  idx  [our (twin-index:orr bodies now) (ship-index:orr bodies)]
   =/  subjects=(list bid:orr)  ~(tap in (silt (turn landed |=([b=bid:orr *] b))))
   |-
-  ?~  subjects  (pure:m &)
+  ::  the page's actions, once its bodies and rows are in (version 92)
+  ?~  subjects  (apply-acts src (skim es |=(e=json =('act' (gs:orr e 'op')))))
   =/  mine=(list [b=bid:orr from=bid:orr e=json])  (skim landed |=([b=bid:orr *] =(b i.subjects)))
   =/  rows=(list json)
     %+  murn  mine
@@ -3914,6 +3940,86 @@
       ==
     $(cuts t.cuts)
   $(subjects t.subjects)
+::  +apply-acts: another ship's actions on shared bodies. Its own twin of
+::  one of ours brings that one's end here; one of its own is kept in
+::  peer-actions.json while open, for the generator and against filing
+::  it twice. Assigned to this ship's owner and approved there, it is
+::  filed here as a proposal from that ship; one of ours twinned to it
+::  takes its end. An end moves an action only where the move is legal,
+::  so nothing echoes (version 92)
+::
+++  apply-acts
+  |=  [src=@p es=(list json)]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ?~  es  (pure:m &)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  peer=(map @t json)  bind:m  (read-map (rf 0 / %'peer-actions.json'))
+  =/  twins  (twin-index:orr all now)
+  =/  ships  (ship-index:orr all)
+  =/  ended  |=(s=@t (lien `(list @t)`~['done' 'failed' 'dismissed'] |=(x=@t =(x s))))
+  =/  todo=(list json)  es
+  =|  ops=(list json)
+  |-
+  ?~  todo
+    ;<  ~  bind:m  (over:io (rf 0 / %'peer-actions.json') [[/ %json] [%o peer]])
+    ;<  ~  bind:m  (send-ops (flop ops))
+    (pure:m &)
+  =/  e=json  i.todo
+  =/  tid=@t  (gs:orr e 'id')
+  =/  status=@t  (gs:orr e 'status')
+  =/  pay=json  (gj:orr e 'payload')
+  =/  key=@t  (rap 3 (scot %p src) '/' tid ~)
+  =/  mine=(unit [ship=@p id=@ta])
+    =/  t=json  (gj:orr pay 'twin')
+    ?.  =((scot %p our) (gs:orr t 'ship'))  ~
+    `[our (gs:orr t 'id')]
+  ::  the other ship's twin of one of ours: its end is ours
+  ?^  mine
+    =/  hit=(list [id=@ta a=action:orr])  (skim acts |=([i=@ta *] =(i id.u.mine)))
+    =/  ok=?
+      ?~  hit  |
+      &((ended status) (is-open:orr a.i.hit) (transition-ok:orr status.a.i.hit `@tas`status))
+    $(todo t.todo, ops ?.(ok ops [(set-action-op:orr id.u.mine status (rap 3 'on ' (scot %p src) ~) (scot %p src)) ops]))
+  =/  about=(list @t)  (turn (strings:orr (ga:orr e 'about')) |=(b=@t (translate-ref:orr b src our twins ships)))
+  =/  who=@t
+    =/  r=@t  (gs:orr (gj:orr pay 'assignee') 'ref')
+    ?:(=('' r) '' (translate-ref:orr r src our twins ships))
+  =.  peer
+    ?:  (ended status)  (~(del by peer) key)
+    %+  ~(put by peer)  key
+    %-  pairs:enjs:format
+    :~  ['kind' s+(gs:orr e 'kind')]  ['title' s+(gs:orr e 'title')]  ['status' s+status]
+        ['about' a+(turn about |=(b=@t `json`s+b))]  ['ship' s+(scot %p src)]  ['assignee' s+who]
+    ==
+  ::  ours twinned to it: its end is ours too
+  =/  ours=(list [id=@ta a=action:orr])
+    (skim acts |=([* a=action:orr] =(`[src tid] (act-twin:orr a))))
+  ?^  ours
+    =/  ok=?  &((ended status) (is-open:orr a.i.ours) (transition-ok:orr status.a.i.ours `@tas`status))
+    $(todo t.todo, ops ?.(ok ops [(set-action-op:orr id.i.ours status (rap 3 'on ' (scot %p src) ~) (scot %p src)) ops]))
+  ::  assigned to our owner and approved there: a proposal here, from it
+  ?.  &(=('person/me' who) |(=('approved' status) =('claimed' status)))  $(todo t.todo)
+  =/  p1=json  (set-key:orr ?:(?=([%o *] pay) pay [%o ~]) 'assignee' (pairs:enjs:format ~[['ref' s+'person/me']]))
+  =/  p2=json  (set-key:orr p1 'twin' (pairs:enjs:format ~[['ship' s+(scot %p src)] ['id' s+tid]]))
+  =/  act=json
+    %-  pairs:enjs:format
+    :~  ['kind' s+(gs:orr e 'kind')]  ['title' s+(gs:orr e 'title')]  ['payload' p2]
+        ['about' a+(turn about |=(b=@t `json`s+b))]  ['due' (gj:orr e 'due')]  ['by' s+(scot %p src)]
+    ==
+  $(todo t.todo, ops [(pairs:enjs:format ~[['op' s+'act'] ['action' act]]) ops])
+::  +send-ops: writer ops, one poke each
+::
+++  send-ops
+  |=  ops=(list json)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  ops  (pure:m ~)
+  ;<  ~  bind:m  (poke-writer 0 i.ops)
+  $(ops t.ops)
 ::  +await-bodies: wait, twenty seconds at most, until each body exists;
 ::  answers whether they all do
 ::
@@ -4767,7 +4873,10 @@
   =/  tz=@t  (owner-zone:orr all (multi-of:orr schema) now timezone.cfg)
   ;<  cs-j=json  bind:m  (read-json (rf 0 / %'corrections.json'))
   =/  cs=(list correction:orr)  (de-corrections:orr cs-j)
-  =/  parts=(list @t)  (build-parts:orr all acts decided schema now tz max-actions.cfg cs)
+  ::  the other ship's open actions on shared bodies, so a pass does not
+  ::  propose what the other owner has in hand (version 92)
+  ;<  peer-j=json  bind:m  (read-json (rf 0 / %'peer-actions.json'))
+  =/  parts=(list @t)  (with-peer:orr (build-parts:orr all acts decided schema now tz max-actions.cfg cs) peer-j)
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
   =/  last=json  last0
@@ -4814,7 +4923,7 @@
     ::  the filings change the open actions, so the writer wakes this
     ::  fiber again; the digest recorded is of the prompt as it will read
     ::  with them open, so that wake finds nothing new and asks nothing
-    =/  after=(list @t)  (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg cs)
+    =/  after=(list @t)  (with-peer:orr (build-parts:orr all (weld acts (flop sent)) decided schema now tz max-actions.cfg cs) peer-j)
     =/  said=(list @t)
       ?~  urgent  notes.v
       [(cat 3 'urgent pass' ?~(u.urgent '' (cat 3 ': ' (join-cords:orr ', ' u.urgent)))) notes.v]

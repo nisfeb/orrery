@@ -1109,6 +1109,7 @@
       [85 ~ ~ ~['drop-off' 'pick-up']]
       [87 ~ ~[['place' ~['website']]] ~]
       [89 ~ ~ ~['twin']]
+      [92 ~ ~ ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1177,6 +1178,18 @@
       (set-key ks kind (put (put spec 'attrs' (more (ga spec 'attrs') attrs)) 'notes' notes))
     ?~  multi.a  acc
     (put acc 'multi' (more (ga acc 'multi') multi.a))
+  ::  a field a release added to a kind's payload shape, where the stored
+  ::  shape lacks it (version 92)
+  =.  new
+    %+  roll  (skim schema-payload-adds |=([v=@ud *] (gth v from)))
+    |=  [[v=@ud kind=@t field=@t] acc=_new]
+    ^-  json
+    =/  shape=json  (gj (gj acc 'payloads') kind)
+    ?.  ?=([%o *] shape)  acc
+    ?:  (has-key shape field)  acc
+    =/  said=json  (gj (gj (gj starter-schema 'payloads') kind) field)
+    ?~  said  acc
+    (set-key acc 'payloads' (set-key (gj acc 'payloads') kind (set-key shape field said)))
   ::  a note the starter retired, still held word for word, is the
   ::  starter's note now; one the owner changed stays theirs (version 75)
   =.  new
@@ -1189,6 +1202,12 @@
     ?~  said  acc
     (set-key acc 'kinds' (set-key (gj acc 'kinds') kind (set-key spec 'notes' (set-key (gj spec 'notes') attr said))))
   (set-key new 'schema_version' (numb:enjs:format schema-newest))
+::  +schema-payload-adds: fields a release added to a kind's payload shape
+::
+++  schema-payload-adds  ^-((list [v=@ud kind=@t field=@t]) ~[[92 'task' 'assignee']])
+++  assignee-note
+  ^-  @t
+  'optional: who does it when it is not the owner, a ref to the person ({"ref": "person/x"}), by who the facts say does the thing (their leg, their errand). A person with their own orrery gets it in their Inbox once the owner approves it here'
 ::  +schema-new-kinds: the kinds a release brought in after the first
 ::
 ++  schema-new-kinds  `(set @t)`(sy `(list @t)`~['sphere'])
@@ -1309,7 +1328,7 @@
       %-  pairs:enjs:format
       %+  weld  writer-shapes
       ^-  (list [@t json])
-      :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence']])]
+      :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence'] ['assignee' assignee-note]])]
           ['note' (shape ~[['text' 'required: the note for the owner']])]
           :-  'message'
           %-  shape
@@ -1636,6 +1655,76 @@
     ==
   ?.  ?=([* ~] hits)  $(ros t.ros)
   $(ros t.ros, out (take id.i.hits 'name' |))
+::  ==  shared actions (version 92)
+::
+::  +assignee-of: the person an action's payload says does it, '' when
+::  none; +own-hand: whether it is this ship's owner's to carry out
+::
+++  assignee-of  |=(a=action ^-(@t (gs (gj payload.a 'assignee') 'ref')))
+++  own-hand
+  |=  a=action
+  ^-  ?
+  =/  who=@t  (assignee-of a)
+  |(=('' who) =('person/me' who))
+::  +act-twin: the action on another ship this one was filed from
+::
+++  act-twin
+  |=  a=action
+  ^-  (unit [ship=@p id=@ta])
+  =/  t=json  (gj payload.a 'twin')
+  =/  s=(unit @p)  (slaw %p (gs t 'ship'))
+  =/  i=@t  (gs t 'id')
+  ?:  |(?=(~ s) =('' i))  ~
+  `[u.s i]
+::  +feed-acts: the actions a sphere's feed carries: about its members
+::  only (and about something), each when its status moved since it last
+::  went; fed maps an action to the status it went with
+::
+++  feed-acts
+  |=  [acts=(list [id=@ta a=action]) members=(set bid) fed=(map @t @t)]
+  ^-  (list [id=@ta a=action])
+  %+  skim  acts
+  |=  [id=@ta a=action]
+  ?&  !=(~ about.a)
+      (levy ~(tap in about.a) |=(b=bid (~(has in members) b)))
+      !=(`status.a (~(get by fed) id))
+  ==
+++  en-feed-act
+  |=  [seq=@ud id=@ta a=action]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['seq' (numb:enjs:format seq)]  ['op' s+'act']  ['id' s+id]  ['kind' s+kind.a]
+      ['title' s+title.a]  ['payload' payload.a]  ['about' a+(turn ~(tap in about.a) |=(b=bid `json`s+b))]
+      ['due' ?~(due.a ~ s+(en-iso u.due.a))]  ['by' s+by.a]  ['status' s+status.a]
+  ==
+::  +peer-lines: the other ships' open actions on shared bodies, for a
+::  generator to know who has what in hand. Never tagged: they are not
+::  this ship's to move
+::
+++  peer-lines
+  |=  peer=json
+  ^-  (list @t)
+  =/  open=(list @t)
+    %+  murn  ?:(?=([%o *] peer) ~(tap by p.peer) ~)
+    |=  [k=@t v=json]
+    ^-  (unit @t)
+    ?.  (lien `(list @t)`~['proposed' 'approved' 'claimed'] |=(s=@t =(s (gs v 'status'))))  ~
+    =/  who=@t  (gs v 'assignee')
+    `(rap 3 '  ' (gs v 'kind') ' | ' (gs v 'title') ' | about ' (join-cords ', ' (strings (ga v 'about'))) ' | on ' (gs v 'ship') ?:(=('' who) '' (rap 3 ', for ' who ~)) ~)
+  ?~  open  ~
+  :-  'Open on the other ship you share with (theirs, not yours to move or propose again):'
+  (sort open aor)
+::  +with-peer: the generator's parts with the other ship's open actions
+::  as their own part before the last (the clock), when there are any
+::
+++  with-peer
+  |=  [parts=(list @t) peer=json]
+  ^-  (list @t)
+  =/  lines=(list @t)  (peer-lines peer)
+  ?~  lines  parts
+  =/  n=@ud  (lent parts)
+  ?:  =(0 n)  [(join-cords nl lines) ~]
+  (weld (scag (dec n) parts) [(join-cords nl lines) (slag (dec n) parts)])
 ::  +group-name: the usergroup that may read one shared body
 ::
 ::    Kind and slug are joined with a dot, which neither may contain, so
@@ -6406,6 +6495,9 @@
   |=  [id=@ta a=action]
   ^-  (unit exec-plan)
   ?.  =(%approved status.a)  ~
+  ::  an action assigned to someone else is theirs to carry out: it
+  ::  crosses to their ship, and stays open here until they say (version 92)
+  ?.  (own-hand a)  ~
   ::  a correction, a fact, a preference or a resolve is the writer's:
   ::  the body is the op, or the note says why it waits. A merge is
   ::  run-merges'. A resolve of a situation the ship does not hold waits
