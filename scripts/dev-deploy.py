@@ -49,6 +49,16 @@ def blot(path):
     s, b = call('GET', f'grubbery/ball/{path}?info=1')
     return json.loads(b).get('blot') if s == 200 else None
 
+#  a file a /< import names is kept as mime, which is what the import
+#  finds, whatever its extension (auspex's ui-app/manifest.json)
+raw = set()
+for dp, _, fs in os.walk(code):
+    for f in fs:
+        if not f.endswith('.hoon'): continue
+        for line in open(os.path.join(dp, f), encoding='utf-8'):
+            hit = re.match(r'/<\s+\S+\s+(\S+)', line)
+            if hit: raw.add(os.path.normpath(os.path.join(os.path.relpath(dp, code), hit.group(1))))
+
 #  a .hoon or .json file is kept under its own mark; any other (the icon)
 #  as mime, which is what a /< import of it finds, as the forge lays it
 def put(rel, text):
@@ -56,7 +66,7 @@ def put(rel, text):
     d, name = path.rsplit('/', 1)
     ensure_dir(d)
     form = {'action': 'create-file', 'filename': name}
-    if not name.endswith(('.hoon', '.json')):
+    if not name.endswith(('.hoon', '.json')) or (os.path.normpath(rel) in raw and not name.endswith('.hoon')):
         form['blot'] = '/mime'
         if blot(path) not in (None, '/mime'):
             s, b = call('POST', f'grubbery/ball/{d}', {'action': 'delete-grub', 'filename': name})

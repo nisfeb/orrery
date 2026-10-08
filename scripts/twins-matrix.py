@@ -45,6 +45,11 @@ def observe(side, subject, name, value, src=('matrix', 'twins-' + RUN), by='owne
          'source': {'kind': src[0], 'id': src[1]}, 'by': by}]})
 
 
+def carriers(side, ship):
+    """the people on a side carrying a ship: another gate's accept can leave one"""
+    return [dictish(x).get('id') for x in listish(dictish(side('GET', '/location')[1]).get('peers')) if dictish(x).get('ship') == ship]
+
+
 def offered(key):
     return dictish(dictish(peer('GET', '/shares')[1]).get('offers')).get(key)
 
@@ -76,7 +81,7 @@ code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': SWIM})
 check('the activity lands under its own id', code == 200 and dictish(d).get('target') == SWIM, (code, d))
 peer('POST', '/sync')
 got = wait('the legs mirror', lambda: (lambda p: p if p else None)(refs(peer, SWIM, 'pick-up', HOSTNAME)), 90) or []
-check("the host's own self reads as the peer's body carrying the host's ship", got == [THEM], got)
+check("the host's own self reads as the peer's body carrying the host's ship", len(got) == 1 and got[0] in carriers(peer, HOSTNAME), (got, carriers(peer, HOSTNAME)))
 check('the drop-off, with no twin yet, arrives as written', refs(peer, SWIM, 'drop-off', HOSTNAME) == [PARTNER], refs(peer, SWIM, 'drop-off'))
 twins = [dictish(r.get('value')) for r in rows(peer, SWIM, 'twin')]
 check('the accept wrote the twin on the landing body', {'ship': HOSTNAME, 'id': SWIM} in twins, twins)
@@ -96,7 +101,7 @@ code, d = observe(peer, SWIM, 'participants', ref('person/me'))
 check('the peer says it takes part', code == 200, (code, d))
 peer('POST', '/sync')
 got = wait('the participant crosses', lambda: (lambda p: p if p else None)(refs(host, SWIM, 'participants', PEERNAME)), 90) or []
-check("the peer's person/me arrives as the host's body carrying the peer's ship", got == [PARTNER], got)
+check("the peer's person/me arrives as the host's body carrying the peer's ship", len(got) == 1 and got[0] in carriers(host, PEERNAME), (got, carriers(host, PEERNAME)))
 check('no twin fact crossed to the host', not [r for r in rows(host, SWIM, 'twin') if r.get('by') == PEERNAME], rows(host, SWIM, 'twin'))
 
 # an event both ships keep under their own ids: the offer's uid lands it on the peer's

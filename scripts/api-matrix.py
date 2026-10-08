@@ -1556,6 +1556,14 @@ srv.shutdown()
 srv.server_close()
 
 
+# ---- pairing (version 91): the list of matches waiting, and a word on one that is not there; the two-ship part is
+# scripts/pairing-matrix.py ----
+print('== pairing')
+code, d = curl('GET', API + '/pairing')
+check('the matches waiting are a list', code == 200 and isinstance(d, list), (code, d))
+code, d = curl('POST', API + '/pairing', {'key': '~sampel-palnet|sphere/home', 'there': 'person/x', 'same': True})
+check('a word on a sphere not followed is a 404', code == 404, (code, d))
+
 # ---- sphere sharing (version 90): what a share and an accept refuse, a private row, the listing; the two-ship part
 # is scripts/sphere-matrix.py ----
 print('== sphere sharing')

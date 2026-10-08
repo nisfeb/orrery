@@ -1249,6 +1249,55 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
   ==
+++  test-pairing
+  =/  mk
+    |=  [id=@t kind=@tas name=@t ship=(unit @p) attrs=(list [a=@t v=json k=@t s=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name (silt ~[(lower:orr name)]) now ship]
+    %+  turn  attrs
+    |=  [a=@t v=json k=@t s=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a (en:json:html v) ~) [id a v now ~ 100 [k s] 'owner' now | '']]
+  =/  twin  |=([s=@t i=@t] `json`(pairs:enjs:format ~[['ship' s+s] ['id' s+i]]))
+  ::  here: our self, the host's owner by their ship, a child under our own
+  ::  slug, two of one name, an event from the calendar, one already paired
+  =/  all=(list loaded:orr)
+    :~  (mk 'person/me' %person 'Me' `~wet ~)
+        (mk 'person/sam' %person 'Sam' `~zod ~)
+        (mk 'person/kid-r' %person 'Rowan' ~ ~)
+        (mk 'person/ash-1' %person 'Ash' ~ ~)
+        (mk 'person/ash-2' %person 'Ash' ~ ~)
+        (mk 'situation/party' %situation 'Party' ~ ~[['starts' s+'x' 'calendar' 'family/0vparty@~zod']])
+        (mk 'place/pool' %place 'Pool' ~ ~[['twin' (twin '~zod' 'place/the-pool') 'share' 'x']])
+    ==
+  =/  row
+    |=  [id=@t name=@t ship=(unit @p) uids=(list @t) as=(list [@p @t])]
+    ^-  roster-row:orr
+    [id kind:(need (parse-bid:orr id)) name ship ~ uids (malt as)]
+  =/  ros=(list roster-row:orr)
+    :~  (row 'person/partner' 'Partner' `~wet ~ ~)
+        (row 'person/partner-2' 'P2' `~wet ~ ~)
+        (row 'person/me' 'Sam' `~zod ~ ~)
+        (row 'person/rowan' 'Rowan' ~ ~ ~)
+        (row 'person/ash' 'Ash' ~ ~ ~)
+        (row 'situation/bday' 'Birthday' ~ ~['0vparty@~zod'] ~)
+        (row 'place/the-pool' 'Pool' ~ ~ ~)
+        (row 'thing/boat' 'Boat' ~ ~ ~[[~wet 'thing/skiff']])
+        (row 'thing/new' 'New' ~ ~ ~)
+    ==
+  ;:  weld
+    ::  our ship is our self; theirs is the body carrying it; the event by
+    ::  its uid; the name waits; two of a name match none; the paired and the
+    ::  unknown are left out; a twin they name here is taken only if it exists
+    %+  expect-eq
+      !>(`(list [@t @t @t ?])`~[['person/partner' 'person/me' 'ship' &] ['person/partner-2' 'person/me' 'ship' &] ['person/me' 'person/sam' 'ship' &] ['person/rowan' 'person/kid-r' 'name' |] ['situation/bday' 'situation/party' 'event' &]])
+    !>((match-roster:orr ros all ~zod ~wet now))
+    ::  the roster round trips
+    =/  l  (mk 'person/sam' %person 'Sam' `~zod ~[['twin' (twin '~wet' 'person/s') 'share' 'x'] ['starts' s+'x' 'calendar' '0vx']])
+    %+  expect-eq
+      !>(`(list roster-row:orr)`~[['person/sam' %person 'Sam' `~zod ~['sam'] ~['0vx'] (malt ~[[~wet 'person/s']])]])
+    !>((de-roster:orr a+~[(en-roster-row:orr l now)]))
+  ==
 ++  test-sphere-feed
   =/  mk
     |=  [id=@t kind=@tas attrs=(list [a=@t v=json by=@t src=@t])]
