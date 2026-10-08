@@ -1249,6 +1249,54 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
   ==
+++  test-sphere-feed
+  =/  mk
+    |=  [id=@t kind=@tas attrs=(list [a=@t v=json by=@t src=@t])]
+    ^-  loaded:orr
+    :+  id  [kind id ~ now ~]
+    %+  turn  attrs
+    |=  [a=@t v=json by=@t src=@t]
+    ^-  row:orr
+    [(rap 3 id '/' a (en:json:html v) ~) [id a v now ~ 100 [src 'x'] by now | '']]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  boat  (mk 'thing/boat' %thing ~[['sphere' (ref 'sphere/sail') 'owner' 'user'] ['sphere' (ref 'sphere/work') 'owner' 'user'] ['location' s+'dock' 'owner' 'user'] ['health' s+'x' 'owner' 'user'] ['status' s+'afloat' '~zod' 'ship'] ['twin' (pairs:enjs:format ~[['ship' s+'~zod'] ['id' s+'thing/skiff']]) 'share' 'share']])
+  =/  kid  (mk 'person/kid' %person ~[['likes' s+'swim' 'owner' 'user']])
+  =/  desk  (mk 'thing/desk' %thing ~[['sphere' (ref 'sphere/work') 'owner' 'user']])
+  =/  all=(list loaded:orr)  ~[boat kid desk (mk 'sphere/sail' %sphere ~) (mk 'sphere/work' %sphere ~) (mk 'sphere/home' %sphere ~)]
+  ;:  weld
+    ::  filed under a sphere; home takes the unfiled and its own body, never another sphere's
+    (expect-eq !>((silt `(list @t)`~['thing/boat' 'sphere/sail'])) !>((sphere-members:orr all 'sphere/sail' now)))
+    (expect-eq !>((silt `(list @t)`~['person/kid' 'sphere/home'])) !>((sphere-members:orr all 'sphere/home' now)))
+    ::  the feed takes the owner's rows, no twin, nothing kept back or private, and only this sphere's filing
+    (expect-eq !>(`(list @t)`~['sphere' 'location']) !>((turn (feed-rows:orr boat 'sphere/sail' (silt ~['health']) ~) |=(r=row:orr attr.obs.r))))
+    (expect-eq !>(`(list @t)`~['sphere']) !>((turn (feed-rows:orr boat 'sphere/sail' (silt ~['health']) (silt ~[id:(snag 2 rows.boat)])) |=(r=row:orr attr.obs.r))))
+    ::  due: not fed yet, or retracted since; never fed and retracted already is nothing
+    =/  rs=(list row:orr)  (feed-rows:orr boat 'sphere/sail' ~ ~)
+    =/  gone=row:orr  =/(r (snag 0 rs) r(retracted.obs &))
+    ;:  weld
+      (expect-eq !>(`(list @t)`~['location' 'health']) !>((turn (feed-due:orr rs (malt ~[[id:(snag 0 rs) |]])) |=(r=row:orr attr.obs.r))))
+      (expect-eq !>(`(list @t)`~['sphere']) !>((turn (feed-due:orr ~[gone] (malt ~[[id.gone |]])) |=(r=row:orr attr.obs.r))))
+      (expect-eq !>(~) !>((feed-due:orr ~[gone] ~)))
+    ==
+    ::  the owner's corrections on members, once; never a ship's
+    =/  c1=correction:orr  ['thing/boat' 'location' 'pier' '' now 'owner']
+    =/  c2=correction:orr  ['thing/boat' 'status' 'sunk' '' now '~zod']
+    =/  c3=correction:orr  ['thing/desk' 'location' 'office' '' now 'owner']
+    ;:  weld
+      (expect-eq !>(~[c1]) !>((feed-corrections:orr ~[c1 c2 c3] (silt ~['thing/boat']) ~)))
+      (expect-eq !>(~) !>((feed-corrections:orr ~[c1] (silt ~['thing/boat']) (silt ~[(correction-key:orr c1)]))))
+    ==
+    ::  an entry carries the body's twins, its name and the row as carried
+    =/  e=json  (en-feed-row:orr 7 boat (snag 2 rows.boat) (body-twins:orr boat now))
+    (expect-eq !>(['row' 'thing/boat' 'location' 'thing/skiff' 7]) !>([(gs:orr e 'op') (gs:orr e 'name') (gs:orr (gj:orr e 'row') 'attr') (gs:orr (gj:orr e 'as') '~zod') (fall (gn:orr e 'seq') 0)]))
+    ::  a hundred to a page
+    (expect-eq !>(`(list @ta)`~['p0.json' 'p0.json' 'p1.json' 'p0.json']) !>((turn `(list @ud)`~[1 100 101 0] feed-page:orr)))
+    ::  landing: what the sender says it is here, else its id read as a ref
+    (expect-eq !>(['thing/skiff' 'person/zod' 'thing/kayak']) !>([(land-subject:orr 'thing/boat' (pairs:enjs:format ~[['~wet' s+'thing/skiff']]) ~zod ~wet ~ ~) (land-subject:orr 'person/me' [%o ~] ~zod ~wet ~ ~) (land-subject:orr 'thing/kayak' [%o ~] ~zod ~wet ~ ~)]))
+    ::  a new body lands; a held one only in the sphere here, or filed into it
+    (expect-eq !>([& & | &]) !>([(feed-takes:orr 'thing/x' | ~ 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & (silt ~['thing/x']) 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & ~ 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & ~ 'sphere' (ref 'sphere/sail') 'sphere/sail')]))
+    (expect-eq !>((malt ~[['a' &] ['b' |]])) !>((de-fed:orr (en-fed:orr (malt ~[['a' &] ['b' |]])))))
+  ==
 ++  test-twins
   =/  mk
     |=  [id=@t kind=@tas ship=(unit @p) attrs=(list [a=@t v=json])]
@@ -1400,6 +1448,9 @@
     (expect-eq !>(4) !>((lent kept.got)))
     (expect-eq !>(`(list @t)`~['situation/a' 'situation/c' 'situation/a']) !>((murn kept.got |=(e=(each obs:orr @t) ?:(?=(%& -.e) `subject.p.e ~)))))
     (expect-eq !>(`(list @t)`~['not a sphere: ']) !>((murn kept.got |=(e=(each obs:orr @t) ?:(?=(%| -.e) `p.e ~)))))
+    ::  a row carried from a ship is kept, the sphere new or not, and not counted
+    =/  carried=(each obs:orr @t)  [%& ['situation/e' 'sphere' (ref 'sphere/new') now ~ 90 ['ship' '~zod/1'] '~zod' now | '']]
+    (expect-eq !>([1 0 ~]) !>(=/(g (sphere-hold:orr ~[carried] ~) [(lent kept.g) (lent held.g) confirmed.g])))
     ::  the proposal a held row becomes
     =/  ask=json  (sphere-ask:orr (snag 0 held.got))
     (expect-eq !>(['fact' 'File b under the-llc' 'mail']) !>([(gs:orr ask 'kind') (gs:orr ask 'title') (gs:orr ask 'by')]))

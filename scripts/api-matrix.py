@@ -1556,6 +1556,30 @@ srv.shutdown()
 srv.server_close()
 
 
+# ---- sphere sharing (version 90): what a share and an accept refuse, a private row, the listing; the two-ship part
+# is scripts/sphere-matrix.py ----
+print('== sphere sharing')
+OUR_NAME = str(curl('GET', HOST + '/~/host')[1]).strip()
+for body, code_wanted, why in (({'sphere': 'person/me', 'ship': '~sampel-palnet'}, 400, 'a share of a body that is not a sphere'),
+                        ({'sphere': 'sphere/home', 'ship': 'nope'}, 400, 'a share to no ship'),
+                        ({'sphere': 'sphere/home', 'ship': OUR_NAME}, 400, 'a share to this ship itself'),
+                        ({'sphere': 'sphere/gate-none-' + secrets.token_hex(3), 'ship': '~sampel-palnet'}, 404, 'a share of a sphere not here')):
+    code, d = curl('POST', API + '/sphere-share', body)
+    check(why + ' is a ' + str(code_wanted), code == code_wanted, (code, d))
+code, d = curl('DELETE', API + '/sphere-share/sphere/gate-none/~sampel-palnet')
+check('stopping a sphere share that is not there is a 404', code == 404, (code, d))
+code, d = curl('POST', API + '/sphere-accept', {'host': '~sampel-palnet', 'sphere': 'sphere/home'})
+check('accepting an offer that was never made is a 404', code == 404, (code, d))
+PRIV = 'gate-row-' + secrets.token_hex(3)
+code, d = curl('POST', API + '/private', {'id': PRIV, 'private': True})
+check('a row is kept private', code == 200 and dictish(d).get('private') is True, (code, d))
+code, d = curl('POST', API + '/private', {'id': PRIV, 'private': False})
+check('and no longer', code == 200 and dictish(d).get('private') is False, (code, d))
+code, d = curl('POST', API + '/private', {'id': ''})
+check('a private mark needs a row id', code == 400, (code, d))
+code, d = curl('GET', API + '/shares')
+check('the shares listing names the spheres shared, offered and followed', code == 200 and all(k in dictish(d) for k in ('sphere_shares', 'sphere_offers', 'sphere_follows')), d)
+
 # ---- twins (version 89): the schema keeps a twin per peer; the two-ship part is scripts/twins-matrix.py ----
 print('== twins')
 code, d = curl('GET', API + '/schema')

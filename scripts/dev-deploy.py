@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Put code/ on a DEV ship as the orrery desk, the way a user adds one.
 
-  dev-deploy.py <base-url> <cookie-jar> <code-dir> [--add]
+  dev-deploy.py <base-url> <cookie-jar> <code-dir> [--add] [--desk NAME]
 
 Mirrors code/ into the ship's ball at /furum-dev/code through the explorer
 (creating what is missing, rewriting the rest), then stamps that copy's
@@ -16,7 +16,9 @@ import json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 
 url, jar = sys.argv[1].rstrip('/'), sys.argv[2]
 code = sys.argv[3]
-dest = 'orrery-dev/code'
+#  another grubbery desk (calendar, auspex) goes on a dev ship the same way
+desk = sys.argv[sys.argv.index('--desk') + 1] if '--desk' in sys.argv else 'orrery'
+dest = desk + '-dev/code'
 cookie = next(f'{p[5]}={p[6]}' for p in (l.rstrip('\n').split('\t') for l in open(jar))
               if len(p) == 7 and p[5].startswith('urbauth-'))
 
@@ -78,5 +80,5 @@ put('version.json', json.dumps(ver))
 print(f'  version.json {json.dumps(ver)}')
 
 if '--add' in sys.argv:
-    s, b = call('POST', 'apps/grubbery/desks/add', body={'name': 'orrery', 'code': '/' + dest})
+    s, b = call('POST', 'apps/grubbery/desks/add', body={'name': desk, 'code': '/' + dest})
     print(f'desks/add: {s} {b.decode(errors="replace")}')
