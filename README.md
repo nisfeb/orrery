@@ -391,6 +391,16 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
+Since version 95 all of this is on the page. The **Sharing** page shows:
+- **waiting offers** to accept or decline, and matches to pair;
+- **spheres** you share (share one, stop) and spheres shared with you (last read, errors, read now, leave);
+- **bodies** shared alone, both ways;
+- **situations** shared alone, with how each person was reached;
+- **location** sharing, which moved here from Settings;
+- **what reaches your phone**.
+
+Each body page has a **Sharing** card: share the body (a sphere shares whole), share a situation with a person, and in a shared sphere keep any of your rows to yourself. The **Inbox** says who a task is for, or which ship it came from, and a proposed task or note can be assigned to someone.
+
 Since version 94 one situation can be shared alone: say who (`shared-with`, a person per row, "share the party with Gran"). Someone whose ship runs orrery is offered it with the places it names; anyone else gets an invitation by Telegram or mail, sent again when the time, place or what is needed changes. It closes a day after the situation ends.
 
 Since version 93 a sphere shared both ways is quiet unless it asks something of you: a leg that is now yours (a drop-off or pick-up naming you) is pushed to your phone, the morning brief says who changed how many things, and the page names the other person on each row they sent. Set `"peer_push": "all"` in policy.json to be told of every change.
@@ -591,6 +601,11 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /sphere-share` | `{"sphere", "ship", "mode"}`: share a sphere with a ship, read or edit, which is offered it (version 90) |
 | `DELETE /sphere-share/<kind>/<slug>/<ship>` | stop sharing a sphere with a ship and tell it |
 | `POST /sphere-accept` | `{"host", "sphere"}`: follow a sphere a ship offered; in edit mode our own rows on it go back |
+| `GET /private` | `{"ids"}`: the rows kept to yourself (version 95) |
+| `POST /sphere-decline` | `{"host", "sphere"}`: an offered sphere you do not want |
+| `POST /sphere-leave` | `{"host", "sphere"}`: stop following a sphere shared with you; the other ship drops you, and what you hold stays |
+| `POST /leave` | `{"host", "id"}`: the same for a body shared with you alone |
+| `POST /actions/<id>/assign` | `{"assignee": "person/x"}`, or `""` for no one: who does a proposed action |
 | `GET` and `POST /pairing` | the matches by name a followed sphere waits on, and the owner's word on one: `{"key", "there", "same"}` (version 91) |
 | `POST /private` | `{"id", "private"}`: a row kept to yourself never enters a sphere's feed |
 | `GET /location` | `{"out", "in", "peers"}`: who the owner shares their position with and until when, the positions shared with them (each with `km_from_home`), and the people here with a ship (version 88) |

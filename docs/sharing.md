@@ -11,6 +11,16 @@ A body and its observations can be shared with another ship: read mode mirrors w
 - In edit mode the follower also sends the local observations on that body (the ones not mirrored from a ship) to the host's inbox, where they land with `by` set to the sender and the same source shape. Retractions travel the same way. The host's inbox checks the share record before it applies anything; the sender is the transport's, never the payload's.
 - `DELETE /apps/orrery/api/share/person/sarah/~sampel-palnet` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
 
+## Managing it (version 95)
+
+The Sharing page and each body's Sharing card do everything below through these routes.
+
+- **Leaving.** A ship can leave what it follows. `POST /api/sphere-leave` drops the follow, closes its own feed back to the host, and tells the host (`{"action": "sphere-leave"}`). The host then drops the ship from its record and group, and stops reading its feed. `POST /api/leave` does the same for a body shared alone (`{"action": "leave"}`).
+- **Declining.** `POST /api/sphere-decline` declines a sphere offer; nothing is told to the host.
+- **Assigning.** `POST /api/actions/<id>/assign` sets or clears a proposed action's assignee, through the writer's revise op.
+- **Private rows.** `GET /api/private` lists the rows kept private.
+- **Listing.** `GET /api/shares` also answers `situation_shares`.
+
 ## Sharing one situation (version 94)
 
 A single situation (a party, a visit, a recital) can be shared with people outside the household for as long as it matters, by a `shared-with` fact on it, a ref per person.

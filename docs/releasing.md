@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 95's owner steps
+
+Nothing to do. There is a Sharing page in the menu. Location sharing moved there from Settings.
+
 ### Version 94's owner steps
 
 Nothing to do. The schema gains `shared-with` on situations, multi-valued, by itself. Share a party or a visit by saying who it is shared with; an invitation to someone without orrery waits in your Inbox as any message does.
