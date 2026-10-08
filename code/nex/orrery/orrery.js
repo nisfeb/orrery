@@ -17,6 +17,8 @@
     if (typeof v === 'object' && !Array.isArray(v) && typeof v.ref === 'string') {
       return '<a href="#body/' + esc(v.ref) + '">' + esc(v.ref) + '</a>';
     }
+    // a twin: the same body on another ship (version 89)
+    if (typeof v === 'object' && !Array.isArray(v) && typeof v.ship === 'string' && typeof v.id === 'string') return esc(v.id) + ' on ' + esc(v.ship);
     if (typeof v === 'string') return esc(v);
     return esc(JSON.stringify(v));
   }

@@ -1108,6 +1108,7 @@
       ==
       [85 ~ ~ ~['drop-off' 'pick-up']]
       [87 ~ ~[['place' ~['website']]] ~]
+      [89 ~ ~ ~['twin']]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1295,7 +1296,7 @@
               ['status' 'active, or closed when that part of their life is over']
           ==
       ==
-      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped' 'sphere' 'drop-off' 'pick-up'] |=(t=@t `json`s+t))]
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped' 'sphere' 'drop-off' 'pick-up' 'twin'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference' 'resolve'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
@@ -1353,6 +1354,83 @@
   ?:  &(?=(^ ship) =(our u.ship))  'person/me'
   ?.  =('person/me' id)  id
   (rap 3 'person/' (rsh [3 1] (scot %p host)) ~)
+::  ==  twins (version 89): the same body on two ships
+::
+::  +twin-index: every live twin fact here, from a peer ship and that
+::  ship's id for a body to the body it is here
+::
+++  twin-index
+  |=  [all=(list loaded) now=@da]
+  ^-  (map [@p bid] bid)
+  %+  roll  all
+  |=  [l=loaded acc=(map [@p bid] bid)]
+  ?.  (lien rows.l |=(r=row =('twin' attr.obs.r)))  acc
+  %+  roll  (fall (~(get by (fold rows.l (sy ~['twin']) now)) 'twin') ~)
+  |=  [r=row a=_acc]
+  =/  s=(unit @p)  (slaw %p (gs value.obs.r 'ship'))
+  =/  i=@t  (gs value.obs.r 'id')
+  ?:  |(?=(~ s) ?=(~ (parse-bid i)))  a
+  (~(put by a) [u.s i] id.l)
+::  +ship-index: the body here that carries each ship, the first found
+::
+++  ship-index
+  |=  all=(list loaded)
+  ^-  (map @p bid)
+  %+  roll  (flop all)
+  |=  [l=loaded acc=(map @p bid)]
+  ?~  ship.body.l  acc
+  (~(put by acc) u.ship.body.l id.l)
+::  +translate-ref: a body another ship names, as this ship names it:
+::  its twin here; the sender's own self as the body here carrying the
+::  sender's ship (else person/<sender>, where an accept lands it); this
+::  ship's owner under the name a sender gives it (person/<this ship>)
+::  as person/me; else as written, the same id on both more often than
+::  not
+::
+++  translate-ref
+  |=  [ref=bid src=@p our=@p twins=(map [@p bid] bid) ships=(map @p bid)]
+  ^-  bid
+  =/  t=(unit bid)  (~(get by twins) [src ref])
+  ?^  t  u.t
+  ?:  =('person/me' ref)
+    (fall (~(get by ships) src) (mirror-target our src ~ 'person/me'))
+  ?:  =(ref (mirror-target src our ~ 'person/me'))  'person/me'
+  ref
+::  +translate-carried: a carried row with the ref in its value, if any,
+::  as this ship names it
+::
+++  translate-carried
+  |=  [j=json src=@p our=@p twins=(map [@p bid] bid) ships=(map @p bid)]
+  ^-  json
+  =/  v=json  (gj j 'value')
+  ?.  &(?=([%o *] v) (~(has by p.v) 'ref'))  j
+  =/  r=@t  (gs v 'ref')
+  ?~  (parse-bid r)  j
+  (set-key j 'value' (set-key v 'ref' s+(translate-ref r src our twins ships)))
+::  +twin-row: the fact that a body here is a body on another ship
+::
+++  twin-row
+  |=  [here=bid ship=@p there=bid now=@da]
+  ^-  json
+  %:  obs-row  here  'twin'
+    (pairs:enjs:format ~[['ship' s+(scot %p ship)] ['id' s+there]])
+    now  ~  100  ['share' (rap 3 (scot %p ship) '/' there ~)]  'share'
+  ==
+::  +cal-uids: the calendar uids a body's rows name, twenty at most: an
+::  offer carries them, so the accept lands on the receiver's own body
+::  for the same event
+::
+++  cal-uids
+  |=  rows=(list row)
+  ^-  (list @t)
+  %+  scag  20
+  %~  tap  in
+  %-  silt
+  %+  murn  rows
+  |=  r=row
+  ^-  (unit @t)
+  =/  u=@t  (uid-of-source source.obs.r)
+  ?:(|(=('' u) (gth (met 3 u) 200)) ~ `u)
 ::  +group-name: the usergroup that may read one shared body
 ::
 ::    Kind and slug are joined with a dot, which neither may contain, so

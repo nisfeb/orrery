@@ -3412,6 +3412,7 @@
         ['name' s+(gs:orr jon 'name')]
         ['mode' s+mode]
         ['base' s+(gs:orr jon 'base')]
+        ['uids' a+(turn (scag 20 (skim (strings:orr (ga:orr jon 'uids')) |=(u=@t (lte (met 3 u) 200)))) |=(u=@t `json`s+u))]
         ['at' (en-time:orr now)]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
@@ -3479,22 +3480,49 @@
   ;<  vw=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
   ?.  ?=([%ball *] vw)  (pure:m [0 ~])
   =/  pre=@t  (rap 3 (scot %p src) '/' ~)
-  ::  what we hold from this ship, by the sender's grub name
-  =/  held=(map @t [oid=@ta retracted=?])
-    %-  ~(gas by *(map @t [oid=@ta retracted=?]))
-    %+  murn  (rows-in:om ball.vw)
-    |=  r=row:orr
-    ^-  (unit [@t [@ta ?]])
-    ?.  (from-ship:orr obs.r src)  ~
-    `[(rsh [3 (met 3 pre)] id.source.obs.r) id.r retracted.obs.r]
-  =/  all=(list json)  `(list json)`rows
+  ::  what we hold from this ship, by the sender's grub name, a live
+  ::  row before a retracted one
+  =/  held=(map @t [oid=@ta retracted=? value=json])
+    %+  roll  (rows-in:om ball.vw)
+    |=  [r=row:orr acc=(map @t [oid=@ta retracted=? value=json])]
+    ?.  (from-ship:orr obs.r src)  acc
+    =/  k=@t  (rsh [3 (met 3 pre)] id.source.obs.r)
+    =/  was  (~(get by acc) k)
+    ?:  &(?=(^ was) !retracted.u.was)  acc
+    (~(put by acc) k [id.r retracted.obs.r value.obs.r])
   ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  bodies=(list loaded:orr)  bind:m  (load-bodies up)
+  =/  twins  (twin-index:orr bodies now)
+  =/  ships  (ship-index:orr bodies)
+  ::  refs are read the way this ship names its bodies, and a twin fact
+  ::  is the sender's own: it never lands here (version 89)
+  =/  all=(list json)
+    %+  murn  `(list json)`rows
+    |=  j=json
+    ^-  (unit json)
+    ?:  =('twin' (gs:orr j 'attr'))  ~
+    `(translate-carried:orr j src our twins ships)
+  ::  a row held with a ref read before its twin was known goes, and
+  ::  comes again as it reads now
+  =/  moved=(set @t)
+    %-  silt
+    %+  murn  all
+    |=  j=json
+    ^-  (unit @t)
+    =/  h  (~(get by held) (gs:orr j 'oid'))
+    ?~  h  ~
+    ?:  |(retracted.u.h =(`json`b+& (gj:orr j 'retracted')))  ~
+    =/  v=json  (gj:orr j 'value')
+    ?.  &(?=([%o *] v) (has-key:orr v 'ref') ?=([%o *] value.u.h))  ~
+    ?:  =((gs:orr v 'ref') (gs:orr value.u.h 'ref'))  ~
+    `(gs:orr j 'oid')
   =/  received=(list [oid=@t j=json])
     %+  murn  all
     |=  j=json
     ^-  (unit [@t json])
     ?.  =(subject (gs:orr j 'subject'))  ~
-    ?:  (~(has by held) (gs:orr j 'oid'))  ~
+    ?:  &((~(has by held) (gs:orr j 'oid')) !(~(has in moved) (gs:orr j 'oid')))  ~
     ?:  =(`json`b+& (gj:orr j 'retracted'))  ~
     `[(gs:orr j 'oid') (receive-obs:orr src j)]
   =/  split=[ok=(list json) bad=(list [oid=@t why=@t])]
@@ -3509,8 +3537,9 @@
     |=  j=json
     ^-  (unit @ta)
     ?.  =(subject (gs:orr j 'subject'))  ~
-    =/  h=(unit [oid=@ta retracted=?])  (~(get by held) (gs:orr j 'oid'))
+    =/  h=(unit [oid=@ta retracted=? value=json])  (~(get by held) (gs:orr j 'oid'))
     ?~  h  ~
+    ?:  (~(has in moved) (gs:orr j 'oid'))  `oid.u.h
     ?.  &(=(`json`b+& (gj:orr j 'retracted')) !retracted.u.h)  ~
     `oid.u.h
   ::  the retract pokes are capped, so the count answers for the cap
@@ -3587,11 +3616,16 @@
   =.  mine  (~(put by mine) (scot %p u.shp) s+mode)
   ;<  ~  bind:m  (over:io (rf 1 / %'shares.json') [[/ %json] [%o (~(put by all) id [%o mine])]])
   ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
+  ::  the event's calendar uids go with it, so a ship that reads the
+  ::  same calendar lands it on its own body for that event (version 89)
+  ;<  bv=view:nexus  bind:m  (peek:io (rv 1 (body-dir kind.u.pk slug.u.pk)) ~)
+  =/  uids=(list @t)  ?.(?=([%ball *] bv) ~ (cal-uids:orr (rows-in:om ball.bv)))
   ;<  told=?  bind:m
     %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
     %-  pairs:enjs:format
     :~  ['action' s+'offer']
         ['id' s+id]
+        ['uids' a+(turn uids |=(u=@t `json`s+u))]
         ['ship' `json`?~(ship.u.b ~ s+(scot %p u.ship.u.b))]
         ['name' s+name.u.b]
         ['mode' s+mode]
@@ -3661,7 +3695,17 @@
     ?~  oship  ~
     =/  hits=(list loaded:orr)  (skim all |=(l=loaded:orr =(oship ship.body.l)))
     ?~(hits ~ `id.i.hits)
-  =/  target=bid:orr  (fall same-ship (mirror-target:orr our u.host oship id))
+  ::  an event the offer names by a calendar uid this ship's body for it
+  ::  also carries is that body (version 89)
+  =/  same-event=(unit bid:orr)
+    =/  idx  (index-events:orr all)
+    =/  us=(list @t)  (strings:orr (ga:orr u.offer 'uids'))
+    |-  ^-  (unit bid:orr)
+    ?~  us  ~
+    =/  h  (~(get by uids.idx) i.us)
+    ?^  h  `id.u.h
+    $(us t.us)
+  =/  target=bid:orr  (fall same-ship (fall same-event (mirror-target:orr our u.host oship id)))
   =/  tpk  (parse-bid:orr target)
   ?~  tpk  (send-err eyre-id 400 'id: bad')
   ::  person/me counts as existing the way +first-missing counts it: the
@@ -3679,6 +3723,15 @@
             ['name' s+(gs:orr u.offer 'name')]
             ['ship' `json`?~(oship ~ s+(scot %p u.oship))]
         ==
+    ==
+  ::  the landing body is the host's body: its twin, so a ref either
+  ::  ship sends about it means it on the other (version 89)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m
+    %+  poke-writer  1
+    %-  pairs:enjs:format
+    :~  ['op' s+'observe']  ['bodies' [%a ~]]
+        ['observations' a+~[(twin-row:orr target u.host id now)]]
     ==
   ;<  rm=(map @t json)  bind:m  (read-map (rf 1 / %'ship-remotes.json'))
   =/  old=json  (fall (~(get by rm) key) [%o ~])
@@ -3860,6 +3913,7 @@
     |=  r=row:orr
     ?.  (is-local:orr obs.r)  |
     ?:  (~(has in hide) attr.obs.r)  |
+    ?:  =('twin' attr.obs.r)  |
     =/  was=(unit json)  (~(get by pushed) id.r)
     ?~  was  &
     !=(`json`b+retracted.obs.r u.was)
