@@ -512,7 +512,14 @@ owner_only('the settings are the owner\'s, even to a writing key', 'GET', '/gene
 
 # ---- the stub: one server for the model, the decider, Telegram, Mapbox, the weather service and POTA ----
 import http.server, socketserver
-STUB_PORT = 8099
+#  the stub's port: STUB_PORT when given, else one free now (8099, the
+#  old fixed port, is a fake ship's http port on this machine since 2026-10-08)
+def _free_port():
+    import socket
+    with socket.socket() as so:
+        so.bind(('127.0.0.1', 0))
+        return so.getsockname()[1]
+STUB_PORT = int(os.environ.get('STUB_PORT') or _free_port())
 # a title unlike any earlier run's, since a dismissed one stays decided
 # for ever and the validator drops a rewording of it
 import secrets
