@@ -1249,6 +1249,27 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
   ==
+++  test-peer-changes
+  =/  mk
+    |=  [id=@t ship=(unit @p) rows=(list [a=@t by=@t k=@t seen=@da])]
+    ^-  loaded:orr
+    :+  id  [%person id ~ now ship]
+    (turn rows |=([a=@t by=@t k=@t seen=@da] ^-(row:orr [(rap 3 id a by ~) [id a s+'x' now ~ 100 [k 'x'] by seen | '']])))
+  =/  all=(list loaded:orr)
+    :~  (mk 'person/sam' `~zod ~)
+        (mk 'thing/boat' ~ ~[['a' '~zod' 'ship' now] ['b' '~zod' 'ship' now] ['twin' 'share' 'ship' now] ['c' '~nec' 'ship' now] ['d' '~zod' 'ship' (sub now ~d2)] ['e' 'owner' 'user' now]])
+    ==
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  ;:  weld
+    ::  by the name of the person carrying the ship, most first; a twin and an old row do not count
+    %+  expect-eq
+      !>(`(list @t)`~['person/sam changed 2 things in the last day, shown on the page by name' '~nec changed 1 thing in the last day, shown on the page by name'])
+    !>((peer-change-lines:orr all now))
+    (expect-eq !>(['asks' 'all' 'asks']) !>([(peer-push-of:orr ~) (peer-push-of:orr (pairs:enjs:format ~[['peer_push' s+'all']])) (peer-push-of:orr (pairs:enjs:format ~[['peer_push' s+'x']]))]))
+    ::  a leg named for the owner, live; not someone else's, not retracted, not another attribute
+    =/  r  |=([a=@t v=json x=?] `json`(pairs:enjs:format ~[['attr' s+a] ['value' v] ['retracted' b+x]]))
+    (expect-eq !>([& & | | |]) !>([(leg-for-me:orr (r 'drop-off' (ref 'person/me') |)) (leg-for-me:orr (r 'pick-up' (ref 'person/me') |)) (leg-for-me:orr (r 'drop-off' (ref 'person/sam') |)) (leg-for-me:orr (r 'drop-off' (ref 'person/me') &)) (leg-for-me:orr (r 'likes' (ref 'person/me') |))]))
+  ==
 ++  test-shared-actions
   =/  mk
     |=  [title=@t about=(list @t) status=@tas payload=json]
