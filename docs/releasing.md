@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 88's owner steps
+
+Nothing to do. Settings gains a Location card: share where you are with someone whose ship runs orrery (a person here with a `ship`), for some hours or until you are home, to about a kilometre unless you tick exact. Their ship needs version 88 to show it.
+
 ### Version 87's owner steps
 
 Optional. To have the ship fill in your places' addresses, phones, hours and websites, get a Brave Search API key with the Search plan (Place Search is part of it), paste it on the settings page under Place lookups, and tick on. It looks up ten places at most twice a day and at most 500 a month unless you change the cap; each lookup sends a place's name and your home's area to Brave, never a person.
@@ -224,7 +228,7 @@ Nothing to do. An action the ship claimed and never finished (a release reloads 
 
 ### Version 85's owner steps
 
-Nothing to do. Who drops off and who picks up can now differ by day: say it as you would ("Andrea drops Rose off on Wednesdays and I pick her up; Fridays I do both"), and time to leave follows each day's legs. The schema takes `drop-off` and `pick-up` as multi-valued by itself, and their activity notes are renewed where you have not changed them.
+Nothing to do. Who drops off and who picks up can now differ by day: say it as you would ("Sam drops Lena off on Wednesdays and I pick her up; Fridays I do both"), and time to leave follows each day's legs. The schema takes `drop-off` and `pick-up` as multi-valued by itself, and their activity notes are renewed where you have not changed them.
 
 ### Version 84's owner steps
 

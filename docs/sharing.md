@@ -11,6 +11,10 @@ A body and its observations can be shared with another ship: read mode mirrors w
 - In edit mode the follower also sends the local observations on that body (the ones not mirrored from a ship) to the host's inbox, where they land with `by` set to the sender and the same source shape. Retractions travel the same way. The host's inbox checks the share record before it applies anything; the sender is the transport's, never the payload's.
 - `DELETE /apps/orrery/api/share/person/sarah/~sampel-palnet` removes the ship from the record and the group and tells the other ship, which drops the accepted row. Mirrored observations stay on both sides, still naming their source.
 
+## Location for a while (version 88)
+
+A position is not a body, so it travels apart from body shares. `POST /api/location/share` with `{"ship": "~sampel-palnet", "hours": 2}` (or `"home": true`, or both, and `"precision": "exact"` for the phone's own figures) keeps a grant in `location.json`. The location loop runs on each fix the phone sends and every ten minutes. It pokes each live grant's ship once per new fix, `{"action": "position", "lat", "lon", "acc", "at", "until", "home"}` into the same inbox road as offers, and `{"action": "position-end"}` when the grant's time passes, when the owner reaches home on an until-home share after being seen away, or on `DELETE /api/location/share/<ship>`. The receiving inbox keeps the latest fix per ship in its own `location.json`, only when a person there carries the sender's ship (any other is refused and noted in `/tr/inbox`), and drops it on the end or when its `until` passes. Neither ship files a position as a fact, and nothing is read: no grant, no group.
+
 ## What to know
 
 - The ask grows by poke on `/sys/gall/`, `/sys/behn/` and `/sys/ames/registry`, peek on `/sys/ames/usergroups/` and `/sys/ames/ships/`, make on `/sys/ames/usergroups/`. Refuse them and everything else keeps working; sharing is off.
