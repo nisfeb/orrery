@@ -1110,6 +1110,7 @@
       [87 ~ ~[['place' ~['website']]] ~]
       [89 ~ ~ ~['twin']]
       [92 ~ ~ ~]
+      [94 ~ ~[['situation' ~['shared-with']]] ~['shared-with']]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1270,9 +1271,10 @@
           ['org' (kind ~['type' 'phone' 'email' 'website' 'contact' 'address' 'sphere'] ~[['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']])]
           :-  'situation'
           %+  kind
-            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere']
+            ~['status' 'participants' 'location' 'starts' 'ends' 'started' 'ended' 'summary' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere' 'shared-with']
           :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
               ['status' 'open or closed, or cancelled; nothing else. Whether it is upcoming, under way or over is read off starts, ends, started and ended']
+              ['shared-with' 'a person this one situation is shared with, a ref, a row each: someone outside the household (grandparents to a party). One with their own orrery gets the situation and the names and places it mentions; anyone else an invitation, sent again when the time, the place or what is needed changes. It ends a day after the situation does; a row taken back ends it for them']
               ['away' 'yes or no: a trip that takes the owner away from home from its starts to its ends (travel, an offsite, a trip on the water, a stay elsewhere), from their word or plainly from what is known ("I\'m in Barcelona the 19th to the 24th"); while it runs the ship leaves home\'s trips to others and holds the nudges. A stay of six hours or more forty kilometres from home counts without it; no says it does not']
               ['attending' 'yes or no: whether the owner goes themselves, in their own word when they gave it ("not me", "I\'m taking her"); the ship tells the owner when to leave only for what they attend']
               ['leave-by' 'when the owner must leave to arrive on time, ISO 8601 UTC, from where they are, with traffic; written by the ship, not from messages']
@@ -1315,7 +1317,7 @@
               ['status' 'active, or closed when that part of their life is over']
           ==
       ==
-      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped' 'sphere' 'drop-off' 'pick-up' 'twin'] |=(t=@t `json`s+t))]
+      ['multi' a+(turn ~['participants' 'likes' 'dislikes' 'household' 'vehicles' 'children' 'parents' 'siblings' 'owners' 'members' 'aware-of' 'skipped' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with'] |=(t=@t `json`s+t))]
       ['actions' a+(turn ~['task' 'note' 'message' 'home' 'calendar' 'correct' 'fact' 'merge' 'preference' 'resolve'] |=(t=@t `json`s+t))]
       ['style' s+'']
       ['preferences' a+~]
@@ -1764,6 +1766,90 @@
   ?&  |(=('drop-off' (gs r 'attr')) =('pick-up' (gs r 'attr')))
       !=(`json`b+& (gj r 'retracted'))
       =('person/me' (gs (gj r 'value') 'ref'))
+  ==
+::  ==  sharing one situation (version 94)
+::
+::  +situation-with: who a situation is shared with, and who said so
+::
+++  situation-with
+  |=  [l=loaded multi=(set @t) now=@da]
+  ^-  (list [who=bid by=@t])
+  ?.  (lien rows.l |=(r=row =('shared-with' attr.obs.r)))  ~
+  %+  murn  (fall (~(get by (fold rows.l (~(put in multi) 'shared-with') now)) 'shared-with') ~)
+  |=  r=row
+  =/  who=@t  (ref-or-text value.obs.r)
+  ?~  (parse-bid who)  ~
+  `[who by.obs.r]
+::  +situation-end: when it ended, else when it ends, else ~
+::
+++  situation-end
+  |=  [l=loaded multi=(set @t) now=@da]
+  ^-  (unit @da)
+  =/  w  (fold rows.l multi now)
+  =/  e=@t  (winner-text w 'ended')
+  =?  e  =('' e)  (winner-text w 'ends')
+  (de-iso e)
+::  +share-over: a day after a situation's end, its sharing closes
+::
+++  share-over
+  |=  [end=(unit @da) now=@da]
+  ^-  ?
+  ?~  end  |
+  (gth now (add u.end ~d1))
+::  +invite-text: a situation in plain words, its key facts only: the
+::  name, when, where (a place's name and address), what is needed
+::
+++  invite-text
+  |=  [l=loaded all=(list loaded) multi=(set @t) now=@da tz=@t]
+  ^-  @t
+  =/  w  (fold rows.l multi now)
+  =/  start=@t  (winner-text w 'starts')
+  =/  when=@t  ?:(=('' start) '' (cut 3 [0 16] (rap 3 (local-iso start tz) '          ' ~)))
+  =/  when-text=@t  ?:(=('' when) '' (rap 3 (cut 3 [0 10] when) ' at ' (cut 3 [11 5] when) ~))
+  =/  loc=(list row)  (fall (~(get by w) 'location') ~)
+  =/  where=@t
+    ?~  loc  ''
+    =/  ref=@t  (gs value.obs.i.loc 'ref')
+    ?:  =('' ref)  (ref-or-text value.obs.i.loc)
+    =/  name=@t  (fall (bind (loaded-of all ref) |=(p=loaded name.body.p)) ref)
+    =/  addr=@t  (attr-text all multi now ref 'address')
+    ?:(=('' addr) name (rap 3 name ', ' addr ~))
+  =/  needs=(list @t)  (turn (fall (~(get by (fold rows.l (~(put in multi) 'needs') now)) 'needs') ~) |=(r=row (ref-or-text value.obs.r)))
+  %+  rap  3
+  :~  name.body.l
+      ?:(=('' when-text) '' (cat 3 ', ' when-text))
+      ?:(=('' where) '' (cat 3 ', at ' where))
+      '.'
+      ?~(needs '' (cat 3 ' What is needed: ' (join-cords '; ' needs)))
+      ?~(needs '' '.')
+  ==
+::  +thin-of: the bodies a situation's rows name, thin: a name, and for a
+::  place its address and point; never this ship's own self
+::
+++  thin-of
+  |=  [l=loaded all=(list loaded) multi=(set @t) now=@da]
+  ^-  json
+  =/  refs=(set @t)
+    %-  silt
+    %+  murn  rows.l
+    |=  r=row
+    =/  ref=@t  (gs value.obs.r 'ref')
+    ?:  |(=('' ref) =('person/me' ref) retracted.obs.r)  ~
+    ?~  (parse-bid ref)  ~
+    `ref
+  :-  %a
+  %+  scag  20
+  %+  murn  ~(tap in refs)
+  |=  ref=@t
+  ^-  (unit json)
+  =/  b=(unit loaded)  (loaded-of all ref)
+  ?~  b  ~
+  ?:  =(%sphere kind.body.u.b)  ~
+  :-  ~
+  %-  pairs:enjs:format
+  :~  ['id' s+ref]  ['name' s+name.body.u.b]
+      ['address' s+(attr-text all multi now ref 'address')]
+      ['geo' s+(attr-text all multi now ref 'geo')]
   ==
 ::  +group-name: the usergroup that may read one shared body
 ::

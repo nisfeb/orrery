@@ -194,6 +194,7 @@
           [%fall %& [/ %'feed-state.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'private.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'peer-actions.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'situation-shares.json'] [[/ %json] [%o ~]]]
           [%fall %| /feeds empty-dir:loader]
           [%fall %& [/ %'feed.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'location.sig'] [[/ %sig] ~]]
@@ -275,6 +276,7 @@
         ;<  ~  bind:m  prod-inbox-road
         ;<  ~  bind:m  sync-pass
         ;<  ~  bind:m  sphere-follow-pass
+        ;<  ~  bind:m  situation-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /tick (add now ~m5))
         ;<  *  bind:m  take-poke-from:io
@@ -4058,6 +4060,97 @@
   ?~  ops  (pure:m ~)
   ;<  ~  bind:m  (poke-writer 0 i.ops)
   $(ops t.ops)
+::  +situation-pass: each situation shared alone (version 94). A person
+::  on its shared-with with a ship gets it as a body share, edit, with
+::  the bodies it names, thin; anyone else an invitation, a message
+::  action, filed again when its words (the time, the place, what is
+::  needed) change. A day after the situation ends, or once a person's
+::  row is taken back, their share is revoked; what each side holds stays.
+::
+++  situation-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  st=(map @t json)  bind:m  (read-map (rf 0 / %'situation-shares.json'))
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  tz=@t  (owner-zone:orr all multi now timezone:(de-config:orr gen-j))
+  =/  sits=(list loaded:orr)
+    %+  skim  all
+    |=  l=loaded:orr
+    ?&  =(%situation kind.body.l)
+        |((~(has by st) id.l) (lien rows.l |=(r=row:orr =('shared-with' attr.obs.r))))
+    ==
+  ?~  sits  (pure:m ~)
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (pure:m ~)
+  =/  todo=(list loaded:orr)  sits
+  |-
+  ?~  todo
+    (over:io (rf 0 / %'situation-shares.json') [[/ %json] [%o st]])
+  =/  l=loaded:orr  i.todo
+  =/  over=?  (share-over:orr (situation-end:orr l multi now) now)
+  =/  with=(list [who=bid:orr by=@t])  ?:(over ~ (situation-with:orr l multi now))
+  =/  had=(map @t json)  =/(j (~(get by st) id.l) ?:(?=([~ %o *] j) p.u.j ~))
+  ::  those no longer on it: a ship's share revoked
+  =/  gone=(list [who=@t e=json])  (skip ~(tap by had) |=([w=@t *] (lien with |=([x=bid:orr *] =(x w)))))
+  ;<  ~  bind:m
+    =/  n  (fiber:fiber:nexus ,~)
+    |-  ^-  form:n
+    ?~  gone  (pure:n ~)
+    =/  s=(unit @p)  (slaw %p (gs:orr e.i.gone 'ship'))
+    ;<  *  bind:n  ?~(s (pure:(fiber:fiber:nexus ,?) |) (unshare-out 0 u.base id.l u.s))
+    $(gone t.gone)
+  =.  had  (roll gone |=([[w=@t *] h=_had] (~(del by h) w)))
+  ::  those on it: a share, or an invitation when its words are new
+  =/  text=@t  (invite-text:orr l all multi now tz)
+  =/  dig=@t  (scot %uv (mug text))
+  =/  people=(list [who=bid:orr by=@t])  with
+  ;<  had=(map @t json)  bind:m
+    =/  n  (fiber:fiber:nexus ,(map @t json))
+    |-  ^-  form:n
+    ?~  people  (pure:n had)
+    ?:  =('person/me' who.i.people)  $(people t.people)
+    =/  p=(unit loaded:orr)  (loaded-of:orr all who.i.people)
+    =/  was=json  (fall (~(get by had) who.i.people) [%o ~])
+    ?~  p  $(people t.people)
+    ?^  ship.body.u.p
+      ?:  =((scot %p u.ship.body.u.p) (gs:orr was 'ship'))  $(people t.people)
+      ;<  *  bind:n  (share-out 0 u.base id.l body.l u.ship.body.u.p 'edit' (thin-of:orr l all multi now))
+      $(people t.people, had (~(put by had) who.i.people (pairs:enjs:format ~[['ship' s+(scot %p u.ship.body.u.p)]])))
+    ?:  =(dig (gs:orr was 'digest'))  $(people t.people)
+    =/  w  (fold:orr rows.u.p multi now)
+    =/  via=@t
+      ?.  =('' (winner-text:orr w 'telegram'))  'telegram'
+      ?.  =('' (winner-text:orr w 'email'))  'mail'
+      ''
+    ?:  =('' via)
+      $(people t.people, had (~(put by had) who.i.people (pairs:enjs:format ~[['digest' s+dig] ['note' s+'no telegram or email to invite them by']])))
+    ::  the invitation with the old words, still open, goes first
+    =/  title=@t  (rap 3 'Invite ' name.body.u.p ' to ' name.body.l ~)
+    =/  stale=(list @ta)
+      %+  murn  acts
+      |=  [i=@ta a=action:orr]
+      ?.  &(=(%message kind.a) =(title title.a) (is-open:orr a))  ~
+      `i
+    ;<  ~  bind:n  (send-ops (turn stale |=(i=@ta (set-action-op:orr i 'dismissed' 'the details changed; sent again' 'ship'))))
+    ;<  ~  bind:n
+      %+  poke-writer  0
+      %-  pairs:enjs:format
+      :~  ['op' s+'act']
+          :-  'action'
+          %-  pairs:enjs:format
+          :~  ['kind' s+'message']  ['title' s+title]
+              ['about' a+~[s+id.l s+who.i.people]]  ['by' s+by.i.people]
+              ['payload' (pairs:enjs:format ~[['via' s+via] ['to' s+who.i.people] ['text' s+text]])]
+          ==
+      ==
+    $(people t.people, had (~(put by had) who.i.people (pairs:enjs:format ~[['digest' s+dig] ['via' s+via]])))
+  =.  st  ?:(=(~ had) (~(del by st) id.l) (~(put by st) id.l [%o had]))
+  $(todo t.todo)
 ::  +await-bodies: wait, twenty seconds at most, until each body exists;
 ::  answers whether they all do
 ::
@@ -4275,6 +4368,16 @@
         ['mode' s+mode]
         ['base' s+(gs:orr jon 'base')]
         ['uids' a+(turn (scag 20 (skim (strings:orr (ga:orr jon 'uids')) |=(u=@t (lte (met 3 u) 200)))) |=(u=@t `json`s+u))]
+        :-  'thin'
+        :-  %a
+        %+  scag  20
+        %+  murn  (ga:orr jon 'thin')
+        |=  t=json
+        ^-  (unit json)
+        =/  tid=@t  (gs:orr t 'id')
+        ?:  |(?=(~ (parse-bid:orr tid)) =('person/me' tid) (gth (met 3 (gs:orr t 'name')) 200))  ~
+        ?:  |((gth (met 3 (gs:orr t 'address')) 300) (gth (met 3 (gs:orr t 'geo')) 100))  ~
+        `(pairs:enjs:format ~[['id' s+tid] ['name' s+(gs:orr t 'name')] ['address' s+(gs:orr t 'address')] ['geo' s+(gs:orr t 'geo')]])
         ['at' (en-time:orr now)]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
@@ -4483,28 +4586,37 @@
   ?~  b  (send-err eyre-id 500 'unreadable body')
   ;<  base=(unit path)  bind:m  self-base
   ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
-  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  ;<  told=?  bind:m  (share-out 1 u.base id u.b u.shp mode [%a ~])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['notified' b+told]]))
+::  +share-out: a body shared with a ship: the record, the group, and the
+::  offer, which names the event's calendar uids (version 89) and, for a
+::  situation shared alone, the bodies it names, thin (version 94)
+::
+++  share-out
+  |=  [up=@ud base=path id=bid:orr b=body:orr shp=@p mode=@t thin=json]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m |)
+  ;<  shares=json  bind:m  (read-json (rf up / %'shares.json'))
   =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
   =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
-  =.  mine  (~(put by mine) (scot %p u.shp) s+mode)
-  ;<  ~  bind:m  (over:io (rf 1 / %'shares.json') [[/ %json] [%o (~(put by all) id [%o mine])]])
-  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
-  ::  the event's calendar uids go with it, so a ship that reads the
-  ::  same calendar lands it on its own body for that event (version 89)
-  ;<  bv=view:nexus  bind:m  (peek:io (rv 1 (body-dir kind.u.pk slug.u.pk)) ~)
+  =.  mine  (~(put by mine) (scot %p shp) s+mode)
+  ;<  ~  bind:m  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(put by all) id [%o mine])]])
+  ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
+  ;<  bv=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
   =/  uids=(list @t)  ?.(?=([%ball *] bv) ~ (cal-uids:orr (rows-in:om ball.bv)))
-  ;<  told=?  bind:m
-    %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
-    %-  pairs:enjs:format
-    :~  ['action' s+'offer']
-        ['id' s+id]
-        ['uids' a+(turn uids |=(u=@t `json`s+u))]
-        ['ship' `json`?~(ship.u.b ~ s+(scot %p u.ship.u.b))]
-        ['name' s+name.u.b]
-        ['mode' s+mode]
-        ['base' s+(spat u.base)]
-    ==
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['notified' b+told]]))
+  %^  remote-poke-wait  shp  [%& orrery-instance %'shares.sig']
+  %-  pairs:enjs:format
+  :~  ['action' s+'offer']
+      ['id' s+id]
+      ['uids' a+(turn uids |=(u=@t `json`s+u))]
+      ['ship' `json`?~(ship.b ~ s+(scot %p u.ship.b))]
+      ['name' s+name.b]
+      ['mode' s+mode]
+      ['base' s+(spat base)]
+      ['thin' thin]
+  ==
 ::  +serve-revoke: the ship leaves the record and the group, and is told
 ::
 ++  serve-revoke
@@ -4518,20 +4630,32 @@
   ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
   ;<  base=(unit path)  bind:m  self-base
   ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
-  ;<  shares=json  bind:m  (read-json (rf 1 / %'shares.json'))
+  ;<  had=?  bind:m  (unshare-out 1 u.base id u.shp)
+  ?.  had  (send-err eyre-id 404 'not shared with that ship')
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +unshare-out: a ship leaves a body's record and group, and is told;
+::  answers whether it was there
+::
+++  unshare-out
+  |=  [up=@ud base=path id=bid:orr shp=@p]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (pure:m |)
+  ;<  shares=json  bind:m  (read-json (rf up / %'shares.json'))
   =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
   =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
-  ?.  (~(has by mine) (scot %p u.shp))  (send-err eyre-id 404 'not shared with that ship')
-  =.  mine  (~(del by mine) (scot %p u.shp))
+  ?.  (~(has by mine) (scot %p shp))  (pure:m |)
+  =.  mine  (~(del by mine) (scot %p shp))
   ::  the grant goes first: a crash between the two leaves a record
   ::  claiming a share that cannot be read, never a grant with no record
-  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
+  ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
   ;<  ~  bind:m
-    (over:io (rf 1 / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
+    (over:io (rf up / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
   ;<  *  bind:m
-    %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
+    %^  remote-poke-wait  shp  [%& orrery-instance %'shares.sig']
     (pairs:enjs:format ~[['action' s+'revoke'] ['id' s+id]])
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+  (pure:m &)
 ::  +serve-shares: what we share, what was offered to us, what we accepted
 ::
 ++  serve-shares
@@ -4605,13 +4729,28 @@
         ==
     ==
   ::  the landing body is the host's body: its twin, so a ref either
-  ::  ship sends about it means it on the other (version 89)
+  ::  ship sends about it means it on the other (version 89). A situation
+  ::  shared alone brings the bodies it names, thin: a name, a place's
+  ::  address and point, as the host's, each made only when missing here
+  ::  (version 94)
   ;<  now=@da  bind:m  get-time:io
+  =/  held=(set bid:orr)  (silt (turn all |=(l=loaded:orr id.l)))
+  =/  thin=(list json)  (skip (ga:orr u.offer 'thin') |=(t=json (~(has in held) (gs:orr t 'id'))))
+  =/  src=json  (pairs:enjs:format ~[['kind' s+'ship'] ['id' s+(rap 3 (scot %p u.host) '/thin' ~)]])
+  =/  thin-rows=(list json)
+    %-  zing
+    %+  turn  thin
+    |=  t=json
+    %+  murn  `(list @t)`~['address' 'geo']
+    |=  a=@t
+    ?:  =('' (gs:orr t a))  ~
+    `(pairs:enjs:format ~[['subject' (gj:orr t 'id')] ['attr' s+a] ['value' (gj:orr t a)] ['at' s+(en-iso:orr now)] ['conf' (numb:enjs:format 90)] ['by' s+(scot %p u.host)] ['source' src]])
   ;<  ~  bind:m
     %+  poke-writer  1
     %-  pairs:enjs:format
-    :~  ['op' s+'observe']  ['bodies' [%a ~]]
-        ['observations' a+~[(twin-row:orr target u.host id now)]]
+    :~  ['op' s+'observe']
+        ['bodies' a+(turn thin |=(t=json (pairs:enjs:format ~[['id' (gj:orr t 'id')] ['name' (gj:orr t 'name')]])))]
+        ['observations' a+(weld ~[(twin-row:orr target u.host id now)] (weld thin-rows (turn thin |=(t=json (twin-row:orr (gs:orr t 'id') u.host (gs:orr t 'id') now)))))]
     ==
   ;<  rm=(map @t json)  bind:m  (read-map (rf 1 / %'ship-remotes.json'))
   =/  old=json  (fall (~(get by rm) key) [%o ~])
