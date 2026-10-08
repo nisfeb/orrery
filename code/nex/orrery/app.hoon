@@ -33,6 +33,7 @@
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
+::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -183,6 +184,8 @@
           [%fall %& [/ %'parks-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'weather.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'parks.sig'] [[/ %sig] ~]]
+          [%fall %& [/ %'location.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'location.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
@@ -415,6 +418,18 @@
         $
           ::  the weather (version 76): the forecast every two hours and
           ::  the alerts every half hour, for the owner's point
+          [~ %'location.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery location: failed")
+        |-
+        ;<  ~  bind:m  location-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /location (add now ~m10))
+        ;<  ~  bind:m  (idle-until-poke /location)
+        ;<  ~  bind:m  (cancel-timer:io /location)
+        $
+          ::  location shared for a while (version 88): each new fix to
+          ::  every live grant, on a poke from the position route; every
+          ::  ten minutes the grants that ran out are ended
           [~ %'parks.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery parks: failed")
         |-
@@ -1421,6 +1436,9 @@
     %get-weather            (serve-weather eyre-id)
     %post-geocode-wake      (serve-prod eyre-id %'parks.sig' 'geocode')
     %get-search             (serve-search eyre-id)
+    %get-location           (serve-location eyre-id)
+    %post-location-share    (serve-location-share eyre-id jon)
+    %delete-location-share  (serve-location-unshare eyre-id (rear suffix))
     %put-search             (serve-set-doc eyre-id 'set-search' jon)
     %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
@@ -3160,6 +3178,8 @@
   =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
   =/  act=@t  (gs:orr jon 'action')
   =/  id=@t  (gs:orr jon 'id')
+  ?:  =('position' act)  (take-position src jon)
+  ?:  =('position-end' act)  (take-position-end src)
   ?:  =(~ (parse-bid:orr id))
     (note-inbox 'inbox' | 'id: expected <kind>/<slug>' (scot %p src))
   =/  key=@t  (share-key:orr src id)
@@ -3167,6 +3187,182 @@
   ?:  =('revoke' act)  (take-revoke src key)
   ?:  =('observe' act)  (take-edit src id jon)
   (note-inbox 'inbox' | 'unknown action' (scot %p src))
+::  +take-position: a ship's owner shares where they are (version 88):
+::  kept, the latest only, when a person here carries that ship; any
+::  other ship's is refused and noted
+::
+++  take-position
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  who=(list loaded:orr)
+    (skim all |=(l=loaded:orr &(=(%person kind.body.l) =(`src ship.body.l) !=('person/me' id.l))))
+  ?~  who  (note-inbox 'position' | 'no person here carries this ship' (scot %p src))
+  ?.  &((coordinate:orr (gs:orr jon 'lat') 90) (coordinate:orr (gs:orr jon 'lon') 180))
+    (note-inbox 'position' | 'lat, lon: expected decimal degrees' (scot %p src))
+  ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  =/  in=json  (gj:orr doc 'in')
+  =/  one=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id.i.who]  ['name' s+name.body.i.who]  ['lat' s+(gs:orr jon 'lat')]  ['lon' s+(gs:orr jon 'lon')]
+        ['acc' s+(gs:orr jon 'acc')]  ['at' s+(gs:orr jon 'at')]  ['until' (gj:orr jon 'until')]  ['home' (gj:orr jon 'home')]
+    ==
+  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) (scot %p src) one))])
+  (note-inbox 'position' & '' (scot %p src))
+::  +take-position-end: a ship stops sharing where its owner is
+::
+++  take-position-end
+  |=  src=@p
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  =/  in=json  (gj:orr doc 'in')
+  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' ?:(?=([%o *] in) (del-key:orr in (scot %p src)) [%o ~]))])
+  (note-inbox 'position-end' & '' (scot %p src))
+::  +location-pass: each live grant gets the phone's newest fix, exact or
+::  cut, once; a grant whose time ran out, or one until home whose fix is
+::  now home, is ended and its ship told; a peer's entry whose time ran
+::  out is dropped (version 88)
+::
+++  location-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  =/  grants=(list loc-grant:orr)  (de-loc-grants:orr doc)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
+  =/  fix=(unit [lat=@t lon=@t])
+    ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  ~
+    `[(gs:orr pos 'lat') (gs:orr pos 'lon')]
+  ;<  home=(unit [lat=@t lon=@t])  bind:m
+    ?.  (lien grants |=(g=loc-grant:orr home.g))  (pure:(fiber:fiber:nexus ,(unit [lat=@t lon=@t])) ~)
+    ;<  schema=json  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (read-json (rf 0 / %'schema.json'))
+    ;<  all=(list loaded:orr)  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (load-bodies 0)
+    ;<  gc=json  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (read-json (rf 0 / %'geocache.json'))
+    (pure:(fiber:fiber:nexus ,(unit [lat=@t lon=@t])) (home-point:orr all (multi-of:orr schema) now gc))
+  =|  keep=(list loc-grant:orr)
+  =/  todo=(list loc-grant:orr)  grants
+  |-
+  ?^  todo
+    =/  g=loc-grant:orr  i.todo
+    ::  the first send takes the latest fix of the last half hour, so the
+    ::  peer sees where the owner is at once; after that, each newer one
+    =/  fresh=?
+      ?~  at  |
+      ?~  sent.g  (gte u.at (sub since.g ~m30))
+      (gth u.at u.sent.g)
+    =/  athome=?  &(?=(^ fix) (home-reached:orr u.fix home))
+    ::  until home ends at home only once the owner has been seen away,
+    ::  so a share begun at home lasts until they leave and come back
+    =/  over=?
+      ?|  !(loc-live:orr g now)
+          &(home.g left.g fresh athome)
+      ==
+    ?:  over
+      ;<  *  bind:m  (remote-poke-wait ship.g [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'position-end']]))
+      $(todo t.todo)
+    ?.  &(fresh ?=(^ fix) ?=(^ at))  $(todo t.todo, keep [g keep])
+    =/  pt  (loc-fix:orr lat.u.fix lon.u.fix exact.g)
+    ;<  *  bind:m
+      %^  remote-poke-wait  ship.g  [%& orrery-instance %'shares.sig']
+      %-  pairs:enjs:format
+      :~  ['action' s+'position']  ['lat' s+lat.pt]  ['lon' s+lon.pt]  ['acc' s+?:(exact.g (gs:orr pos 'acc') '1000')]
+          ['at' s+(en-iso:orr u.at)]  ['until' ?~(until.g ~ s+(en-iso:orr u.until.g))]  ['home' b+home.g]
+      ==
+    $(todo t.todo, keep [g(sent at, left |(left.g !athome)) keep])
+  ::  a peer's entry past its time goes
+  =/  in=json  (gj:orr doc 'in')
+  =/  live-in=json
+    ?.  ?=([%o *] in)  [%o ~]
+    :-  %o
+    %-  ~(gas by *(map @t json))
+    %+  skim  ~(tap by p.in)
+    |=  [k=@t v=json]
+    =/  u=(unit @da)  (de-iso:orr (gs:orr v 'until'))
+    ?~(u & (gth u.u now))
+  =/  next=json  (pairs:enjs:format ~[['out' a+(turn (flop keep) en-loc-grant:orr)] ['in' live-in]])
+  ?:  =(next doc)  (pure:m ~)
+  (over:io (rf 0 / %'location.json') [[/ %json] next])
+::  +serve-location: what the owner shares and with whom, and the peers
+::  sharing with them, each with how far from home; the people here with
+::  a ship, to share with (version 88)
+::
+++  serve-location
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  gc=json  bind:m  (read-json (rf 1 / %'geocache.json'))
+  =/  home  (home-point:orr all (multi-of:orr schema) now gc)
+  =/  in=json  (gj:orr doc 'in')
+  =/  peers=(list json)
+    %+  murn  all
+    |=  l=loaded:orr
+    ?.  &(=(%person kind.body.l) ?=(^ ship.body.l) !=('person/me' id.l))  ~
+    `(pairs:enjs:format ~[['id' s+id.l] ['name' s+name.body.l] ['ship' s+(scot %p u.ship.body.l)]])
+  =/  ins=(list json)
+    ?.  ?=([%o *] in)  ~
+    %+  murn  ~(tap by p.in)
+    |=  [k=@t v=json]
+    =/  u=(unit @da)  (de-iso:orr (gs:orr v 'until'))
+    ?:  &(?=(^ u) (lte u.u now))  ~
+    =/  km=(unit @ud)
+      ?~  home  ~
+      =/  d  (metres-between:orr u.home [(gs:orr v 'lat') (gs:orr v 'lon')])
+      ?~(d ~ `(div (add u.d 500) 1.000))
+    `(set-key:orr (set-key:orr v 'ship' s+k) 'km_from_home' ?~(km ~ (numb:enjs:format u.km)))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['out' a+(turn (skim (de-loc-grants:orr doc) |=(g=loc-grant:orr (loc-live:orr g now))) en-loc-grant:orr)]
+      ['in' a+ins]  ['peers' a+peers]
+  ==
+::  +serve-location-share: share the owner's position with a ship for a
+::  while: {"ship", "hours" or "until", "home", "precision": "exact" or
+::  "area"}; one grant per ship, a new one replacing it (version 88)
+::
+++  serve-location-share
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  shp=(unit @p)  (slaw %p (gs:orr jon 'ship'))
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  our=@p  bind:m  get-our:io
+  ?:  =(our u.shp)  (send-err eyre-id 400 'ship: not this ship')
+  ;<  now=@da  bind:m  get-time:io
+  =/  home=?  ?=([%b %.y] (gj:orr jon 'home'))
+  =/  hours=(unit @ud)  (gn:orr jon 'hours')
+  =/  until=(unit @da)
+    =/  u=(unit @da)  (de-iso:orr (gs:orr jon 'until'))
+    ?^  u  u
+    ?^  hours  `(add now (mul ~h1 (max 1 (min 72 u.hours))))
+    ?:(home ~ `(add now ~h2))
+  ?:  &(?=(^ until) (lte u.until now))  (send-err eyre-id 400 'until: in the past')
+  =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ |]
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
+  =/  rest=(list loc-grant:orr)  (skip (de-loc-grants:orr doc) |=(x=loc-grant:orr =(ship.x u.shp)))
+  ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr ?:(?=([%o *] doc) doc [%o ~]) 'out' a+(turn [g rest] en-loc-grant:orr))])
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'location.sig') [[/ %sig] ~])
+  (send-json eyre-id 200 (en-loc-grant:orr g))
+::  +serve-location-unshare: stop sharing with a ship, and tell it
+::
+++  serve-location-unshare
+  |=  [eyre-id=@ta ship=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  shp=(unit @p)  (slaw %p ship)
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
+  =/  grants=(list loc-grant:orr)  (de-loc-grants:orr doc)
+  ?.  (lien grants |=(x=loc-grant:orr =(ship.x u.shp)))  (send-err eyre-id 404 'not shared with that ship')
+  =/  rest=(list loc-grant:orr)  (skip grants |=(x=loc-grant:orr =(ship.x u.shp)))
+  ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr ?:(?=([%o *] doc) doc [%o ~]) 'out' a+(turn rest en-loc-grant:orr))])
+  ;<  told=?  bind:m  (remote-poke-wait u.shp [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'position-end']]))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
 ::  +take-offer: a host offers a body. An offer for a share already
 ::  accepted narrows its mode in place; a wider one waits for an accept.
 ::
@@ -5374,8 +5570,12 @@
         ['at' s+(en-iso:orr (min at now))]
     ==
   ;<  ~  bind:m  (over:io (rf 1 / %'position.json') [[/ %json] doc])
+  ::  the phone is answered first: a poke waits until its loop takes it,
+  ::  and the location loop can be waiting on a peer that is down
+  ;<  ~  bind:m  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
   ;<  *  bind:m  (poke-soft:io (rf 1 / %'leave.sig') [[/ %sig] ~])
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'location.sig') [[/ %sig] ~])
+  (pure:m ~)
 ::  +serve-day: a day of health or of work, checked and kept in its
 ::  store, the newest sixty days, replacing a day sent before (version 74)
 ::

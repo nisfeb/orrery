@@ -763,6 +763,7 @@
       '<label class="field">Brave Search API key <input name="api_key" type="password" placeholder="' + (sc.api_key_set ? 'set; blank keeps it' : 'not set') + '"></label> ' +
       '<label class="field">a month at most <input name="monthly_cap" value="' + esc(sc.monthly_cap != null ? String(sc.monthly_cap) : '') + '" placeholder="500"></label></p>' +
       '<p><button data-save-search="1">save place lookups</button></p></div>';
+    out += '<div class="card" id="location-card"><h2>Location</h2><p class="muted">Loading who you share with.</p></div>';
     out += '<p><button data-review-wake="1">send the review now</button></p>';
     if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
     return out + '</div>';
@@ -884,7 +885,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
@@ -1220,7 +1221,7 @@
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
         { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last }));
-      if (drew) fillCalendars();
+      if (drew) { fillCalendars(); fillLocation(); }
       return drew;
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
@@ -1312,6 +1313,37 @@
   // the calendar's own lists for the executor card's two choices, from
   // the calendar's route on this same ship; a calendar not installed
   // leaves the default alone
+  // location shared for a while (version 88): who you share with and
+  // until when, who shares with you and how far from home, and a form
+  function locationCard(loc) {
+    loc = loc || {};
+    var out = '<div class="card" id="location-card"><h2>Location</h2><p class="muted">Share where you are with someone for a while; it stops by itself at the time you set, or when you get home. ' +
+      'Your position is never kept as a fact, and the other ship keeps only the latest.</p>';
+    var mine = loc.out || [], theirs = loc.in || [], peers = loc.peers || [];
+    var nameOf = function (ship) { var p = peers.filter(function (x) { return x.ship === ship; })[0]; return p ? p.name : ship; };
+    if (mine.length) out += '<ul>' + mine.map(function (g) {
+      return '<li>Sharing with ' + esc(nameOf(g.ship)) + ' ' + (g.until ? 'until ' + fmtTime(g.until) : '') + (g.home ? (g.until ? ' or ' : '') + 'until you are home' : '') +
+        (g.exact ? '' : ', to about a kilometre') + ' <button class="small" data-loc-stop="' + esc(g.ship) + '">stop</button></li>';
+    }).join('') + '</ul>';
+    if (theirs.length) out += '<ul>' + theirs.map(function (e) {
+      return '<li>' + esc(e.name || e.ship) + ' is sharing: ' + (e.km_from_home != null ? esc(String(e.km_from_home)) + ' km from home' : 'where they are') + ', ' + fmtTime(e.at) +
+        (e.until ? ', until ' + fmtTime(e.until) : '') + '</li>';
+    }).join('') + '</ul>';
+    if (!peers.length) return out + '<p class="muted">No one here has a ship to share with yet.</p></div>';
+    out += '<div id="loc-form"><p><label class="field">with <select name="ship">' + peers.map(function (p) { return '<option value="' + esc(p.ship) + '">' + esc(p.name) + '</option>'; }).join('') + '</select></label> ' +
+      '<label class="field">for hours <input name="hours" value="2"></label> ' +
+      '<label class="field"><input type="checkbox" name="home"> or until I am home</label> ' +
+      '<label class="field"><input type="checkbox" name="exact"> exact (else about a kilometre)</label></p>' +
+      '<p><button data-loc-share="1">share my location</button></p></div></div>';
+    return out;
+  }
+  function fillLocation() {
+    var slot = document.getElementById('location-card');
+    if (!slot) return;
+    fetch(API + '/location', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (loc) {
+      if (loc && document.getElementById('location-card')) document.getElementById('location-card').outerHTML = locationCard(loc);
+    }).catch(function () { /* the card keeps its words */ });
+  }
   function fillCalendars() {
     var picks = ['todo-cal', 'event-cal'].map(function (id) { return document.getElementById(id); }).filter(Boolean);
     if (!picks.length) return;
@@ -1502,6 +1534,15 @@
       ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
       say('saving your day');
       post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
+    } else if (b.dataset.locShare) {
+      var lv = function (name) { return field('#loc-form', name); };
+      var lf = { ship: (view.querySelector('#loc-form select[name="ship"]') || {}).value, hours: numOrNull(lv('hours')),
+        home: !!view.querySelector('#loc-form input[name="home"]:checked'), precision: view.querySelector('#loc-form input[name="exact"]:checked') ? 'exact' : 'area' };
+      if (lf.home && !lv('hours')) delete lf.hours;
+      say('sharing your location');
+      post('/location/share', lf).then(function () { say('location shared'); fillLocation(); }).catch(oops);
+    } else if (b.dataset.locStop) {
+      api('/location/share/' + encodeURIComponent(b.dataset.locStop), { method: 'DELETE' }).then(function () { say('stopped sharing'); fillLocation(); }).catch(oops);
     } else if (b.dataset.saveSearch) {
       var sv = function (name) { return field('#search', name); };
       var sf = { enabled: !!view.querySelector('#search input[name="enabled"]:checked'), monthly_cap: numOrNull(sv('monthly_cap')) };

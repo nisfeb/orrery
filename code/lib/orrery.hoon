@@ -7598,6 +7598,55 @@
   ?~  pt  ~
   =/  act=(list row)  (fall (~(get by w) 'activated') ~)
   `[id.l name.body.l ref u.pt ?~(act ~ (de-iso-any (ref-or-text value.obs.i.act)))]
+::  ==  location sharing (version 88): where the owner is, for a while
+::
+::  +loc-grant: a ship the owner shares their position with: until a
+::  time, or until home (a fix within 150 m of home, once the owner has
+::  been seen away, ends it), or both; exact, or cut to about a
+::  kilometre; since when, the time of the last fix sent, and whether a
+::  fix away from home has gone. Position never becomes a fact on either
+::  ship
+::
++$  loc-grant  [ship=@p until=(unit @da) home=? exact=? since=@da sent=(unit @da) left=?]
+++  de-loc-grants
+  |=  j=json
+  ^-  (list loc-grant)
+  %+  murn  (ga j 'out')
+  |=  g=json
+  ^-  (unit loc-grant)
+  =/  s=(unit @p)  (slaw %p (gs g 'ship'))
+  =/  since=(unit @da)  (de-iso (gs g 'since'))
+  ?.  &(?=(^ s) ?=(^ since))  ~
+  `[u.s (de-iso (gs g 'until')) ?=([%b %.y] (gj g 'home')) ?=([%b %.y] (gj g 'exact')) u.since (de-iso (gs g 'sent')) ?=([%b %.y] (gj g 'left'))]
+++  en-loc-grant
+  |=  g=loc-grant
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['ship' s+(scot %p ship.g)]  ['until' ?~(until.g ~ s+(en-iso u.until.g))]  ['home' b+home.g]
+      ['exact' b+exact.g]  ['since' s+(en-iso since.g)]  ['sent' ?~(sent.g ~ s+(en-iso u.sent.g))]  ['left' b+left.g]
+  ==
+::  +loc-live: a grant still runs: before its time, or until home
+::
+++  loc-live
+  |=  [g=loc-grant now=@da]
+  ^-  ?
+  ?^  until.g  (gth u.until.g now)
+  home.g
+::  +loc-fix: the point a grant sends: as the phone gave it, or to two
+::  decimals, about a kilometre
+::
+++  loc-fix
+  |=  [lat=@t lon=@t exact=?]
+  ^-  [lat=@t lon=@t]
+  ?:(exact [lat lon] [(coarse lat) (coarse lon)])
+::  +home-reached: a fix within 150 m of home
+::
+++  home-reached
+  |=  [at=[lat=@t lon=@t] home=(unit [lat=@t lon=@t])]
+  ^-  ?
+  ?~  home  |
+  =/  m  (metres-between u.home at)
+  &(?=(^ m) (lte u.m 150))
 ::  ==  place lookups (version 87): Brave Search fills in a place
 ::
 ::  +search-config: search.json. Off until the owner turns it on with a
@@ -9910,6 +9959,9 @@
   ?:  &(=('GET' meth) ?=([%api %weather ~] suffix))             `[%get-weather %own]
   ?:  &(=('POST' meth) ?=([%api %geocode %wake ~] suffix))      `[%post-geocode-wake %own]
   ?:  &(=('GET' meth) ?=([%api %search ~] suffix))              `[%get-search %own]
+  ?:  &(=('GET' meth) ?=([%api %location ~] suffix))            `[%get-location %own]
+  ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
+  ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]
   ?:  &(=('PUT' meth) ?=([%api %search ~] suffix))              `[%put-search %own]
   ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
   ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
