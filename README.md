@@ -391,6 +391,8 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
+Since version 91 the ship that accepts a sphere first matches what the other ship holds to its own: the other owner's body for you is your `person/me`, an event both read from one calendar is one, and a person or place by the same name waits on the Spheres page for you to say whether it is the same. Nothing comes in until you have.
+
 Since version 90 a whole sphere can be shared: `post sphere-share '{"sphere": "sphere/home", "ship": "~sampel-palnet", "mode": "edit"}'`, accepted on her ship with `post sphere-accept '{"host": "~your-ship", "sphere": "sphere/home"}'`. Every body in it, and every row on them, then replicates both ways, each row keeping its author; sensitive attributes, rows you keep private (`post private '{"id": "<row id>", "private": true}'`) and other spheres stay home. docs/sharing.md has how the feed works.
 
 Since version 89 a reference crosses the way each ship names its bodies: share `person/sarah` with her ship and it lands on her `person/me` with a `twin` fact, so a leg you write as `drop-off: person/sarah` on a shared activity reads `drop-off: person/me` on hers, and her `person/me` comes back to you as `person/sarah`. An event both ships read from one calendar lands on her own body for it. docs/sharing.md has the rules.
@@ -583,6 +585,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /sphere-share` | `{"sphere", "ship", "mode"}`: share a sphere with a ship, read or edit, which is offered it (version 90) |
 | `DELETE /sphere-share/<kind>/<slug>/<ship>` | stop sharing a sphere with a ship and tell it |
 | `POST /sphere-accept` | `{"host", "sphere"}`: follow a sphere a ship offered; in edit mode our own rows on it go back |
+| `GET` and `POST /pairing` | the matches by name a followed sphere waits on, and the owner's word on one: `{"key", "there", "same"}` (version 91) |
 | `POST /private` | `{"id", "private"}`: a row kept to yourself never enters a sphere's feed |
 | `GET /location` | `{"out", "in", "peers"}`: who the owner shares their position with and until when, the positions shared with them (each with `km_from_home`), and the people here with a ship (version 88) |
 | `POST /location/share` | `{"ship", "hours", "until", "home", "precision"}`: share the owner's position with a ship for a while, about a kilometre unless `precision` is `exact`; a new share replaces that ship's last |

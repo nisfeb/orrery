@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 91's owner steps
+
+Nothing to do. When a sphere is shared with you, the Spheres page may ask "To pair": the same name here and there. Say same or different for each, and the sphere comes in after.
+
 ### Version 90's owner steps
 
 Nothing to do. Sharing a whole sphere is there to be used by hand (`POST /sphere-share`, accepted with `POST /sphere-accept`); pairing in a later version brings the page and the match list. Sharing `sphere/home` shares every body filed under nothing, so try it first with a small sphere.
