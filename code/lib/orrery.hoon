@@ -1375,6 +1375,13 @@
   ?:  &(?=(^ ship) =(our u.ship))  'person/me'
   ?.  =('person/me' id)  id
   (rap 3 'person/' (rsh [3 1] (scot %p host)) ~)
+::  +landed-name: what a body new here from a host is called: the host's
+::  name for it, but the host's own self is its ship, not "me"
+::
+++  landed-name
+  |=  [host=@p id=bid name=@t]
+  ^-  @t
+  ?:(=('person/me' id) (scot %p host) name)
 ::  ==  twins (version 89): the same body on two ships
 ::
 ::  +twin-index: every live twin fact here, from a peer ship and that

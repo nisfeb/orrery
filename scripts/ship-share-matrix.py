@@ -258,8 +258,12 @@ SELFKEY = HOSTNAME + '/person/me'
 code, d = host('POST', '/share', {'id': 'person/me', 'ship': PEERNAME, 'mode': 'read'})
 check('share the host self', code == 200 and dictish(d).get('ok') is True, d)
 wait('the self offer reaches the peer', lambda: dictish(dictish(shares(peer)).get('offers')).get(SELFKEY), 30)
+#  made fresh, so the accept names it
+peer('DELETE', '/body/' + SELF)
 code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'person/me'})
 check('accept lands on ' + SELF, code == 200 and dictish(d).get('target') == SELF, d)
+name = wait('the self body is made', lambda: dictish(peer('GET', '/body/' + SELF)[1]).get('name'), 30)
+check('named by its ship, not "me"', name == HOSTNAME, name)
 code, d = observe(host, 'person/me', 'location', 'in the workshop', T0, 'self-1')
 check('host observes its own location', code == 200, d)
 peer('POST', '/sync')

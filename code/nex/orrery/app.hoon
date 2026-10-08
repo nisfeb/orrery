@@ -4035,7 +4035,7 @@
     |=  [b=bid:orr from=bid:orr e=json]
     ^-  (unit [bid:orr bid:orr @t])
     ?:  &((~(has in held) b) =(`b (~(get by twins) [src from])))  ~
-    `[b from (gs:orr e 'name')]
+    `[b from (landed-name:orr src from (gs:orr e 'name'))]
   ;<  ~  bind:m
     ?:  =(~ fresh)  (pure:(fiber:fiber:nexus ,~) ~)
     %+  poke-writer  0
@@ -4868,7 +4868,7 @@
         :-  'body'
         %-  pairs:enjs:format
         :~  ['id' s+target]
-            ['name' s+(gs:orr u.offer 'name')]
+            ['name' s+(landed-name:orr u.host id (gs:orr u.offer 'name'))]
             ['ship' `json`?~(oship ~ s+(scot %p u.oship))]
         ==
     ==

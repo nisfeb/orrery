@@ -697,6 +697,9 @@
     (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex `~wex 'person/me')))
     (expect-eq !>('person/wex') !>((mirror-target:orr ~feb ~wex ~ 'person/me')))
     (expect-eq !>('person/ricsul-bilwyt') !>((mirror-target:orr ~feb ~ricsul-bilwyt `~ricsul-bilwyt 'person/me')))
+    ::  the host's self lands named by its ship, not "me"
+    (expect-eq !>('~wex') !>((landed-name:orr ~wex 'person/me' 'me')))
+    (expect-eq !>('Sarah') !>((landed-name:orr ~wex 'person/sarah' 'Sarah')))
     (expect-eq !>('orrery-person.sarah') !>((group-name:orr %person %sarah)))
     ::  a dot cannot appear in a kind or a slug, so no two bodies share
     ::  a group name
