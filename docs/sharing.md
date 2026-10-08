@@ -24,6 +24,12 @@ A sphere is shared whole: every body filed under it (for `sphere/home`, every bo
   - **Matches by kind and name** wait on the follow row's `pending` until the owner says (`GET /api/pairing`, `POST /api/pairing {"key", "there", "same"}`, the To pair card on the Spheres page). "Same" writes the twin; "different" lets the sender's body come as one of its own. A name that matches two bodies here matches none.
   - **Holding:** the reader reads no page while a match waits.
   - **Joining:** a body a page files under the sphere counts as in it for that whole page.
+- Shared actions (version 92): an action about the sphere's bodies only (and about something) goes in the feed as an `act` entry each time its status moves.
+  - **Assignee.** A task's payload may name who does it, `"assignee": {"ref": "person/x"}`; the schema's task shape says so to the models.
+  - **Not carried out here.** An approved action assigned to someone other than `person/me` is not run by the executor.
+  - **Crossing.** On the reading ship, an action assigned to its owner (the ref read its way) and approved where it was proposed is filed as a proposal from that ship, with `payload.twin` naming the original. It waits for the owner whatever the policy says.
+  - **Status both ways.** When either copy ends (done, failed, dismissed), the other is moved to the same end, by the ship that ended it, where the move is legal; a copy already ended is left alone, so nothing echoes.
+  - **The other ship's open actions** are kept in `peer-actions.json`. The writer will not file one of the same kind and title, unless it is that action crossing. The generator is shown them as their own part, untagged, as the other owner's.
 - Edit mode is two feeds, not a push: the ship that accepts keeps a feed of the sphere for the host and tells it where (`{"action": "sphere-accept"}`), and the host reads it only while its own record still shares the sphere with that ship in edit mode. The design's `share-rows` inbox operation is not used; the inbox carries only the offer, the accept, the revoke and the wake.
 - The two-ship check is `scripts/sphere-matrix.py`, on a test sphere: never `sphere/home`, which is every unfiled body.
 

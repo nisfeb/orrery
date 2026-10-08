@@ -391,6 +391,8 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
+Since version 92 a task can name who does it (`"assignee": {"ref": "person/sarah"}` in its payload). When Sarah runs orrery and shares the sphere, approving it here sends it to her Inbox as a proposal from your ship; it stays open here, not carried out, until she marks it done (or you dismiss it, which dismisses hers). Neither ship proposes what the other already has open on a shared body.
+
 Since version 91 the ship that accepts a sphere first matches what the other ship holds to its own: the other owner's body for you is your `person/me`, an event both read from one calendar is one, and a person or place by the same name waits on the Spheres page for you to say whether it is the same. Nothing comes in until you have.
 
 Since version 90 a whole sphere can be shared: `post sphere-share '{"sphere": "sphere/home", "ship": "~sampel-palnet", "mode": "edit"}'`, accepted on her ship with `post sphere-accept '{"host": "~your-ship", "sphere": "sphere/home"}'`. Every body in it, and every row on them, then replicates both ways, each row keeping its author; sensitive attributes, rows you keep private (`post private '{"id": "<row id>", "private": true}'`) and other spheres stay home. docs/sharing.md has how the feed works.
