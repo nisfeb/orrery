@@ -113,3 +113,6 @@ details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }
 .brief-map { max-width: 100%; height: auto; border-radius: 6px; }
 
 .review { white-space: pre-wrap; font: inherit; font-size: 0.9em; margin: 0; }
+
+/* a row another ship sent (version 93) */
+.peer { border-bottom: 1px dotted currentColor; font-style: italic; }

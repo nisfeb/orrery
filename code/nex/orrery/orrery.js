@@ -317,6 +317,14 @@
 
   // the state rides along for the names, phases and open-action counts of
   // the situations the body is involved in
+  // a row another ship sent says whose it is: the person carrying that
+  // ship, marked as theirs (version 93)
+  function byWho(by, state) {
+    by = String(by || '');
+    if (by.charAt(0) !== '~') return esc(by);
+    var who = ((state && state.bodies) || []).filter(function (b) { return b.ship === by; })[0];
+    return '<span class="peer" title="from ' + esc(by) + '">' + esc(who ? who.name || who.id : by) + '</span>';
+  }
   function body(v, state) {
     var out = '<h1>' + esc(v.name || v.id) + ' <span class="muted">' + esc(v.id) + '</span></h1>';
     if (v.kind === 'situation') {
@@ -340,7 +348,7 @@
         (Array.isArray(rows) ? rows : [rows]).forEach(function (r) {
           if (!r) return;
           out += '<tr>' + cell('attribute', esc(a)) + cell('value', fmtValue(r.value) + notTrue(v.id, a, r.value)) + cell('since', fmtTime(r.at)) +
-            cell('by', esc(r.by || '')) + cell('source', source(r.source)) + '</tr>';
+            cell('by', byWho(r.by, state)) + cell('source', source(r.source)) + '</tr>';
         });
       });
       out += '</tbody></table>';
@@ -888,7 +896,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, byWho: byWho, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }

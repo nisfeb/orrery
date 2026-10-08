@@ -1725,6 +1725,46 @@
   =/  n=@ud  (lent parts)
   ?:  =(0 n)  [(join-cords nl lines) ~]
   (weld (scag (dec n) parts) [(join-cords nl lines) (slag (dec n) parts)])
+::  ==  what the other ship changed (version 93)
+::
+::  +peer-change-lines: one brief line per ship whose rows came in over
+::  the last day, by the name of the person carrying it, most first
+::
+++  peer-change-lines
+  |=  [all=(list loaded) now=@da]
+  ^-  (list @t)
+  =/  since=@da  (sub now ~d1)
+  =/  ships  (ship-index all)
+  =/  counts=(map @p @ud)
+    %+  roll  all
+    |=  [l=loaded acc=(map @p @ud)]
+    %+  roll  rows.l
+    |=  [r=row a=_acc]
+    ?.  &(=('ship' kind.source.obs.r) (gte seen.obs.r since) !=('twin' attr.obs.r))  a
+    =/  s=(unit @p)  (slaw %p by.obs.r)
+    ?~  s  a
+    (~(put by a) u.s +((~(gut by a) u.s 0)))
+  %+  turn  (sort ~(tap by counts) |=([a=[s=@p n=@ud] b=[s=@p n=@ud]] ?:(=(n.a n.b) (aor s.a s.b) (gth n.a n.b))))
+  |=  [s=@p n=@ud]
+  =/  who=@t
+    =/  b=(unit bid)  (~(get by ships) s)
+    ?~  b  (scot %p s)
+    (fall (bind (loaded-of all u.b) |=(l=loaded name.body.l)) (scot %p s))
+  (rap 3 who ' changed ' (crip (a-co:co n)) ?:(=(1 n) ' thing' ' things') ' in the last day, shown on the page by name' ~)
+::  +peer-push-of: what another ship's changes push: "asks" (what asks
+::  something of the owner: a task, a leg now theirs; the default) or "all"
+::
+++  peer-push-of  |=(policy=json ^-(@t ?:(=('all' (gs policy 'peer_push')) 'all' 'asks')))
+::  +leg-for-me: a carried row that makes a leg the owner's: a drop-off
+::  or pick-up, live, naming person/me once read this ship's way
+::
+++  leg-for-me
+  |=  r=json
+  ^-  ?
+  ?&  |(=('drop-off' (gs r 'attr')) =('pick-up' (gs r 'attr')))
+      !=(`json`b+& (gj r 'retracted'))
+      =('person/me' (gs (gj r 'value') 'ref'))
+  ==
 ::  +group-name: the usergroup that may read one shared body
 ::
 ::    Kind and slug are joined with a dot, which neither may contain, so

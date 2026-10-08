@@ -3916,7 +3916,16 @@
   =/  subjects=(list bid:orr)  ~(tap in (silt (turn landed |=([b=bid:orr *] b))))
   |-
   ::  the page's actions, once its bodies and rows are in (version 92)
-  ?~  subjects  (apply-acts src (skim es |=(e=json =('act' (gs:orr e 'op')))))
+  ?~  subjects
+    ::  every change pushed, when the owner widened it (version 93)
+    ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+    =/  n=@ud  (lent (skim es |=(e=json =('row' (gs:orr e 'op')))))
+    ;<  ~  bind:m
+      ?.  &(=('all' (peer-push-of:orr policy)) (gth n 0))  (pure:(fiber:fiber:nexus ,~) ~)
+      %^  push-text  (peer-name bodies src)
+        (rap 3 'changed ' (crip (a-co:co n)) ?:(=(1 n) ' thing' ' things') ' you share' ~)
+      (cat 3 'orrery-peer-' (scot %p src))
+    (apply-acts src (skim es |=(e=json =('act' (gs:orr e 'op')))))
   =/  mine=(list [b=bid:orr from=bid:orr e=json])  (skim landed |=([b=bid:orr *] =(b i.subjects)))
   =/  rows=(list json)
     %+  murn  mine
@@ -3925,6 +3934,14 @@
     `(set-key:orr (gj:orr e 'row') 'subject' s+b)
   ;<  got=[pokes=@ud refused=(list [oid=@t why=@t])]  bind:m  (apply-carried-in 0 src rows idx)
   ;<  ~  bind:m  (note-refusals 'feed' (scot %p src) refused.got)
+  ::  a leg that is now the owner's is told at once (version 93)
+  ;<  ~  bind:m
+    =/  legs=(list json)  (skim (turn rows |=(j=json (translate-carried:orr j src our twins ships))) leg-for-me:orr)
+    ?~  legs  (pure:(fiber:fiber:nexus ,~) ~)
+    =/  what=@t  (fall (bind (loaded-of:orr bodies i.subjects) |=(l=loaded:orr name.body.l)) i.subjects)
+    %^  push-text  (rap 3 (peer-name bodies src) ' says' ~)
+      (rap 3 'You ' ?:(=('drop-off' (gs:orr i.legs 'attr')) 'drop off' 'pick up') ' for ' what '.' ~)
+    (rap 3 'orrery-leg-' i.subjects ~)
   ;<  ~  bind:m
     =/  cuts=(list json)  (skim (turn mine |=([* * e=json] e)) |=(e=json =('correct' (gs:orr e 'op'))))
     =/  n  (fiber:fiber:nexus ,~)
@@ -4011,6 +4028,27 @@
         ['about' a+(turn about |=(b=@t `json`s+b))]  ['due' (gj:orr e 'due')]  ['by' s+(scot %p src)]
     ==
   $(todo t.todo, ops [(pairs:enjs:format ~[['op' s+'act'] ['action' act]]) ops])
+::  +peer-name: the name of the person here carrying a ship, else the ship
+::
+++  peer-name
+  |=  [all=(list loaded:orr) s=@p]
+  ^-  @t
+  =/  b=(unit bid:orr)  (~(get by (ship-index:orr all)) s)
+  ?~  b  (scot %p s)
+  (fall (bind (loaded-of:orr all u.b) |=(l=loaded:orr name.body.l)) (scot %p s))
+::  +push-text: a notification through /sys/push and trunk, soft, of a
+::  title and a line (version 93)
+::
+++  push-text
+  |=  [title=@t text=@t tag=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ;<  err=(unit tang)  bind:m
+    %+  poke-soft:io  push-road:io
+    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title text ~ `'/apps/orrery' `tag]] eny]]
+  ;<  ~  bind:m  (trunk-notice tag title text)
+  (note-by 'push' ?=(~ err) ?~(err text 'push refused') 'feed')
 ::  +send-ops: writer ops, one poke each
 ::
 ++  send-ops
@@ -7221,6 +7259,8 @@
       ==
       habit-lines
       outdoor
+      ::  what the other ship changed over the day (version 93)
+      (peer-change-lines:orr all now)
     ==
   =/  waiting  (brief-waiting:orr acts all tz)
   =/  decided=(list [id=@ta a=action:orr])
