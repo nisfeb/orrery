@@ -1556,6 +1556,12 @@ srv.shutdown()
 srv.server_close()
 
 
+# ---- shared actions (version 92): the schema tells the models about the assignee; the two-ship part is
+# scripts/action-matrix.py ----
+print('== shared actions')
+code, d = curl('GET', API + '/schema')
+check('the task shape names an assignee', code == 200 and 'assignee' in dictish(dictish(dictish(d).get('payloads')).get('task')), dictish(dictish(d).get('payloads')).get('task'))
+
 # ---- pairing (version 91): the list of matches waiting, and a word on one that is not there; the two-ship part is
 # scripts/pairing-matrix.py ----
 print('== pairing')

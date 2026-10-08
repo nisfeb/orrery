@@ -1057,7 +1057,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 89]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 92]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1248,6 +1248,50 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-shared-actions
+  =/  mk
+    |=  [title=@t about=(list @t) status=@tas payload=json]
+    ^-  action:orr
+    [%note title payload (silt about) ~ 'generator' now status '' ~]
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  for  |=(b=@t `json`(pairs:enjs:format ~[['assignee' (ref b)]]))
+  =/  members=(set @t)  (silt ~['thing/boat' 'person/kid'])
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' (mk 'Wax the boat' ~['thing/boat'] %approved (for 'person/partner'))]
+        ['a2' (mk 'Call the bank' ~['org/bank'] %proposed ~)]
+        ['a3' (mk 'Pack' ~ %proposed ~)]
+        ['a4' (mk 'Bath' ~['person/kid' 'thing/boat'] %proposed ~)]
+    ==
+  ;:  weld
+    ::  whose hand: no assignee, or person/me, is the owner's
+    (expect-eq !>([& & |]) !>([(own-hand:orr +:(snag 2 acts)) (own-hand:orr (mk 'x' ~ %approved (for 'person/me'))) (own-hand:orr +:(snag 0 acts))]))
+    (expect-eq !>('person/partner') !>((assignee-of:orr +:(snag 0 acts))))
+    ::  an assigned action is not carried out here
+    (expect-eq !>(~) !>((plan-exec:orr ~[['a1' (mk 'x' ~ %approved (for 'person/partner'))]] ~ ~ ~ now '' ['' ''])))
+    ::  the feed carries what is about members only, and again only when its status moved
+    (expect-eq !>(`(list @ta)`~['a1' 'a4']) !>((turn (feed-acts:orr acts members ~) |=([i=@ta *] i))))
+    (expect-eq !>(`(list @ta)`~['a4']) !>((turn (feed-acts:orr acts members (malt ~[['a1' 'approved'] ['a4' 'approved']])) |=([i=@ta *] i))))
+    ::  the twin a crossed action names
+    (expect-eq !>(`(unit [@p @ta])`[~ ~zod 'a9']) !>((act-twin:orr (mk 'x' ~ %proposed (pairs:enjs:format ~[['twin' (pairs:enjs:format ~[['ship' s+'~zod'] ['id' s+'a9']])]])))))
+    ::  the other ship's open actions, for the generator, untagged; closed ones left out
+    =/  peer=json
+      %-  pairs:enjs:format
+      :~  ['~zod/a1' (pairs:enjs:format ~[['kind' s+'task'] ['title' s+'Wax the boat'] ['status' s+'approved'] ['about' a+~[s+'thing/boat']] ['ship' s+'~zod'] ['assignee' s+'person/me']])]
+          ['~zod/a2' (pairs:enjs:format ~[['kind' s+'task'] ['title' s+'Done one'] ['status' s+'done'] ['about' a+~] ['ship' s+'~zod'] ['assignee' s+'']])]
+      ==
+    =/  part=@t  (rap 3 'Open on the other ship you share with (theirs, not yours to move or propose again):' nl:orr '  task | Wax the boat | about thing/boat | on ~zod, for person/me' ~)
+    ;:  weld
+      %+  expect-eq
+        !>(`(list @t)`~['Open on the other ship you share with (theirs, not yours to move or propose again):' '  task | Wax the boat | about thing/boat | on ~zod, for person/me'])
+      !>((peer-lines:orr peer))
+      (expect-eq !>(`(list @t)`~) !>((peer-lines:orr [%o ~])))
+      ::  their part goes before the clock; with none, the parts are as they were
+      (expect-eq !>(`(list @t)`~['p0' 'p1' part 'now']) !>((with-peer:orr ~['p0' 'p1' 'now'] peer)))
+      (expect-eq !>(`(list @t)`~['p0' 'now']) !>((with-peer:orr ~['p0' 'now'] [%o ~])))
+    ==
+    ::  the task shape a release adds the assignee to
+    (expect-eq !>(s+assignee-note:orr) !>((gj:orr (gj:orr (gj:orr (schema-upgrade:orr (set-key:orr (set-key:orr starter-schema:orr 'schema_version' (numb:enjs:format 91)) 'payloads' (set-key:orr (gj:orr starter-schema:orr 'payloads') 'task' (pairs:enjs:format ~[['notes' s+'mine']])))) 'payloads') 'task') 'assignee')))
   ==
 ++  test-pairing
   =/  mk
