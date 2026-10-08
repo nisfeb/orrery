@@ -322,7 +322,7 @@ Since version 76 the week counts shared time: a situation the owner or a reader 
 
 ### Spheres
 
-Since version 84 a body can say which parts of the owner's life it belongs to: a `sphere` fact (multi-valued) on a person, place, thing, org, situation or activity, a ref to a `sphere/<name>` body (home, work, a business, the road), named in the owner's words. Nothing filed is home's, and a ship with no spheres behaves as before. A sphere a row names that the ship lacks is made, named from its slug. The models assign spheres from the schema's note as they file; what a model files under a sphere waits for the owner as a fact proposal until the owner has confirmed three in that sphere (`sphere-trust.json` counts them), and after that a model's word stands there. The owner's own filings are kept at once. The Spheres page lists each sphere, what is filed under it and who filed it, how much is under none, and what waits. This is phase 1 of the spheres design; which spheres are live, and what that changes, come in later phases.
+Since version 84 a body can say which parts of the owner's life it belongs to: a `sphere` fact (multi-valued) on a person, place, thing, org, situation or activity, a ref to a `sphere/<name>` body (home, work, a business, the road), named in the owner's words. Nothing filed is home's, and a ship with no spheres behaves as before. A sphere a row names that the ship lacks is made, named from its slug. The models assign spheres from the schema's note as they file; what a model files under a sphere waits for the owner as a fact proposal until the owner has confirmed three in that sphere (`sphere-trust.json` counts them), and after that a model's word stands there. The owner's own filings are kept at once, and since version 90 so is a filing carried from another ship, its owner's word in a sphere shared with them. The Spheres page lists each sphere, what is filed under it and who filed it, how much is under none, and what waits. This is phase 1 of the spheres design; which spheres are live, and what that changes, come in later phases.
 
 ### Away
 
@@ -390,6 +390,8 @@ Sarah runs her own ship. Share her body with her and her ship mirrors what you k
 post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
+
+Since version 90 a whole sphere can be shared: `post sphere-share '{"sphere": "sphere/home", "ship": "~sampel-palnet", "mode": "edit"}'`, accepted on her ship with `post sphere-accept '{"host": "~your-ship", "sphere": "sphere/home"}'`. Every body in it, and every row on them, then replicates both ways, each row keeping its author; sensitive attributes, rows you keep private (`post private '{"id": "<row id>", "private": true}'`) and other spheres stay home. docs/sharing.md has how the feed works.
 
 Since version 89 a reference crosses the way each ship names its bodies: share `person/sarah` with her ship and it lands on her `person/me` with a `twin` fact, so a leg you write as `drop-off: person/sarah` on a shared activity reads `drop-off: person/me` on hers, and her `person/me` comes back to you as `person/sarah`. An event both ships read from one calendar lands on her own body for it. docs/sharing.md has the rules.
 
@@ -578,6 +580,10 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /work` | the days of work kept; owner only |
 | `GET` and `PUT /outdoors` | `{"weather", "pota", "pota_location", "pota_radius_km", "nws_api", "pota_api"}`: the weather on (the default) or off, the parks off until a location is set; a save wakes both (version 76); owner only |
 | `POST /geocode/wake` | a point for every known address now: places' `geo`, text locations into the geocache (version 77); owner only |
+| `POST /sphere-share` | `{"sphere", "ship", "mode"}`: share a sphere with a ship, read or edit, which is offered it (version 90) |
+| `DELETE /sphere-share/<kind>/<slug>/<ship>` | stop sharing a sphere with a ship and tell it |
+| `POST /sphere-accept` | `{"host", "sphere"}`: follow a sphere a ship offered; in edit mode our own rows on it go back |
+| `POST /private` | `{"id", "private"}`: a row kept to yourself never enters a sphere's feed |
 | `GET /location` | `{"out", "in", "peers"}`: who the owner shares their position with and until when, the positions shared with them (each with `km_from_home`), and the people here with a ship (version 88) |
 | `POST /location/share` | `{"ship", "hours", "until", "home", "precision"}`: share the owner's position with a ship for a while, about a kilometre unless `precision` is `exact`; a new share replaces that ship's last |
 | `DELETE /location/share/<ship>` | stop sharing with a ship and tell it; 404 when nothing is shared |
