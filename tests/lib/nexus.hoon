@@ -1249,6 +1249,20 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
   ==
+++  test-location-share
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ |]
+  =/  home=(unit [@t @t])  `['39.7817' '-89.6501']
+  ;:  weld
+    ::  live before its time; until home lives on with no time; none at all is not a grant
+    (expect-eq !>([& |]) !>([(loc-live:orr g (add now ~h1)) (loc-live:orr g (add now ~h3))]))
+    (expect-eq !>([& |]) !>([(loc-live:orr g(until ~, home &) (add now ~d9)) (loc-live:orr g(until ~) now)]))
+    ::  exact as given, or to two decimals
+    (expect-eq !>([['39.781734' '-89.650123'] ['39.78' '-89.65']]) !>([(loc-fix:orr '39.781734' '-89.650123' &) (loc-fix:orr '39.781734' '-89.650123' |)]))
+    ::  home within 150 m; 300 m off is not home; no home point, never
+    (expect-eq !>([& | |]) !>([(home-reached:orr ['39.7820' '-89.6501'] home) (home-reached:orr ['39.7844' '-89.6501'] home) (home-reached:orr ['39.7817' '-89.6501'] ~)]))
+    ::  the record round trips
+    (expect-eq !>(`(list loc-grant:orr)`~[g(sent `now, left &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[(en-loc-grant:orr g(sent `now, left &))]]]))))
+  ==
 ++  test-place-search
   =/  res=json
     %-  jo

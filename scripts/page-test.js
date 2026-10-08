@@ -191,6 +191,12 @@ ok('the spheres page lists home first (made when the ship has none), what each h
   && sph.includes('And 1 more under no sphere.') && sph.includes('<p>client work</p>') && sph.includes('Client dinner</a>')
   && sph.includes('1 waiting for you</a>: File invoice under the-llc'));
 ok('a route to the spheres page is its own view', render.route('#spheres').name === 'spheres');
+const locHtml = render.locationCard({ out: [{ ship: '~sampel', until: '2026-10-08T22:00:00Z', home: true, exact: false }], in: [{ ship: '~zod', name: 'Lena', km_from_home: 3, at: '2026-10-08T20:00:00Z' }],
+  peers: [{ id: 'person/lena', name: 'Lena', ship: '~zod' }, { id: 'person/sam', name: 'Sam', ship: '~sampel' }] });
+ok('the location card says who you share with and until when, who shares with you and how far, and offers the people with a ship (version 88)',
+  locHtml.includes('Sharing with Sam until') && locHtml.includes('or until you are home') && locHtml.includes('to about a kilometre') && locHtml.includes('data-loc-stop="~sampel"')
+  && locHtml.includes('Lena is sharing: 3 km from home') && locHtml.includes('<option value="~zod">Lena</option>') && locHtml.includes('data-loc-share="1"'));
+ok('with no one to share with, the card says so', render.locationCard({}).includes('No one here has a ship to share with yet.'));
 const weekEmpty = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
 ok('an empty week card says nothing has come in', weekEmpty.includes('Health: nothing from your phone yet.') && weekEmpty.includes('Work: nothing from your computer yet.') && !weekEmpty.includes('Last review') && weekEmpty.includes('Nudges today: none yet.'));
 const genOff = render.settings({ kinds: {} }, {}, { enabled: false, api_key_set: false, reasoning: { enabled: false } }, {});

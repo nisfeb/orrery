@@ -1556,6 +1556,29 @@ srv.shutdown()
 srv.server_close()
 
 
+# ---- location sharing (version 88): the route's shape and what a share refuses; the two-ship part is
+# scripts/location-matrix.py ----
+print('== location sharing')
+code, d = curl('GET', API + '/location')
+check('the location route answers what is shared, with whom, and who could be', code == 200 and all(k in dictish(d) for k in ('out', 'in', 'peers')), (code, d))
+code, d = curl('POST', API + '/location/share', {'ship': 'not-a-ship'})
+check('a share to no ship is a 400', code == 400, (code, d))
+code, d = curl('POST', API + '/location/share', {'ship': str(curl('GET', HOST + '/~/host')[1]).strip()})
+check('a share to this ship itself is a 400', code == 400, (code, d))
+code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'until': '2020-01-01T00:00:00Z'})
+check('a share that ended before it began is a 400', code == 400, (code, d))
+code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'hours': 500})
+check('hours are held to three days', code == 200 and dictish(d).get('until') and
+      datetime.fromisoformat(dictish(d)['until'].replace('Z', '+00:00')) <= datetime.now(timezone.utc) + timedelta(hours=73), d)
+code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet'})
+check('with no time and not until home, a share lasts two hours, replacing the one before', code == 200 and
+      len([g for g in listish(dictish(curl('GET', API + '/location')[1]).get('out')) if dictish(g).get('ship') == '~sampel-palnet']) == 1, d)
+code, d = curl('DELETE', API + '/location/share/~sampel-palnet')
+check('a stop answers, told or not', code == 200 and dictish(d).get('ok') is True, (code, d))
+code, d = curl('DELETE', API + '/location/share/~sampel-palnet')
+check('stopping what is not shared is a 404', code == 404, (code, d))
+
+
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
 code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
 check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))
