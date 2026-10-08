@@ -1474,6 +1474,11 @@
     %post-sphere-accept     (serve-sphere-accept eyre-id jon)
     %post-private           (serve-private eyre-id jon)
     %get-pairing            (serve-pairing eyre-id)
+    %get-private            (serve-private-list eyre-id)
+    %post-sphere-decline    (serve-sphere-decline eyre-id jon)
+    %post-sphere-leave      (serve-sphere-leave eyre-id jon)
+    %post-leave             (serve-leave eyre-id jon)
+    %post-actions-assign    (serve-assign eyre-id s2 jon act)
     %post-pairing           (serve-pair eyre-id jon)
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
@@ -3232,6 +3237,8 @@
   ?:  =('sphere-offer' act)  (take-sphere-offer src jon)
   ?:  =('sphere-accept' act)  (take-sphere-accept src jon)
   ?:  =('sphere-revoke' act)  (take-sphere-revoke src jon)
+  ?:  =('sphere-leave' act)  (take-sphere-leave src jon)
+  ?:  =('leave' act)  (take-leave src jon)
   ?:  =('feed-moved' act)  (take-feed-moved src)
   ?:  =(~ (parse-bid:orr id))
     (note-inbox 'inbox' | 'id: expected <kind>/<slug>' (scot %p src))
@@ -3347,6 +3354,141 @@
   ;<  so=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
   ;<  ~  bind:m  (over:io (rf 0 / %'sphere-offers.json') [[/ %json] [%o (~(del by so) key)]])
   (note-inbox 'sphere-revoke' & key (scot %p src))
+::  +take-sphere-leave: a ship we shared a sphere with stops following it:
+::  it leaves the record and the group, and we stop reading its feed
+::  (version 95)
+::
+++  take-sphere-leave
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  pk  (parse-bid:orr sphere)
+  ?~  pk  (note-inbox 'sphere-leave' | 'sphere: expected sphere/<slug>' (scot %p src))
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (pure:m ~)
+  ;<  sh=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-shares.json'))
+  =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
+  ?.  (~(has by mine) (scot %p src))  (note-inbox 'sphere-leave' | 'not shared with that ship' (scot %p src))
+  =.  mine  (~(del by mine) (scot %p src))
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) sphere) (~(put by sh) sphere [%o mine]))]])
+  ;<  ~  bind:m  (set-feed-group u.base slug.u.pk mine)
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  kept=(map @t json)
+    %-  ~(gas by *(map @t json))
+    (skip ~(tap by fl) |=([k=@t r=json] &(=((scot %p src) (gs:orr r 'host')) =(sphere (gs:orr r 'local')))))
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-follows.json') [[/ %json] [%o kept]])
+  (note-inbox 'sphere-leave' & sphere (scot %p src))
+::  +take-leave: a ship we shared a body with stops following it (version 95)
+::
+++  take-leave
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  pk  (parse-bid:orr id)
+  ?~  pk  (note-inbox 'leave' | 'id: expected <kind>/<slug>' (scot %p src))
+  ;<  base=(unit path)  bind:m  self-base
+  ?~  base  (pure:m ~)
+  ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
+  =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
+  =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
+  ?.  (~(has by mine) (scot %p src))  (note-inbox 'leave' | 'not shared with that ship' (scot %p src))
+  =.  mine  (~(del by mine) (scot %p src))
+  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
+  ;<  ~  bind:m  (over:io (rf 0 / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
+  (note-inbox 'leave' & id (scot %p src))
+::  +serve-private-list: the rows the owner keeps to themselves
+::
+++  serve-private-list
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=json  bind:m  (read-json (rf 1 / %'private.json'))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ids' ?:(?=([%a *] cur) cur [%a ~])]]))
+::  +serve-sphere-decline: an offered sphere we do not want leaves the
+::  inbox; nothing is told to the ship that offered it
+::
+++  serve-sphere-decline
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  key=@t  (rap 3 (gs:orr jon 'host') '|' (gs:orr jon 'sphere') ~)
+  ;<  so=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-offers.json'))
+  ?.  (~(has by so) key)  (send-err eyre-id 404 'no such offer')
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-offers.json') [[/ %json] [%o (~(del by so) key)]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
+::  +serve-sphere-leave: stop following a sphere a ship shares with us:
+::  our follow and our own feed of it for that ship go, and the ship is
+::  told. What we hold stays (version 95)
+::
+++  serve-sphere-leave
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
+  ?~  host  (send-err eyre-id 400 'host: expected an @p')
+  =/  sphere=@t  (gs:orr jon 'sphere')
+  =/  key=@t  (rap 3 (scot %p u.host) '|' sphere ~)
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
+  =/  row=(unit json)  (~(get by fl) key)
+  ?~  row  (send-err eyre-id 404 'not following that sphere')
+  =/  local=@t  (gs:orr u.row 'local')
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o (~(del by fl) key)]])
+  ;<  base=(unit path)  bind:m  self-base
+  ;<  ~  bind:m
+    =/  lpk  (parse-bid:orr local)
+    ?.  &(?=(^ lpk) ?=(^ base))  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,~)  (read-map (rf 1 / %'sphere-shares.json'))
+    =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
+    ?.  (~(has by mine) (scot %p u.host))  (pure:(fiber:fiber:nexus ,~) ~)
+    =.  mine  (~(del by mine) (scot %p u.host))
+    ;<  ~  bind:(fiber:fiber:nexus ,~)
+      (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
+    (set-feed-group u.base slug.u.lpk mine)
+  ;<  told=?  bind:m
+    (remote-poke-wait u.host [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'sphere-leave'] ['sphere' s+sphere]]))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
+::  +serve-leave: stop following a body a ship shares with us; the ship
+::  is told. What we hold stays (version 95)
+::
+++  serve-leave
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  host=(unit @p)  (slaw %p (gs:orr jon 'host'))
+  ?~  host  (send-err eyre-id 400 'host: expected an @p')
+  =/  id=@t  (gs:orr jon 'id')
+  =/  key=@t  (share-key:orr u.host id)
+  ;<  rm=(map @t json)  bind:m  (read-map (rf 1 / %'ship-remotes.json'))
+  ?.  (~(has by rm) key)  (send-err eyre-id 404 'not following that body')
+  ;<  ~  bind:m  (over:io (rf 1 / %'ship-remotes.json') [[/ %json] [%o (~(del by rm) key)]])
+  ;<  told=?  bind:m
+    (remote-poke-wait u.host [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'leave'] ['id' s+id]]))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
+::  +serve-assign: who does a proposed action, {"assignee": "person/x"},
+::  or no one in particular, {"assignee": ""}; a revision through the
+::  writer (version 95)
+::
+++  serve-assign
+  |=  [eyre-id=@ta id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
+  =/  a=action:orr  p.got
+  ?.  =(%proposed status.a)  (send-err eyre-id 409 'only a proposed action is assigned')
+  =/  who=@t  (gs:orr jon 'assignee')
+  ?:  &(!=('' who) ?=(~ (parse-bid:orr who)))  (send-err eyre-id 400 'assignee: a person id, or empty')
+  ;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ?:(=('' who) ~ ~[who]))
+  ?^  missing  (send-err eyre-id 400 'assignee: no such body')
+  =/  pay=json  ?:(?=([%o *] payload.a) payload.a [%o ~])
+  =/  next=json
+    ?:  =('' who)  (del-key:orr pay 'assignee')
+    (set-key:orr pay 'assignee' (pairs:enjs:format ~[['ref' s+who]]))
+  =/  op=json  (revise-action-op:orr id title.a next ~(tap in about.a) due.a 'owner')
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id] ['assignee' s+who]]))
 ::  +take-feed-moved: a ship we follow wrote to its feed: read it now.
 ::  Only a ship we follow wakes the follower, and nothing is taken from
 ::  what it sent
@@ -4668,10 +4810,12 @@
   ;<  ss=json  bind:m  (read-json (rf 1 / %'sphere-shares.json'))
   ;<  so=json  bind:m  (read-json (rf 1 / %'sphere-offers.json'))
   ;<  sf=json  bind:m  (read-json (rf 1 / %'sphere-follows.json'))
+  ;<  sit=json  bind:m  (read-json (rf 1 / %'situation-shares.json'))
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['shares' shares]  ['offers' offers]  ['accepted' rows]
       ['sphere_shares' ss]  ['sphere_offers' so]  ['sphere_follows' sf]
+      ['situation_shares' sit]
   ==
 ::  +serve-accept: an offered body becomes ours to follow. The target is
 ::  a local body that already carries the offered ship, else where
