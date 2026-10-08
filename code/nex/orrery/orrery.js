@@ -848,7 +848,8 @@
     var waiting = (state.actions || []).filter(function (a) { return a.kind === 'fact' && a.status === 'proposed' && a.payload && a.payload.attr === 'sphere'; });
     var unfiled = all.filter(function (b) { return b.kind !== 'sphere' && b.kind !== 'note' && b.id !== 'person/me' && !rowsOf(b).length; }).length;
     var out = '<h1>Spheres</h1><p class="muted">The parts of your life. Whatever is filed under none is home\'s. ' +
-      'What a model files under a sphere waits for you in the Inbox until you have confirmed three there.</p>';
+      'What a model files under a sphere waits for you in the Inbox until you have confirmed three there.</p>' +
+      '<div id="pairing-card"></div>';
     list.forEach(function (s) {
       var members = all.filter(function (b) { return rowsOf(b).some(function (r) { return refOf(r) === s.id; }); });
       var asks = waiting.filter(function (a) { return a.payload.value && a.payload.value.ref === s.id; });
@@ -887,7 +888,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, esc: esc, fmtValue: fmtValue,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
   if (typeof module !== 'undefined' && module.exports) { module.exports = render; }
@@ -1227,7 +1228,7 @@
       return drew;
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
-    if (v.name === 'spheres') return show(spheres(d));
+    if (v.name === 'spheres') { var shown = show(spheres(d)); if (shown) fillPairing(); return shown; }
     // the graph drawn already takes the new state in place: a redraw
     // would drop the hand on it and the find box's words
     if (drawn === v.here && document.getElementById('graph')) {
@@ -1338,6 +1339,26 @@
       '<label class="field"><input type="checkbox" name="exact"> exact (else about a kilometre)</label></p>' +
       '<p><button data-loc-share="1">share my location</button></p></div></div>';
     return out;
+  }
+  // pairing (version 91): a sphere another ship shares is matched to what
+  // you hold before any of it comes in; a match by name only is yours to
+  // say is the same thing, or not
+  function pairingCard(list) {
+    list = Array.isArray(list) ? list : [];
+    if (!list.length) return '<div id="pairing-card"></div>';
+    return '<div class="card" id="pairing-card"><h2>To pair</h2><p class="muted">A sphere shared with you waits for these before it comes in: ' +
+      'the same name, here and there. Say whether each is the same.</p><ul>' + list.map(function (p) {
+        var at = 'data-pair-key="' + esc(p.key) + '" data-pair-there="' + esc(p.there) + '"';
+        return '<li>' + esc(p.there_name || p.there) + ' <span class="muted">on ' + esc(p.host) + '</span> and <a href="#body/' + esc(p.here) + '">' + esc(p.here_name || p.here) + '</a> here ' +
+          '<button class="small" ' + at + ' data-pair-same="1">same</button> <button class="small" ' + at + ' data-pair-same="0">different</button></li>';
+      }).join('') + '</ul></div>';
+  }
+  function fillPairing() {
+    if (!document.getElementById('pairing-card')) return;
+    fetch(API + '/pairing', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (list) {
+      var slot = document.getElementById('pairing-card');
+      if (slot) slot.outerHTML = pairingCard(list);
+    }).catch(function () { /* nothing waits */ });
   }
   function fillLocation() {
     var slot = document.getElementById('location-card');
@@ -1543,6 +1564,9 @@
       if (lf.home && !lv('hours')) delete lf.hours;
       say('sharing your location');
       post('/location/share', lf).then(function () { say('location shared'); fillLocation(); }).catch(oops);
+    } else if (b.dataset.pairThere) {
+      post('/pairing', { key: b.dataset.pairKey, there: b.dataset.pairThere, same: b.dataset.pairSame === '1' })
+        .then(function () { say(b.dataset.pairSame === '1' ? 'paired' : 'kept apart'); fillPairing(); }).catch(oops);
     } else if (b.dataset.locStop) {
       api('/location/share/' + encodeURIComponent(b.dataset.locStop), { method: 'DELETE' }).then(function () { say('stopped sharing'); fillLocation(); }).catch(oops);
     } else if (b.dataset.saveSearch) {

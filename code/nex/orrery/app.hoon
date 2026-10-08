@@ -1470,6 +1470,8 @@
     %delete-sphere-share    (serve-sphere-unshare eyre-id s2 s3 s4)
     %post-sphere-accept     (serve-sphere-accept eyre-id jon)
     %post-private           (serve-private eyre-id jon)
+    %get-pairing            (serve-pairing eyre-id)
+    %post-pairing           (serve-pair eyre-id jon)
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
     %delete-location-share  (serve-location-unshare eyre-id (rear suffix))
@@ -3560,6 +3562,15 @@
     |=  l=loaded:orr
     (turn (feed-due:orr (feed-rows:orr l sphere hide private) fed) |=(r=row:orr [l r]))
   =/  cuts=(list correction:orr)  (feed-corrections:orr corr members done)
+  ::  the roster of members, which a reader matches its own bodies to
+  ::  before it reads a row (version 91): there from the first pass
+  ;<  rostered=?  bind:m  (peek-exists:io (rf 0 /feeds/[slug.u.pk] %'roster.json'))
+  =/  roster=json
+    a+(turn (skim all |=(l=loaded:orr (~(has in members) id.l))) |=(l=loaded:orr (en-roster-row:orr l now)))
+  ;<  ~  bind:m
+    ?:  &(rostered =(~ due))  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  ~  bind:(fiber:fiber:nexus ,~)  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
+    (over:io (rf 0 /feeds/[slug.u.pk] %'roster.json') [[/ %json] roster])
   ?:  &(=(~ due) =(~ cuts))  (pure:m |)
   ::  ponytail: a thousand entries a pass and the fed map rewritten whole;
   ::  a ship whose first fill is tens of thousands wants a lighter state
@@ -3651,6 +3662,17 @@
   ?:  &(=('host' (gs:orr u.row 'role')) !=('edit' (gs:orr (gj:orr sh local) (scot %p u.host))))
     (follow-mark key seq 'not shared in edit mode any more')
   =/  dir=path  (weld base /feeds/[slug.u.pk])
+  ::  the other ship's members matched to ours before any row is read,
+  ::  so a body both hold is not made twice (version 91)
+  ?.  ?=([%b %.y] (gj:orr u.row 'matched'))
+    ;<  ros=(unit json)  bind:m  (remote-json u.host dir %'roster.json')
+    ?~  ros  (follow-mark key seq 'the roster could not be read; matching waits')
+    ;<  ok=?  bind:m  (pair-start key u.host [(gs:orr u.row 'sphere') local] u.ros)
+    ?.  ok  (follow-mark key seq 'the matched twins were not written in time; matching runs again')
+    $
+  =/  waiting=@ud  (lent (ga:orr u.row 'pending'))
+  ?:  (gth waiting 0)
+    (follow-mark key seq (rap 3 (crip (a-co:co waiting)) ' matches wait for the owner' ~))
   ;<  head=(unit json)  bind:m  (remote-json u.host dir %'head.json')
   ?~  head  (follow-mark key seq 'the feed could not be read (the ship is down, or no longer shares it)')
   =/  top=@ud  (fall (gn:orr u.head 'seq') 0)
@@ -3664,6 +3686,116 @@
   ?.  done  (follow-mark key seq 'the bodies a page names were not made in time; it is read again')
   ;<  ~  bind:m  (follow-mark key (roll (turn `(list json)`es |=(e=json (fall (gn:orr e 'seq') 0))) max) '')
   $
+::  +pair-start: another ship's roster matched to this ship's bodies:
+::  the sure matches made twins, waited for until written; the matches by
+::  name kept on the follow row for the owner (version 91)
+::
+++  pair-start
+  |=  [key=@t src=@p sphere=[there=bid:orr here=bid:orr] ros=json]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  our=@p  bind:m  get-our:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ::  the sphere itself was paired by the accept, whose twin may not be
+  ::  written yet: it is never a match to ask about
+  =/  rr=(list roster-row:orr)  (skip (de-roster:orr ros) |=(r=roster-row:orr =(id.r there.sphere)))
+  =/  found=(list [there=bid:orr here=bid:orr why=@t sure=?])  (match-roster:orr rr all src our now)
+  =/  sure  [[there.sphere here.sphere] (turn (skim found |=([* * * s=?] s)) |=([t=bid:orr h=bid:orr * *] [t h]))]
+  =/  ask  (skip found |=([* * * s=?] s))
+  =/  have  (twin-index:orr all now)
+  =/  fresh  (skip `(list [bid:orr bid:orr])`sure |=([t=bid:orr h=bid:orr] =(`h (~(get by have) [src t]))))
+  ;<  ~  bind:m
+    ?~  fresh  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  poke-writer  0
+    %-  pairs:enjs:format
+    :~  ['op' s+'observe']  ['bodies' [%a ~]]
+        ['observations' a+(turn fresh |=([t=bid:orr h=bid:orr] (twin-row:orr h src t now)))]
+    ==
+  ;<  ok=?  bind:m  (await-twins 0 src sure)
+  ?.  ok  (pure:m |)
+  =/  name-of  |=(b=bid:orr (fall (bind (loaded-of:orr all b) |=(l=loaded:orr name.body.l)) b))
+  =/  there-name  |=(t=bid:orr =/(h (skim rr |=(r=roster-row:orr =(id.r t))) ?~(h t name.i.h)))
+  =/  pending=json
+    :-  %a
+    %+  turn  ask
+    |=  [t=bid:orr h=bid:orr why=@t *]
+    %-  pairs:enjs:format
+    :~  ['there' s+t]  ['there_name' s+(there-name t)]  ['here' s+h]  ['here_name' s+(name-of h)]  ['why' s+why]  ==
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
+  =/  row=(unit json)  (~(get by fl) key)
+  ?.  ?=([~ %o *] row)  (pure:m &)
+  =/  next=json  [%o (~(gas by p.u.row) ~[['matched' b+&] ['pending' pending] ['paired' (numb:enjs:format (lent sure))]])]
+  ;<  ~  bind:m  (over:io (rf 0 / %'sphere-follows.json') [[/ %json] [%o (~(put by fl) key next)]])
+  (pure:m &)
+::  +await-twins: wait, twenty seconds at most, until each pair is a twin
+::  here: the writer took the poke, which is not having written it
+::
+++  await-twins
+  |=  [up=@ud src=@p pairs=(list [there=bid:orr here=bid:orr])]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  ?~  pairs  (pure:m &)
+  =/  tries=@ud  20
+  |-
+  ;<  now=@da  bind:m  get-time:io
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies up)
+  =/  tw  (twin-index:orr all now)
+  ?:  (levy `(list [bid:orr bid:orr])`pairs |=([t=bid:orr h=bid:orr] =(`h (~(get by tw) [src t]))))  (pure:m &)
+  ?:  =(0 tries)  (pure:m |)
+  ;<  ~  bind:m  (wait:io (add now ~s1))
+  $(tries (dec tries))
+::  +serve-pairing: the matches by name waiting for the owner, on every
+::  sphere followed (version 91)
+::
+++  serve-pairing
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
+  %^  send-json  eyre-id  200
+  :-  %a
+  %-  zing
+  %+  turn  ~(tap by fl)
+  |=  [key=@t r=json]
+  %+  turn  (ga:orr r 'pending')
+  |=  p=json
+  (set-key:orr (set-key:orr (set-key:orr p 'key' s+key) 'host' s+(gs:orr r 'host')) 'sphere' s+(gs:orr r 'local'))
+::  +serve-pair: the owner's word on one match: {"key", "there", "same"}.
+::  The same: the twin is written and waited for. Not: the other ship's
+::  body will come as a body of its own. The last word lets the follower
+::  read the sphere
+::
+++  serve-pair
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  key=@t  (gs:orr jon 'key')
+  =/  there=@t  (gs:orr jon 'there')
+  ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
+  =/  row=(unit json)  (~(get by fl) key)
+  ?.  ?=([~ %o *] row)  (send-err eyre-id 404 'no such sphere followed')
+  =/  pend=(list json)  (ga:orr u.row 'pending')
+  =/  hit=(list json)  (skim pend |=(p=json =(there (gs:orr p 'there'))))
+  ?~  hit  (send-err eyre-id 404 'no such match waiting')
+  =/  src=(unit @p)  (slaw %p (gs:orr u.row 'host'))
+  ?~  src  (send-err eyre-id 500 'the follow names no ship')
+  =/  same=?  ?=([%b %.y] (gj:orr jon 'same'))
+  =/  here=@t  (gs:orr i.hit 'here')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ok=?  bind:m
+    ?.  same  (pure:(fiber:fiber:nexus ,?) &)
+    ;<  ~  bind:(fiber:fiber:nexus ,?)
+      %+  poke-writer  1
+      (pairs:enjs:format ~[['op' s+'observe'] ['bodies' [%a ~]] ['observations' a+~[(twin-row:orr here u.src there now)]]])
+    (await-twins 1 u.src ~[[there here]])
+  ?.  ok  (send-err eyre-id 500 'the twin was not written in time; try again')
+  =/  left=(list json)  (skip pend |=(p=json =(there (gs:orr p 'there'))))
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o (~(put by fl) key [%o (~(put by p.u.row) 'pending' a+left)])]])
+  ;<  ~  bind:m  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['waiting' (numb:enjs:format (lent left))]]))
+  ?^  left  (pure:m ~)
+  ;<  *  bind:m  (poke-soft:io (rf 1 / %'sync.sig') [[/ %sig] ~])
+  (pure:m ~)
 ::  +remote-json: one JSON grub on another ship, or ~. The one road the
 ::  follower reads by: a file under the feed's directory grant
 ::
@@ -3702,8 +3834,18 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  twins  (twin-index:orr all now)
   =/  ships  (ship-index:orr all)
-  =/  members=(set bid:orr)  (sphere-members:orr all sphere now)
   =/  held=(set bid:orr)  (silt (turn all |=(l=loaded:orr id.l)))
+  ::  a body this page files under the sphere is in it for the whole page,
+  ::  so its rows after the filing are not refused as the filing's are not
+  =/  joining=(list bid:orr)
+    %+  murn  es
+    |=  e=json
+    ^-  (unit bid:orr)
+    ?.  =('row' (gs:orr e 'op'))  ~
+    =/  r=json  (translate-carried:orr (gj:orr e 'row') src our twins ships)
+    ?.  &(=('sphere' (gs:orr r 'attr')) =(sphere (ref-or-text:orr (gj:orr r 'value'))))  ~
+    `(land-subject:orr (gs:orr r 'subject') (gj:orr e 'as') src our twins ships)
+  =/  members=(set bid:orr)  (~(gas in (sphere-members:orr all sphere now)) joining)
   =/  landed=(list [b=bid:orr from=bid:orr e=json])
     %+  murn  es
     |=  e=json

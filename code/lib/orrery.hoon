@@ -1550,6 +1550,92 @@
   ?.  ?=([%o *] j)  ~
   (~(run by p.j) |=(v=json ?=([%b %.y] v)))
 ++  en-fed  |=(f=(map @t ?) ^-(json [%o (~(run by f) |=(b=? `json`b+b))]))
+::  ==  pairing (version 91): matching the bodies two ships both hold
+::
+::  +roster-row: a sphere member as the feed's roster names it, so the
+::  ship that reads the feed can match it to a body of its own first
+::
++$  roster-row  [id=bid kind=@tas name=@t ship=(unit @p) aliases=(list @t) uids=(list @t) as=(map @p bid)]
+++  en-roster-row
+  |=  [l=loaded now=@da]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.l]  ['name' s+name.body.l]  ['ship' ?~(ship.body.l ~ s+(scot %p u.ship.body.l))]
+      ['aliases' a+(turn (scag 10 ~(tap in aliases.body.l)) |=(a=@t `json`s+a))]
+      ['uids' a+(turn (cal-uids rows.l) |=(u=@t `json`s+u))]
+      ['as' (body-twins l now)]
+  ==
+++  de-roster
+  |=  j=json
+  ^-  (list roster-row)
+  %+  murn  ?:(?=([%a *] j) p.j ~)
+  |=  r=json
+  ^-  (unit roster-row)
+  =/  id=@t  (gs r 'id')
+  =/  pk  (parse-bid id)
+  ?~  pk  ~
+  =/  as=json  (gj r 'as')
+  :-  ~
+  :*  id  kind.u.pk  (gs r 'name')  (slaw %p (gs r 'ship'))
+      (strings (ga r 'aliases'))  (strings (ga r 'uids'))
+      ?.  ?=([%o *] as)  ~
+      %-  ~(gas by *(map @p bid))
+      %+  murn  ~(tap by p.as)
+      |=  [k=@t v=json]
+      ^-  (unit [@p bid])
+      =/  s=(unit @p)  (slaw %p k)
+      ?.  &(?=(^ s) ?=([%s *] v))  ~
+      `[u.s p.v]
+  ==
+::  +match-roster: each member of another ship's roster this ship holds
+::  too, and how it knows: the other ship's twin for it here, the same
+::  ship, the same calendar event (sure, so their twins are written at
+::  once), or the same kind and name, which waits for the owner. A
+::  member already a twin here is left out. A sure match may share its
+::  body here with another (two bodies there carrying one ship are one
+::  person); a match by name may not, and a name that matches two
+::  bodies here matches none.
+::
+++  match-roster
+  |=  [ros=(list roster-row) all=(list loaded) src=@p our=@p now=@da]
+  ^-  (list [there=bid here=bid why=@t sure=?])
+  =/  twins  (twin-index all now)
+  =/  ships  (ship-index all)
+  =/  idx  (index-events all)
+  =/  held=(set bid)  (silt (turn all |=(l=loaded id.l)))
+  =/  taken=(set bid)  (silt ~(val by twins))
+  =|  out=(list [there=bid here=bid why=@t sure=?])
+  |-
+  ?~  ros  (flop out)
+  =/  r=roster-row  i.ros
+  =/  used=(set bid)  (~(gas in taken) (turn out |=([* h=bid *] h)))
+  =/  take
+    |=  [here=bid why=@t sure=?]
+    ?:  |(&(!sure (~(has in used) here)) !(~(has in held) here))  out
+    [[id.r here why sure] out]
+  ?:  (~(has by twins) [src id.r])  $(ros t.ros)
+  =/  said=(unit bid)  (~(get by as.r) our)
+  ?^  said  $(ros t.ros, out (take u.said 'twin' &))
+  ?:  =(ship.r `our)  $(ros t.ros, out (take 'person/me' 'ship' &))
+  =/  by-ship=(unit bid)  ?~(ship.r ~ (~(get by ships) u.ship.r))
+  ?^  by-ship  $(ros t.ros, out (take u.by-ship 'ship' &))
+  =/  by-event=(unit bid)
+    |-  ^-  (unit bid)
+    ?~  uids.r  ~
+    =/  h  (~(get by uids.idx) i.uids.r)
+    ?^  h  `id.u.h
+    $(uids.r t.uids.r)
+  ?^  by-event  $(ros t.ros, out (take u.by-event 'event' &))
+  =/  names=(set @t)  (silt (turn [name.r aliases.r] lower))
+  =/  hits=(list loaded)
+    %+  skim  all
+    |=  l=loaded
+    ?&  =(kind.r kind.body.l)
+        !(~(has in used) id.l)
+        (~(has in names) (lower name.body.l))
+    ==
+  ?.  ?=([* ~] hits)  $(ros t.ros)
+  $(ros t.ros, out (take id.i.hits 'name' |))
 ::  +group-name: the usergroup that may read one shared body
 ::
 ::    Kind and slug are joined with a dot, which neither may contain, so
@@ -10164,6 +10250,8 @@
   ?:  &(=('DELETE' meth) ?=([%api %sphere-share @ @ @ ~] suffix))  `[%delete-sphere-share %own]
   ?:  &(=('POST' meth) ?=([%api %sphere-accept ~] suffix))      `[%post-sphere-accept %own]
   ?:  &(=('POST' meth) ?=([%api %private ~] suffix))            `[%post-private %own]
+  ?:  &(=('GET' meth) ?=([%api %pairing ~] suffix))             `[%get-pairing %own]
+  ?:  &(=('POST' meth) ?=([%api %pairing ~] suffix))            `[%post-pairing %own]
   ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
   ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]
   ?:  &(=('PUT' meth) ?=([%api %search ~] suffix))              `[%put-search %own]
