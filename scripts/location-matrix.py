@@ -29,6 +29,11 @@ def theirs():
     return next((e for e in listish(dictish(p('GET', '/location')[1]).get('in')) if dictish(e).get('ship') == HOSTNAME), {})
 
 
+def carriers():
+    """the people on PEER carrying HOST's ship: another gate's accept can leave one"""
+    return [dictish(x) for x in listish(dictish(p('GET', '/location')[1]).get('peers')) if dictish(x).get('ship') == HOSTNAME]
+
+
 def obs(sub, attr, value):
     return {'subject': sub, 'attr': attr, 'value': value, 'conf': 100, 'source': {'kind': 'user', 'id': 'location-gate-' + RUN}, 'by': 'owner'}
 
@@ -49,18 +54,21 @@ check('a share for an hour, to about a kilometre, answers its grant', code == 20
 h('POST', '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12})
 e = wait('the peer has the fix', lambda: theirs() or None, 60) or {}
 check('the peer keeps it, cut to two decimals, with the person it belongs to and the time it ends',
-      e.get('lat') == '39.65' and e.get('lon') == '-89.71' and e.get('id') == PP and e.get('until'), e)
+      e.get('lat') == '39.65' and e.get('lon') == '-89.71' and e.get('id') in [c.get('id') for c in carriers()] and e.get('until'), e)
 check('and how far that is from the peer\'s home is its own reckoning', 'km_from_home' in e, e)
 code, d = h('POST', '/location/share', {'ship': PEERNAME, 'hours': 1, 'precision': 'exact'})
 h('POST', '/position', {'lat': 39.6589, 'lon': -89.7113, 'acc': 12})
 e = wait('the exact fix arrives', lambda: (lambda x: x if x.get('lat') == '39.6589' else None)(theirs()), 60) or {}
 check('exact, the fix goes as the phone gave it', e.get('lat') == '39.6589' and e.get('lon') == '-89.7113', e)
-# a ship no person on the peer carries is refused
-p('DELETE', '/body/' + PP)
+# a ship no person on the peer carries is refused: every carrier goes for a moment, and comes back
+away = carriers()
+for c in away:
+    p('DELETE', '/body/' + c['id'])
 h('POST', '/position', {'lat': 39.6590, 'lon': -89.7114, 'acc': 12})
 time.sleep(12)
 check('with no person carrying the ship, the peer keeps nothing new', theirs().get('lat') != '39.659', theirs())
-p('POST', '/bodies', {'id': PP, 'name': 'Gate host ' + RUN, 'ship': HOSTNAME})
+for c in away:
+    p('POST', '/bodies', {'id': c['id'], 'name': c.get('name') or c['id'], 'ship': HOSTNAME})
 # a stop ends it on the peer
 code, d = h('DELETE', '/location/share/' + PEERNAME)
 check('a stop answers that the peer was told', code == 200 and dictish(d).get('told') is True, (code, d))

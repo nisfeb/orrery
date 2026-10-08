@@ -1556,6 +1556,19 @@ srv.shutdown()
 srv.server_close()
 
 
+# ---- twins (version 89): the schema keeps a twin per peer; the two-ship part is scripts/twins-matrix.py ----
+print('== twins')
+code, d = curl('GET', API + '/schema')
+check('the schema holds twin as multi-valued', code == 200 and 'twin' in listish(dictish(d).get('multi')), dictish(d).get('multi'))
+TWB = 'person/gate-twin-' + secrets.token_hex(3)
+code, d = curl('POST', API + '/observe', {'bodies': [{'id': TWB, 'name': 'Gate twin'}], 'observations': [
+    {'subject': TWB, 'attr': 'twin', 'value': {'ship': s, 'id': 'person/me'}, 'conf': 100,
+     'source': {'kind': 'share', 'id': s + '/person/me'}, 'by': 'share'} for s in ('~sampel-palnet', '~zod')]})
+code, d = curl('GET', API + '/body/' + TWB)
+tw = dictish(dictish(d).get('attrs')).get('twin')
+check('a body keeps a twin on each ship side by side', isinstance(tw, list) and len(tw) == 2, tw)
+curl('DELETE', API + '/body/' + TWB)
+
 # ---- location sharing (version 88): the route's shape and what a share refuses; the two-ship part is
 # scripts/location-matrix.py ----
 print('== location sharing')

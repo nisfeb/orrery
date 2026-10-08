@@ -191,6 +191,7 @@ ok('the spheres page lists home first (made when the ship has none), what each h
   && sph.includes('And 1 more under no sphere.') && sph.includes('<p>client work</p>') && sph.includes('Client dinner</a>')
   && sph.includes('1 waiting for you</a>: File invoice under the-llc'));
 ok('a route to the spheres page is its own view', render.route('#spheres').name === 'spheres');
+ok('a twin reads as the body on the other ship (version 89)', render.fmtValue({ ship: '~zod', id: 'person/lena' }) === 'person/lena on ~zod');
 const locHtml = render.locationCard({ out: [{ ship: '~sampel', until: '2026-10-08T22:00:00Z', home: true, exact: false }], in: [{ ship: '~zod', name: 'Lena', km_from_home: 3, at: '2026-10-08T20:00:00Z' }],
   peers: [{ id: 'person/lena', name: 'Lena', ship: '~zod' }, { id: 'person/sam', name: 'Sam', ship: '~sampel' }] });
 ok('the location card says who you share with and until when, who shares with you and how far, and offers the people with a ship (version 88)',

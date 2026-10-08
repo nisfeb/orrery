@@ -1054,17 +1054,17 @@
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
     (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
     (expect-eq !>('mine') !>((gs:orr (gj:orr (gj:orr (gj:orr new 'kinds') 'person') 'notes') 'status')))
-    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr new 'multi'))))
+    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 87]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 89]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
     (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
     (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
-    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up']) !>((strings:orr (ga:orr bare 'multi'))))
+    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin']) !>((strings:orr (ga:orr bare 'multi'))))
     ::  but a kind a release brought in is made whole
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'kinds') 'sphere')) !>((gj:orr (gj:orr bare 'kinds') 'sphere')))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
@@ -1248,6 +1248,45 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-twins
+  =/  mk
+    |=  [id=@t kind=@tas ship=(unit @p) attrs=(list [a=@t v=json])]
+    ^-  loaded:orr
+    :+  id  [kind id ~ now ship]
+    %+  turn  attrs
+    |=  [a=@t v=json]
+    ^-  row:orr
+    [(rap 3 id '/' a (en:json:html v) ~) [id a v now ~ 100 ['share' 'x'] 'share' now | '']]
+  =/  twin  |=([s=@t i=@t] `json`(pairs:enjs:format ~[['ship' s+s] ['id' s+i]]))
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  ::  the peer's own self is here person/sam, which carries its ship; a
+  ::  child the two name differently is a twin; a twin with no ship is
+  ::  left out
+  =/  all=(list loaded:orr)
+    :~  (mk 'person/me' %person `~wet ~[['twin' (twin '~zod' 'person/lena')]])
+        (mk 'person/sam' %person `~zod ~)
+        (mk 'person/kid' %person ~ ~[['twin' (twin '~zod' 'person/rowan')] ['twin' (twin 'zod' 'person/x')]])
+        (mk 'activity/swim' %activity ~ ~[['drop-off' (ref 'person/me')]])
+    ==
+  =/  tw  (twin-index:orr all now)
+  =/  sh  (ship-index:orr all)
+  =/  tr  |=(r=@t (translate-ref:orr r ~zod ~wet tw sh))
+  =/  row  |=(v=json `json`(pairs:enjs:format ~[['subject' s+'activity/swim'] ['attr' s+'drop-off'] ['value' v]]))
+  ;:  weld
+    (expect-eq !>(`(list [[@p @t] @t])`~[[[~zod 'person/lena'] 'person/me'] [[~zod 'person/rowan'] 'person/kid']]) !>((sort ~(tap by tw) aor)))
+    ::  a twin, the sender's self, us under the sender's name for us, and the rest as written
+    (expect-eq !>(`(list @t)`~['person/me' 'person/kid' 'person/sam' 'person/me' 'place/pool']) !>((turn `(list @t)`~['person/lena' 'person/rowan' 'person/me' 'person/wet' 'place/pool'] tr)))
+    ::  the sender's self with no body here carrying its ship is where an accept lands it
+    (expect-eq !>('person/zod') !>((translate-ref:orr 'person/me' ~zod ~wet tw ~)))
+    ::  a row's ref is translated, the rest of its value kept; a value with no ref is left alone
+    (expect-eq !>((row (pairs:enjs:format ~[['ref' s+'person/me'] ['days' a+~[s+'wed']]]))) !>((translate-carried:orr (row (pairs:enjs:format ~[['ref' s+'person/lena'] ['days' a+~[s+'wed']]])) ~zod ~wet tw sh)))
+    (expect-eq !>((row s+'Lena')) !>((translate-carried:orr (row s+'Lena') ~zod ~wet tw sh)))
+    (expect-eq !>((row (twin '~zod' 'person/me'))) !>((translate-carried:orr (row (twin '~zod' 'person/me')) ~zod ~wet tw sh)))
+    ::  the twin fact, and the uids an offer carries
+    (expect-eq !>((twin '~zod' 'person/lena')) !>((gj:orr (twin-row:orr 'person/me' ~zod 'person/lena' now) 'value')))
+    (expect-eq !>(['twin' 'share' 'share']) !>([(gs:orr (twin-row:orr 'person/me' ~zod 'person/lena' now) 'attr') (gs:orr (twin-row:orr 'person/me' ~zod 'person/lena' now) 'by') (gs:orr (gj:orr (twin-row:orr 'person/me' ~zod 'person/lena' now) 'source') 'kind')]))
+    (expect-eq !>(`(list @t)`~['0vabc@~zod']) !>((cal-uids:orr ~[[*@ta ['situation/x' 'starts' s+'x' now ~ 100 ['calendar' 'family/0vabc@~zod'] 'calendar' now | '']] [*@ta ['situation/x' 'note' s+'x' now ~ 100 ['user' 'u'] 'owner' now | '']]])))
   ==
 ++  test-location-share
   =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ |]

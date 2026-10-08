@@ -263,7 +263,8 @@ check('accept lands on ' + SELF, code == 200 and dictish(d).get('target') == SEL
 code, d = observe(host, 'person/me', 'location', 'in the workshop', T0, 'self-1')
 check('host observes its own location', code == 200, d)
 peer('POST', '/sync')
-row = dictish(wait('the host self row mirrors onto ' + SELF, lambda: attr(peer, SELF, 'location'), 90))
+#  the host's person/me may carry an older location from another gate, which mirrors first
+row = dictish(wait('the host self row mirrors onto ' + SELF, lambda: (lambda r: r if dictish(r).get('value') == 'in the workshop' else None)(attr(peer, SELF, 'location')), 90))
 check('the mirrored self row is the host claim', row.get('by') == HOSTNAME and source_id(row).startswith(HOSTNAME + '/') and row.get('value') == 'in the workshop', row)
 code, d = retract(host, dictish(attr(host, 'person/me', 'location')))
 check('the host self location is retracted', code == 200, d)
