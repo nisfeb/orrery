@@ -391,6 +391,8 @@ post observe '{"bodies": [{"id": "person/sarah", "ship": "~sampel-palnet"}]}'
 post share '{"id": "person/sarah", "ship": "~sampel-palnet", "mode": "edit"}'
 ```
 
+Since version 89 a reference crosses the way each ship names its bodies: share `person/sarah` with her ship and it lands on her `person/me` with a `twin` fact, so a leg you write as `drop-off: person/sarah` on a shared activity reads `drop-off: person/me` on hers, and her `person/me` comes back to you as `person/sarah`. An event both ships read from one calendar lands on her own body for it. docs/sharing.md has the rules.
+
 On her ship (point `API` and the cookie jar at it first), `GET /api/shares` lists the offer and `post accept '{"host": "~your-ship", "id": "person/sarah"}'` takes it. Because the body carries her ship's name it lands on her own `person/me`. Her ship reads the body every five minutes and on demand (`POST /api/sync`), and every mirrored fact names its origin: `by` is your ship, and `source` is `{"kind": "ship", "id": "~your-ship/<observation id>"}`.
 
 The unit of sharing is one body. Nothing else on your ship is visible to her. `DELETE /api/share/person/sarah/~sampel-palnet` ends it. A share carries the body whole, every attribute on it, so a body holding facts you would not share is not a body to share; the one filter is on the way back, where attributes named in her ship's `policy.sensitive` are never sent to yours. The whole protocol is in `docs/sharing.md`.

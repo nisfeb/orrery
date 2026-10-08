@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 89's owner steps
+
+Nothing to do. The schema takes `twin` as multi-valued by itself. A shared body's references now mean the right body on each ship once both run 89; to have a shared activity's legs name the other owner as themselves on their ship, also share the person you keep for them.
+
 ### Version 88's owner steps
 
 Nothing to do. Settings gains a Location card: share where you are with someone whose ship runs orrery (a person here with a `ship`), for some hours or until you are home, to about a kilometre unless you tick exact. Their ship needs version 88 to show it.
