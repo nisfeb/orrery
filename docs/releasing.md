@@ -214,6 +214,10 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 87's owner steps
+
+Optional. To have the ship fill in your places' addresses, phones, hours and websites, get a Brave Search API key with the Search plan (Place Search is part of it), paste it on the settings page under Place lookups, and tick on. It looks up ten places at most twice a day and at most 500 a month unless you change the cap; each lookup sends a place's name and your home's area to Brave, never a person.
+
 ### Version 86's owner steps
 
 Nothing to do. An action the ship claimed and never finished (a release reloads the instance, and one in the middle of a pass was left claimed for good) is finished at the ship's next pass: a fact or a correction is carried out, and a message or a calendar event is marked failed with a note to check whether it went.

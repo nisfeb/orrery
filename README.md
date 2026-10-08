@@ -334,6 +334,10 @@ Since version 83 the ship knows when the owner is away from home, and while they
 
 The distances need home's point: `place/home`'s `geo`, or its `address`, which the ship geocodes. Without it only `away: yes` counts, and an appointment whose point is not known is taken to be at home.
 
+### Place lookups
+
+Since version 87 the ship can fill in a thin place through Brave Search's Place Search API: one missing its address, phone, hours or website (never home, never a POTA park). It is off until the owner pastes a Brave Search API key and turns it on (Settings, Place lookups; `PUT /search`); the key is never answered back. Twice a day with the parks, or on `POST /geocode/wake`, it looks up ten places at most, a second apart, each once a month, under the owner's monthly cap (500 unless set), near home's point. It files only what a place lacks, by `search`, at confidence 60, its source the result's website: the owner's own facts are never touched, a phone and hours are held ninety days and then looked up again, and "not true" on any of them keeps it out. Each lookup sends Brave a place's name and home's area, never a person; organisations are left out, since a place search finds a branch, not the company.
+
 ### Outdoors
 
 Since version 76 the ship reads the weather for the owner's point (home's `geo`, else the phone's last position, cut to two decimals) from the National Weather Service: the forecast every two hours, the alerts every half hour, kept in `weather.json` and never as facts. It touches three things. Time to leave adds ten minutes when the hour of leaving has storms and five when rain is likely, and says so in the alert. The brief gives the day's weather and any alert in force. And an activity with `wind-mph`, `rain-max` or `temp-f` ("8-18", "30", "60-90") is an outing: the brief names the days ahead whose daytime forecast gives it that weather and whose calendar is light (under four hours booked). The service asks who is calling, so every request says `orrery (github.com/nisfeb/orrery)`; it covers the United States only.
@@ -568,6 +572,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /work` | the days of work kept; owner only |
 | `GET` and `PUT /outdoors` | `{"weather", "pota", "pota_location", "pota_radius_km", "nws_api", "pota_api"}`: the weather on (the default) or off, the parks off until a location is set; a save wakes both (version 76); owner only |
 | `POST /geocode/wake` | a point for every known address now: places' `geo`, text locations into the geocache (version 77); owner only |
+| `GET` and `PUT /search` | `{"enabled", "api_key", "monthly_cap", "api_url"}`: the place lookups through Brave Search, off until a key is set; the key answered only as `api_key_set`, a blank one keeping the stored (version 87); owner only |
 | `GET /weather` | the forecast held (`periods`: start, end, day, temp in F, wind_lo and wind_hi in mph, rain in percent, short), the alerts in force, when each was read, and a note when there is none; never the point (version 76); owner only |
 | `GET /nudge/last`, `POST /nudge/wake` | the day's nudges (its day, each one's time, kind, key, title, and whether the push went), and a look now (version 75); owner only |
 | `GET /review/last`, `POST /review/wake` | the last Sunday review (its day, text, the line pushed, whether it was mailed), and one sent now (version 74); owner only |
