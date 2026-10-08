@@ -1048,23 +1048,23 @@
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere' 'shared-with']) !>((strings:orr (ga:orr sit 'attrs'))))
     (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
     (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
     (expect-eq !>('mine') !>((gs:orr (gj:orr (gj:orr (gj:orr new 'kinds') 'person') 'notes') 'status')))
-    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin']) !>((strings:orr (ga:orr new 'multi'))))
+    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 92]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 94]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
     (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
     (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
-    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin']) !>((strings:orr (ga:orr bare 'multi'))))
+    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with']) !>((strings:orr (ga:orr bare 'multi'))))
     ::  but a kind a release brought in is made whole
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'kinds') 'sphere')) !>((gj:orr (gj:orr bare 'kinds') 'sphere')))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))
@@ -1248,6 +1248,36 @@
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.27.10 ~2026.10.6..17.00.00 `leave &)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.31.00 ~2026.10.6..17.00.00 `leave |)))
     (expect-eq !>(`(unit @da)``~2026.10.6..17.01.00) !>((after-alert:orr ~2026.10.6..16.20.00 ~2026.10.6..17.00.00 ~ |)))
+  ==
+++  test-share-situation
+  =/  mk
+    |=  [id=@t kind=@tas name=@t attrs=(list [a=@t v=json by=@t])]
+    ^-  loaded:orr
+    :+  id  [kind name ~ now ~]
+    (turn attrs |=([a=@t v=json by=@t] ^-(row:orr [(rap 3 id a (en:json:html v) ~) [id a v now ~ 100 ['t' 'x'] by now | '']])))
+  =/  ref  |=(b=@t `json`(pairs:enjs:format ~[['ref' s+b]]))
+  =/  park  (mk 'place/park' %place 'The Park' ~[['address' s+'1 Park Rd' 'owner'] ['geo' s+'39.78,-89.65' 'owner']])
+  =/  party
+    %:  mk  'situation/party'  %situation  'Party'
+      :~  ['starts' s+'2026-10-10T15:00:00Z' 'owner']  ['location' (ref 'place/park') 'owner']
+          ['needs' s+'a cake' 'owner']  ['participants' (ref 'person/me') 'owner']
+          ['shared-with' (ref 'person/gran') 'owner']  ['shared-with' (ref 'person/pop') 'generator']
+          ['ends' s+'2026-10-10T18:00:00Z' 'owner']
+      ==
+    ==
+  =/  all=(list loaded:orr)  ~[party park (mk 'person/gran' %person 'Gran' ~)]
+  ;:  weld
+    ::  who, and who said so
+    (expect-eq !>(`(list [@t @t])`~[['person/gran' 'owner'] ['person/pop' 'generator']]) !>((sort (situation-with:orr party ~ now) aor)))
+    ::  it ends with the situation, a day after
+    (expect-eq !>([& | |]) !>([(share-over:orr (de-iso:orr '2026-10-10T18:00:00Z') ~2026.10.11..18.00.01) (share-over:orr (de-iso:orr '2026-10-10T18:00:00Z') ~2026.10.11..17.00.00) (share-over:orr ~ now)]))
+    (expect-eq !>(`(unit @da)`[~ ~2026.10.10..18.00.00]) !>((situation-end:orr party ~ now)))
+    ::  the invitation: the key facts in plain words
+    (expect-eq !>('Party, 2026-10-10 at 15:00, at The Park, 1 Park Rd. What is needed: a cake.') !>((invite-text:orr party all ~ now 'UTC')))
+    ::  the thin copies: the park with its address and point, gran by name, never our self
+    %+  expect-eq
+      !>(`json`a+~[(pairs:enjs:format ~[['id' s+'place/park'] ['name' s+'The Park'] ['address' s+'1 Park Rd'] ['geo' s+'39.78,-89.65']]) (pairs:enjs:format ~[['id' s+'person/gran'] ['name' s+'Gran'] ['address' s+''] ['geo' s+'']])])
+    !>(=/(t (thin-of:orr party all ~ now) ?.(?=([%a *] t) t a+(sort p.t |=([a=json b=json] (aor (gs:orr b 'id') (gs:orr a 'id')))))))
   ==
 ++  test-peer-changes
   =/  mk
