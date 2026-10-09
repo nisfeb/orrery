@@ -224,6 +224,14 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 98's owner steps
+
+Nothing to do on the ship. The schema gains, by itself, `research` on situations and activities (multi-valued) and the action kind `close`. What it brings:
+
+- **All-day events on your clock.** A situation made from an all-day or dated event runs from midnight to midnight where you are, not from 8 pm the evening before (Eastern); one made before keeps its id, and its times are written again at the next pass.
+- **The browsing reader.** Once the browser extension's matching release is in, turn on "Send Orrery what I browse" in its Options (and "Read pages too" for the pages' text). Your ship keeps what you browse and asks a model only about pages tied to a plan, a todo, a person or a place. The model is the one your Armillary vendor names for the browsing reader, always a zero-data-retention one; until it names one the pages wait. Banking and medical sites and Claude artifacts are never read; add any other site on the Browsing card under Settings.
+- **A close to approve.** When a page shows an order for one of your open tasks, a "Done?" proposal waits in your Inbox; approving it closes the task.
+
 ### Version 95's owner steps
 
 Version 95 is one release of the shared-households work built as 88 to 95; none of those numbers shipped alone. It asks for no new roads, so no consent prompt.
