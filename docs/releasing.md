@@ -224,6 +224,14 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 101's owner steps
+
+Nothing to do on the ship: no new roads, so no consent prompt. Update the browser extension to its matching release. Its popup gains "This page in Orrery": what Orrery tied the page to, each with "Not related"; "File under it" and "It's the place for it" for your open plans; "Never read this site"; and a pause for an hour or until midnight. The day page gains a Browsing card with your interests, the pages filed under a plan and the forms you left.
+
+### Version 100's owner steps
+
+Nothing to do. The chat reader now reads what it is sent: the ship's chat answer gave every sender's name in quotes, so each was a stranger and no DM or channel message had been read since the chat reader began. Messages that came before the update stay unread. To have your own messages read too (the side of a DM where plans are often made), tick "read my own messages too" on the chat card under Settings.
+
 ### Version 99's owner steps
 
 Nothing to do. With the browsing reader on and a model for it, once a week it names what you have been into from the week's titles and sites (never a page's text): Monday's brief says it, the Browsing card shows it, and each new topic waits in your Inbox as one of your likes to keep or dismiss. A form you left a day ago on a page about one of your plans (a registration, an application, a booking) is asked about once, as a "Finish …?" task.
