@@ -576,9 +576,12 @@ DOWN = False  # the analyst answers 503 while set: the reader's model outage
 SLOW = 0  # seconds the stub's drives take longer: traffic gone worse (version 76)
 #  defined further down; until then the stub answers 503, since a reader
 #  on the ship may call it as soon as it listens (the last run's settings)
-TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = None
+TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = BROWSING_CANNED = None
 import base64
 GATE_PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+def user_text(body):
+    #  the user block of a chat request: where a reader's channel and its messages are
+    return (((body or {}).get('messages') or [{}])[-1].get('content') or [{}])[0].get('text', '') if isinstance(body, dict) else ''
 class Stub(http.server.BaseHTTPRequestHandler):
     #  one stub for the model, the decider and Telegram, told apart by path:
     #  the analyst's chat request by its system block (the analyst prompt's
@@ -645,6 +648,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 out = REFINE_CANNED and REFINE_CANNED.get(tail, REFINE_CANNED[''])
             elif system.startswith('You carry out'):
                 out = INSTRUCT_CANNED
+            elif system.startswith('You turn') and BROWSING_CANNED and 'Channel: browsing' in user_text(body):
+                out = BROWSING_CANNED(user_text(body))
             else:
                 out = TG_CANNED if system.startswith('You turn') else CANNED
         if out is None:
@@ -1147,6 +1152,116 @@ for o in dictish(curl('GET', API + '/body/person/me')[1]).get('observations', []
 for a in curl('GET', API + '/actions?status=open')[1] or []:
     if isinstance(a, dict) and a.get('by') in ('gate-read', 'web'):
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
+
+
+# ---- the browsing reader (version 98): what the extension sends is kept by day, the pages tied to what the ship knows go to the model ----
+#  the stub stands in for the ZDR model and the decider; a page tied to a
+#  gate situation gains research, an order for a gate task proposes its
+#  close, and a plain page, a bank's and a Claude artifact go nowhere
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
+DECIDER_CANNED = {'answers': {'worth_reading': {'type': 'noul', 'noul': 0.9}, 'needs_help_now': {'type': 'noul', 'noul': 0.1}}}
+BR_RUN = time.strftime('%H%M%S')
+BR_SIT = 'situation/gate-br-pergola-' + BR_RUN
+BR_PAGE = 'https://gate.example/pergola-' + BR_RUN
+BR_SHOP = 'https://shop.gate.example/thanks-' + BR_RUN
+BR_PLAIN = 'https://gate.example/weather-' + BR_RUN
+BR_TASK_TITLE = 'Gate order cedar boards ' + BR_RUN
+BR_APP = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+for a in curl('GET', API + '/actions?status=open')[1] or []:
+    if isinstance(a, dict) and str(a.get('title', '')).startswith('Done? Gate order'):
+        curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'matrix rerun'})
+code, d = curl('PUT', API + '/browsing/settings', {'enabled': True, 'model': '', 'exclude': ['skip.gate.example'], 'interval_hours': 3})
+d = dictish(d)
+check('the browsing settings answer as stored', code == 200 and d.get('enabled') is True and d.get('model') == '' and d.get('exclude') == ['skip.gate.example'] and d.get('interval_hours') == 3, (code, d))
+code, d = curl('GET', API + '/browsing')
+d = dictish(d)
+check('the status names what is never read, for the extension to skip too', code == 200 and 'bank' in listish(d.get('skip_hosts'))
+      and 'claude.ai/artifact' in listish(d.get('skip_paths')) and d.get('exclude') == ['skip.gate.example'], d)
+owner_only('the browsing settings are the owner\'s', 'GET', '/browsing/settings')
+check('the schema knows research on a situation, and close as an action', 'research' in listish(dictish(dictish(dictish(curl('GET', API + '/schema')[1]).get('kinds')).get('situation')).get('attrs'))
+      and 'close' in listish(dictish(curl('GET', API + '/schema')[1]).get('actions')), dictish(curl('GET', API + '/schema')[1]).get('actions'))
+observe([{'id': BR_SIT, 'name': 'Gate pergola lumber ' + BR_RUN}], [])
+code, d = curl('POST', API + '/act', {'kind': 'task', 'title': BR_TASK_TITLE, 'about': [BR_SIT], 'by': 'owner', 'payload': {}})
+BR_TASK = dictish(d).get('id', '')
+if dictish(d).get('status') == 'proposed':
+    curl('POST', API + '/actions/' + BR_TASK, {'status': 'approved', 'note': 'gate'})
+br_ms = int(time.time() * 1000)
+br_batch = {'visits': [{'url': BR_PAGE, 'title': 'Pergola lumber guide', 'at': br_ms, 'how': 'link'},
+                       {'url': BR_SHOP, 'title': 'Thank you for your order', 'at': br_ms, 'how': 'form_submit'},
+                       {'url': BR_PLAIN, 'title': 'Weather', 'at': br_ms, 'how': 'typed'},
+                       {'url': 'https://gatebank.example/acct', 'title': 'Balance', 'at': br_ms, 'how': 'typed'},
+                       {'url': 'https://claude.ai/artifact/gate', 'title': 'Doc', 'at': br_ms, 'how': 'link'},
+                       {'url': 'https://skip.gate.example/x', 'title': 'Left out', 'at': br_ms, 'how': 'link'}],
+            'pages': [{'url': BR_PAGE, 'title': 'Pergola lumber guide', 'text': 'How much pergola lumber to buy, and which cedar. ' * 10, 'at': br_ms},
+                      {'url': BR_SHOP, 'title': 'Thank you for your order', 'text': 'Order ' + BR_RUN + ': cedar boards, arriving Friday.', 'at': br_ms},
+                      {'url': BR_PLAIN, 'title': 'Weather', 'text': 'Rain later today.', 'at': br_ms},
+                      {'url': 'https://gatebank.example/acct', 'title': 'Balance', 'text': 'balance', 'at': br_ms},
+                      {'url': 'https://claude.ai/artifact/gate', 'title': 'Doc', 'text': 'ship data', 'at': br_ms}]}
+code, d = curl('POST', API + '/browsing', br_batch)
+check('a batch is taken at once', code == 202 and dictish(d).get('ok') is True and dictish(d).get('visits') == 6 and dictish(d).get('pages') == 5, (code, d))
+code, d = curl('POST', API + '/browsing', {'visits': [{}] * 5001})
+check('a batch past the cap is a 413', code == 413, (code, d))
+gate.wait('the batch is laid by day', lambda: dictish(curl('GET', API + '/browsing')[1]).get('inbox') == 0 or None, 60)
+br_day = time.strftime('%Y-%m-%d', time.gmtime(br_ms / 1000))
+br_pages = dictish(curl('GET', BR_APP + '/browsing/pages/' + br_day + '?raw=1')[1])
+br_urls = {dictish(v).get('url') for v in br_pages.values()}
+check('the day keeps the pages, and never a bank\'s, a Claude artifact or a site the owner left out',
+      {BR_PAGE, BR_SHOP, BR_PLAIN} <= br_urls and not any(('gatebank' in str(u)) or ('claude.ai' in str(u)) or ('skip.gate' in str(u)) for u in br_urls), sorted(map(str, br_urls))[-6:])
+br_visits = listish(curl('GET', BR_APP + '/browsing/visits/' + br_day + '?raw=1')[1])
+check('a visit keeps how it came about', any(dictish(v).get('url') == BR_SHOP and dictish(v).get('how') == 'form_submit' for v in br_visits), br_visits[-6:])
+def br_last():
+    return dictish(curl('GET', API + '/browsing/last')[1])
+def br_pass():
+    before = br_last().get('pass_at')
+    curl('POST', API + '/browsing/wake', {})
+    return gate.wait('the browsing pass runs', lambda: (lambda l: l if l.get('pass_at') != before else None)(br_last()), 90) or {}
+last = br_pass()
+check('with no model the tied pages wait, read by no model', last.get('sent') == 0 and last.get('tied', 0) >= 2
+      and any('no ZDR model' in str(n) for n in last.get('notes', [])), last)
+br_pages = dictish(curl('GET', BR_APP + '/browsing/pages/' + br_day + '?raw=1')[1])
+br_by = {dictish(v).get('url'): dictish(v) for v in br_pages.values()}
+check('the plain page is set aside as read, the tied one waits', bool(br_by.get(BR_PLAIN, {}).get('read')) and br_by.get(BR_PLAIN, {}).get('hits') == []
+      and not br_by.get(BR_PAGE, {}).get('read'), (br_by.get(BR_PLAIN), br_by.get(BR_PAGE, {}).get('read')))
+def br_answer(user):
+    tag = re.search(r'(A\d+) \| task \| ' + re.escape(BR_TASK_TITLE), user)
+    moves = [{'tag': tag.group(1), 'status': 'done', 'reason': 'the order went through'}] if tag else []
+    #  a fact cites the message it comes from, as the analyst is told to
+    blocks = re.split(r'\n--- message ', user)
+    cite = next((b.split(' |', 1)[0] for b in blocks[1:] if BR_PAGE in b), '')
+    return {'choices': [{'message': {'content': json.dumps({'bodies': [], 'observations': [{'subject': BR_SIT, 'attr': 'research', 'value': BR_PAGE, 'conf': 85, 'message': cite}],
+            'actions': [], 'moves': moves})}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+BROWSING_CANNED = br_answer
+curl('PUT', API + '/browsing/settings', {'model': 'stub/zdr'})
+br_seen = len(seen)
+last = br_pass()
+check('with a model the tied pages are read and filed', last.get('sent', 0) >= 2 and last.get('filed', 0) >= 1, last)
+br_asked = ' '.join(user_text(b) for p, h, b in seen[br_seen:] if 'Channel: browsing' in user_text(b))
+check('the model saw the tied pages, never the plain one, the bank or the artifact', BR_PAGE in br_asked and BR_SHOP in br_asked
+      and BR_PLAIN not in br_asked and 'gatebank' not in br_asked and 'claude.ai/artifact' not in br_asked, br_asked[:400])
+br_rows = listish(dictish(dictish(curl('GET', API + '/body/' + BR_SIT)[1]).get('attrs')).get('research'))
+check('the page that bears on the situation is its research, filed by browsing', any(dictish(r).get('value') == BR_PAGE and dictish(r).get('by') == 'browsing'
+      and dictish(dictish(r).get('source')).get('kind') == 'browsing' for r in br_rows), br_rows)
+br_open = [dictish(a) for a in listish(curl('GET', API + '/actions?status=open')[1])]
+br_close = [a for a in br_open if a.get('kind') == 'close' and dictish(a.get('payload')).get('action') == BR_TASK]
+br_task = next((a for a in br_open if a.get('id') == BR_TASK), {})
+check('the order proposes closing its task, for the owner; the task itself stays open', len(br_close) == 1 and br_close[0].get('status') == 'proposed'
+      and br_close[0].get('by') == 'browsing' and br_task.get('status') == 'approved', (br_close, br_task.get('status')))
+if br_close:
+    curl('POST', API + '/actions/' + br_close[0]['id'], {'status': 'approved', 'note': 'gate'})
+    curl('POST', API + '/exec/wake', {})
+    done = gate.wait('the close is carried out', lambda: next((a for a in listish(curl('GET', API + '/actions?status=all')[1]) if dictish(a).get('id') == BR_TASK and dictish(a).get('status') == 'done'), None), 90)
+    check('approved, the close closes the task', bool(done), done)
+BROWSING_CANNED = None
+curl('PUT', API + '/browsing/settings', {'model': '', 'exclude': []})
+curl('PUT', API + '/generator', {'api_key': None})
+srv.shutdown()
+srv.server_close()
+for a in curl('GET', API + '/actions?status=open')[1] or []:
+    if isinstance(a, dict) and (a.get('id') == BR_TASK or str(a.get('title', '')).startswith('Done? Gate order')):
+        curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
+curl('DELETE', API + '/body/' + BR_SIT)
 
 
 # ---- a lattice page followed (version 66): a page sent from lattice is read as the owner's own, its
@@ -2430,7 +2545,7 @@ srv.server_close()
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
 RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json']
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json']
 def reload_raw(name):
     return gate.curl('GET', HOST + '/grubbery/ball' + RELOAD_APP + '/' + name + '?raw=1', jar=JAR)[1]
 code, reload_before = curl('GET', API + '/search')
