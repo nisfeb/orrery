@@ -2424,6 +2424,29 @@ curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()
 srv.server_close()
 
+# ---- a reload keeps the settings (version 97): the place lookups' key and the sharing trust survive a load ----
+# a grub no on-load row declares is dropped at every load: until 97 that
+# was search.json, search-last.json and sphere-trust.json, and ricsul's
+# 87 to 96 update lost its owner's Brave key that way. Last in the gate,
+# since the reload restarts every fiber.
+RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json']
+def reload_raw(name):
+    return gate.curl('GET', HOST + '/grubbery/ball' + RELOAD_APP + '/' + name + '?raw=1', jar=JAR)[1]
+code, reload_before = curl('GET', API + '/search')
+curl('PUT', API + '/search', {'api_key': 'reload-gate-key', 'enabled': dictish(reload_before).get('enabled') is True})
+held_before = {n: reload_raw(n) for n in RELOAD_FILES}
+code, d = curl('POST', HOST + '/apps/grubbery/permits/reload', {'app': RELOAD_APP})
+check('the instance reloads', code == 200, (code, d))
+gate.wait('orrery answers again after the reload', lambda: curl('GET', API + '/version')[0] == 200, 180)
+code, reload_after = curl('GET', API + '/search')
+check('a reload keeps the place lookups\' key and switch',
+      dictish(reload_after).get('api_key_set') is True
+      and dictish(reload_after).get('enabled') == (dictish(reload_before).get('enabled') is True), reload_after)
+for n in RELOAD_FILES:
+    if isinstance(held_before[n], dict):
+        check('a reload keeps ' + n, reload_raw(n) == held_before[n], (held_before[n], reload_raw(n)))
+
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')
 sys.exit(1 if fails else 0)

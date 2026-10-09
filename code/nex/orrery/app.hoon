@@ -212,6 +212,13 @@
           [%fall %& [/ %'corrections.json'] [[/ %json] [%a ~]]]
           ::  refine (version 36): one lock grub per action being refined
           [%fall %| /refining empty-dir:loader]
+          ::  version 97: three files written since 87 and 95 that no row
+          ::  declared, so every reload dropped them: the place lookups'
+          ::  settings (the owner's Brave key) and record, and the sharing
+          ::  trust. A row here is what keeps a grub through a load.
+          [%fall %& [/ %'search.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'search-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'sphere-trust.json'] [[/ %json] [%o ~]]]
       ==
     ::
     ++  on-file

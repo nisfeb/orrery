@@ -193,7 +193,7 @@ Fake ships derive every keypair from the `@p`, so anything key-dependent behaves
 The gate is two tiers. The **release gate** (steps 1 to 7) runs before every release and takes a few minutes: nothing in it waits on the ship longer than a build. The **full gate** (steps 8 to 13) takes the better part of an hour; it runs unattended, after a release or overnight, not while a release waits, and a failure in it is fixed in the next release. Run the full gate before a release only when the release changes what every section leans on: the fiber plumbing, the writer, the weir, sharing, or the gate itself.
 
 1. `code/version.json` bumped, the number one higher than the last release, and `++  version` in `code/lib/orrery.hoon` to the same number: it is what `GET /version` answers, and `node scripts/page-test.js` fails until the two agree. Run it after the bump.
-2. `python3 scripts/code-closure.py code` reports nothing missing.
+2. `python3 scripts/code-closure.py code` reports nothing missing, and `python3 scripts/load-rows.py` exits 0: every file the app writes has a row in `+on-load`, since the loader drops the rest at every load.
 3. `cmp code/lib/tools.hoon <grubbery checkout>/desk/gub/lib/tools.hoon` prints nothing, against the grubbery kernel checkout on the branch the publisher runs. The vendored tool types must equal the kernel's or every tool call breaks.
 4. `python3 scripts/prompt-drift.py <orrery-utils checkout>/common` exits 0: the prompt cords in the lib equal the shared prompt files.
 5. The unit suites, with no ship: `scripts/eval-tests.sh nexus`, `generator` and `orrery`, run side by side, each `failed=~`.
@@ -213,6 +213,10 @@ The full gate:
 16. The publisher's steps: the forge pull (or the poll), the four reads of section 4, and, when the release added a road to the ask, the consent on `/apps/grubbery/permits` followed by a reload of the instance. A release that adds to the starter schema (an action kind with its payload shape, an attribute with its note, a multi-valued attribute) names the addition in `+schema-adds` in the lib, and every ship adds it to its own stored schema at its first start on that version (`+schema-upgrade`, since version 64): nothing the owner has is replaced, the document as it was is kept in `schema-before.json` beside it, and `schema_version` in the document says how far it has come. A release that changes the wording of a note or a policy default still changes nothing on a ship that has one: those are the owner's, and a changed note is merged by hand through `PUT /api/schema` or `PUT /api/policy`.
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
+
+### Version 97's owner steps
+
+If place lookups were on before you updated to 96, paste your Brave Search key again on the settings page under Place lookups, and tick on. Every update before 97 dropped that setting, the key with it, and the record of past lookups; 97 keeps them, and the sharing trust too. Nothing else to do: no new roads, so no consent prompt.
 
 ### Version 96's owner steps
 
