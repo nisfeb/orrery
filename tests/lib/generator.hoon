@@ -1936,13 +1936,40 @@
     (expect-eq !>(`json`s+'2026-09-14T13:30:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'at')))
     (expect-eq !>(`json`s+'2026-09-21T13:45:00Z') !>((gj:orr (snag 0 (of 'activity/standup' 'next')) 'until')))
     (expect-eq !>(0) !>((lent (of 'activity/standup' 'location'))))
-    ::  the birthday: a series, felix made and in it, its next the 20th
-    (expect-eq !>(`json`s+'2026-09-20T00:00:00Z') !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'next')) 'value')))
+    ::  the birthday: a series, felix made and in it, its next the 20th,
+    ::  from midnight on the owner's clock (a dated event's day is a UTC
+    ::  day in the calendar)
+    (expect-eq !>(`json`s+'2026-09-20T04:00:00Z') !>((gj:orr (snag 0 (of 'activity/felix-birthday' 'next')) 'value')))
     (expect-eq !>(`(list @t)`~['person/felix']) !>((turn (of 'activity/felix-birthday' 'participants') |=(r=json (gs:orr (gj:orr r 'value') 'ref')))))
     (expect-eq !>(`json`s+'Felix') !>((gj:orr (snag 2 bodies) 'name')))
     (expect-eq !>(0) !>(cancelled.got))
     (expect-eq !>(`(list json)`~) !>(ops.again))
     (expect-eq !>(seen.got) !>(seen.again))
+  ==
+::  a wall time read back to the moment: summer and winter in New York,
+::  summer in London, and a zone the ship cannot render passed through
+++  test-unwall
+  ;:  weld
+    (expect-eq !>(~2026.10.9..04.00.00) !>((unwall:orr ~2026.10.9 'America/New_York')))
+    (expect-eq !>(~2026.12.25..05.00.00) !>((unwall:orr ~2026.12.25 'America/New_York')))
+    (expect-eq !>(~2026.6.30..23.00.00) !>((unwall:orr ~2026.7.1 'Europe/London')))
+    (expect-eq !>(~2026.10.9) !>((unwall:orr ~2026.10.9 'Mars/Olympus')))
+    (expect-eq !>(~2026.10.9..13.00.00) !>((wall-of:orr (unwall:orr ~2026.10.9..13.00.00 'America/New_York') 'America/New_York')))
+  ==
+::  an all-day one-off is the owner's whole day: its situation is dated
+::  that day and runs midnight to midnight on their clock, not from the
+::  evening before
+++  test-plan-events-allday
+  =/  evs=(list cal-event:orr)  ~[['u-visit' 'home' 'allday' 'Electrician visit' '' '' ~ 'once']]
+  =/  order=cal-order:orr
+    (gas:on-cal-order:orr *cal-order:orr ~[[~2026.10.9 (sy ~[`cal-ref:orr`['u-visit' 0 ~2026.10.9 ~2026.10.10]])]])
+  =/  got=event-plan:orr  (plan-events:orr evs order ~ ~ ~2026.10.8..12.00.00 ~ 'America/New_York')
+  =/  obs=(list json)  (ga:orr (snag 0 ops.got) 'observations')
+  =/  of  |=(attr=@t ^-(json (gj:orr (snag 0 (skim obs |=(r=json =(attr (gs:orr r 'attr'))))) 'value')))
+  ;:  weld
+    (expect-eq !>('situation/2026-10-09-electrician-visit') !>((gs:orr (snag 0 obs) 'subject')))
+    (expect-eq !>(`json`s+'2026-10-09T04:00:00Z') !>((of 'starts')))
+    (expect-eq !>(`json`s+'2026-10-10T04:00:00Z') !>((of 'ends')))
   ==
 ::  the owner is in an event that names them or names nobody else; a
 ::  calendar row from before that says they are in one naming only

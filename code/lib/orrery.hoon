@@ -6427,6 +6427,20 @@
   ?~  z  at
   =/  shift=@dr  (mul ?:((in-dst u.z at) dst.u.z std.u.z) ~m1)
   ?:(west.u.z (sub at shift) (add at shift))
+::  +unwall: the moment a zone's clock reads a wall time, the inverse of
+::  +wall-of. Summer is judged at the standard reading, so a time in the
+::  hour a change skips or repeats may land an hour off; midnight never
+::  is one. A zone the ship cannot render is passed through.
+::
+++  unwall
+  |=  [wall=@da tz=@t]
+  ^-  @da
+  =/  z=(unit zone)  (~(get by zones) tz)
+  ?~  z  wall
+  =/  std=@dr  (mul std.u.z ~m1)
+  =/  guess=@da  ?:(west.u.z (add wall std) (sub wall std))
+  =/  shift=@dr  (mul ?:((in-dst u.z guess) dst.u.z std.u.z) ~m1)
+  ?:(west.u.z (add wall shift) (sub wall shift))
 ++  event-json
   |=  [id=@ta a=action zone=@t cal=@t]
   ^-  (unit json)
@@ -9392,7 +9406,12 @@
   ?^  todo
     =/  ev=cal-event  i.todo
     ?:  =('' name.ev)  $(todo t.todo)
-    =/  occs=(list [idx=@ud l=@da r=@da])  (occurrences id.ev order from to)
+    ::  an all-day or dated event's days are UTC days in the calendar;
+    ::  the owner lives them on their own clock, midnight to midnight
+    =/  occs=(list [idx=@ud l=@da r=@da])
+      =/  raw  (occurrences id.ev order from to)
+      ?.  ?=(?(%allday %date) cat.ev)  raw
+      (turn raw |=([i=@ud l=@da r=@da] [i (unwall l tz) (unwall r tz)]))
     =/  repeats=?  |(!=('once' kind.ev) ?=([* ^] occs))
     =/  start=@da  ?~(occs now l.i.occs)
     =/  hit=(unit loaded)  (same-event ev repeats start idx multi now)
