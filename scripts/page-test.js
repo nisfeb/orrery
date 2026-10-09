@@ -502,6 +502,8 @@ ok('with no model the browsing card says pages wait, and lists the sites the own
   brNone.includes('No ZDR model yet') && brNone.includes('news.example') && brNone.includes('data-save-browsing="1"') && brNone.includes('data-browsing-wake="1"'));
 ok('with a model the card says what the last pass did',
   !brSet.includes('No ZDR model yet') && brSet.includes('12 new pages, 3 tied to something, 3 read by the model, 2 filed, 4 old texts trimmed') && brSet.includes('gate: worth reading'));
+ok('the card says what the owner has been into lately', render.browsingCard({ model: 'zdr/one' }, {}, { at: '2026-10-12T00:00:00Z', topics: [{ topic: 'woodworking', pages: 9 }, { topic: 'a <b>trip</b>', pages: 2 }] })
+  .includes('Lately you have been into woodworking, a &lt;b&gt;trip&lt;/b&gt;') && !render.browsingCard({ model: 'zdr/one' }, {}, {}).includes('Lately'));
 ok('the settings view carries the browsing card', render.settings({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
   { browsing: { enabled: true, model: '' }, browsingLast: {} }).includes('<h2>Browsing</h2>'));
 console.log('ALL OK (' + n + ' checks)');

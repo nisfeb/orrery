@@ -2401,7 +2401,7 @@
 ::  a page seen again keeps its first sighting; new text is read again;
 ::  text goes seven days after its pass, what the pass made of it stays
 ++  test-browsing-pages
-  =/  p=bpage:orr  ['https://example.org/a' 'A' 'old' ~2026.10.1 ~2026.10.1 1 `~2026.10.1 ~['situation/x']]
+  =/  p=bpage:orr  ['https://example.org/a' 'A' 'old' ~2026.10.1 ~2026.10.1 1 `~2026.10.1 ~['situation/x'] |]
   =/  day=(map @t json)  (merge-pages:orr ~ ~[p])
   =/  same  (merge-pages:orr day ~[p(text 'old', first ~2026.10.2, last ~2026.10.2)])
   =/  moved  (merge-pages:orr day ~[p(text 'new', first ~2026.10.2, last ~2026.10.2)])
@@ -2436,7 +2436,7 @@
   =/  acts=(list [id=@ta a=action:orr])
     ~[['t1' [%task 'Buy a kayak paddle' ~ ~ ~ 'owner' now %approved '' ~]]]
   =/  idx  (browse-index:orr all acts ~ now)
-  =/  page  |=([title=@t text=@t] ^-(bpage:orr ['https://example.org/p' title text now now 1 ~ ~]))
+  =/  page  |=([title=@t text=@t] ^-(bpage:orr ['https://example.org/p' title text now now 1 ~ ~ |]))
   =/  hits  |=([title=@t text=@t] hits:(browse-hits:orr (page title text) ~ idx))
   =/  sig
     |=  [url=@t title=@t how=(set @t)]
@@ -2480,5 +2480,65 @@
     (expect-eq !>('v/read') !>((gs:orr (armillary-apply:orr 'read' [%o ~] offer |) 'model')))
     (expect !>((lien armillary-files:orr |=([n=@t f=@ta] =('browsing' n)))))
     (expect-eq !>(98) !>(schema-newest:orr))
+  ==
+::  ==  what the owner has been into, and forms left (version 99)
+::
+::  the week's lines: newest first, one a page, site | title
+++  test-interest-lines
+  =/  v  |=([u=@t t=@t at=@t] ^-(json (pairs:enjs:format ~[['url' s+u] ['title' s+t] ['at' s+at]])))
+  =/  got=@t
+    %-  interest-lines:orr
+    :~  (v 'https://www.lumber.example/cedar' 'Cedar boards' '2026-10-05T10:00:00Z')
+        (v 'https://lumber.example/cedar' 'Cedar boards' '2026-10-05T10:00:00Z')
+        (v 'https://lumber.example/cedar' 'Cedar boards again' '2026-10-06T10:00:00Z')
+        (v 'https://news.example/x' 'Morning news' '2026-10-07T08:00:00Z')
+    ==
+  (expect-eq !>('news.example | Morning news\0alumber.example | Cedar boards again\0alumber.example | Cedar boards') !>(got))
+::  topics read from the answer, at most five, empty ones gone; the
+::  brief's line only on a Monday, from a pass in the last eight days
+++  test-interest-topics
+  =/  ans=json  (jo '{"topics": [{"topic": "woodworking", "pages": 9}, {"topic": ""}, {"topic": "a trip to Lisbon", "pages": 4}, {"topic": "c"}, {"topic": "d"}, {"topic": "e"}, {"topic": "f"}]}')
+  =/  ts  (de-topics:orr ans)
+  =/  ij=json  (en-topics:orr ~2026.10.11..20.00.00 ts)
+  ;:  weld
+    (expect-eq !>(5) !>((lent ts)))
+    (expect-eq !>(['woodworking' 9]) !>((snag 0 ts)))
+    (expect-eq !>(['a trip to Lisbon' 4]) !>((snag 1 ts)))
+    ::  2026-10-12 is a Monday, 2026-10-13 a Tuesday
+    (expect-eq !>(`(list @t)`~['This week you have been into woodworking, a trip to Lisbon, c, d, e']) !>((interest-line:orr ij '2026-10-12' ~2026.10.12..11.00.00)))
+    (expect-eq !>(`(list @t)`~) !>((interest-line:orr ij '2026-10-13' ~2026.10.13..11.00.00)))
+    (expect-eq !>(`(list @t)`~) !>((interest-line:orr ij '2026-10-26' ~2026.10.26..11.00.00)))
+    (expect-eq !>(`(list @t)`~) !>((interest-line:orr [%o ~] '2026-10-12' ~2026.10.12..11.00.00)))
+  ==
+::  a topic the owner already likes, or already asked, is not proposed
+++  test-like-acts
+  =/  all=(list loaded:orr)  ~[(mkb 'person/me' %person 'me' ~ ~[['likes' s+'Woodworking']] now)]
+  =/  acts=(list [id=@ta a=action:orr])
+    ~[['f1' [%fact 'You have been into sailing' ~ ~ ~ 'browsing' now %proposed '' ~]]]
+  =/  got=(list json)  (like-acts:orr ~[['woodworking' 9] ['sailing' 3] ['pottery' 2]] all acts (sy ~['likes']) now)
+  ;:  weld
+    (expect-eq !>(1) !>((lent got)))
+    (expect-eq !>('You have been into pottery') !>((gs:orr (snag 0 got) 'title')))
+    (expect-eq !>('likes') !>((gs:orr (gj:orr (snag 0 got) 'payload') 'attr')))
+    (expect-eq !>('pottery') !>((gs:orr (gj:orr (snag 0 got) 'payload') 'value')))
+  ==
+::  a form left on a page tied to a plan is asked about a day on, not
+::  before, not after three, not once a form went on its site, and once
+++  test-nudge-due
+  =/  p=bpage:orr
+    ['https://camp.example/registration' 'Summer camp registration' 'x' ~2026.10.5..10.00.00 ~2026.10.5..10.00.00 1 `~2026.10.5..10.05.00 ~['situation/summer-camp' 'action:t1'] |]
+  ;:  weld
+    (expect !>((form-page:orr p)))
+    (expect !>((form-page:orr p(title 'Sign up for the class', url 'https://x.example/a'))))
+    (expect !>(!(form-page:orr p(title 'Information about camp', url 'https://x.example/info'))))
+    (expect !>((nudge-due:orr p ~ ~2026.10.6..12.00.00)))
+    (expect !>(!(nudge-due:orr p ~ ~2026.10.5..20.00.00)))
+    (expect !>(!(nudge-due:orr p ~ ~2026.10.8..12.00.00)))
+    (expect !>(!(nudge-due:orr p ~[['camp.example' ~2026.10.5..11.00.00]] ~2026.10.6..12.00.00)))
+    (expect !>((nudge-due:orr p ~[['camp.example' ~2026.10.4..11.00.00]] ~2026.10.6..12.00.00)))
+    (expect !>(!(nudge-due:orr p(nudged &) ~ ~2026.10.6..12.00.00)))
+    (expect !>(!(nudge-due:orr p(hits ~['action:t1']) ~ ~2026.10.6..12.00.00)))
+    (expect-eq !>('Finish Summer camp registration?') !>((gs:orr (nudge-act:orr p) 'title')))
+    (expect-eq !>(`(list @t)`~['situation/summer-camp']) !>((strings:orr (ga:orr (nudge-act:orr p) 'about'))))
   ==
 --

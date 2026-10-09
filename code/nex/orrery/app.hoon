@@ -169,6 +169,8 @@
           [%fall %& [/ %'browsing.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'browsing-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'browsing-recent.json'] [[/ %json] [%o ~]]]
+          ::  what the owner has been into, the week's pass (version 99)
+          [%fall %& [/ %'browsing-interests.json'] [[/ %json] [%o ~]]]
           [%fall %| /browsing-inbox empty-dir:loader]
           [%fall %& [/browsing-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %| /browsing empty-dir:loader]
@@ -5987,6 +5989,7 @@
   ;<  search-last=json  bind:m  (doc %'search-last.json')
   ;<  browsing=json  bind:m  (doc %'browsing.json')
   ;<  browsing-last=json  bind:m  (doc %'browsing-last.json')
+  ;<  browsing-interests=json  bind:m  (doc %'browsing-interests.json')
   ;<  offer=(unit json)  bind:m  armillary-offer
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
@@ -6037,6 +6040,7 @@
       ['search_last' (del-key:orr search-last 'seen')]
       ['browsing' (en-browsing-config:orr (de-browsing-config:orr browsing))]
       ['browsing_last' browsing-last]
+      ['browsing_interests' browsing-interests]
       :-  'armillary'
       %+  armillary-state:orr  offer
       :~  ['generator' generator]  ['mail' mail]  ['chat' chat]
@@ -6718,12 +6722,7 @@
 ::
 ++  page-days
   |=  up=@ud
-  =/  m  (fiber:fiber:nexus ,(list @ta))
-  ^-  form:m
-  ;<  vw=view:nexus  bind:m  (peek:io (rv up /browsing/pages) ~)
-  ?.  ?=([%ball *] vw)  (pure:m ~)
-  ?~  fil.ball.vw  (pure:m ~)
-  (pure:m (sort (turn ~(tap by contents.u.fil.ball.vw) head) aor))
+  (grub-days up /browsing/pages)
 ++  inbox-count
   |=  up=@ud
   =/  m  (fiber:fiber:nexus ,@ud)
@@ -6829,12 +6828,32 @@
     =/  came=(set @t)  (~(gut by how.h) url.p ~)
     =/  got  (browse-hits:orr p came idx)
     `[day.h k p came hits.got signals.got]
+  ;<  ~  bind:m  (browse-interests cfg now force all acts (multi-of:orr schema))
+  ::  a form left on a page tied to a plan, a day on, is asked about once
+  ::  (version 99); only a page a pass has read, so the two never meet
+  =/  subs=(list [host=@t at=@da])  (zing (turn held |=(h=held-day subs.h)))
+  =/  due=(list [day=@ta key=@t p=bpage:orr])
+    %-  zing
+    %+  turn  held
+    |=  h=held-day
+    %+  murn  ~(tap by pages.h)
+    |=  [k=@t v=json]
+    ^-  (unit [day=@ta key=@t p=bpage:orr])
+    =/  p=bpage:orr  (de-bpage:orr v)
+    ?.  &(?=(^ read.p) (nudge-due:orr p subs now))  ~
+    `[day.h k p(nudged &)]
+  ;<  *  bind:m
+    %+  file-ops-on
+      %+  turn  due
+      |=([* * p=bpage:orr] (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr (nudge-act:orr p) now 'browsing')]]))
+    /tg
   =/  tied=(list bscored)  (skim scored |=(s=bscored |(?=(^ hits.s) ?=(^ sig.s))))
   =/  plain=(list bscored)  (skip scored |=(s=bscored |(?=(^ hits.s) ?=(^ sig.s))))
   =/  take=(list bscored)
     (scag browsing-take:orr (sort tied |=([a=bscored b=bscored] (gth last.p.a last.p.b))))
-  =/  marks=(list [day=@ta key=@t p=bpage:orr])
+  =/  plain-marks=(list [day=@ta key=@t p=bpage:orr])
     (turn plain |=(s=bscored [day.s key.s p.s(read `now)]))
+  =/  marks=(list [day=@ta key=@t p=bpage:orr])  (weld due plain-marks)
   ?:  =('' model.cfg)
     ;<  ~  bind:m  (mark-pages held marks)
     %:  browse-record  now  (lent scored)  (lent tied)  0  0  trimmed
@@ -6868,10 +6887,68 @@
     (turn `(list bscored)`take |=(s=bscored [day.s key.s p.s(read `now, hits hits.s)]))
   ;<  ~  bind:m  (mark-pages held (weld marks read-too))
   (browse-record now (lent scored) (lent tied) (lent take) n trimmed notes.facts)
+::  +browse-interests: once a week (or on a wake), the week's titles and
+::  sites, never a page's text, to the browsing reader's model: what the
+::  owner has been into, kept for Monday's brief, and each new topic
+::  proposed as one of their likes. With no model, or no answer, it waits
+::  for the next pass.
+::
+++  browse-interests
+  |=  [cfg=browsing-config:orr now=@da force=? all=(list loaded:orr) acts=(list [id=@ta a=action:orr]) multi=(set @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  =('' model.cfg)  (pure:m ~)
+  ;<  ij=json  bind:m  (read-json (rf 0 / %'browsing-interests.json'))
+  =/  at=(unit @da)  (de-iso:orr (gs:orr ij 'at'))
+  ?.  |(force ?=(~ at) (gte now (add (need at) ~d7)))  (pure:m ~)
+  ;<  days=(list @ta)  bind:m  (grub-days 0 /browsing/visits)
+  =/  edge=@t  (day-of:orr (sub now ~d7))
+  ;<  visits=(list json)  bind:m  (load-visits (skim days |=(d=@ta &(=(10 (met 3 d)) (aor edge d)))))
+  ?~  visits  (pure:m ~)
+  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  gen=config:orr  (de-config:orr gen-j)
+  ?:  =('' api-key.gen)  (pure:m ~)
+  =/  small=config:orr  gen(model model.cfg, max-tokens 1.000, reasoning [%o (my ~[['enabled' b+|]])])
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
+    %:  post-json
+      (cat 3 url.gen '/chat/completions')
+      api-key.gen
+      (chat-body-with:orr small interests-prompt:orr ~[(interest-lines:orr visits)])
+      ~m5
+      %reader
+    ==
+  =/  ans  (reader-answer:orr status.got body.got)
+  ?:  ?=(%| -.ans)  (pure:m ~)
+  =/  ts=(list [topic=@t pages=@ud])  (de-topics:orr p.ans)
+  ;<  ~  bind:m  (put-json (rf 0 / %'browsing-interests.json') (en-topics:orr now ts))
+  =/  ops=(list json)
+    %+  turn  (like-acts:orr ts all acts multi now)
+    |=(a=json (pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr a now 'browsing')]]))
+  ;<  *  bind:m  (file-ops-on ops /tg)
+  (pure:m ~)
+::  +grub-days: the grubs under a /browsing directory, oldest first;
+::  +load-visits: the visits of the days named, in one list
+::
+++  grub-days
+  |=  [up=@ud dir=path]
+  =/  m  (fiber:fiber:nexus ,(list @ta))
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up dir) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  (pure:m (sort (turn ~(tap by contents.u.fil.ball.vw) head) aor))
+++  load-visits
+  |=  days=(list @ta)
+  =/  m  (fiber:fiber:nexus ,(list json))
+  ^-  form:m
+  ?~  days  (pure:m ~)
+  ;<  j=json  bind:m  (read-json (rf 0 /browsing/visits i.days))
+  ;<  rest=(list json)  bind:m  (load-visits t.days)
+  (pure:m (weld ?:(?=([%a *] j) p.j ~) rest))
 ::  +$  held-day: a day's pages and how each URL was come to that day;
 ::  +$  bscored: an unread page as the matcher left it
 ::
-+$  held-day  [day=@ta pages=(map @t json) how=(map @t (set @t))]
++$  held-day  [day=@ta pages=(map @t json) how=(map @t (set @t)) subs=(list [host=@t at=@da])]
 +$  bscored  [day=@ta key=@t p=bpage:orr how=(set @t) hits=(list @t) sig=(list @t)]
 ++  load-days
   |=  days=(list @ta)
@@ -6887,8 +6964,15 @@
     =/  h=@t  (gs:orr v 'how')
     ?:  |(=('' u) =('' h))  acc
     (~(put by acc) u (~(put in (~(gut by acc) u ~)) h))
+  =/  subs=(list [host=@t at=@da])
+    %+  murn  `(list json)`?:(?=([%a *] vj) p.vj ~)
+    |=  v=json
+    ^-  (unit [host=@t at=@da])
+    ?.  =('form_submit' (gs:orr v 'how'))  ~
+    =/  at=(unit @da)  (de-iso:orr (gs:orr v 'at'))
+    ?~(at ~ `[(url-host:orr (gs:orr v 'url')) u.at])
   ;<  rest=(list held-day)  bind:m  (load-days t.days)
-  (pure:m [[i.days ?:(?=([%o *] pj) p.pj ~) how] rest])
+  (pure:m [[i.days ?:(?=([%o *] pj) p.pj ~) how subs] rest])
 ::  +mark-pages: the pages a pass took, written back into their days
 ::
 ++  mark-pages
@@ -8059,6 +8143,7 @@
     (zing per)
   ;<  wx=json  bind:m  (read-json (rf 0 / %'weather.json'))
   ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  ;<  interests=json  bind:m  (read-json (rf 0 / %'browsing-interests.json'))
   =/  outdoor=(list @t)  (outdoor-lines:orr wx gc all multi now to tz)
   =/  today=(list @t)
     ;:  weld
@@ -8070,6 +8155,8 @@
       outdoor
       ::  what the other ship changed over the day (version 93)
       (peer-change-lines:orr all now)
+      ::  on Mondays, what the owner has been into (version 99)
+      (interest-line:orr interests day now)
     ==
   =/  waiting  (brief-waiting:orr acts all tz)
   =/  decided=(list [id=@ta a=action:orr])

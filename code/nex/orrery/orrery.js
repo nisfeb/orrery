@@ -686,8 +686,8 @@
   // of what the owner reads, kept on the ship; only pages tied to a plan,
   // a todo, a person or a place go to a ZDR model. The model follows
   // Armillary's; with none, pages wait.
-  function browsingCard(c, last) {
-    c = c || {}; last = last || {};
+  function browsingCard(c, last, interests) {
+    c = c || {}; last = last || {}; interests = interests || {};
     var out = '<div class="card"><h2>Browsing</h2><div id="browsing"><p class="muted">The browser extension sends the pages you read. The ship keeps them, ties each to a plan, a todo, a person or a place it knows, and asks a zero-data-retention model only about those. ' +
       'Banking and medical sites and Claude artifacts are never read; add any other site below.</p>' +
       '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled !== false ? ' checked' : '') + '> on</label> ' +
@@ -700,6 +700,8 @@
       out += '<p class="muted">Last pass ' + fmtTime(last.pass_at) + ': ' + (last.unread || 0) + ' new pages, ' + (last.tied || 0) + ' tied to something, ' + (last.sent || 0) + ' read by the model, ' + (last.filed || 0) + ' filed' + (last.trimmed ? ', ' + last.trimmed + ' old texts trimmed' : '') + '.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
     }
+    var topics = (interests.topics || []).map(function (t) { return t.topic; }).filter(Boolean);
+    if (topics.length) out += '<p>Lately you have been into ' + topics.map(esc).join(', ') + ' <span class="muted">(the week to ' + fmtTime(interests.at) + ')</span>.</p>';
     return out + '</div>';
   }
   function readCard(c, last) {
@@ -854,7 +856,7 @@
     return out + '</div>';
   }
   function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast, week) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + armillaryCard(week && week.armillary) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + browsingCard(week && week.browsing, week && week.browsingLast) + briefCard(briefLast) +
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + armillaryCard(week && week.armillary) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + browsingCard(week && week.browsing, week && week.browsingLast, week && week.browsingInterests) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -1309,7 +1311,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last, armillary: d.armillary, browsing: d.browsing, browsingLast: d.browsing_last }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last, armillary: d.armillary, browsing: d.browsing, browsingLast: d.browsing_last, browsingInterests: d.browsing_interests }));
       if (drew) fillCalendars();
       return drew;
     }
