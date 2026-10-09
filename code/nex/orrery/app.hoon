@@ -163,6 +163,18 @@
           [%fall %| /read-inbox empty-dir:loader]
           [%fall %& [/read-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %& [/ %'read.sig'] [[/ %sig] ~]]
+          ::  the browsing reader (version 98): its settings, record and
+          ::  window, what the extension sent waiting to be laid by day,
+          ::  the days of visits and pages, and the fiber
+          [%fall %& [/ %'browsing.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'browsing-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'browsing-recent.json'] [[/ %json] [%o ~]]]
+          [%fall %| /browsing-inbox empty-dir:loader]
+          [%fall %& [/browsing-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
+          [%fall %| /browsing empty-dir:loader]
+          [%fall %| /browsing/visits empty-dir:loader]
+          [%fall %| /browsing/pages empty-dir:loader]
+          [%fall %& [/ %'browse.sig'] [[/ %sig] ~]]
           ::  the lattice pages followed (version 66): one grub per page
           ::  sent, and the fiber that looks at them
           [%fall %| /follows empty-dir:loader]
@@ -398,6 +410,23 @@
         ;<  ~  bind:m  ?.(again (pure:(fiber:fiber:nexus ,~) ~) (set-timer:io /read-retry (add now ~m5)))
         ;<  *  bind:m  (take-gen-in /rd)
         $
+          ::  the browsing reader (version 98): what the extension sends
+          ::  is laid by day as it comes; each interval, or at once on a
+          ::  wake, the pages the matcher ties go to the model, and old
+          ::  text is trimmed
+          [~ %'browse.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery browse: failed")
+        ;<  *  bind:m  (keep:io /bw (rf 0 /browsing-inbox %rev) ~)
+        ::  not =|, which starts a flag at yes
+        =/  force=?  |
+        |-
+        ;<  ~  bind:m  browse-drain
+        ;<  ~  bind:m  (browse-pass force)
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (cancel-timer:io /browse)
+        ;<  ~  bind:m  (set-timer:io /browse (add now ~h1))
+        ;<  in=gen-in  bind:m  (take-gen-in /bw)
+        $(force ?=(%poke -.in))
           ::  the lattice pages followed (version 66): every five minutes
           ::  each page sent is looked at where lattice keeps it; one
           ::  edited is read again, one moved is followed at its new
@@ -911,6 +940,7 @@
   ?:  =('set-chat' op)  (do-set-chat jon)
   ?:  =('set-mail' op)  (do-set-mail jon)
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
+  ?:  =('set-browsing' op)  (do-set-merged jon %'browsing.json' 'set-browsing')
   ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
   ?:  =('set-outdoors' op)  (do-set-outdoors jon)
   ?:  =('set-search' op)  (do-set-search jon)
@@ -1483,6 +1513,12 @@
     %put-read-settings      (serve-set-doc eyre-id 'set-read' jon)
     %get-read-last          (serve-doc eyre-id %'read-last.json')
     %post-read-wake         (serve-prod eyre-id %'read.sig' 'read')
+    %post-browsing          (serve-browsing eyre-id jon act)
+    %get-browsing           (serve-browsing-status eyre-id)
+    %get-browsing-settings  (serve-browsing-settings eyre-id)
+    %put-browsing-settings  (serve-set-doc eyre-id 'set-browsing' jon)
+    %get-browsing-last      (serve-doc eyre-id %'browsing-last.json')
+    %post-browsing-wake     (serve-prod eyre-id %'browse.sig' 'browsing')
     %get-mail               (serve-mail eyre-id)
     %put-mail               (serve-set-doc eyre-id 'set-mail' jon)
     %get-mail-last          (serve-doc eyre-id %'mail-last.json')
@@ -3044,7 +3080,7 @@
   =/  expected=json
     ?+  op  jon
         $?  %'set-generator'  %'set-telegram'  %'set-chat'  %'set-mail'  %'set-read'
-            %'set-travel'  %'set-search'  %'set-rhythm'  %'set-outdoors'
+            %'set-travel'  %'set-search'  %'set-rhythm'  %'set-outdoors'  %'set-browsing'
         ==
       [%o (settings-merge:orr op base p.jon)]
     ==
@@ -6615,6 +6651,356 @@
   ;<  *  bind:m  (cull-soft:io (rf 0 /read-inbox i.todo))
   ;<  all=(list loaded:orr)  bind:m  ?:(=(0 n) (pure:(fiber:fiber:nexus ,(list loaded:orr)) all) (load-bodies 0))
   $(todo t.todo, all all)
+::  ==  the browsing reader (version 98)
+::
+::  +serve-browsing: POST /api/browsing {visits, pages}: what the
+::  extension saw since its last send. The batch is kept in the inbox as
+::  its own grub and the request answers at once; the browse fiber alone
+::  lays batches into the days, so two never race. 413 past 5000 visits
+::  or 200 pages; the extension sends in pieces below that.
+::
+++  serve-browsing
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  nv=@ud  (lent (ga:orr jon 'visits'))
+  =/  np=@ud  (lent (ga:orr jon 'pages'))
+  ?:  |((gth nv 5.000) (gth np 200))  (send-err eyre-id 413 'at most 5000 visits and 200 pages a send')
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'browsing.json'))
+  ?.  enabled:(de-browsing-config:orr cfg-j)
+    (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['dropped' s+'the browsing reader is off']]))
+  ;<  now=@da  bind:m  get-time:io
+  =/  id=@t  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (scot %ux (end [3 4] (sham jon now))) ~)
+  =/  item=json
+    (pairs:enjs:format ~[['visits' a+(ga:orr jon 'visits')] ['pages' a+(ga:orr jon 'pages')] ['by' s+by.act]])
+  ;<  *  bind:m  (make-soft:io (rf 1 /browsing-inbox `@ta`id) |+[[[/ %json] item] ~])
+  ;<  ~  bind:m  (over:io (rf 1 /browsing-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+  %^  send-json  eyre-id  202
+  (pairs:enjs:format ~[['ok' b+&] ['id' s+id] ['visits' (numb:enjs:format nv)] ['pages' (numb:enjs:format np)]])
+::  +serve-browsing-status: GET /api/browsing: whether it is on, what is
+::  never read (the extension skips the same before it reads a page),
+::  the model, the days held, what waits in the inbox, the last pass
+::
+++  serve-browsing-status
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'browsing.json'))
+  =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
+  ;<  last=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  ;<  days=(list @ta)  bind:m  (page-days 1)
+  ;<  waiting=@ud  bind:m  (inbox-count 1)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['enabled' b+enabled.cfg]
+      ['model' s+model.cfg]
+      ['skip_hosts' a+(turn browsing-skip-hosts:orr |=(s=@t `json`s+s))]
+      ['skip_paths' a+(turn browsing-skip-paths:orr |=(s=@t `json`s+s))]
+      ['exclude' a+(turn exclude.cfg |=(s=@t `json`s+s))]
+      ['days' (numb:enjs:format (lent (skim days |=(d=@ta =(10 (met 3 d))))))]
+      ['inbox' (numb:enjs:format waiting)]
+      ['last' last]
+  ==
+++  serve-browsing-settings
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'browsing.json'))
+  (send-json eyre-id 200 (en-browsing-config:orr (de-browsing-config:orr doc)))
+::  +page-days: the grubs under /browsing/pages, oldest first: a day's
+::  (YYYY-MM-DD) or, once folded, a month's (YYYY-MM)
+::
+++  page-days
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,(list @ta))
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up /browsing/pages) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  (pure:m (sort (turn ~(tap by contents.u.fil.ball.vw) head) aor))
+++  inbox-count
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv up /browsing-inbox) ~)
+  ?.  ?=([%ball *] vw)  (pure:m 0)
+  ?~  fil.ball.vw  (pure:m 0)
+  (pure:m (lent (skip (turn ~(tap by contents.u.fil.ball.vw) head) |=(n=@ta =(%rev n)))))
+::  +put-json: a JSON grub written, made when there is none
+::
+++  put-json
+  |=  [=road:tarball j=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ex=?  bind:m  (peek-exists:io road)
+  ?:  ex  (over:io road [[/ %json] j])
+  ;<  *  bind:m  (make-soft:io road |+[[[/ %json] j] ~])
+  (pure:m ~)
+::  +browse-drain: each batch in the inbox, oldest first, read (the skip
+::  lists applied again, the owner's exclude list with them), its visits
+::  and pages laid into their days' grubs, then culled
+::
+++  browse-drain
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /browsing-inbox) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  =/  names=(list @ta)
+    (sort (skip (turn ~(tap by contents.u.fil.ball.vw) head) |=(n=@ta =(%rev n))) aor)
+  ?~  names  (pure:m ~)
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'browsing.json'))
+  =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
+  =/  todo=(list @ta)  names
+  |-
+  ?~  todo  (pure:m ~)
+  ;<  item=json  bind:m  (read-json (rf 0 /browsing-inbox i.todo))
+  ;<  now=@da  bind:m  get-time:io
+  =/  got  (de-browsing-batch:orr item now exclude.cfg)
+  ;<  ~  bind:m  (lay-visits ~(tap by (visits-by-day:orr visits.got)))
+  ;<  ~  bind:m  (lay-pages ~(tap by (pages-by-day:orr pages.got)))
+  ;<  *  bind:m  (cull-soft:io (rf 0 /browsing-inbox i.todo))
+  $(todo t.todo)
+++  lay-visits
+  |=  days=(list [p=@ta q=(list bvisit:orr)])
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  days  (pure:m ~)
+  =/  road=road:tarball  (rf 0 /browsing/visits p.i.days)
+  ;<  j=json  bind:m  (read-json road)
+  =/  old=(list json)  ?:(?=([%a *] j) p.j ~)
+  ;<  ~  bind:m  (put-json road [%a (weld old (turn (flop q.i.days) en-bvisit:orr))])
+  (lay-visits t.days)
+++  lay-pages
+  |=  days=(list [p=@ta q=(list bpage:orr)])
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  days  (pure:m ~)
+  =/  road=road:tarball  (rf 0 /browsing/pages p.i.days)
+  ;<  j=json  bind:m  (read-json road)
+  ;<  ~  bind:m  (put-json road [%o (merge-pages:orr ?:(?=([%o *] j) p.j ~) q.i.days)])
+  (lay-pages t.days)
+::  +browse-pass: when due (the interval since the last pass, or a
+::  wake): old text trimmed and old days folded; then each unread page
+::  of the last three days matched. The tied pages, ten at most and
+::  newest first, are read through the reader's pipeline as browsing
+::  and filed; the rest are marked read, sent nowhere. With no model in
+::  browsing.json, or a model that cannot be reached, the tied pages
+::  wait for the next pass.
+::
+++  browse-pass
+  |=  force=?
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'browsing.json'))
+  =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  last=json  bind:m  (read-json (rf 0 / %'browsing-last.json'))
+  =/  prev=(unit @da)  (de-iso:orr (gs:orr last 'pass_at'))
+  ?.  |(force ?=(~ prev) (gte now (add (need prev) (mul hours.cfg ~h1))))  (pure:m ~)
+  ;<  trimmed=@ud  bind:m  (browse-trim now)
+  ;<  ~  bind:m  (browse-fold now)
+  ?.  enabled.cfg  (browse-record now 0 0 0 0 trimmed ~['the browsing reader is off'])
+  ;<  days=(list @ta)  bind:m  (page-days 0)
+  =/  recent=(list @ta)  (scag 3 (flop (skim days |=(d=@ta =(10 (met 3 d))))))
+  ;<  held=(list held-day)  bind:m  (load-days recent)
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  idx=bmatch-index:orr  (browse-index:orr all acts (multi-of:orr schema) now)
+  =/  names=(map @t @t)
+    %-  ~(gas by *(map @t @t))
+    (turn (weld words.idx names.idx) |=([i=@t n=@t *] [i n]))
+  =/  scored=(list bscored)
+    %-  zing
+    %+  turn  held
+    |=  h=held-day
+    %+  murn  ~(tap by pages.h)
+    |=  [k=@t v=json]
+    ^-  (unit bscored)
+    =/  p=bpage:orr  (de-bpage:orr v)
+    ?^  read.p  ~
+    =/  came=(set @t)  (~(gut by how.h) url.p ~)
+    =/  got  (browse-hits:orr p came idx)
+    `[day.h k p came hits.got signals.got]
+  =/  tied=(list bscored)  (skim scored |=(s=bscored |(?=(^ hits.s) ?=(^ sig.s))))
+  =/  plain=(list bscored)  (skip scored |=(s=bscored |(?=(^ hits.s) ?=(^ sig.s))))
+  =/  take=(list bscored)
+    (scag browsing-take:orr (sort tied |=([a=bscored b=bscored] (gth last.p.a last.p.b))))
+  =/  marks=(list [day=@ta key=@t p=bpage:orr])
+    (turn plain |=(s=bscored [day.s key.s p.s(read `now)]))
+  ?:  =('' model.cfg)
+    ;<  ~  bind:m  (mark-pages held marks)
+    %:  browse-record  now  (lent scored)  (lent tied)  0  0  trimmed
+      ~[(rap 3 'no ZDR model for the browsing reader: ' (crip (a-co:co (lent tied))) ' pages wait' ~)]
+    ==
+  ?~  take
+    ;<  ~  bind:m  (mark-pages held marks)
+    (browse-record now (lent scored) 0 0 0 trimmed ~)
+  =/  run=(list [msg=tg-msg:orr who=@t])
+    %+  turn  `(list bscored)`take
+    |=  s=bscored
+    [(browse-msg:orr p.s how.s (turn hits.s |=(i=@t [i (~(gut by names) i i)])) sig.s) 'person/me']
+  =/  tg=tg-config:orr
+    %*  .  *tg-config:orr
+      enabled     &
+      model       model.cfg
+      max-tokens  4.000
+      gate        30
+      escalate    101
+      max-daily   1.000
+    ==
+  ;<  [read=? down=? facts=tg-facts:orr]  bind:m  (tg-read tg run now browsing-kind:orr schema all)
+  ?:  down
+    ;<  ~  bind:m  (mark-pages held marks)
+    %:  browse-record  now  (lent scored)  (lent tied)  0  0  trimmed
+      (snoc notes.facts 'the model could not be reached: the tied pages wait')
+    ==
+  ;<  ~  bind:m  (tg-file facts now browsing-kind:orr)
+  =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
+  =/  read-too=(list [day=@ta key=@t p=bpage:orr])
+    (turn `(list bscored)`take |=(s=bscored [day.s key.s p.s(read `now, hits hits.s)]))
+  ;<  ~  bind:m  (mark-pages held (weld marks read-too))
+  (browse-record now (lent scored) (lent tied) (lent take) n trimmed notes.facts)
+::  +$  held-day: a day's pages and how each URL was come to that day;
+::  +$  bscored: an unread page as the matcher left it
+::
++$  held-day  [day=@ta pages=(map @t json) how=(map @t (set @t))]
++$  bscored  [day=@ta key=@t p=bpage:orr how=(set @t) hits=(list @t) sig=(list @t)]
+++  load-days
+  |=  days=(list @ta)
+  =/  m  (fiber:fiber:nexus ,(list held-day))
+  ^-  form:m
+  ?~  days  (pure:m ~)
+  ;<  pj=json  bind:m  (read-json (rf 0 /browsing/pages i.days))
+  ;<  vj=json  bind:m  (read-json (rf 0 /browsing/visits i.days))
+  =/  how=(map @t (set @t))
+    %+  roll  `(list json)`?:(?=([%a *] vj) p.vj ~)
+    |=  [v=json acc=(map @t (set @t))]
+    =/  u=@t  (gs:orr v 'url')
+    =/  h=@t  (gs:orr v 'how')
+    ?:  |(=('' u) =('' h))  acc
+    (~(put by acc) u (~(put in (~(gut by acc) u ~)) h))
+  ;<  rest=(list held-day)  bind:m  (load-days t.days)
+  (pure:m [[i.days ?:(?=([%o *] pj) p.pj ~) how] rest])
+::  +mark-pages: the pages a pass took, written back into their days
+::
+++  mark-pages
+  |=  [held=(list held-day) marks=(list [day=@ta key=@t p=bpage:orr])]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  held  (pure:m ~)
+  =/  mine=(list [day=@ta key=@t p=bpage:orr])
+    (skim marks |=([d=@ta *] =(d day.i.held)))
+  ?~  mine  (mark-pages t.held marks)
+  =/  next=(map @t json)
+    %+  roll  `(list [day=@ta key=@t p=bpage:orr])`mine
+    |=  [[* k=@t p=bpage:orr] acc=_pages.i.held]
+    (~(put by acc) k (en-bpage:orr p))
+  ;<  ~  bind:m  (put-json (rf 0 /browsing/pages day.i.held) [%o next])
+  (mark-pages t.held marks)
+::  +browse-trim: the text gone from pages read more than seven days
+::  ago, on the days of the last month that could hold one
+::
+++  browse-trim
+  |=  now=@da
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  ;<  days=(list @ta)  bind:m  (page-days 0)
+  =/  lo=@t  (day-of:orr (sub now ~d40))
+  =/  hi=@t  (day-of:orr (sub now ~d7))
+  =/  todo=(list @ta)  (skim days |=(d=@ta &(=(10 (met 3 d)) (aor lo d) (aor d hi))))
+  =/  n=@ud  0
+  |-
+  ?~  todo  (pure:m n)
+  ;<  j=json  bind:m  (read-json (rf 0 /browsing/pages i.todo))
+  =/  got  (trim-pages:orr ?:(?=([%o *] j) p.j ~) now)
+  ;<  ~  bind:m
+    ?:  =(0 n.got)  (pure:(fiber:fiber:nexus ,~) ~)
+    (put-json (rf 0 /browsing/pages i.todo) [%o day.got])
+  $(todo t.todo, n (add n n.got))
+::  +browse-fold: days more than 45 days back folded into their month's
+::  grub, so a directory holds a few dozen grubs, not one a day for good
+::  (a directory's children are what a tree walk pays for). Text is long
+::  gone by then; a page keeps its day in its key.
+::
+++  browse-fold
+  |=  now=@da
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  edge=@t  (day-of:orr (sub now ~d45))
+  ;<  ~  bind:m  (fold-dir /browsing/visits edge)
+  (fold-dir /browsing/pages edge)
+++  fold-dir
+  |=  [dir=path edge=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 dir) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  =/  old=(list @ta)
+    %+  skim  (sort (turn ~(tap by contents.u.fil.ball.vw) head) aor)
+    |=(d=@ta &(=(10 (met 3 d)) (aor d edge) !=(d edge)))
+  |-
+  ?~  old  (pure:m ~)
+  =/  mon=@ta  (end [3 7] i.old)
+  ;<  dj=json  bind:m  (read-json (rf 0 dir i.old))
+  ;<  mj=json  bind:m  (read-json (rf 0 dir mon))
+  =/  next=json
+    ?:  ?=([%a *] dj)  [%a (weld ?:(?=([%a *] mj) p.mj ~) p.dj)]
+    ?.  ?=([%o *] dj)  mj
+    :-  %o
+    %-  ~(gas by ?:(?=([%o *] mj) p.mj ~))
+    (turn ~(tap by p.dj) |=([k=@t v=json] [(rap 3 i.old '/' k ~) v]))
+  ;<  ~  bind:m  (put-json (rf 0 dir mon) next)
+  ;<  *  bind:m  (cull-soft:io (rf 0 dir i.old))
+  $(old t.old)
+::  +browse-record: browsing-last.json after a pass
+::
+++  browse-record
+  |=  [now=@da unread=@ud tied=@ud sent=@ud filed=@ud trimmed=@ud notes=(list @t)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  %+  over:io  (rf 0 / %'browsing-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['pass_at' s+(en-iso:orr now)]
+      ['unread' (numb:enjs:format unread)]
+      ['tied' (numb:enjs:format tied)]
+      ['sent' (numb:enjs:format sent)]
+      ['filed' (numb:enjs:format filed)]
+      ['trimmed' (numb:enjs:format trimmed)]
+      ['notes' a+(turn (scag 20 notes) |=(t=@t `json`s+t))]
+  ==
+::  +propose-closes: a page's moves as proposals: each done move on an
+::  approved or claimed action becomes a close for the owner to approve,
+::  signed by the reader; nothing is moved (the owner's word, 2026-10-09:
+::  an order placed closing its todo stays a proposal for now)
+::
+++  propose-closes
+  |=  [moves=(list move:orr) acts=(list [id=@ta a=action:orr]) now=@da by=@t]
+  =/  m  (fiber:fiber:nexus ,(list @t))
+  ^-  form:m
+  =/  ops=(list json)
+    %+  murn  moves
+    |=  mv=move:orr
+    ^-  (unit json)
+    ?.  =('done' status.mv)  ~
+    =/  cur=(unit action:orr)  (act-by:orr acts id.mv)
+    ?~  cur  ~
+    ?.  ?=(?(%approved %claimed) status.u.cur)  ~
+    =/  fresh=json
+      %-  pairs:enjs:format
+      :~  ['kind' s+'close']
+          ['title' s+(cat 3 'Done? ' title.u.cur)]
+          ['payload' (pairs:enjs:format ~[['action' s+id.mv] ['why' s+reason.mv]])]
+          ['about' a+(turn ~(tap in about.u.cur) |=(b=@t `json`s+b))]
+      ==
+    `(pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr fresh now by)]])
+  ?~  ops  (pure:m ~)
+  ;<  *  bind:m  (file-ops-on ops /tg)
+  (pure:m (turn ops |=(* `@t`'a close proposed for the owner')))
 ::  ==  a lattice page followed (version 66)
 ::
 ::  +serve-follow: POST /api/follow {path, title, text, links}: a page
@@ -8631,6 +9017,7 @@
           ?~(tags analyst-prompt:orr (rap 3 analyst-prompt:orr nl:orr nl:orr reader-move-rules:orr ~))
       :_  ~
       %:  reader-prompt-with:orr  rows  ctx  tz  kind
+        %+  weld  ?:(=('browsing' channel.kind) browsing-rules:orr ~)
         ?~(tags ~ (tag-lines:orr tags own-acts 'The ship\'s open actions, by tag (tag | kind | title | about | due | status):'))
       ==
       ~m5
@@ -8640,7 +9027,12 @@
   ?:  ?=(%| -.answer)  (pure:m [& down.p.answer ~ ~ ~ ~[gate-note why.p.answer] ~])
   ::  what the conversation closed, signed by the reader, said in the record
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
-  ;<  moved=(list @t)  bind:m  (apply-moves (reader-moves:orr p.answer tags known) own-acts now /tg by.kind)
+  ::  a page closes nothing itself: the browsing reader proposes the
+  ::  close, for the owner to approve (version 98)
+  ;<  moved=(list @t)  bind:m
+    =/  mv=(list move:orr)  (reader-moves:orr p.answer tags known)
+    ?.  =('browsing' channel.kind)  (apply-moves mv own-acts now /tg by.kind)
+    (propose-closes mv own-acts now by.kind)
   =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx)
   =.  notes.facts  (weld [gate-note moved] notes.facts)
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
@@ -8687,7 +9079,8 @@
   |=  [facts=tg-facts:orr now=@da kind=reader-kind:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind ?:(=('web' channel.kind) 'web' 'chat'))))
+  =/  src=@t  ?:(=('web' channel.kind) 'web' ?:(=('browsing' channel.kind) 'browsing' 'chat'))
+  =/  obs=(list json)  (turn obs.facts |=(o=json (tg-final-row o by.kind src)))
   ;<  *  bind:m  (file-ops-on (observe-ops:orr bodies.facts obs) /tg)
   =/  act-ops=(list json)
     %+  turn  acts.facts
