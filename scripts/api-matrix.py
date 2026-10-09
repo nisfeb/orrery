@@ -576,7 +576,7 @@ DOWN = False  # the analyst answers 503 while set: the reader's model outage
 SLOW = 0  # seconds the stub's drives take longer: traffic gone worse (version 76)
 #  defined further down; until then the stub answers 503, since a reader
 #  on the ship may call it as soon as it listens (the last run's settings)
-TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = BROWSING_CANNED = None
+TG_CANNED = DECIDER_CANNED = REFINE_CANNED = INSTRUCT_CANNED = BROWSING_CANNED = INTERESTS_CANNED = None
 import base64
 GATE_PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
 def user_text(body):
@@ -648,6 +648,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 out = REFINE_CANNED and REFINE_CANNED.get(tail, REFINE_CANNED[''])
             elif system.startswith('You carry out'):
                 out = INSTRUCT_CANNED
+            elif system.startswith('You read a week') and INTERESTS_CANNED:
+                out = INTERESTS_CANNED
             elif system.startswith('You turn') and BROWSING_CANNED and 'Channel: browsing' in user_text(body):
                 out = BROWSING_CANNED(user_text(body))
             else:
@@ -1168,6 +1170,7 @@ BR_PAGE = 'https://gate.example/pergola-' + BR_RUN
 BR_SHOP = 'https://shop.gate.example/thanks-' + BR_RUN
 BR_PLAIN = 'https://gate.example/weather-' + BR_RUN
 BR_TASK_TITLE = 'Gate order cedar boards ' + BR_RUN
+BR_FORM = 'https://camp.gate.example/registration-' + BR_RUN
 BR_APP = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 for a in curl('GET', API + '/actions?status=open')[1] or []:
     if isinstance(a, dict) and str(a.get('title', '')).startswith('Done? Gate order'):
@@ -1188,19 +1191,21 @@ BR_TASK = dictish(d).get('id', '')
 if dictish(d).get('status') == 'proposed':
     curl('POST', API + '/actions/' + BR_TASK, {'status': 'approved', 'note': 'gate'})
 br_ms = int(time.time() * 1000)
-br_batch = {'visits': [{'url': BR_PAGE, 'title': 'Pergola lumber guide', 'at': br_ms, 'how': 'link'},
+br_old = br_ms - 30 * 3600000
+br_batch = {'visits': [{'url': BR_FORM, 'title': 'Pergola lumber workshop registration', 'at': br_old, 'how': 'link'},{'url': BR_PAGE, 'title': 'Pergola lumber guide', 'at': br_ms, 'how': 'link'},
                        {'url': BR_SHOP, 'title': 'Thank you for your order', 'at': br_ms, 'how': 'form_submit'},
                        {'url': BR_PLAIN, 'title': 'Weather', 'at': br_ms, 'how': 'typed'},
                        {'url': 'https://gatebank.example/acct', 'title': 'Balance', 'at': br_ms, 'how': 'typed'},
                        {'url': 'https://claude.ai/artifact/gate', 'title': 'Doc', 'at': br_ms, 'how': 'link'},
                        {'url': 'https://skip.gate.example/x', 'title': 'Left out', 'at': br_ms, 'how': 'link'}],
-            'pages': [{'url': BR_PAGE, 'title': 'Pergola lumber guide', 'text': 'How much pergola lumber to buy, and which cedar. ' * 10, 'at': br_ms},
+            'pages': [{'url': BR_FORM, 'title': 'Pergola lumber workshop registration', 'text': 'Register for the pergola lumber workshop.', 'at': br_old},
+                      {'url': BR_PAGE, 'title': 'Pergola lumber guide', 'text': 'How much pergola lumber to buy, and which cedar. ' * 10, 'at': br_ms},
                       {'url': BR_SHOP, 'title': 'Thank you for your order', 'text': 'Order ' + BR_RUN + ': cedar boards, arriving Friday.', 'at': br_ms},
                       {'url': BR_PLAIN, 'title': 'Weather', 'text': 'Rain later today.', 'at': br_ms},
                       {'url': 'https://gatebank.example/acct', 'title': 'Balance', 'text': 'balance', 'at': br_ms},
                       {'url': 'https://claude.ai/artifact/gate', 'title': 'Doc', 'text': 'ship data', 'at': br_ms}]}
 code, d = curl('POST', API + '/browsing', br_batch)
-check('a batch is taken at once', code == 202 and dictish(d).get('ok') is True and dictish(d).get('visits') == 6 and dictish(d).get('pages') == 5, (code, d))
+check('a batch is taken at once', code == 202 and dictish(d).get('ok') is True and dictish(d).get('visits') == 7 and dictish(d).get('pages') == 6, (code, d))
 code, d = curl('POST', API + '/browsing', {'visits': [{}] * 5001})
 check('a batch past the cap is a 413', code == 413, (code, d))
 gate.wait('the batch is laid by day', lambda: dictish(curl('GET', API + '/browsing')[1]).get('inbox') == 0 or None, 60)
@@ -1233,10 +1238,17 @@ def br_answer(user):
     return {'choices': [{'message': {'content': json.dumps({'bodies': [], 'observations': [{'subject': BR_SIT, 'attr': 'research', 'value': BR_PAGE, 'conf': 85, 'message': cite}],
             'actions': [], 'moves': moves})}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 BROWSING_CANNED = br_answer
+INTERESTS_CANNED = {'choices': [{'message': {'content': json.dumps({'topics': [{'topic': 'pergola building ' + BR_RUN, 'pages': 3}]})}}],
+                    'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
 curl('PUT', API + '/browsing/settings', {'model': 'stub/zdr'})
 br_seen = len(seen)
 last = br_pass()
-check('with a model the tied pages are read and filed', last.get('sent', 0) >= 2 and last.get('filed', 0) >= 1, last)
+check('with a model the tied pages are read and filed', last.get('sent', 0) >= 3 and last.get('filed', 0) >= 1, last)
+br_int = dictish(curl('GET', BR_APP + '/browsing-interests.json?raw=1')[1])
+check('the week\'s pass names what the owner has been into', any(dictish(t).get('topic') == 'pergola building ' + BR_RUN for t in listish(br_int.get('topics'))), br_int)
+br_open = [dictish(a) for a in listish(curl('GET', API + '/actions?status=open')[1])]
+check('a new topic is proposed as one of the owner\'s likes', any(a.get('kind') == 'fact' and a.get('by') == 'browsing' and dictish(a.get('payload')).get('attr') == 'likes'
+      and dictish(a.get('payload')).get('value') == 'pergola building ' + BR_RUN and a.get('status') == 'proposed' for a in br_open), [a.get('title') for a in br_open][-6:])
 br_asked = ' '.join(user_text(b) for p, h, b in seen[br_seen:] if 'Channel: browsing' in user_text(b))
 check('the model saw the tied pages, never the plain one, the bank or the artifact', BR_PAGE in br_asked and BR_SHOP in br_asked
       and BR_PLAIN not in br_asked and 'gatebank' not in br_asked and 'claude.ai/artifact' not in br_asked, br_asked[:400])
@@ -1253,13 +1265,21 @@ if br_close:
     curl('POST', API + '/exec/wake', {})
     done = gate.wait('the close is carried out', lambda: next((a for a in listish(curl('GET', API + '/actions?status=all')[1]) if dictish(a).get('id') == BR_TASK and dictish(a).get('status') == 'done'), None), 90)
     check('approved, the close closes the task', bool(done), done)
+last = br_pass()
+br_open = [dictish(a) for a in listish(curl('GET', API + '/actions?status=open')[1])]
+br_nudge = [a for a in br_open if a.get('title') == 'Finish Pergola lumber workshop registration?']
+check('a form left on a page tied to a plan, a day on, is asked about', len(br_nudge) == 1 and br_nudge[0].get('by') == 'browsing' and BR_SIT in listish(br_nudge[0].get('about')), [a.get('title') for a in br_open][-6:])
+last = br_pass()
+check('and only once', len([a for a in listish(curl('GET', API + '/actions?status=open')[1]) if dictish(a).get('title') == 'Finish Pergola lumber workshop registration?']) == 1, last)
 BROWSING_CANNED = None
+INTERESTS_CANNED = None
 curl('PUT', API + '/browsing/settings', {'model': '', 'exclude': []})
 curl('PUT', API + '/generator', {'api_key': None})
 srv.shutdown()
 srv.server_close()
 for a in curl('GET', API + '/actions?status=open')[1] or []:
-    if isinstance(a, dict) and (a.get('id') == BR_TASK or str(a.get('title', '')).startswith('Done? Gate order')):
+    if isinstance(a, dict) and (a.get('id') == BR_TASK or str(a.get('title', '')).startswith('Done? Gate order')
+                                or a.get('title') == 'Finish Pergola lumber workshop registration?' or str(a.get('title', '')).startswith('You have been into pergola building')):
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
 curl('DELETE', API + '/body/' + BR_SIT)
 
