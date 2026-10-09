@@ -1271,6 +1271,44 @@ br_nudge = [a for a in br_open if a.get('title') == 'Finish Pergola lumber works
 check('a form left on a page tied to a plan, a day on, is asked about', len(br_nudge) == 1 and br_nudge[0].get('by') == 'browsing' and BR_SIT in listish(br_nudge[0].get('about')), [a.get('title') for a in br_open][-6:])
 last = br_pass()
 check('and only once', len([a for a in listish(curl('GET', API + '/actions?status=open')[1]) if dictish(a).get('title') == 'Finish Pergola lumber workshop registration?']) == 1, last)
+# the owner's hand on a page (version 101): what the popup shows, filing,
+# not related, the place for a plan, and the day page's card
+code, d = curl('GET', API + '/browsing/page?' + urllib.parse.urlencode({'url': BR_PAGE, 'title': 'Pergola lumber guide'}))
+d = dictish(d)
+check('the page in hand: kept, read, tied to the situation and its research', code == 200 and d.get('kept') is True and bool(d.get('read'))
+      and BR_SIT in [dictish(t).get('id') for t in listish(d.get('tied'))] and BR_SIT in [dictish(t).get('id') for t in listish(d.get('filed'))]
+      and BR_SIT in [dictish(t).get('id') for t in listish(d.get('plans'))], d)
+code, d = curl('GET', API + '/browsing/page?' + urllib.parse.urlencode({'url': 'https://www.chase.com/x'}))
+check('a page the ship never reads says so', code == 200 and dictish(d).get('skipped') is True, d)
+BR_HAND = 'https://hand.gate.example/notes-' + BR_RUN
+code, d = curl('POST', API + '/browsing/file', {'url': BR_HAND, 'body': BR_SIT})
+check('the owner files a page under a plan, at once', code == 200, (code, d))
+br_rows = lambda: [dictish(r) for r in listish(dictish(dictish(curl('GET', API + '/body/' + BR_SIT)[1]).get('attrs')).get('research'))]
+check('it is the plan\'s research, the owner\'s', bool(gate.wait('the research lands', lambda: [r for r in br_rows() if r.get('value') == BR_HAND and r.get('by') == 'owner'] or None, 30)), br_rows())
+code, d = curl('POST', API + '/browsing/file', {'url': BR_HAND, 'body': 'situation/gate-br-nothing-' + BR_RUN})
+check('filing under a body the ship lacks is a 404', code == 404, (code, d))
+code, d = curl('POST', API + '/browsing/unrelate', {'url': BR_PAGE, 'body': BR_SIT})
+check('not related takes the research back', code == 200 and dictish(d).get('retracted') == 1, (code, d))
+gate.wait('the page is untied', lambda: BR_SIT not in [dictish(t).get('id') for t in listish(dictish(curl('GET', API + '/browsing/page?' + urllib.parse.urlencode({'url': BR_PAGE}))[1]).get('tied'))] or None, 30)
+d = dictish(curl('GET', API + '/browsing/page?' + urllib.parse.urlencode({'url': BR_PAGE}))[1])
+check('and no pass ties them again', BR_SIT not in [dictish(t).get('id') for t in listish(d.get('tied'))] and BR_SIT not in [dictish(t).get('id') for t in listish(d.get('filed'))], d)
+BR_DINNER = 'situation/gate-br-dinner-' + BR_RUN
+observe([{'id': BR_DINNER, 'name': 'Gate dinner ' + BR_RUN}], [obs(BR_DINNER, 'starts', iso(datetime.now(timezone.utc) + timedelta(days=3)), datetime.now(timezone.utc), USER)])
+BR_VENUE = 'https://www.gate-grill.example/menu-' + BR_RUN
+curl('DELETE', API + '/body/place/gate-grill')  # an earlier run cut short leaves its place, found by name
+code, d = curl('POST', API + '/browsing/place', {'url': BR_VENUE, 'title': 'Dinner menu | Gate Grill', 'plan': BR_DINNER})
+BR_PLACE = dictish(d).get('place', '')
+check('the page is the place for a plan, named for the site', code == 200 and BR_PLACE == 'place/gate-grill', (code, d))
+loc = gate.wait('the plan\'s location is set', lambda: (lambda v: v if dictish(dictish(v).get('value')).get('ref') == BR_PLACE else None)(dictish(dictish(dictish(curl('GET', API + '/body/' + BR_DINNER)[1]).get('attrs')).get('location'))), 30)
+check('the plan\'s location is the place', bool(loc), loc)
+br_site = dictish(dictish(dictish(curl('GET', API + '/body/' + BR_PLACE)[1]).get('attrs')).get('website'))
+check('the place keeps the page as its website', br_site.get('value') == BR_VENUE, br_site)
+code, d = curl('GET', API + '/browsing/recent')
+d = dictish(d)
+check('the day page\'s card: interests, pages filed lately, forms left', code == 200 and listish(dictish(d.get('interests')).get('topics'))
+      and any(dictish(r).get('url') == BR_HAND for r in listish(d.get('research'))) and any('Pergola lumber workshop registration' in str(dictish(f).get('title')) for f in listish(d.get('forms'))), d)
+curl('DELETE', API + '/body/' + BR_DINNER)
+curl('DELETE', API + '/body/' + BR_PLACE)
 BROWSING_CANNED = None
 INTERESTS_CANNED = None
 curl('PUT', API + '/browsing/settings', {'model': '', 'exclude': []})

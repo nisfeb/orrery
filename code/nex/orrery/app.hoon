@@ -171,6 +171,8 @@
           [%fall %& [/ %'browsing-recent.json'] [[/ %json] [%o ~]]]
           ::  what the owner has been into, the week's pass (version 99)
           [%fall %& [/ %'browsing-interests.json'] [[/ %json] [%o ~]]]
+          ::  the bodies the owner said a page is not about (version 101)
+          [%fall %& [/ %'browsing-not.json'] [[/ %json] [%o ~]]]
           [%fall %| /browsing-inbox empty-dir:loader]
           [%fall %& [/browsing-inbox %rev] [[/ %json] (numb:enjs:format 0)]]
           [%fall %| /browsing empty-dir:loader]
@@ -943,6 +945,7 @@
   ?:  =('set-mail' op)  (do-set-mail jon)
   ?:  =('set-read' op)  (do-set-merged jon %'read.json' 'set-read')
   ?:  =('set-browsing' op)  (do-set-merged jon %'browsing.json' 'set-browsing')
+  ?:  =('browse-not' op)  (do-browse-not jon)
   ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
   ?:  =('set-outdoors' op)  (do-set-outdoors jon)
   ?:  =('set-search' op)  (do-set-search jon)
@@ -1521,6 +1524,11 @@
     %put-browsing-settings  (serve-set-doc eyre-id 'set-browsing' jon)
     %get-browsing-last      (serve-doc eyre-id %'browsing-last.json')
     %post-browsing-wake     (serve-prod eyre-id %'browse.sig' 'browsing')
+    %get-browsing-page      (serve-browsing-page eyre-id args)
+    %get-browsing-recent    (serve-browsing-recent eyre-id)
+    %post-browsing-file     (serve-browsing-file eyre-id jon act)
+    %post-browsing-unrelate  (serve-browsing-unrelate eyre-id jon act)
+    %post-browsing-place    (serve-browsing-place eyre-id jon act)
     %get-mail               (serve-mail eyre-id)
     %put-mail               (serve-set-doc eyre-id 'set-mail' jon)
     %get-mail-last          (serve-doc eyre-id %'mail-last.json')
@@ -6812,6 +6820,7 @@
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  ;<  nots=(map @t json)  bind:m  (read-map (rf 0 / %'browsing-not.json'))
   =/  idx=bmatch-index:orr  (browse-index:orr all acts (multi-of:orr schema) now)
   =/  names=(map @t @t)
     %-  ~(gas by *(map @t @t))
@@ -6827,7 +6836,8 @@
     ?^  read.p  ~
     =/  came=(set @t)  (~(gut by how.h) url.p ~)
     =/  got  (browse-hits:orr p came idx)
-    `[day.h k p came hits.got signals.got]
+    =/  no=(set @t)  (not-about nots url.p)
+    `[day.h k p came (skip hits.got |=(b=@t (~(has in no) b))) signals.got]
   ;<  ~  bind:m  (browse-interests cfg now force all acts (multi-of:orr schema))
   ::  a form left on a page tied to a plan, a day on, is asked about once
   ::  (version 99); only a page a pass has read, so the two never meet
@@ -7090,6 +7100,182 @@
   ?~  ops  (pure:m ~)
   ;<  *  bind:m  (file-ops-on ops /tg)
   (pure:m (turn ops |=(* `@t`'a close proposed for the owner')))
+::  ==  the owner's hand on a page (version 101)
+::
+::  +not-about: the bodies the owner said a page is not about
+::
+++  not-about
+  |=  [nots=(map @t json) url=@t]
+  ^-  (set @t)
+  (sy (strings:orr (ga:orr (pairs:enjs:format ~[['x' (~(gut by nots) url [%a ~])]]) 'x')))
+::  +do-browse-not: the writer's: a body the page is not about, kept so
+::  no pass ties them again
+::
+++  do-browse-not
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  url=@t  (gs:orr jon 'url')
+  =/  body=@t  (gs:orr jon 'body')
+  ?:  |(=('' url) =('' body))  (refuse 'browse-not' 'url and body: required')
+  ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'browsing-not.json'))
+  =/  had=(set @t)  (not-about cur url)
+  =/  next=(list @t)  ~(tap in (~(put in had) body))
+  ;<  ~  bind:m
+    (over:io (rf 0 / %'browsing-not.json') [[/ %json] [%o (~(put by cur) url a+(turn next |=(t=@t `json`s+t)))]])
+  ;<  ~  bind:m  (note 'browse-not' & '')
+  (pure:m |)
+::  +hand-by: who a hand route signs as: the owner's cookie as the owner,
+::  a key as its own name
+::
+++  hand-by  |=(act=actor ^-(@t ?:(owner.act 'owner' by.act)))
+::  +find-page: a page's record on the days given, newest first, or ~
+::
+++  find-page
+  |=  [days=(list @ta) url=@t]
+  =/  m  (fiber:fiber:nexus ,(unit bpage:orr))
+  ^-  form:m
+  ?~  days  (pure:m ~)
+  ;<  j=json  bind:m  (read-json (rf 1 /browsing/pages i.days))
+  =/  v=json  (gj:orr j (url-key:orr url))
+  ?:  ?=([%o *] v)  (pure:m `(de-bpage:orr v))
+  (find-page t.days url)
+::  +serve-browsing-page: GET /api/browsing/page?url=&title=: what the
+::  extension's popup shows of the page in hand. Whether the ship would
+::  read it at all; the bodies a pass tied it to, or the matcher would
+::  now (less those the owner said it is not about); the bodies it is
+::  research for; and the open plans to file it under or set it as the
+::  place for
+::
+++  serve-browsing-page
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  q=(map @t @t)  (~(gas by *(map @t @t)) args)
+  =/  url=@t  (trim-cord:orr (~(gut by q) 'url' ''))
+  =/  title=@t  (trim-cord:orr (~(gut by q) 'title' ''))
+  ?:  =('' url)  (send-err eyre-id 400 'url: required')
+  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'browsing.json'))
+  =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  nots=(map @t json)  bind:m  (read-map (rf 1 / %'browsing-not.json'))
+  ;<  days=(list @ta)  bind:m  (page-days 1)
+  ;<  rec=(unit bpage:orr)  bind:m  (find-page (scag 7 (flop (skim days |=(d=@ta =(10 (met 3 d)))))) url)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  =/  idx=bmatch-index:orr  (browse-index:orr all acts multi now)
+  =/  p=bpage:orr  (fall rec [url title '' now now 1 ~ ~ |])
+  =/  no=(set @t)  (not-about nots url)
+  =/  tied=(list @t)
+    =/  h=(list @t)  ?:(&(?=(^ rec) ?=(^ read.u.rec)) hits.p hits:(browse-hits:orr p ~ idx))
+    (skip h |=(b=@t (~(has in no) b)))
+  =/  names=(map @t @t)
+    (~(gas by *(map @t @t)) (turn (weld words.idx names.idx) |=([i=@t n=@t *] [i n])))
+  =/  plans=(list plan:orr)  (browse-plans:orr all multi now)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['url' s+url]
+      ['skipped' b+(browsing-skip:orr url exclude.cfg)]
+      ['kept' b+?=(^ rec)]
+      ['read' ?.(&(?=(^ rec) ?=(^ read.u.rec)) ~ s+(en-iso:orr (need read.u.rec)))]
+      ['tied' a+(turn tied |=(i=@t (pairs:enjs:format ~[['id' s+i] ['name' s+(~(gut by names) i i)]])))]
+      ['filed' a+(turn (filed-for:orr all multi now url) |=([i=@t n=@t] (pairs:enjs:format ~[['id' s+i] ['name' s+n]])))]
+      ['plans' a+(turn plans en-plan:orr)]
+  ==
+::  +serve-browsing-file: POST /api/browsing/file {url, body}: the page
+::  filed under a body by the owner's hand, as its research, at once.
+::  The owner's cookie signs as the owner (+owner-by), not as http
+::
+++  serve-browsing-file
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  url=@t  (trim-cord:orr (gs:orr jon 'url'))
+  =/  body=@t  (gs:orr jon 'body')
+  =/  pk  (parse-bid:orr body)
+  ?:  |(=('' url) ?=(~ pk))  (send-err eyre-id 400 'url and body: required, body a body id')
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
+  ?.  ex  (send-err eyre-id 404 'no such body')
+  ;<  now=@da  bind:m  get-time:io
+  %^  write-then  eyre-id  (file-op:orr body url now (hand-by act))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['body' s+body]]))
+::  +serve-browsing-unrelate: POST /api/browsing/unrelate {url, body}:
+::  the page is not about that body: no pass ties them again, and any
+::  research row tying them is taken back
+::
+++  serve-browsing-unrelate
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  url=@t  (trim-cord:orr (gs:orr jon 'url'))
+  =/  body=@t  (gs:orr jon 'body')
+  ?:  |(=('' url) =('' body))  (send-err eyre-id 400 'url and body: required')
+  ;<  ~  bind:m  (poke-writer 1 (pairs:enjs:format ~[['op' s+'browse-not'] ['url' s+url] ['body' s+body]]))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  l=(unit loaded:orr)  (loaded-of:orr all body)
+  =/  ids=(list @ta)  ?~(l ~ (research-rows:orr u.l url))
+  =/  todo=(list @ta)  ids
+  |-
+  ?^  todo
+    ;<  ~  bind:m  (poke-writer 1 (retract-op:orr i.todo 'the owner: this page is not about it' (hand-by act)))
+    $(todo t.todo)
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['retracted' (numb:enjs:format (lent ids))]]))
+::  +serve-browsing-place: POST /api/browsing/place {url, title, plan}:
+::  the page is the place for a plan: the place made or found, the plan's
+::  location set to it; place lookups fill its address
+::
+++  serve-browsing-place
+  |=  [eyre-id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  url=@t  (trim-cord:orr (gs:orr jon 'url'))
+  =/  plan=@t  (gs:orr jon 'plan')
+  =/  pk  (parse-bid:orr plan)
+  ?:  |(=('' url) ?=(~ pk))  (send-err eyre-id 400 'url and plan: required, plan a body id')
+  ?.  ?=(?(%situation %activity) kind.u.pk)  (send-err eyre-id 400 'plan: a situation or an activity')
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ?~  (loaded-of:orr all plan)  (send-err eyre-id 404 'no such plan')
+  ;<  now=@da  bind:m  get-time:io
+  =/  got  (place-ops:orr plan url (gs:orr jon 'title') all (multi-of:orr schema) now (hand-by act))
+  =/  todo=(list json)  ops.got
+  |-
+  ?^  todo
+    ;<  ~  bind:m  (poke-writer 1 i.todo)
+    $(todo t.todo)
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['place' s+place.got] ['plan' s+plan]]))
+::  +serve-browsing-recent: GET /api/browsing/recent: the day page's
+::  card. What the owner has been into, the pages filed under a plan in
+::  the last fortnight, the forms left waiting, and the last pass
+::
+++  serve-browsing-recent
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ij=json  bind:m  (read-json (rf 1 / %'browsing-interests.json'))
+  ;<  last=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  now=@da  bind:m  get-time:io
+  =/  forms=(list [id=@ta a=action:orr])
+    %+  skim  acts
+    |=  [* a=action:orr]
+    ?&  =('browsing' by.a)  =(%task kind.a)  ?=(?(%proposed %approved) status.a)
+        =('Finish ' (end [3 7] title.a))
+    ==
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['interests' ij]
+      :-  'research'
+      :-  %a
+      %+  turn  (research-recent:orr all (multi-of:orr schema) now)
+      |=([i=@t n=@t u=@t at=@da] (pairs:enjs:format ~[['id' s+i] ['name' s+n] ['url' s+u] ['at' s+(en-iso:orr at)]]))
+      ['forms' a+(turn forms |=([i=@ta a=action:orr] (pairs:enjs:format ~[['id' s+i] ['title' s+title.a]])))]
+      ['last' last]
+  ==
 ::  ==  a lattice page followed (version 66)
 ::
 ::  +serve-follow: POST /api/follow {path, title, text, links}: a page

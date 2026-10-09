@@ -10622,6 +10622,11 @@
   ?:  &(=('PUT' meth) ?=([%api %browsing %settings ~] suffix))  `[%put-browsing-settings %own]
   ?:  &(=('GET' meth) ?=([%api %browsing %last ~] suffix))      `[%get-browsing-last %own]
   ?:  &(=('POST' meth) ?=([%api %browsing %wake ~] suffix))     `[%post-browsing-wake %own]
+  ?:  &(=('GET' meth) ?=([%api %browsing %page ~] suffix))      `[%get-browsing-page %writes]
+  ?:  &(=('GET' meth) ?=([%api %browsing %recent ~] suffix))    `[%get-browsing-recent %writes]
+  ?:  &(=('POST' meth) ?=([%api %browsing %file ~] suffix))     `[%post-browsing-file %writes]
+  ?:  &(=('POST' meth) ?=([%api %browsing %unrelate ~] suffix))  `[%post-browsing-unrelate %writes]
+  ?:  &(=('POST' meth) ?=([%api %browsing %place ~] suffix))    `[%post-browsing-place %writes]
   ?:  &(=('GET' meth) ?=([%api %mail ~] suffix))                `[%get-mail %writes]
   ?:  &(=('PUT' meth) ?=([%api %mail ~] suffix))                `[%put-mail %writes]
   ?:  &(=('GET' meth) ?=([%api %mail %last ~] suffix))          `[%get-mail-last %own]
@@ -11290,6 +11295,141 @@
       ['about' a+(turn (skim hits.p |=(h=@t ?=(^ (find "/" (trip h))))) |=(h=@t `json`s+h))]
       ['payload' (pairs:enjs:format ~[['text' s+(cat 3 'Left unfinished: ' url.p)]])]
   ==
+::  ==  the owner's hand on a page (version 101)
+::
+::  +$  plan: an open situation or activity a page can be filed under or
+::  a place set for. +browse-plans: situations soonest first, those with
+::  no start after them, then activities by name; none over more than a
+::  day ago; at most 30
+::
++$  plan  [id=@t name=@t kind=@t starts=(unit @da) placed=?]
+++  browse-plans
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list plan)
+  =/  open=(list plan)
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit plan)
+    ?.  ?=(?(%situation %activity) kind.body.l)  ~
+    =/  w  (fold rows.l multi now)
+    =/  st=@t  (winner-text w 'status')
+    ?:  |(=('closed' st) =('cancelled' st))  ~
+    =/  end=(unit @da)  (de-iso =/(e (winner-text w 'ended') ?:(=('' e) (winner-text w 'ends') e)))
+    ?:  &(?=(^ end) (lth (add (need end) ~d1) now))  ~
+    `[id.l name.body.l `@t`kind.body.l (de-iso (winner-text w 'starts')) !=(~ (~(gut by w) 'location' ~))]
+  %+  scag  30
+  %+  sort  open
+  |=  [a=plan b=plan]
+  ?.  =(kind.a kind.b)  =('situation' kind.a)
+  ?:  &(?=(^ starts.a) ?=(^ starts.b))  (lth (need starts.a) (need starts.b))
+  ?:  !=(?=(^ starts.a) ?=(^ starts.b))  ?=(^ starts.a)
+  (aor (lower name.a) (lower name.b))
+++  en-plan
+  |=  p=plan
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['id' s+id.p]  ['name' s+name.p]  ['kind' s+kind.p]
+      ['starts' ?~(starts.p ~ s+(en-iso u.starts.p))]
+      ['placed' b+placed.p]
+  ==
+::  +filed-for: the bodies a page is already research for
+::
+++  filed-for
+  |=  [all=(list loaded) multi=(set @t) now=@da url=@t]
+  ^-  (list [id=@t name=@t])
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [id=@t name=@t])
+  =/  rs=(list row)  (~(gut by (fold rows.l multi now)) 'research' ~)
+  ?.  (lien rs |=(r=row =(url (ref-or-text value.obs.r))))  ~
+  `[id.l name.body.l]
+::  +research-rows: a body's live research rows for one page, to take
+::  back when the owner says the page is not about it
+::
+++  research-rows
+  |=  [l=loaded url=@t]
+  ^-  (list @ta)
+  %+  murn  rows.l
+  |=  r=row
+  ?.  &(=('research' attr.obs.r) !retracted.obs.r =(url (ref-or-text value.obs.r)))  ~
+  `id.r
+::  +research-recent: the pages filed under a body in the last fortnight,
+::  newest first, at most twenty
+::
+++  research-recent
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list [id=@t name=@t url=@t at=@da])
+  =/  rows=(list [id=@t name=@t url=@t at=@da])
+    %-  zing
+    %+  turn  all
+    |=  l=loaded
+    ^-  (list [id=@t name=@t url=@t at=@da])
+    %+  murn  (~(gut by (fold rows.l multi now)) 'research' ~)
+    |=  r=row
+    ^-  (unit [id=@t name=@t url=@t at=@da])
+    ?.  (gth (add at.obs.r ~d14) now)  ~
+    `[id.l name.body.l (ref-or-text value.obs.r) at.obs.r]
+  %+  scag  20
+  (sort rows |=([a=[* * * at=@da] b=[* * * at=@da]] (gth at.a at.b)))
+::  +place-name: what a page calls the place it is about. A title's
+::  parts (split at a bar, a dash, a dot or a colon) are scored by the
+::  words they share with the site's address, so "Menu | Smoke Bistro"
+::  on smoke-bistro.example is Smoke Bistro; with no part sharing one,
+::  the first part; with no title, the site
+::
+++  place-name
+  |=  [title=@t url=@t]
+  ^-  @t
+  =/  host=(set @t)  (sy (tokens (url-host url)))
+  =/  parts=(list @t)
+    %+  skip
+      %+  turn
+        %+  roll  `(list tape)`~[" | " " - " " – " " — " " · " ": "]
+        |=  [sep=tape acc=_`(list @t)`~[title]]
+        (zing (turn acc |=(t=@t (turn (split-on sep (trip t)) crip))))
+      trim-cord
+    |=(t=@t =('' t))
+  ?~  parts  (url-host url)
+  =/  score  |=(t=@t (lent (skim (tokens t) |=(w=@t (~(has in host) w)))))
+  =/  best=@t
+    %+  roll  t.parts
+    |=  [t=@t b=_i.parts]
+    ?:((gth (score t) (score b)) t b)
+  (cut-utf8 best 120)
+::  +split-on: a tape cut at each run of a separator
+::
+++  split-on
+  |=  [sep=tape t=tape]
+  ^-  (list tape)
+  =/  at=(unit @ud)  (find sep t)
+  ?~  at  ~[t]
+  [(scag u.at t) $(t (slag (add u.at (lent sep)) t))]
+::  +file-op: a page filed under a body by the owner's hand, as its
+::  research, the page its source
+::
+++  file-op
+  |=  [body=@t url=@t now=@da by=@t]
+  ^-  json
+  (snag 0 (observe-ops ~ ~[(obs-row body 'research' s+url now ~ 100 ['browsing' url] by)]))
+::  +place-ops: a page as the place for a plan: the place the ship holds
+::  for that site or by that name, else a new one with the page as its
+::  website (place lookups fill the rest); the plan's location set to it
+::
+++  place-ops
+  |=  [plan=@t url=@t title=@t all=(list loaded) multi=(set @t) now=@da by=@t]
+  ^-  [place=@t ops=(list json)]
+  =/  name=@t  (place-name title url)
+  =/  hit=(unit loaded)
+    %+  find-first-loaded  (skim all |=(l=loaded =(%place kind.body.l)))
+    |=  l=loaded
+    |(=(url (winner-text (fold rows.l multi now) 'website')) =((lower name) (lower name.body.l)))
+  =/  pid=@t  ?^(hit id.u.hit (cat 3 'place/' (slug name)))
+  =/  bodies=(list json)  ?^(hit ~ ~[(pairs:enjs:format ~[['id' s+pid] ['name' s+name]])])
+  =/  rows=(list json)
+    %+  weld
+      ?^(hit ~ ~[(obs-row pid 'website' s+url now ~ 100 ['browsing' url] by)])
+    ~[(obs-row plan 'location' (pairs:enjs:format ~[['ref' s+pid]]) now ~ 100 ['browsing' url] by)]
+  [pid (observe-ops bodies rows)]
 ::  ==  the readers' verdicts (version 60)
 ::
 ::  +run-fresh: a run without its questions: a question states nothing,

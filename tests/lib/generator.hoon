@@ -2563,4 +2563,67 @@
     (expect-eq !>('he said "hi"') !>((dequote:orr '"he said \\"hi\\""')))
     (expect-eq !>('42') !>((dequote:orr '42')))
   ==
+::  ==  the owner's hand on a page (version 101)
+::
+::  the plans a page can be filed under: open ones, situations soonest
+::  first and then those with no start, then activities by name
+++  test-browse-plans
+  =/  st  |=(t=@t ['starts' s+t])
+  =/  all=(list loaded:orr)
+    :~  (mkb 'activity/pottery' %activity 'Pottery' ~ ~ now)
+        (mkb 'situation/later' %situation 'Later trip' ~ ~[(st '2026-10-20T10:00:00Z')] now)
+        (mkb 'situation/soon' %situation 'Soon dinner' ~ ~[(st '2026-09-19T18:00:00Z') ['location' (pairs:enjs:format ~[['ref' s+'place/x']])]] now)
+        (mkb 'situation/undated' %situation 'Someday thing' ~ ~ now)
+        (mkb 'situation/done' %situation 'Done thing' ~ ~[['status' s+'closed']] now)
+        (mkb 'situation/past' %situation 'Long past' ~ ~[['ends' s+'2026-09-01T10:00:00Z']] now)
+        (mkb 'activity/archery' %activity 'Archery' ~ ~ now)
+    ==
+  =/  ps  (browse-plans:orr all ~ now)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['situation/soon' 'situation/later' 'situation/undated' 'activity/archery' 'activity/pottery']) !>((turn ps |=(p=plan:orr id.p))))
+    (expect !>(placed:(snag 0 ps)))
+    (expect !>(!placed:(snag 1 ps)))
+  ==
+::  a page is research for the bodies that hold it; its rows are what
+::  the owner's "not related" takes back; recent ones newest first
+++  test-browse-filed
+  =/  row  |=([u=@t at=@da] ['research' s+u])
+  =/  sit=loaded:orr  (mkb 'situation/s' %situation 'S' ~ ~[['research' s+'https://a.example/1']] ~2026.9.17)
+  =/  all=(list loaded:orr)  ~[sit (mkb 'situation/t' %situation 'T' ~ ~[['research' s+'https://b.example/2']] ~2026.9.10)]
+  ;:  weld
+    (expect-eq !>(`(list [@t @t])`~[['situation/s' 'S']]) !>((filed-for:orr all (sy ~['research']) now 'https://a.example/1')))
+    (expect-eq !>(`(list @ta)`~['situation/s/research']) !>((research-rows:orr sit 'https://a.example/1')))
+    (expect-eq !>(`(list @ta)`~) !>((research-rows:orr sit 'https://elsewhere.example/')))
+    ::  the fortnight: the 10th's is past it at the 18th? no: within, newest first
+    (expect-eq !>(`(list @t)`~['situation/s' 'situation/t']) !>((turn (research-recent:orr all (sy ~['research']) now) |=([i=@t *] i))))
+    (expect-eq !>(`(list @t)`~['situation/s']) !>((turn (research-recent:orr all (sy ~['research']) ~2026.9.26) |=([i=@t *] i))))
+  ==
+::  the place a page is about: the title's part that shares the site's
+::  words, else the first part, else the site
+++  test-place-name
+  ;:  weld
+    (expect-eq !>('Smoke Bistro') !>((place-name:orr 'Anniversary menu | Smoke Bistro' 'https://www.smoke-bistro.example/menu')))
+    (expect-eq !>('Smoke Bistro') !>((place-name:orr 'Smoke Bistro - Menu' 'https://smokebistro.example/')))
+    (expect-eq !>('Harbor Grill') !>((place-name:orr 'Harbor Grill | Home' 'https://eat.example/')))
+    (expect-eq !>('Harbor Grill') !>((place-name:orr 'Harbor Grill' 'https://eat.example/')))
+    (expect-eq !>('eat.example') !>((place-name:orr '' 'https://www.eat.example/')))
+  ==
+::  a new place takes the page as its website; a place the ship holds
+::  for that site, or by that name, is the one used; the plan's location
+::  is set to it, signed by who did it
+++  test-place-ops
+  =/  plan=@t  'situation/dinner'
+  =/  fresh  (place-ops:orr plan 'https://harbor.example/' 'Harbor Grill' ~ ~ now 'owner')
+  =/  obs=(list json)  (zing (turn ops.fresh |=(o=json (ga:orr o 'observations'))))
+  =/  held=(list loaded:orr)  ~[(mkb 'place/the-harbor' %place 'The Harbor' ~ ~[['website' s+'https://harbor.example/']] now)]
+  =/  again  (place-ops:orr plan 'https://harbor.example/' 'Harbor Grill' held ~ now 'owner')
+  =/  obs2=(list json)  (zing (turn ops.again |=(o=json (ga:orr o 'observations'))))
+  ;:  weld
+    (expect-eq !>('place/harbor-grill') !>(place.fresh))
+    (expect-eq !>(`(list @t)`~['website' 'location']) !>((turn obs |=(o=json (gs:orr o 'attr')))))
+    (expect-eq !>('owner') !>((gs:orr (snag 1 obs) 'by')))
+    (expect-eq !>('place/the-harbor') !>(place.again))
+    (expect-eq !>(`(list @t)`~['location']) !>((turn obs2 |=(o=json (gs:orr o 'attr')))))
+    (expect-eq !>('research') !>((gs:orr (snag 0 (ga:orr (file-op:orr plan 'https://x.example/' now 'owner') 'observations')) 'attr')))
+  ==
 --
