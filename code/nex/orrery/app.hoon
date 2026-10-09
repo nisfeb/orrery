@@ -37,6 +37,7 @@
 ::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
 ::    /feeds/<sphere>/head.json  /feeds/<sphere>/p<n>.json  a shared sphere's feed, a hundred entries a page; /feed-state.json what went in it
 ::    /feed.sig   the feed writer; /private.json  the rows the owner keeps to themselves (version 90)
+::    /armillary.sig   follows this ship's Armillary: its offer laid over every setting the owner did not pick by hand (version 96)
 ::    /refining/<aid>                  the lock a refine request holds on its action
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
@@ -198,6 +199,9 @@
           [%fall %| /feeds empty-dir:loader]
           [%fall %& [/ %'feed.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'location.sig'] [[/ %sig] ~]]
+          ::  following Armillary (version 96): the fiber that looks at
+          ::  this ship's Armillary every minute
+          [%fall %& [/ %'armillary.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
@@ -451,6 +455,25 @@
           ::  ships that read it are woken; a poke (a share made, a follow
           ::  accepted) runs a pass at once. A pass that hit its cap runs
           ::  again at once.
+          [~ %'armillary.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery armillary: failed")
+        =|  last=(unit json)
+        |-
+        ;<  got=(unit json)  bind:m  armillary-offer
+        ;<  ~  bind:m
+          ?~  got  (pure:m ~)
+          ?:  =(got last)  (pure:m ~)
+          %+  poke-writer  0
+          (pairs:enjs:format ~[['op' s+'follow-armillary'] ['offer' u.got]])
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /armillary (add now ~m1))
+        ;<  ~  bind:m  (idle-until-poke /armillary)
+        ;<  ~  bind:m  (cancel-timer:io /armillary)
+        $(last got)
+          ::  following Armillary (version 96): a new offer from this
+          ::  ship's Armillary goes to the writer, which lays it over each
+          ::  setting that follows; Armillary moves within five minutes of
+          ::  its vendor, so a minute here adds little to that
           [~ %'location.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery location: failed")
         |-
@@ -834,6 +857,7 @@
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
           (line '/apps/shell.shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
           (line '/apps/shell.shell/desks/lattice.desk/' 'read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over. Refuse this and a sent page is read once, as sent')
+          (line '/apps/shell.shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json' 'read your Armillary settings: the address, the key, the model for each feature and the search address your Armillary vendor gives you. Approving this lets orrery run on the AI your vendor runs for you, kept current, unless you pick your own for a setting. Refuse this and orrery keeps only the settings you give it')
           (line '/apps/shell.shell/desks/auspex.desk/' 'read your mail, so what people write you becomes facts the ship knows, and read your replies to the daily brief. Refuse this and the ship reads no mail')
       ==
       :-  'make'
@@ -883,6 +907,7 @@
   ?:  =('set-rhythm' op)  (do-set-merged jon %'rhythm.json' 'set-rhythm')
   ?:  =('set-outdoors' op)  (do-set-outdoors jon)
   ?:  =('set-search' op)  (do-set-search jon)
+  ?:  =('follow-armillary' op)  (do-follow-armillary jon)
   ?:  =('set-travel' op)  (do-set-travel jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
@@ -1417,6 +1442,8 @@
     %delete-clients         (serve-drop-client eyre-id s2)
     %get-generator          (serve-generator eyre-id)
     %put-generator          (serve-set-doc eyre-id 'set-generator' jon)
+    %get-armillary          (serve-armillary eyre-id)
+    %post-armillary-follow  (serve-armillary-follow eyre-id jon)
     %get-generator-last     (serve-doc eyre-id %'generator-last.json')
     %post-generate          (serve-generate eyre-id jon act)
     %post-reconcile         (serve-reconcile eyre-id)
@@ -3009,15 +3036,10 @@
   ;<  base=(map @t json)  bind:m  (read-map (rf 1 / name))
   =/  expected=json
     ?+  op  jon
-      %'set-generator'  [%o (merge-settings:orr base p.jon (sy ~['api_key']))]
-      %'set-telegram'   [%o (merge-settings:orr base p.jon (sy ~['token' 'secret']))]
-      %'set-chat'       [%o (merge-settings:orr base p.jon ~)]
-      %'set-mail'       [%o (merge-settings:orr base p.jon ~)]
-      %'set-read'       [%o (merge-settings:orr base p.jon ~)]
-      %'set-travel'     [%o (merge-settings:orr base p.jon (sy ~['token']))]
-      %'set-search'     [%o (merge-settings:orr base p.jon (sy ~['api_key']))]
-      %'set-rhythm'     [%o (merge-settings:orr base p.jon ~)]
-      %'set-outdoors'   [%o (merge-settings:orr base p.jon ~)]
+        $?  %'set-generator'  %'set-telegram'  %'set-chat'  %'set-mail'  %'set-read'
+            %'set-travel'  %'set-search'  %'set-rhythm'  %'set-outdoors'
+        ==
+      [%o (settings-merge:orr op base p.jon)]
     ==
   =/  pk=json  (pairs:enjs:format ~[['op' s+op] ['doc' jon]])
   %^  write-then  eyre-id  pk
@@ -5364,8 +5386,11 @@
   |=  [cfg=config:orr body=json]
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
+  ::  the vendor's decision model when Armillary names one (version 96)
+  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  =/  model=@t  =/(d=@t (gs:orr gen-j 'decider_model') ?:(=('' d) 'typesafe/jev-1.13' d))
   =/  full=json
-    %^  set-key:orr  (set-key:orr body 'model' s+'typesafe/jev-1.13')
+    %^  set-key:orr  (set-key:orr body 'model' s+model)
       'provider'
     (pairs:enjs:format ~[['zdr' b+&]])
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
@@ -5386,10 +5411,107 @@
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-generator' 'doc: expected an object')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'generator.json'))
-  =/  merged=json  [%o (merge-settings:orr base p.doc (sy ~['api_key']))]
+  =/  merged=json  [%o (settings-merge:orr 'set-generator' base p.doc)]
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
   (pure:m |)
+::  +armillary-offer: this ship's Armillary's app-inference.json, or ~
+::  when Armillary is not installed or the owner refused orrery the file
+::
+++  armillary-offer
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  (find-base %armillary)
+  ?~  base  (pure:m ~)
+  ;<  vw=(unit view:nexus)  bind:m
+    (peek-soft:io [%& %& u.base %'app-inference.json'] ~)
+  ?.  ?=([~ %file *] vw)  (pure:m ~)
+  =/  jon=(unit json)  (mole |.(!<(json (need-vase:tarball sang.u.vw))))
+  ?~  jon  (pure:m ~)
+  ?.  ?=([%o *] u.jon)  (pure:m ~)
+  (pure:m jon)
+::  +do-follow-armillary: Armillary's offer laid over each setting that
+::  follows, and over those named in .attach, which follow again. Only
+::  a setting that changes is written. Settings are not model state:
+::  the beacon does not move.
+::
+++  do-follow-armillary
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  offer=json  (gj:orr jon 'offer')
+  ?.  ?=([%o *] offer)  (refuse 'follow-armillary' 'offer: expected an object')
+  =/  attach=(set @t)  (sy (strings:orr (ga:orr jon 'attach')))
+  =/  todo  armillary-files:orr
+  =|  moved=(list @t)
+  |-
+  ?~  todo
+    ?~  moved  (pure:m |)
+    ;<  ~  bind:m  (note 'follow-armillary' & (rap 3 (join ', ' (flop moved))))
+    (pure:m |)
+  ;<  cur=json  bind:m  (read-json (rf 0 / file.i.todo))
+  =/  next=json  (armillary-apply:orr name.i.todo cur offer (~(has in attach) name.i.todo))
+  ?:  =(next cur)  $(todo t.todo)
+  ;<  ~  bind:m  (over:io (rf 0 / file.i.todo) [[/ %json] next])
+  $(todo t.todo, moved [name.i.todo moved])
+::  +serve-armillary: whether this ship's Armillary offers anything,
+::  and per setting whether it follows and the model it runs
+::
+++  serve-armillary
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  ;<  docs=(list [name=@t doc=json])  bind:m  (armillary-docs armillary-files:orr)
+  (send-json eyre-id 200 (armillary-state:orr offer docs))
+++  armillary-docs
+  |=  todo=(list [name=@t file=@ta])
+  =/  m  (fiber:fiber:nexus ,(list [name=@t doc=json]))
+  ^-  form:m
+  ?~  todo  (pure:m ~)
+  ;<  doc=json  bind:m  (read-json (rf 1 / file.i.todo))
+  ;<  rest=(list [name=@t doc=json])  bind:m  (armillary-docs t.todo)
+  (pure:m [[name.i.todo doc] rest])
+::  +serve-armillary-follow: "Use Armillary AI defaults", from the page
+::  or from Talon: every setting follows again, or the one named in
+::  .feature. 409 says why there is nothing to follow.
+::
+++  serve-armillary-follow
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  one=@t  (gs:orr jon 'feature')
+  =/  names=(list @t)  (turn armillary-files:orr |=([n=@t f=@ta] n))
+  ?.  |(=('' one) (lien names |=(n=@t =(n one))))
+    (send-err eyre-id 400 'feature: not a setting that follows armillary')
+  ;<  base=(unit path)  bind:m  (find-base %armillary)
+  ?~  base  (send-err eyre-id 409 'armillary: not installed on this ship')
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  ?~  offer
+    %^  send-err  eyre-id  409
+    'armillary: orrery may not read it yet; approve orrery reading armillary on the permits page'
+  =/  attach=(list @t)  ?:(=('' one) names ~[one])
+  =/  op=json
+    %-  pairs:enjs:format
+    :~  ['op' s+'follow-armillary']
+        ['offer' u.offer]
+        ['attach' a+(turn attach |=(n=@t s+n))]
+    ==
+  %^  write-then  eyre-id  op
+  ::  the writer takes the poke before it writes: wait for the files,
+  ::  two seconds at most, then answer what they say
+  =/  tries=@ud  10
+  |-
+  ;<  docs=(list [name=@t doc=json])  bind:m  (armillary-docs armillary-files:orr)
+  =/  done=?
+    %+  levy  docs
+    |=  [n=@t d=json]
+    |(!(lien attach |=(a=@t =(a n))) !=(b+| (gj:orr d 'follow_armillary')))
+  ?:  |(done =(0 tries))  (send-json eyre-id 200 (armillary-state:orr offer docs))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-wait:io (add now ~s0..3333))
+  ;<  ~  bind:m  (take-wake:io ~)
+  $(tries (dec tries))
 ::  +do-set-travel: merge the time-to-leave settings over the stored
 ::  ones; a blank or missing token keeps the stored one, a null clears it
 ::
@@ -5415,7 +5537,7 @@
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-search' 'doc: expected an object')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'search.json'))
-  ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] [%o (merge-settings:orr base p.doc (sy ~['api_key']))]])
+  ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] [%o (settings-merge:orr 'set-search' base p.doc)]])
   ;<  ~  bind:m  (note-by 'set-search' & '' 'http')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'parks.sig') [[/ %sig] ~])
   (pure:m |)
@@ -5448,7 +5570,7 @@
   ?.  ?=([%o *] doc)  (refuse 'set-telegram' 'doc: expected an object')
   ?:  (short-secret:orr doc)  (refuse 'set-telegram' 'secret: 16 bytes at least')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'telegram.json'))
-  =/  merged=(map @t json)  (merge-settings:orr base p.doc (sy ~['token' 'secret']))
+  =/  merged=(map @t json)  (settings-merge:orr 'set-telegram' base p.doc)
   ;<  ~  bind:m  (over:io (rf 0 / %'telegram.json') [[/ %json] [%o merged]])
   =/  token=@t  (gs:orr doc 'token')
   ;<  ~  bind:m
@@ -5472,7 +5594,7 @@
   ?.  ?=([%o *] doc)  (refuse 'set-chat' 'doc: expected an object')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'chat.json'))
   ;<  ~  bind:m
-    (over:io (rf 0 / %'chat.json') [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
+    (over:io (rf 0 / %'chat.json') [[/ %json] [%o (settings-merge:orr 'set-chat' base p.doc)]])
   ;<  ~  bind:m  (note 'set-chat' & '')
   (pure:m |)
 ::  +do-set-mail, +do-set-doc: a settings document merged over the
@@ -5489,7 +5611,7 @@
   ?.  ?=([%o *] doc)  (refuse op 'doc: expected an object')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / file))
   ;<  ~  bind:m
-    (over:io (rf 0 / file) [[/ %json] [%o (merge-settings:orr base p.doc ~)]])
+    (over:io (rf 0 / file) [[/ %json] [%o (settings-merge:orr op base p.doc)]])
   ;<  ~  bind:m  (note op & '')
   (pure:m |)
 ::  +serve-read: text a client hands the ship to read (version 59): a
@@ -5820,6 +5942,7 @@
   ;<  parks-last=json  bind:m  (doc %'parks-last.json')
   ;<  search=json  bind:m  (doc %'search.json')
   ;<  search-last=json  bind:m  (doc %'search-last.json')
+  ;<  offer=(unit json)  bind:m  armillary-offer
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   %^  send-json  eyre-id  200
@@ -5867,6 +5990,11 @@
       ['parks_last' parks-last]
       ['search' (en-search-masked:orr (de-search:orr search))]
       ['search_last' (del-key:orr search-last 'seen')]
+      :-  'armillary'
+      %+  armillary-state:orr  offer
+      :~  ['generator' generator]  ['mail' mail]  ['chat' chat]
+          ['telegram' telegram]  ['read' read]  ['search' search]
+      ==
   ==
 ++  list-json  list-json:orr
 ::  +contacts-book: the owner's Tlon contact book as JSON, or why not

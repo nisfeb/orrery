@@ -484,4 +484,14 @@ ok('a refine keeps the page-wide dirty flag on submit and fetches the revised ro
   src.indexOf("dirty = Array.prototype.some.call(view.querySelectorAll('[data-refine-text]')") > src.indexOf("post('/actions/' + seg(rid) + '/refine'")
   && src.indexOf("refresh(true);", src.indexOf("post('/actions/' + seg(rid) + '/refine'")) < src.indexOf("} else if (el) el.textContent = (d && d.note) || 'not refined';")
   && !src.slice(src.indexOf("b.dataset.refine) {"), src.indexOf("post('/actions/' + seg(rid) + '/refine'")).includes('dirty = false'));
+// following Armillary (version 96): the card lists each setting, offers
+// a way back for one picked by hand, and is absent without Armillary
+const armWeek = (a) => render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, { armillary: a });
+const armOn = armWeek({ offered: true, rev: 3, mode: 'lease', settings: {
+  generator: { following: true, applied: true, model: 'g/1' }, mail: { following: false, applied: true, model: 'mine/1' } } });
+ok('the Armillary card names the vendor\'s model and offers the way back for a hand pick',
+  armOn.includes('<h2>Armillary</h2>') && armOn.includes('<code>g/1</code>')
+  && armOn.includes('data-follow-armillary="mail"') && armOn.includes('data-follow-armillary=""'));
+ok('a ship whose Armillary offers nothing shows no Armillary card',
+  !armWeek({ offered: false }).includes('<h2>Armillary</h2>') && !armWeek(undefined).includes('<h2>Armillary</h2>'));
 console.log('ALL OK (' + n + ' checks)');

@@ -9013,7 +9013,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  95
+++  version  96
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so
@@ -10091,6 +10091,116 @@
   |=  [act=actor a=action]
   ^-  action
   ?~(scope.act a (scope-about a kinds.u.scope.act))
+::  ==  following Armillary (version 96)
+::
+::  A ship with Armillary runs on the AI its vendor drives for it: the
+::  address, the key and a model per feature, read from Armillary's
+::  app-inference.json. Every setting follows unless the owner picked
+::  their own (follow_armillary false in that file), and a hand change
+::  of a followed model, address or key is that pick. The decider has no
+::  setting of its own: it takes the vendor's decision model, kept in
+::  generator.json as decider_model, and typesafe/jev-1.13 without one.
+::
+::  +armillary-files: each setting that follows, and its file
+::
+++  armillary-files
+  ^-  (list [name=@t file=@ta])
+  :~  ['generator' %'generator.json']
+      ['mail' %'mail.json']
+      ['chat' %'chat.json']
+      ['telegram' %'telegram.json']
+      ['read' %'read.json']
+      ['search' %'search.json']
+  ==
+::  +armillary-apply: a setting's document with Armillary's offer laid
+::  over it, unless the owner picked their own; .attach follows again.
+::  A model is the feature's own (orrery_<name>), else the vendor's
+::  default. Search turns on the first time it is given a key, unless
+::  the owner has set it either way.
+::
+++  armillary-apply
+  |=  [name=@t doc=json offer=json attach=?]
+  ^-  json
+  =/  base=(map @t json)  ?:(?=([%o *] doc) p.doc ~)
+  =?  base  attach  (~(del by base) 'follow_armillary')
+  ?:  =(`b+| (~(get by base) 'follow_armillary'))  [%o base]
+  =/  sug=json  (gj offer 'suggested')
+  =/  ms=json  (gj sug 'models')
+  =/  model-of  |=(f=@t ^-(@t =/(own=@t (gs ms f) ?:(=('' own) (gs ms 'default') own))))
+  =/  set=(list [@t json])
+    ?:  =('generator' name)
+      =/  url=@t  (gs offer 'base_url')
+      =/  key=@t  (gs offer 'key')
+      =/  mo=@t  (model-of 'orrery_generator')
+      ?:  |(=('' url) =('' key) =('' mo))  ~
+      :~  ['url' s+url]
+          ['api_key' s+key]
+          ['model' s+mo]
+          ['decider_model' s+(gs ms 'orrery_decider')]
+      ==
+    ?:  =('search' name)
+      =/  url=@t  (gs (gj offer 'search') 'url')
+      =/  key=@t  (gs (gj offer 'search') 'key')
+      ?:  |(=('' url) =('' key))  ~
+      ~[['api_url' s+url] ['api_key' s+key]]
+    =/  mo=@t  (model-of (cat 3 'orrery_' name))
+    ?:(=('' mo) ~ ~[['model' s+mo]])
+  ?~  set  [%o base]
+  =?  base  &(=('search' name) !(~(has by base) 'enabled'))  (~(put by base) 'enabled' b+&)
+  [%o (~(gas by base) ['armillary_rev' (numb:enjs:format (fall (gn sug 'rev') 0))] set)]
+::  +settings-merge: an owner's settings document over the stored one,
+::  for every settings op. A blank secret keeps the stored one. When the
+::  file holds Armillary's values, a followed field that really changes
+::  is the owner's own pick and that setting stops following; the page
+::  sends every field on each save, so an unchanged one is no pick.
+::
+++  settings-merge
+  |=  [op=@t base=(map @t json) doc=(map @t json)]
+  ^-  (map @t json)
+  =/  merged=(map @t json)
+    ?+  op  (merge-settings base doc ~)
+      %'set-generator'  (merge-settings base doc (sy ~['api_key']))
+      %'set-telegram'   (merge-settings base doc (sy ~['token' 'secret']))
+      %'set-travel'     (merge-settings base doc (sy ~['token']))
+      %'set-search'     (merge-settings base doc (sy ~['api_key']))
+    ==
+  =/  keys=(list @t)
+    ?+  op  `(list @t)`~
+      %'set-generator'  `(list @t)`~['url' 'model' 'api_key']
+      %'set-search'     `(list @t)`~['api_url' 'api_key']
+      $?(%'set-telegram' %'set-chat' %'set-mail' %'set-read')  `(list @t)`~['model']
+    ==
+  ?:  =(~ keys)  merged
+  ?:  (~(has by doc) 'follow_armillary')  merged
+  ?.  (~(has by base) 'armillary_rev')  merged
+  =/  picked=?
+    %+  lien  keys
+    |=  k=@t
+    =/  v=(unit json)  (~(get by doc) k)
+    ?&(?=(^ v) !=(s+'' u.v) !=(u.v (~(gut by base) k ~)))
+  ?.(picked merged (~(put by merged) 'follow_armillary' b+|))
+::  +armillary-state: what GET /api/armillary answers: whether
+::  Armillary offers anything, its revision and mode, and per setting
+::  whether it follows and the model it runs
+::
+++  armillary-state
+  |=  [offer=(unit json) docs=(list [name=@t doc=json])]
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['offered' b+?=(^ offer)]
+      ['mode' s+?~(offer '' (gs u.offer 'mode'))]
+      ['rev' (numb:enjs:format ?~(offer 0 (fall (gn (gj u.offer 'suggested') 'rev') 0)))]
+      :-  'settings'
+      %-  pairs:enjs:format
+      %+  turn  docs
+      |=  [name=@t doc=json]
+      :-  name
+      %-  pairs:enjs:format
+      :~  ['following' b+!=(b+| (gj doc 'follow_armillary'))]
+          ['applied' b+!=(~ (gj doc 'armillary_rev'))]
+          ['model' s+(gs doc 'model')]
+      ==
+  ==
 ::  +settings-file, +settings-view: the document an op writes, and how
 ::  its GET shows it (the secrets masked)
 ::
@@ -10419,6 +10529,8 @@
   ?:  &(=('DELETE' meth) ?=([%api %clients @ ~] suffix))        `[%delete-clients %own]
   ?:  &(=('GET' meth) ?=([%api %generator ~] suffix))           `[%get-generator %own]
   ?:  &(=('PUT' meth) ?=([%api %generator ~] suffix))           `[%put-generator %own]
+  ?:  &(=('GET' meth) ?=([%api %armillary ~] suffix))           `[%get-armillary %own]
+  ?:  &(=('POST' meth) ?=([%api %armillary %follow ~] suffix))  `[%post-armillary-follow %own]
   ?:  &(=('GET' meth) ?=([%api %generator %last ~] suffix))     `[%get-generator-last %own]
   ?:  &(=('POST' meth) ?=([%api %generate ~] suffix))           `[%post-generate %any]
   ?:  &(=('POST' meth) ?=([%api %reconcile ~] suffix))          `[%post-reconcile %own]

@@ -510,6 +510,45 @@ code, d = curl('GET', API + '/generator')
 check('a write without the key keeps it', dictish(d).get('api_key_set') is True and dictish(d).get('model') == 'deepseek/deepseek-v4.1-flash', d)
 owner_only('the settings are the owner\'s, even to a writing key', 'GET', '/generator')
 
+# ---- following Armillary (version 96): every setting runs on what this ship's Armillary offers ----
+# a ship with no Armillary, or one orrery may not read yet, says so; on
+# one with Armillary every setting follows, a hand pick stops only that
+# setting, and one tap follows it again
+ARM_SETTINGS = {'generator', 'mail', 'chat', 'telegram', 'read', 'search'}
+def arm_of(name):
+    code, st = curl('GET', API + '/armillary')
+    return dictish(dictish(dictish(st).get('settings')).get(name))
+code, arm_st = curl('GET', API + '/armillary')
+arm_st = dictish(arm_st)
+check('the Armillary state names every setting that follows',
+      code == 200 and set(dictish(arm_st.get('settings'))) == ARM_SETTINGS, (code, arm_st))
+code, d = curl('POST', API + '/armillary/follow', {'feature': 'nonsense'})
+check('following a setting that cannot follow is 400', code == 400, (code, d))
+if not arm_st.get('offered'):
+    code, d = curl('POST', API + '/armillary/follow', {})
+    check('with no Armillary to follow, following says why', code == 409 and 'armillary' in json.dumps(d), (code, d))
+else:
+    code, d = curl('POST', API + '/armillary/follow', {})
+    arm_after = dictish(dictish(d).get('settings'))
+    check('following answers every setting following',
+          code == 200 and all(dictish(v).get('following') is True for v in arm_after.values()), (code, d))
+    code, arm_gen = curl('GET', API + '/generator')
+    arm_gen = dictish(arm_gen)
+    curl('PUT', API + '/generator', {'url': arm_gen.get('url'), 'model': arm_gen.get('model'), 'api_key': ''})
+    time.sleep(0.5)
+    check('a page save of the same address and model keeps the generator following',
+          arm_of('generator').get('following') is True, arm_of('generator'))
+    curl('PUT', API + '/mail', {'model': 'hand/picked-1'})
+    time.sleep(0.5)
+    check('a reader model picked by hand stops only that reader following',
+          arm_of('mail').get('following') is False and arm_of('generator').get('following') is True,
+          (arm_of('mail'), arm_of('generator')))
+    code, d = curl('POST', API + '/armillary/follow', {'feature': 'mail'})
+    check('one tap follows it again',
+          code == 200 and dictish(dictish(dictish(d).get('settings')).get('mail')).get('following') is True, (code, d))
+owner_only('what follows Armillary is the owner\'s to read, even to a writing key', 'GET', '/armillary')
+owner_only('following is the owner\'s word, even to a writing key', 'POST', '/armillary/follow')
+
 # ---- the stub: one server for the model, the decider, Telegram, Mapbox, the weather service and POTA ----
 import http.server, socketserver
 #  the stub's port: STUB_PORT when given, else one free now (8099, the

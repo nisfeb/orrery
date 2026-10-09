@@ -214,6 +214,12 @@ The full gate:
 
 A release that raises the consent prompt leaves the new roads refused until the owner approves them, and whatever needed them stays off. Read `weir-json` in `code/nex/orrery/app.hoon` before the bump and say in the release note which lines are new.
 
+### Version 96's owner steps
+
+Version 96 asks for one new road, so the update raises the consent prompt: read Armillary's `app-inference.json` (the line `/apps/shell.shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json`). Approve every road on `/apps/grubbery/permits`, then reload orrery. Refuse that one and nothing changes: orrery keeps the settings you gave it.
+
+On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
+
 ### Version 95's owner steps
 
 Version 95 is one release of the shared-households work built as 88 to 95; none of those numbers shipped alone. It asks for no new roads, so no consent prompt.

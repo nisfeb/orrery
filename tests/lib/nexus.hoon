@@ -78,6 +78,8 @@
     ['GET' `path`~[%api %generator] %get-generator %own]
     ['PUT' `path`~[%api %generator] %put-generator %own]
     ['GET' `path`~[%api %generator %last] %get-generator-last %own]
+    ['GET' `path`~[%api %armillary] %get-armillary %own]
+    ['POST' `path`~[%api %armillary %follow] %post-armillary-follow %own]
     ['POST' `path`~[%api %generate] %post-generate %any]
     ['POST' `path`~[%api %reconcile] %post-reconcile %own]
     ['GET' `path`~[%api %reconcile %last] %get-reconcile-last %own]

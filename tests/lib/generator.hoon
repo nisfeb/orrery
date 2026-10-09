@@ -2254,4 +2254,70 @@
     (expect-eq !>(`(list @t)`~) !>((brief-steps:orr 'done' 'dismissed')))
     (expect-eq !>(`(list @t)`~['dismissed']) !>((brief-steps:orr 'approved' 'dismissed')))
   ==
+::  ==  following Armillary (version 96)
+::
+::  Armillary's offer as app-inference.json carries it, in lease mode
+::
+++  offer
+  %-  jo
+  %+  rap  3
+  :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-1",'
+      '"suggested":{"rev":3,"models":{"default":"f/1","orrery_generator":"g/1",'
+      '"orrery_mail":"z/1","orrery_decider":"typesafe/jev-2"}},'
+      '"search":{"url":"https://v/apps/armillary/brave","key":"id.sec"}}'
+  ==
+::  every setting follows by default: the generator takes the address,
+::  key, its model and the decider's; a reader its own model, else the
+::  default; search the proxy and turns on once; other fields stay
+::
+++  test-armillary-apply
+  =/  gen  (armillary-apply:orr 'generator' (jo '{"enabled":false,"max_tokens":7}') offer |)
+  =/  srch  (armillary-apply:orr 'search' (jo '{"monthly_cap":9}') offer |)
+  ;:  weld
+    (expect-eq !>('https://or/api/v1') !>((gs:orr gen 'url')))
+    (expect-eq !>('sk-1') !>((gs:orr gen 'api_key')))
+    (expect-eq !>('g/1') !>((gs:orr gen 'model')))
+    (expect-eq !>('typesafe/jev-2') !>((gs:orr gen 'decider_model')))
+    (expect-eq !>(`(unit @ud)``3) !>((gn:orr gen 'armillary_rev')))
+    (expect-eq !>(b+|) !>((gj:orr gen 'enabled')))
+    (expect-eq !>(`(unit @ud)``7) !>((gn:orr gen 'max_tokens')))
+    (expect-eq !>('z/1') !>((gs:orr (armillary-apply:orr 'mail' ~ offer |) 'model')))
+    (expect-eq !>('f/1') !>((gs:orr (armillary-apply:orr 'chat' ~ offer |) 'model')))
+    (expect-eq !>('https://v/apps/armillary/brave') !>((gs:orr srch 'api_url')))
+    (expect-eq !>(b+&) !>((gj:orr srch 'enabled')))
+    (expect-eq !>(b+|) !>((gj:orr (armillary-apply:orr 'search' (jo '{"enabled":false}') offer |) 'enabled')))
+  ==
+::  the owner's own pick is left alone until they follow again, and an
+::  offer with nothing for a setting changes nothing
+::
+++  test-armillary-apply-own
+  =/  own  (jo '{"model":"mine/1","follow_armillary":false}')
+  =/  none  (jo '{"mode":"none","base_url":"","key":"","suggested":{"rev":0,"models":{}},"search":{}}')
+  ;:  weld
+    (expect-eq !>(own) !>((armillary-apply:orr 'mail' own offer |)))
+    (expect-eq !>('z/1') !>((gs:orr (armillary-apply:orr 'mail' own offer &) 'model')))
+    (expect-eq !>(~) !>((gj:orr (armillary-apply:orr 'mail' own offer &) 'follow_armillary')))
+    (expect-eq !>((jo '{"model":"m"}')) !>((armillary-apply:orr 'mail' (jo '{"model":"m"}') none |)))
+    (expect-eq !>((jo '{"x":1}')) !>((armillary-apply:orr 'generator' (jo '{"x":1}') none |)))
+  ==
+::  a save that sends the followed values again, or a blank key, still
+::  follows; a model, address or key that really changes is the owner's
+::  pick; a file Armillary never filled has nothing to stop following
+::
+++  test-settings-merge
+  =/  base=(map @t json)
+    (my ~[['url' s+'https://a/v1'] ['model' s+'m1'] ['api_key' s+'k'] ['armillary_rev' n+'3']])
+  =/  fol  |=(m=(map @t json) (~(get by m) 'follow_armillary'))
+  ;:  weld
+    (expect-eq !>(~) !>((fol (settings-merge:orr 'set-generator' base (my ~[['url' s+'https://a/v1'] ['model' s+'m1'] ['api_key' s+'']])))))
+    (expect-eq !>(~) !>((fol (settings-merge:orr 'set-generator' base (my ~[['enabled' b+|]])))))
+    (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-generator' base (my ~[['model' s+'m2']])))))
+    (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'k2']])))))
+    (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-mail' base (my ~[['model' s+'m2']])))))
+    (expect-eq !>(~) !>((fol (settings-merge:orr 'set-mail' base (my ~[['url' s+'https://b']])))))
+    (expect-eq !>(`b+&) !>((fol (settings-merge:orr 'set-mail' base (my ~[['model' s+'m2'] ['follow_armillary' b+&]])))))
+    (expect-eq !>(~) !>((fol (settings-merge:orr 'set-mail' (~(del by base) 'armillary_rev') (my ~[['model' s+'m2']])))))
+    (expect-eq !>(`s+'k') !>((~(get by (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'']]))) 'api_key')))
+    (expect-eq !>(`s+'tok') !>((~(get by (settings-merge:orr 'set-telegram' (my ~[['token' s+'tok']]) (my ~[['token' s+'']]))) 'token')))
+  ==
 --

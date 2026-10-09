@@ -482,6 +482,25 @@
 
   // the generator card: every setting but the key, which is written and
   // never read back; a run-now button; what the last pass did
+  // following Armillary (version 96): which settings run on the AI this
+  // ship's Armillary vendor gives it, and a way back for each the owner
+  // picked by hand. Nothing shows on a ship without Armillary.
+  var ARM_NAMES = { generator: 'Generator', mail: 'Mail reader', chat: 'Chat reader', telegram: 'Telegram reader', read: 'Read channel', search: 'Place lookups' };
+  function armillaryCard(a) {
+    if (!a || !a.offered) return '';
+    var st = a.settings || {}, own = 0;
+    var rows = Object.keys(ARM_NAMES).map(function (k) {
+      var x = st[k] || {};
+      var what = k === 'search' ? 'search through your vendor' : (x.model ? '<code>' + esc(x.model) + '</code>' : 'nothing yet');
+      if (x.following === false) own++;
+      return '<li>' + ARM_NAMES[k] + ': ' + (x.following === false
+        ? 'your own pick <button data-follow-armillary="' + esc(k) + '">use your vendor\'s</button>'
+        : (x.applied ? 'your vendor\'s, ' + what : 'your vendor\'s, once it offers one')) + '</li>';
+    }).join('');
+    return '<div class="card"><h2>Armillary</h2><p class="muted">Your Armillary vendor runs your AI (revision ' + esc(a.rev || 0) + ', ' + esc(a.mode || '') + ' mode). Changing a setting\'s model, address or key below makes it your own pick.</p>' +
+      '<ul>' + rows + '</ul>' +
+      (own ? '<p><button data-follow-armillary="">Use Armillary AI defaults for everything</button></p>' : '') + '</div>';
+  }
   function generatorCard(g, last) {
     g = g || {}; last = last || {};
     var effort = g.reasoning && g.reasoning.enabled === false ? 'off' : (g.reasoning && g.reasoning.effort) || '';
@@ -815,7 +834,7 @@
     return out + '</div>';
   }
   function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast, week) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + armillaryCard(week && week.armillary) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -1270,7 +1289,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last, armillary: d.armillary }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -1884,6 +1903,14 @@
       minted = null;
       dirty = false;
       refresh(true);
+    } else if (b.dataset.followArmillary != null) {
+      var feature = b.dataset.followArmillary;
+      say(feature ? 'following your Armillary vendor for ' + feature : 'following your Armillary vendor for everything');
+      post('/armillary/follow', feature ? { feature: feature } : {}).then(function () {
+        dirty = false;
+        say('following your Armillary vendor');
+        refresh(true);
+      }).catch(oops);
     } else if (b.dataset.saveGenerator) {
       say('saving generator settings');
       post('/generator', generatorForm(), 'PUT').then(function () { dirty = false; say('generator saved'); }).catch(oops);
