@@ -314,6 +314,18 @@
   ^-  @t
   =/  v=json  (gj jon k)
   ?:(?=([%s *] v) p.v '')
+::  +dequote: a string the chat scry gave quoted inside the ship, read as
+::  the JSON string it is (so inner quotes and backslashes come out
+::  right), else its outer quotes dropped; any other string as it is
+::
+++  dequote
+  |=  t=@t
+  ^-  @t
+  =/  j=(unit json)  (de:json:html t)
+  ?:  ?=([~ %s *] j)  p.u.j
+  =/  n=@ud  (met 3 t)
+  ?.  &((gte n 2) =('"' (end [3 1] t)) =('"' (rsh [3 (dec n)] t)))  t
+  (cut 3 [1 (sub n 2)] t)
 ++  num-cord                                    ::  a number or a string as text, or ''
   |=  j=json
   ^-  @t
@@ -4701,11 +4713,11 @@
   %+  turn  xs
   |=  x=json
   ^-  tape
-  ?:  ?=([%s *] x)  (trip p.x)
+  ?:  ?=([%s *] x)  (trip (dequote p.x))
   ?.  ?=([%o *] x)  ""
   ?:  (~(has by p.x) 'break')  "\0a"
   =/  ship=json  (gj x 'ship')
-  ?:  ?=([%s *] ship)  (trip p.ship)
+  ?:  ?=([%s *] ship)  (trip (dequote p.ship))
   =/  nested=(unit (list json))
     =/  keys=(list @t)  ~['bold' 'italics' 'strike' 'blockquote']
     |-
@@ -4714,7 +4726,7 @@
     ?:(?=([%a *] v) `p.v $(keys t.keys))
   ?^  nested  (inlines-text u.nested)
   =/  link=json  (gj x 'link')
-  ?:  ?=([%o *] link)  (trip (gs link 'content'))
+  ?:  ?=([%o *] link)  (trip (dequote (gs link 'content')))
   =/  task=json  (gj x 'task')
   ?:  ?=([%o *] task)  (inlines-text (ga task 'content'))
   =/  plain=@t
@@ -4723,7 +4735,7 @@
     ?~  keys  ''
     =/  t=@t  (gs x i.keys)
     ?:(!=('' t) t $(keys t.keys))
-  (trip plain)
+  (trip (dequote plain))
 ::  +chat-rows, +channel-rows: the reader's message rows from the chat
 ::  agent's changes answer (a map from whom to writs or null, tlon-apps
 ::  desk/mar/chat/changed-writs-1.hoon) and the channels agent's (a
@@ -4781,11 +4793,13 @@
   ?.  ?=([%o *] essay)  ~
   =/  sent=@da  (da-of-ms (fall (gn essay 'sent') 0))
   ?.  (gth sent floor)  ~
+  ::  inside the ship the scry's strings can arrive quoted ("~sarlev"):
+  ::  unquoted, or every sender is a stranger (version 100)
   =/  author=@t
     =/  a=json  (gj essay 'author')
-    (ship-key ?:(?=([%s *] a) p.a (gs a 'ship')))
+    (ship-key (dequote ?:(?=([%s *] a) p.a (gs a 'ship'))))
   ?:  &(!read-own.cfg =(author (ship-key our)))  ~
-  =/  mid=@t  (num-cord (gj (gj w 'seal') 'id'))
+  =/  mid=@t  (dequote (num-cord (gj (gj w 'seal') 'id')))
   ?:  =('' mid)  ~
   `[whom author (trim-cord (story-text (gj essay 'content'))) sent mid '']
 ::  what one message says: bodies and observation rows for the writer,

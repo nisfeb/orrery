@@ -2541,4 +2541,26 @@
     (expect-eq !>('Finish Summer camp registration?') !>((gs:orr (nudge-act:orr p) 'title')))
     (expect-eq !>(`(list @t)`~['situation/summer-camp']) !>((strings:orr (ga:orr (nudge-act:orr p) 'about'))))
   ==
+::  inside the ship the chat scry's strings can come quoted: the sender,
+::  the id and the words are read without the quotes, so a known sender
+::  is known (version 100)
+++  test-chat-quoted
+  =/  writ=json
+    %-  jo
+    '{"seal": {"id": "\\"~sarlev/170.141.184\\"", "replies": {}}, "essay": {"author": "\\"~sarlev\\"", "sent": 1791558000000, "content": [{"inline": ["\\"meet at 3pm\\""]}]}}'
+  =/  plain=json
+    (jo '{"seal": {"id": "~sarlev/170.141.184", "replies": {}}, "essay": {"author": "~sarlev", "sent": 1791558000000, "content": [{"inline": ["meet at 3pm"]}]}}')
+  =/  cfg=chat-config:orr  (de-chat-config:orr (jo '{"enabled": true, "read_own": true}'))
+  =/  q=(unit tg-msg:orr)  (post-row:orr '~sarlev' writ 'essay' cfg *@da '~zod')
+  =/  p=(unit tg-msg:orr)  (post-row:orr '~sarlev' plain 'essay' cfg *@da '~zod')
+  ;:  weld
+    (expect-eq !>('~sarlev') !>(from:(need q)))
+    (expect-eq !>('~sarlev/170.141.184') !>(mid:(need q)))
+    (expect-eq !>('meet at 3pm') !>(text:(need q)))
+    (expect-eq !>(q) !>(p))
+    (expect-eq !>('plain') !>((dequote:orr 'plain')))
+    (expect-eq !>('"') !>((dequote:orr '"')))
+    (expect-eq !>('he said "hi"') !>((dequote:orr '"he said \\"hi\\""')))
+    (expect-eq !>('42') !>((dequote:orr '42')))
+  ==
 --
