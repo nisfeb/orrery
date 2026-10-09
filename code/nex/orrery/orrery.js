@@ -485,7 +485,7 @@
   // following Armillary (version 96): which settings run on the AI this
   // ship's Armillary vendor gives it, and a way back for each the owner
   // picked by hand. Nothing shows on a ship without Armillary.
-  var ARM_NAMES = { generator: 'Generator', mail: 'Mail reader', chat: 'Chat reader', telegram: 'Telegram reader', read: 'Read channel', search: 'Place lookups' };
+  var ARM_NAMES = { generator: 'Generator', mail: 'Mail reader', chat: 'Chat reader', telegram: 'Telegram reader', read: 'Read channel', search: 'Place lookups', browsing: 'Browsing reader' };
   function armillaryCard(a) {
     if (!a || !a.offered) return '';
     var st = a.settings || {}, own = 0;
@@ -682,6 +682,26 @@
     }
     return out + '</div>';
   }
+  // the browsing reader (version 98): what the browser extension sends
+  // of what the owner reads, kept on the ship; only pages tied to a plan,
+  // a todo, a person or a place go to a ZDR model. The model follows
+  // Armillary's; with none, pages wait.
+  function browsingCard(c, last) {
+    c = c || {}; last = last || {};
+    var out = '<div class="card"><h2>Browsing</h2><div id="browsing"><p class="muted">The browser extension sends the pages you read. The ship keeps them, ties each to a plan, a todo, a person or a place it knows, and asks a zero-data-retention model only about those. ' +
+      'Banking and medical sites and Claude artifacts are never read; add any other site below.</p>' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled !== false ? ' checked' : '') + '> on</label> ' +
+      '<label class="field">hours between passes <input name="interval_hours" value="' + esc(c.interval_hours != null ? c.interval_hours : '') + '"></label> ' +
+      '<label class="field">model (ZDR only) <input name="model" value="' + esc(c.model || '') + '"></label></p>' +
+      '<p><label class="field">never read these sites, one per line <textarea name="exclude" class="short" rows="3">' + esc((c.exclude || []).join('\n')) + '</textarea></label></p>' +
+      '<p><button data-save-browsing="1">save browsing</button><button data-browsing-wake="1">read now</button></p></div>';
+    if (!c.model) out += '<p class="bad">No ZDR model yet: your Armillary vendor names one for the browsing reader, or set one above. Until then pages wait on the ship, read by no model.</p>';
+    if (last.pass_at) {
+      out += '<p class="muted">Last pass ' + fmtTime(last.pass_at) + ': ' + (last.unread || 0) + ' new pages, ' + (last.tied || 0) + ' tied to something, ' + (last.sent || 0) + ' read by the model, ' + (last.filed || 0) + ' filed' + (last.trimmed ? ', ' + last.trimmed + ' old texts trimmed' : '') + '.</p>';
+      (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
+    }
+    return out + '</div>';
+  }
   function readCard(c, last) {
     c = c || {}; last = last || {};
     var out = '<div class="card"><h2>Read</h2><div id="read"><p class="muted">What a client hands the ship to read (a page from the browser extension, a note) goes through the reader like a message: ' +
@@ -834,7 +854,7 @@
     return out + '</div>';
   }
   function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast, week) {
-    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + armillaryCard(week && week.armillary) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + briefCard(briefLast) +
+    return '<h1>Settings</h1>' + prefsCard(schema, reasons) + correctionsCard(corrections) + armillaryCard(week && week.armillary) + generatorCard(generator, last) + qualityCard(tally) + reconcileCard(reconcile) + executorCard(execLast, calLast, policy) + travelCard(travel, travelLast) + weekCard(week) + telegramCard(telegram, telegramLast) + chatCard(chat, chatLast, dms, channels) + mailCard(mail, mailLast) + readCard(read, readLast) + browsingCard(week && week.browsing, week && week.browsingLast) + briefCard(briefLast) +
       '<div class="card"><h2>schema.json</h2><textarea id="schema" aria-label="schema.json">' + esc(JSON.stringify(schema, null, 2)) + '</textarea>' +
       '<p><button data-save="schema">save schema</button></p></div>' +
       '<div class="card"><h2>policy.json</h2><textarea id="policy" aria-label="policy.json">' + esc(JSON.stringify(policy, null, 2)) + '</textarea>' +
@@ -952,7 +972,7 @@
 
   var render = {
     phase: phase,
-    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox,
+    bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, browsingCard: browsingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox,
     personPicker: personPicker, matchScore: matchScore, pickMatches: pickMatches, pickList: pickList, payloadLine: payloadLine, namedText: namedText, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
   };
@@ -1289,7 +1309,7 @@
     if (v.name === 'settings') {
       var l = d.chat_lists || {};
       var drew = show(settings(d.schema, d.policy, d.generator, d.generator_last, d.reconcile_last, d.telegram, d.telegram_last, d.exec_last, d.chat, d.chat_last, l.dms, l.channels, d.calendar_last, d.mail, d.mail_last, d.brief_last, d.read, d.read_last, d.reasons, d.tally, d.corrections, d.travel, d.travel_last,
-        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last, armillary: d.armillary }));
+        { review: d.review_last, healthDays: d.health_days, health: d.health_last, work: d.work_last, nudge: d.nudge_last, rhythm: d.rhythm, outdoors: d.outdoors, weather: d.weather_last, parks: d.parks_last, search: d.search, searchLast: d.search_last, armillary: d.armillary, browsing: d.browsing, browsingLast: d.browsing_last }));
       if (drew) fillCalendars();
       return drew;
     }
@@ -2054,6 +2074,15 @@
       ['gate', 'escalate', 'max_daily_messages'].forEach(function (k) { var n = parseInt(field('#read', k), 10); rc[k] = isNaN(n) ? null : n; });
       say('saving read settings');
       post('/read/settings', rc, 'PUT').then(function () { dirty = false; say('read saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.saveBrowsing) {
+      var bc = { enabled: !!view.querySelector('#browsing input[name="enabled"]:checked'), model: field('#browsing', 'model') };
+      var hrs = parseInt(field('#browsing', 'interval_hours'), 10); bc.interval_hours = isNaN(hrs) ? null : hrs;
+      var ex = view.querySelector('#browsing textarea[name="exclude"]');
+      bc.exclude = (ex ? ex.value : '').split(/[\n,]/).map(function (x) { return x.trim(); }).filter(Boolean);
+      say('saving browsing settings');
+      post('/browsing/settings', bc, 'PUT').then(function () { dirty = false; say('browsing saved'); refresh(true); }).catch(oops);
+    } else if (b.dataset.browsingWake) {
+      post('/browsing/wake', {}).then(function () { say('browsing reader woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.readWake) {
       post('/read/wake', {}).then(function () { say('reader woken'); setTimeout(function () { refresh(true); }, 8000); }).catch(oops);
     } else if (b.dataset.mailWake) {

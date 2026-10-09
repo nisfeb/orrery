@@ -5985,6 +5985,8 @@
   ;<  parks-last=json  bind:m  (doc %'parks-last.json')
   ;<  search=json  bind:m  (doc %'search.json')
   ;<  search-last=json  bind:m  (doc %'search-last.json')
+  ;<  browsing=json  bind:m  (doc %'browsing.json')
+  ;<  browsing-last=json  bind:m  (doc %'browsing-last.json')
   ;<  offer=(unit json)  bind:m  armillary-offer
   ;<  lists=json  bind:m  chat-lists
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
@@ -6033,10 +6035,13 @@
       ['parks_last' parks-last]
       ['search' (en-search-masked:orr (de-search:orr search))]
       ['search_last' (del-key:orr search-last 'seen')]
+      ['browsing' (en-browsing-config:orr (de-browsing-config:orr browsing))]
+      ['browsing_last' browsing-last]
       :-  'armillary'
       %+  armillary-state:orr  offer
       :~  ['generator' generator]  ['mail' mail]  ['chat' chat]
           ['telegram' telegram]  ['read' read]  ['search' search]
+          ['browsing' browsing]
       ==
   ==
 ++  list-json  list-json:orr

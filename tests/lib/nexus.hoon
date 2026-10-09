@@ -1045,28 +1045,28 @@
   =/  bare=json  (schema-upgrade:orr (jo '{"kinds": {"person": {"attrs": ["status"]}}, "actions": ["task"]}'))
   ;:  weld
     ::  the kinds and their shapes are added after the owner's own
-    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'correct' 'merge' 'preference' 'resolve']) !>((strings:orr (ga:orr new 'actions'))))
+    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'correct' 'merge' 'preference' 'resolve' 'close']) !>((strings:orr (ga:orr new 'actions'))))
     (expect-eq !>((jo '{"mine": "kept"}')) !>((gj:orr (gj:orr new 'payloads') 'fact')))
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'payloads') 'resolve')) !>((gj:orr (gj:orr new 'payloads') 'resolve')))
     (expect !>((has-key:orr (gj:orr new 'payloads') 'correct')))
     ::  the attributes go on the end, the owner's own and their order kept
-    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere' 'shared-with']) !>((strings:orr (ga:orr sit 'attrs'))))
+    (expect-eq !>(`(list @t)`~['status' 'transcript' 'needs' 'waiting-on' 'outcome' 'attending' 'leave-by' 'drop-off' 'pick-up' 'away' 'sphere' 'shared-with' 'research']) !>((strings:orr (ga:orr sit 'attrs'))))
     (expect-eq !>(`(list @t)`~['status' 'spouse' 'children' 'parents' 'siblings' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr new 'kinds') 'person') 'attrs'))))
     ::  a note in the owner's words stays; a missing one is the starter's
     (expect-eq !>('my own words') !>((gs:orr (gj:orr sit 'notes') 'needs')))
     (expect-eq !>((starter-note 'situation' 'outcome')) !>((gs:orr (gj:orr sit 'notes') 'outcome')))
     (expect-eq !>('mine') !>((gs:orr (gj:orr (gj:orr (gj:orr new 'kinds') 'person') 'notes') 'status')))
-    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with']) !>((strings:orr (ga:orr new 'multi'))))
+    (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with' 'research']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 94]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 98]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
-    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve']) !>((strings:orr (ga:orr at60 'actions'))))
+    (expect-eq !>(`(list @t)`~['task' 'note' 'fact' 'resolve' 'close']) !>((strings:orr (ga:orr at60 'actions'))))
     (expect-eq !>(`(list @t)`~['status' 'steps-target' 'sleep-target' 'bedtime-target' 'sphere']) !>((strings:orr (ga:orr (gj:orr (gj:orr at60 'kinds') 'person') 'attrs'))))
     (expect !>(!(has-key:orr (gj:orr bare 'kinds') 'situation')))
-    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with']) !>((strings:orr (ga:orr bare 'multi'))))
+    (expect-eq !>(`(list @t)`~['children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with' 'research']) !>((strings:orr (ga:orr bare 'multi'))))
     ::  but a kind a release brought in is made whole
     (expect-eq !>((gj:orr (gj:orr starter-schema:orr 'kinds') 'sphere')) !>((gj:orr (gj:orr bare 'kinds') 'sphere')))
     (expect-eq !>(`json`s+'x') !>((schema-upgrade:orr s+'x')))

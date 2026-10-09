@@ -2347,4 +2347,138 @@
     (expect-eq !>(`s+'k') !>((~(get by (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'']]))) 'api_key')))
     (expect-eq !>(`s+'tok') !>((~(get by (settings-merge:orr 'set-telegram' (my ~[['token' s+'tok']]) (my ~[['token' s+'']]))) 'token')))
   ==
+::  ==  the browsing reader (version 98)
+::
+::  what is never read: banking and medical hosts, Claude artifacts, a
+::  dev ship, what the owner lists, anything not a web address
+++  test-browsing-skip
+  ;:  weld
+    (expect !>((browsing-skip:orr 'https://www.chase.com/account' ~)))
+    (expect !>((browsing-skip:orr 'https://secure.examplebank.com/' ~)))
+    (expect !>((browsing-skip:orr 'https://mychart.example.org/visit' ~)))
+    (expect !>((browsing-skip:orr 'https://claude.ai/artifact/abc' ~)))
+    (expect !>((browsing-skip:orr 'https://claude.ai/code/artifact/abc' ~)))
+    (expect !>((browsing-skip:orr 'http://localhost:8080/apps/orrery' ~)))
+    (expect !>((browsing-skip:orr 'https://news.example/today' ~['news.example'])))
+    (expect !>((browsing-skip:orr 'ftp://files.example/x' ~)))
+    (expect !>(!(browsing-skip:orr 'https://example.org/cabinets' ~)))
+    ::  a Claude chat is not an artifact
+    (expect !>(!(browsing-skip:orr 'https://claude.ai/chat/abc' ~)))
+    (expect-eq !>('example.org') !>((url-host:orr 'https://www.Example.org:8080/x?y=1#z')))
+    (expect-eq !>('example.org/x') !>((url-bare:orr 'HTTPS://www.example.org/x')))
+  ==
+::  a text cut short never splits a character
+++  test-cut-utf8
+  ;:  weld
+    (expect-eq !>('h') !>((cut-utf8:orr 'héllo' 2)))
+    (expect-eq !>('hé') !>((cut-utf8:orr 'héllo' 3)))
+    (expect-eq !>('héllo') !>((cut-utf8:orr 'héllo' 99)))
+  ==
+::  a batch read: what is skipped is counted, a time in ms or ISO is read
+++  test-de-browsing-batch
+  =/  j=json
+    %-  pairs:enjs:format
+    :~  :-  'visits'
+        :-  %a
+        :~  (pairs:enjs:format ~[['url' s+'https://example.org/a'] ['title' s+'A'] ['at' n+'1791550800000'] ['how' s+'form_submit']])
+            (pairs:enjs:format ~[['url' s+'https://www.chase.com/'] ['title' s+'Bank'] ['at' n+'1791550800000']])
+        ==
+        :-  'pages'
+        :-  %a
+        :~  (pairs:enjs:format ~[['url' s+'https://example.org/a'] ['title' s+'A'] ['text' s+'words'] ['at' s+'2026-10-09T12:00:00Z']])
+        ==
+    ==
+  =/  got  (de-browsing-batch:orr j now ~)
+  ;:  weld
+    (expect-eq !>(1) !>((lent visits.got)))
+    (expect-eq !>(1) !>((lent pages.got)))
+    (expect-eq !>(1) !>(skipped.got))
+    (expect-eq !>('form_submit') !>(how:(snag 0 visits.got)))
+    (expect-eq !>(~2026.10.9..13.00.00) !>(at:(snag 0 visits.got)))
+    (expect-eq !>(~2026.10.9..12.00.00) !>(first:(snag 0 pages.got)))
+    (expect-eq !>(~.2026-10-09) !>((day-of:orr ~2026.10.9..12.00.00)))
+  ==
+::  a page seen again keeps its first sighting; new text is read again;
+::  text goes seven days after its pass, what the pass made of it stays
+++  test-browsing-pages
+  =/  p=bpage:orr  ['https://example.org/a' 'A' 'old' ~2026.10.1 ~2026.10.1 1 `~2026.10.1 ~['situation/x']]
+  =/  day=(map @t json)  (merge-pages:orr ~ ~[p])
+  =/  same  (merge-pages:orr day ~[p(text 'old', first ~2026.10.2, last ~2026.10.2)])
+  =/  moved  (merge-pages:orr day ~[p(text 'new', first ~2026.10.2, last ~2026.10.2)])
+  =/  k=@t  (url-key:orr 'https://example.org/a')
+  =/  s=bpage:orr  (de-bpage:orr (~(got by same) k))
+  =/  mv=bpage:orr  (de-bpage:orr (~(got by moved) k))
+  =/  trim-late  (trim-pages:orr day ~2026.10.9)
+  =/  trim-soon  (trim-pages:orr day ~2026.10.5)
+  ;:  weld
+    (expect-eq !>(2) !>(seen.s))
+    (expect-eq !>(~2026.10.1) !>(first.s))
+    (expect-eq !>(~2026.10.2) !>(last.s))
+    (expect-eq !>(`(unit @da)``~2026.10.1) !>(read.s))
+    (expect-eq !>('new') !>(text.mv))
+    (expect-eq !>(`(unit @da)`~) !>(read.mv))
+    (expect-eq !>(1) !>(n.trim-late))
+    (expect-eq !>('') !>(text:(de-bpage:orr (~(got by day.trim-late) k))))
+    (expect-eq !>(`(list @t)`~['situation/x']) !>(hits:(de-bpage:orr (~(got by day.trim-late) k))))
+    (expect-eq !>(0) !>(n.trim-soon))
+  ==
+::  the matcher: a plan by two of its telling words, a person by their
+::  whole name, a task by its words, an order by a form sent or its
+::  title, a trip by where it is booked, and nothing for the rest
+++  test-browse-hits
+  =/  all=(list loaded:orr)
+    :~  (mkb 'situation/pantry-remodel-quote' %situation 'Pantry remodel quote' ~ ~ now)
+        (mkb 'situation/old-move' %situation 'Garage clearout weekend' ~ ~[['status' s+'closed']] now)
+        (mkb 'person/mira-quill' %person 'Mira Quill' ~ ~ now)
+        (mkb 'person/sam' %person 'Sam' ~ ~ now)
+        (mkb 'person/me' %person 'me' ~ ~ now)
+    ==
+  =/  acts=(list [id=@ta a=action:orr])
+    ~[['t1' [%task 'Buy a kayak paddle' ~ ~ ~ 'owner' now %approved '' ~]]]
+  =/  idx  (browse-index:orr all acts ~ now)
+  =/  page  |=([title=@t text=@t] ^-(bpage:orr ['https://example.org/p' title text now now 1 ~ ~]))
+  =/  hits  |=([title=@t text=@t] hits:(browse-hits:orr (page title text) ~ idx))
+  =/  sig
+    |=  [url=@t title=@t how=(set @t)]
+    =/  pg=bpage:orr  (page title '')
+    signals:(browse-hits:orr pg(url url) how idx)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['situation/pantry-remodel-quote']) !>((hits 'Shaker cabinets' 'ideas for a pantry remodel this fall')))
+    (expect-eq !>(`(list @t)`~['person/mira-quill']) !>((hits 'Studio' 'portfolio of Mira Quill, ceramicist')))
+    (expect-eq !>(`(list @t)`~['action:t1']) !>((hits 'Kayak paddles' 'the best kayak paddle for beginners')))
+    ::  a closed situation, a one-word short name and the owner tie nothing
+    (expect-eq !>(`(list @t)`~) !>((hits 'Garage clearout weekend' 'garage clearout weekend tips')))
+    (expect-eq !>(`(list @t)`~) !>((hits 'Sam' 'sam and me')))
+    (expect-eq !>(`(list @t)`~) !>((hits 'Weather' 'rain later today')))
+    (expect-eq !>(`(list @t)`~['an order or a booking']) !>((sig 'https://shop.example/thanks' 'Thank you for your order' ~)))
+    (expect-eq !>(`(list @t)`~['an order or a booking']) !>((sig 'https://shop.example/x' 'Checkout' (sy ~['form_submit']))))
+    (expect-eq !>(`(list @t)`~['travel']) !>((sig 'https://www.airbnb.com/rooms/1' 'Flat by the sea' ~)))
+    (expect-eq !>(`(list @t)`~) !>((sig 'https://example.org/x' 'Recipes' ~)))
+  ==
+::  a close is the writer's: the action it names goes to done
+++  test-close-op
+  =/  a=action:orr  [%close 'Done? Buy a kayak paddle' (pairs:enjs:format ~[['action' s+'t1'] ['why' s+'order placed']]) ~ ~ 'browsing' now %approved '' ~]
+  =/  w  (writer-op-of:orr 'c1' a now)
+  =/  bad  (writer-op-of:orr 'c2' a(payload ~) now)
+  ;:  weld
+    (expect !>(?=(%& -.w)))
+    (expect-eq !>('set-action') !>((gs:orr ?>(?=(%& -.w) p.w) 'op')))
+    (expect-eq !>('t1') !>((gs:orr ?>(?=(%& -.w) p.w) 'id')))
+    (expect-eq !>('done') !>((gs:orr ?>(?=(%& -.w) p.w) 'status')))
+    (expect !>(?=(%| -.bad)))
+  ==
+::  the browsing reader takes only the model Armillary names for it,
+::  never the vendor's default; research and close reach old schemas
+++  test-browsing-armillary
+  =/  offer=json
+    (pairs:enjs:format ~[['suggested' (pairs:enjs:format ~[['models' (pairs:enjs:format ~[['default' s+'v/frontier'] ['orrery_read' s+'v/read']])]])]])
+  =/  with=json
+    (pairs:enjs:format ~[['suggested' (pairs:enjs:format ~[['models' (pairs:enjs:format ~[['default' s+'v/frontier'] ['orrery_browsing' s+'v/zdr']])]])]])
+  ;:  weld
+    (expect-eq !>('') !>((gs:orr (armillary-apply:orr 'browsing' [%o ~] offer |) 'model')))
+    (expect-eq !>('v/zdr') !>((gs:orr (armillary-apply:orr 'browsing' [%o ~] with |) 'model')))
+    (expect-eq !>('v/read') !>((gs:orr (armillary-apply:orr 'read' [%o ~] offer |) 'model')))
+    (expect !>((lien armillary-files:orr |=([n=@t f=@ta] =('browsing' n)))))
+    (expect-eq !>(98) !>(schema-newest:orr))
+  ==
 --

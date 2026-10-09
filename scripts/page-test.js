@@ -494,4 +494,14 @@ ok('the Armillary card names the vendor\'s model and offers the way back for a h
   && armOn.includes('data-follow-armillary="mail"') && armOn.includes('data-follow-armillary=""'));
 ok('a ship whose Armillary offers nothing shows no Armillary card',
   !armWeek({ offered: false }).includes('<h2>Armillary</h2>') && !armWeek(undefined).includes('<h2>Armillary</h2>'));
+// the browsing reader (version 98)
+const brNone = render.browsingCard({ enabled: true, model: '', exclude: ['news.example'], interval_hours: 3 }, {});
+const brSet = render.browsingCard({ enabled: true, model: 'zdr/one', exclude: [], interval_hours: 3 },
+  { pass_at: '2026-10-09T12:00:00Z', unread: 12, tied: 3, sent: 3, filed: 2, trimmed: 4, notes: ['gate: worth reading'] });
+ok('with no model the browsing card says pages wait, and lists the sites the owner left out',
+  brNone.includes('No ZDR model yet') && brNone.includes('news.example') && brNone.includes('data-save-browsing="1"') && brNone.includes('data-browsing-wake="1"'));
+ok('with a model the card says what the last pass did',
+  !brSet.includes('No ZDR model yet') && brSet.includes('12 new pages, 3 tied to something, 3 read by the model, 2 filed, 4 old texts trimmed') && brSet.includes('gate: worth reading'));
+ok('the settings view carries the browsing card', render.settings({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
+  { browsing: { enabled: true, model: '' }, browsingLast: {} }).includes('<h2>Browsing</h2>'));
 console.log('ALL OK (' + n + ' checks)');
