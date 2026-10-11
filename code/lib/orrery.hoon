@@ -4313,7 +4313,7 @@
   Three shapes exist.
   A body is something that exists: a person, place, thing, org, situation, activity or note. Its id is kind/slug, lowercase letters, digits and hyphens, for example person/sarah, place/johns-machine-shop, thing/subaru, situation/2026-09-16-breakdown.
   An observation is one claim about one body: subject.attr = value, with when it became true. Values are a short string, a number, true or false, null (which clears the attribute), or {"ref": "kind/slug"} pointing at another body.
-  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both, and when it does not, write neither. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short and plain, in the owner's own voice and in their style when one is given. Someone telling the owner about their own day, trip or trouble is not asking anything: propose a message only when they asked the owner something or are waiting on them, and never about a problem a later message says is solved. Never a message telling someone what they just said, and never one the owner already sent. When a message cancels something that is on the calendar and you were given the calendar's own id for that event, propose a calendar action with mode "cancel", event that id and, for a repeating event, starts the occurrence being dropped, keeping title and starts as an ordinary calendar action has them; the owner approves it, and the cancellation is written as a fact either way. Propose only the action kinds listed for you, with the payload shape given. A bill is a task only while the owner still has to pay it: an invoice, or a request with an amount due and no sign it is paid. A receipt, a charge already made, an autopay notice, a refund or a reimbursement is no task. The owner's standing preferences, when given, say what they want proposed and what not.
+  An action is something to do: a task with a title, the bodies it is about, and an optional due time; or, when a message fixes a plan in time ("dinner Friday at 8", "dentist on the 3rd at 2:30"), a calendar event, kind "calendar", with a payload of title, starts and, when the message says, ends and location, the times ISO 8601 with the message's offset. The situation body records the plan as a fact; the calendar action asks the owner to put it on the calendar; when a message fixes a time, write both. When the messages are about a plan that is going ahead (a party, a dinner, a trip, a game) and neither they nor the bodies you were given say when or where it is, propose one task for the owner asking for what is missing ("When and where is Sam's birthday party?"), about the people the messages name, unless an open action already asks; write the situation too when the new message names the plan. A wish or a maybe ("we should get dinner sometime") is no plan. Or a message to send, kind "message", when the conversation asks the owner something they would answer, or someone should be told what the messages just settled: payload via (the channel the conversation is on, one of the values the schema lists, unless the message says to use another), to (the person's body id) and text, short and plain, in the owner's own voice and in their style when one is given. Someone telling the owner about their own day, trip or trouble is not asking anything: propose a message only when they asked the owner something or are waiting on them, and never about a problem a later message says is solved. Never a message telling someone what they just said, and never one the owner already sent. When a message cancels something that is on the calendar and you were given the calendar's own id for that event, propose a calendar action with mode "cancel", event that id and, for a repeating event, starts the occurrence being dropped, keeping title and starts as an ordinary calendar action has them; the owner approves it, and the cancellation is written as a fact either way. Propose only the action kinds listed for you, with the payload shape given. A bill is a task only while the owner still has to pay it: an invoice, or a request with an amount due and no sign it is paid. A receipt, a charge already made, an autopay notice, a refund or a reimbursement is no task. The owner's standing preferences, when given, say what they want proposed and what not.
   Rules.
   Only state what the messages say or clearly imply. Never invent. When unsure, leave it out or lower the confidence. Money has a direction: a bill or an invoice that asks to be paid is a task to pay it, with the amount and the due in the title; a receipt, a payment confirmation, a charge already made, a reimbursement or a refund is money that has moved, so write what it says as a fact about the thing or the order and never a task to pay it.
   Use the existing bodies by id whenever a message refers to one of them, by name or alias. When a message calls an existing body by a name the list does not have ("next door" for place/neighbors, "the Hendersons"), repeat that body in "bodies" with the new name under "aliases", so the ship learns the word. Create a new body only for a named person, place, thing or org, or for a situation (an event with participants) the messages describe.
@@ -4327,7 +4327,8 @@
   "at" is when the fact became true, ISO 8601 with the offset the message times carry (they are in the owner's time zone), and defaults to the message's time; set it only when the message says otherwise. "until" is when it will stop being true, when the message says so.
   "conf" is 0 to 100: 90 for a plain statement, 60 for an inference, 40 for a guess.
   Each observation and action names the "message" id it comes from.
-  Messages marked as earlier context are there so you understand the new ones: a reply, a pronoun, a mood that carries over. Write facts only from the new messages; anything you write from a context message is thrown away.
+  Messages marked as earlier context are there so you understand the new ones: a reply, a pronoun, a mood that carries over, the plan the talk is about. Write facts only from the new messages; anything you write from a context message is thrown away. A task asking the owner what a plan is missing may rest on what the context says.
+  A question is read for what it shows: what is being planned and who is waiting on the owner. What it asks is not settled, so write no fact from it; a message, a task or a calendar event may come from it.
   Answer with one JSON object and nothing else:
   {"bodies": [{"id": "kind/slug", "name": "...", "aliases": ["..."]}],
    "observations": [{"subject": "kind/slug", "attr": "...", "value": ..., "at": "...", "until": "...", "conf": 90, "message": "..."}],
@@ -4560,14 +4561,15 @@
   =/  id=@t  (gs r 'id')
   ?:(=('' id) ~ `[id (gs r 'at') (gs r 'who') (gs r 'text')])
 ::  +tg-remember: the window with this message appended: a text starting
-::  with a slash and an empty text never go in, five per chat, nothing
-::  older than a day
+::  with a slash and an empty text never go in, thirty per chat, nothing
+::  older than three days, so a plan settled earlier in a conversation is
+::  still in sight when the talk turns to who brings what (version 102)
 ++  tg-remember
   |=  [recent=json m=tg-msg who=@t now=@da kind=reader-kind]
   ^-  json
-  =/  cutoff=@da  (sub now ~d1)
-  ::  every chat's window drops what is older than a day, and a chat
-  ::  left empty goes, so the file holds a day of text and no more
+  =/  cutoff=@da  (sub now ~d3)
+  ::  every chat's window drops what is older than three days, and a chat
+  ::  left empty goes, so the file holds three days of text and no more
   =/  fresh-row
     |=  r=json
     ^-  ?
@@ -4591,7 +4593,8 @@
     ==
   =/  all=(list json)  (snoc kept row)
   =/  n=@ud  (lent all)
-  [%o (~(put by base) chat.m a+(slag (sub n (min n 5)) all))]
+  [%o (~(put by base) chat.m a+(slag (sub n (min n window-size)) all))]
+++  window-size  30
 ::  ==  the chat reader (version 39): Tlon's DMs, group DMs and the group
 ::  channels the owner picks, polled through two changes scries and read
 ::  through the same pipeline as Telegram
@@ -6286,10 +6289,10 @@
       %^  noul-question
         'Does the new message state a fact worth recording about a person, thing, place, or a plan, that the analyst should read?'
         %+  rap  3
-        :~  'it says where someone is, what they are dealing with, what happened, or what will happen, to whom and when'
+        :~  'it says where someone is, what they are dealing with, what happened, or what will happen, to whom and when; or it asks or settles something about a plan (when, where, who brings what)'
             ?~(open '' '; or it says, even in one word, that one of the open actions listed has been done or is no longer needed')
         ==
-      'chatter, greetings, feelings, jokes, a question, or a request that carries no fact about anyone'
+      'chatter, greetings, feelings, jokes, or a question or request that carries nothing about anyone or any plan'
   ==
 ::  +escalate-body: analyze.ESCALATE_QUESTION over the gate state and the
 ::  facts just kept: whether someone needs help within the hour
@@ -10624,6 +10627,7 @@
   ?:  &(=('POST' meth) ?=([%api %browsing %wake ~] suffix))     `[%post-browsing-wake %own]
   ?:  &(=('GET' meth) ?=([%api %browsing %page ~] suffix))      `[%get-browsing-page %writes]
   ?:  &(=('GET' meth) ?=([%api %browsing %recent ~] suffix))    `[%get-browsing-recent %writes]
+  ?:  &(=('GET' meth) ?=([%api %verdicts ~] suffix))             `[%get-verdicts %own]
   ?:  &(=('POST' meth) ?=([%api %browsing %file ~] suffix))     `[%post-browsing-file %writes]
   ?:  &(=('POST' meth) ?=([%api %browsing %unrelate ~] suffix))  `[%post-browsing-unrelate %writes]
   ?:  &(=('POST' meth) ?=([%api %browsing %place ~] suffix))    `[%post-browsing-place %writes]
@@ -11432,17 +11436,37 @@
   [pid (observe-ops bodies rows)]
 ::  ==  the readers' verdicts (version 60)
 ::
-::  +run-fresh: a run without its questions: a question states nothing,
-::  and neither does an empty text; a handed-in page that ends in a
-::  question still says things
+::  +verdict-entry: one line of a reader's history (version 102): what
+::  became of a run or an update, kept forty days under /verdicts so a
+::  message a reader passed over can be traced. The words the reader
+::  saw go too, cut short; a page's text is kept under /browsing already.
+::
+++  verdict-entry
+  |=  [now=@da kind=reader-kind run=(list [msg=tg-msg who=@t]) outcome=@t notes=(list @t) facts=@ud]
+  ^-  json
+  =/  text=@t
+    ?:  =('browsing' channel.kind)  ''
+    %+  end  [3 2.000]
+    (join-cords nl (turn run |=([m=tg-msg w=@t] (rap 3 ?:(=('' w) from.m w) ': ' text.m ~))))
+  %-  pairs:enjs:format
+  :~  ['at' s+(en-iso now)]
+      ['reader' s+channel.kind]
+      ['chat' s+?~(run '' chat.msg.i.run)]
+      ['ids' a+(turn run |=([m=tg-msg *] `json`s+id:(tg-source m kind)))]
+      ['outcome' s+outcome]
+      ['facts' (numb:enjs:format facts)]
+      ['notes' a+(turn (scag 20 notes) |=(n=@t `json`s+(end [3 300] n)))]
+      ['text' s+text]
+  ==
+++  verdict-keep  ~d40
+::  +run-fresh: a run without its empty texts. A question is read too
+::  (version 102): it shows what is being planned and who waits on the
+::  owner, though grounding keeps no fact from it
 ::
 ++  run-fresh
   |=  [run=(list [msg=tg-msg who=@t]) kind=reader-kind]
   ^-  (list [msg=tg-msg who=@t])
-  %+  skip  run
-  |=  [msg=tg-msg who=@t]
-  ?:  =('' text.msg)  &
-  &(!=('web' channel.kind) =('?' (rsh [3 (dec (met 3 text.msg))] text.msg)))
+  (skip run |=([msg=tg-msg who=@t] =('' text.msg)))
 ::  +run-rows: what the analyst reads: the chat's window as context, then
 ::  the run's new messages, oldest first
 ::

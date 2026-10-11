@@ -544,7 +544,8 @@
     ==
   =/  mids  |=(l=(list [msg=tg-msg:orr who=@t]) (turn l |=([m=tg-msg:orr *] mid.m)))
   ;:  weld
-    (expect-eq !>(`(list @t)`~['1']) !>((mids (run-fresh:orr rn telegram-kind:orr))))
+    ::  a question is read too (version 102); an empty text never
+    (expect-eq !>(`(list @t)`~['1' '2']) !>((mids (run-fresh:orr rn telegram-kind:orr))))
     (expect-eq !>(`(list @t)`~['1' '2']) !>((mids (run-fresh:orr rn read-kind:orr))))
   ==
 ++  test-run-rows

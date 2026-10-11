@@ -811,15 +811,15 @@
 ++  test-tg-window
   =/  m1=tg-msg:orr  ['1001' '42' 'first' (sub now ~h2) '1' '']
   =/  m2=tg-msg:orr  ['1001' '42' 'second' (sub now ~h1) '2' '']
-  =/  old=tg-msg:orr  ['1001' '42' 'stale' (sub now ~d2) '0' '']
+  =/  old=tg-msg:orr  ['1001' '42' 'stale' (sub now ~d4) '0' '']
   =/  cmd=tg-msg:orr  ['1001' '42' '/status x' now '3' '']
-  =/  w=json  (tg-remember:orr (jo '{}') old 'person/me' (sub now ~d2) telegram-kind:orr)
+  =/  w=json  (tg-remember:orr (jo '{}') old 'person/me' (sub now ~d4) telegram-kind:orr)
   =.  w  (tg-remember:orr w m1 'person/me' (sub now ~h2) telegram-kind:orr)
   =.  w  (tg-remember:orr w m2 'person/me' (sub now ~h1) telegram-kind:orr)
   =.  w  (tg-remember:orr w cmd 'person/me' now telegram-kind:orr)
   =/  win  (tg-window:orr w '1001')
   =/  six=json
-    %+  roll  (gulf 1 6)
+    %+  roll  (gulf 1 31)
     |=  [n=@ud acc=json]
     (tg-remember:orr acc ['9' '42' (crip (a-co:co n)) now (crip (a-co:co n)) ''] 'person/me' now telegram-kind:orr)
   ;:  weld
@@ -827,7 +827,8 @@
     (expect-eq !>(`(list @t)`~['telegram/1001/1' 'telegram/1001/2']) !>((turn win |=([id=@t *] id))))
     (expect-eq !>('second') !>(text:(rear win)))
     (expect-eq !>('person/me') !>(who:(rear win)))
-    (expect-eq !>(5) !>((lent (tg-window:orr six '9'))))
+    ::  thirty kept, three days back (version 102)
+    (expect-eq !>(30) !>((lent (tg-window:orr six '9'))))
     (expect-eq !>('2') !>(text:(snag 0 (tg-window:orr six '9'))))
     (expect-eq !>(`(list [@t @t @t @t])`~) !>((tg-window:orr w '2')))
   ==
@@ -2625,5 +2626,26 @@
     (expect-eq !>('place/the-harbor') !>(place.again))
     (expect-eq !>(`(list @t)`~['location']) !>((turn obs2 |=(o=json (gs:orr o 'attr')))))
     (expect-eq !>('research') !>((gs:orr (snag 0 (ga:orr (file-op:orr plan 'https://x.example/' now 'owner') 'observations')) 'attr')))
+  ==
+::  a reader's history (version 102): what became of a run, its ids and
+::  the words it saw, cut short; a page's words are kept elsewhere
+++  test-verdict-entry
+  =/  run=(list [msg=tg-msg:orr who=@t])
+    :~  [['-26' '35' 'Do we need floats and goggles?' now '236' ''] 'person/susan']
+        [['-26' '36' (crip (reap 3.000 'x')) now '237' ''] '']
+    ==
+  =/  e=json  (verdict-entry:orr now telegram-kind:orr run 'not read' ~['gate: 12, not read'] 0)
+  =/  b=json  (verdict-entry:orr now browsing-kind:orr run 'facts' ~ 2)
+  ;:  weld
+    (expect-eq !>('telegram') !>((gs:orr e 'reader')))
+    (expect-eq !>('-26') !>((gs:orr e 'chat')))
+    (expect-eq !>(`(list @t)`~['telegram/-26/236' 'telegram/-26/237']) !>((strings:orr (ga:orr e 'ids'))))
+    (expect-eq !>('not read') !>((gs:orr e 'outcome')))
+    (expect-eq !>(`(list @t)`~['gate: 12, not read']) !>((strings:orr (ga:orr e 'notes'))))
+    (expect-eq !>('person/susan: Do we need floats and goggles?') !>(`@t`(end [3 44] (gs:orr e 'text'))))
+    ::  a sender with no person is named by their address
+    (expect-eq !>('\0a36: x') !>(`@t`(cut 3 [44 6] (gs:orr e 'text'))))
+    (expect-eq !>(2.000) !>((met 3 (gs:orr e 'text'))))
+    (expect-eq !>('') !>((gs:orr b 'text')))
   ==
 --

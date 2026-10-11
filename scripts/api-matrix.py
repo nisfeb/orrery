@@ -880,10 +880,24 @@ while time.time() < deadline:
 check('the escalation ran an urgent pass', any(x.startswith('urgent pass') for x in dictish(glast).get('notes', [])), glast)
 check('the record says what happened', dictish(last).get('outcome') == 'facts' and dictish(last).get('read_today', 0) >= 1, last)
 read_before = dictish(last).get('read_today')
-check('a question yields nothing and is remembered as context', hook(update(U0 + 3, MID + 2, 'is the shop open?')) == 200 and dictish(tg_last(U0 + 3)).get('outcome') == 'nothing', None)
+# a question is read (version 102): the model sees it, and grounding
+# keeps no fact from it; the canned answer here is empty, so nothing
+# filed earlier is filed again
+TG_SAVED = TG_CANNED
+TG_CANNED = {'choices': [{'message': {'content': json.dumps({'bodies': [], 'observations': [], 'actions': []})}}],
+             'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+check('a question is read now, and yields nothing here', hook(update(U0 + 3, MID + 2, 'is the shop open?')) == 200 and dictish(tg_last(U0 + 3)).get('outcome') == 'nothing', None)
 read_after = dictish(tg_last(U0 + 3)).get('read_today')
+TG_CANNED = TG_SAVED
 check('a chat not in chats is ignored', hook(update(U0 + 4, MID + 3, 'hello', chat=9)) == 200 and dictish(tg_last(U0 + 4)).get('outcome') == 'ignored', None)
-check('questions do not count against the day', read_before is not None and read_after == read_before, (read_before, read_after))
+check('a question counts against the day, as any message read', read_before is not None and read_after == read_before + 1, (read_before, read_after))
+code, v = curl('GET', API + '/verdicts?reader=telegram')
+v_ids = [i for e in listish(dictish(v).get('entries')) for i in listish(dictish(e).get('ids'))]
+check('the history keeps the question\'s run and the ignored update', code == 200
+      and 'telegram/1001/%d' % (MID + 2) in v_ids and 'telegram/9/%d' % (MID + 3) in v_ids, v)
+check('the history says why the update was ignored', any('telegram/9/%d' % (MID + 3) in listish(dictish(e).get('ids')) and dictish(e).get('outcome') == 'ignored'
+      and any('not in chats' in n for n in listish(dictish(e).get('notes'))) for e in listish(dictish(v).get('entries'))), v)
+check('a reader the history does not know is 400', curl('GET', API + '/verdicts?reader=nope')[0] == 400)
 hook(update(U0 + 6, MID + 5, 'still on route 9', business='conn-1'))
 check('a business message from a connection the stub owns is read', dictish(tg_last(U0 + 6)).get('outcome') in ('facts', 'nothing'), tg_last(U0 + 6))
 # Telegram resends an update it saw no 200 for; one whose id the record

@@ -178,6 +178,14 @@
           [%fall %| /browsing empty-dir:loader]
           [%fall %| /browsing/visits empty-dir:loader]
           [%fall %| /browsing/pages empty-dir:loader]
+          ::  what each reader did with each run and update, a grub a day
+          ::  per reader, forty days (version 102)
+          [%fall %| /verdicts empty-dir:loader]
+          [%fall %| /verdicts/telegram empty-dir:loader]
+          [%fall %| /verdicts/chat empty-dir:loader]
+          [%fall %| /verdicts/mail empty-dir:loader]
+          [%fall %| /verdicts/web empty-dir:loader]
+          [%fall %| /verdicts/browsing empty-dir:loader]
           [%fall %& [/ %'browse.sig'] [[/ %sig] ~]]
           ::  the lattice pages followed (version 66): one grub per page
           ::  sent, and the fiber that looks at them
@@ -1526,6 +1534,7 @@
     %post-browsing-wake     (serve-prod eyre-id %'browse.sig' 'browsing')
     %get-browsing-page      (serve-browsing-page eyre-id args)
     %get-browsing-recent    (serve-browsing-recent eyre-id)
+    %get-verdicts           (serve-verdicts eyre-id args)
     %post-browsing-file     (serve-browsing-file eyre-id jon act)
     %post-browsing-unrelate  (serve-browsing-unrelate eyre-id jon act)
     %post-browsing-place    (serve-browsing-place eyre-id jon act)
@@ -6315,6 +6324,16 @@
   ::  together and a message further down that settles an earlier one
   ::  is seen before anything is proposed from the earlier one alone
   =/  sifted  (sift-rows:orr rows seen people today max-daily.cfg chat-key:orr)
+  ::  a sender the ship does not know is kept in the history, one entry
+  ::  each, so a reader that took everyone for a stranger shows it
+  ::  (ricsul, 2026-10-09: senders arrived quoted)
+  ;<  ~  bind:m
+    %^  verdict-add  chat-kind:orr  now
+    %+  turn
+      %+  skim  rows
+      |=(r=tg-msg:orr &(!(~(has in seen) (chat-key:orr r)) !(~(has by people) from.r)))
+    |=  r=tg-msg:orr
+    (verdict-entry:orr now chat-kind:orr ~[[r '']] 'stranger' ~[(rap 3 'sender ' from.r ' is not among the people' ~)] 0)
   =.  strangers.tally  strangers.sifted
   =.  held.tally  held.sifted
   =/  new=(list @t)  new.sifted
@@ -9162,6 +9181,8 @@
   ?^  why
     ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
     ;<  ~  bind:m  (tg-record last now uid chat.u.why from.u.why 'ignored' ~[note.u.why] 0)
+    =/  one=(list [msg=tg-msg:orr who=@t])  ?~(mu ~ ~[[u.mu '']])
+    ;<  ~  bind:m  (verdict-add telegram-kind:orr now ~[(verdict-entry:orr now telegram-kind:orr one 'ignored' ~[note.u.why] 0)])
     ;<  ~  bind:m  tg-yield
     ;<  c=?  bind:m  (tg-cull ~[i.names])
     $(names t.names, culled &(culled c))
@@ -9202,6 +9223,8 @@
   =/  today=@ud  (day-count:orr last 'read_today' now)
   ?:  (gte today max-daily.cfg)
     ;<  ~  bind:m  (tg-record last now uid.tail chat.run from.msg.tail 'held' ~['today\'s messages are spent'] 0)
+    =/  held=(list [msg=tg-msg:orr who=@t])  (turn `(list tg-item)`items.run |=(i=tg-item [msg.i who.i]))
+    ;<  ~  bind:m  (verdict-add telegram-kind:orr now ~[(verdict-entry:orr now telegram-kind:orr held 'held' ~['today\'s messages are spent'] 0)])
     (pure:m |)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
@@ -9257,13 +9280,24 @@
   |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
-  ::  a question states nothing and is left out of the run; a run of
-  ::  nothing else is not read. The run is one conversation's new
-  ::  messages, oldest first, read together so a message further down
-  ::  that resolves an earlier one is seen before anything is proposed
-  ::  from the earlier one alone.
+  ;<  got=[read=? down=? facts=tg-facts:orr]  bind:m  (tg-read-run cfg run now kind schema all)
+  =/  n=@ud  :(add (lent obs.facts.got) (lent bodies.facts.got) (lent acts.facts.got))
+  =/  outcome=@t  ?:(down.got 'down' ?.(read.got 'not read' ?:(=(0 n) 'nothing' 'facts')))
+  ;<  ~  bind:m  (verdict-add kind now ~[(verdict-entry:orr now kind run outcome notes.facts.got n)])
+  (pure:m got)
+::  +tg-read-run: +tg-read's work, every way out of it kept by +tg-read
+::  in the reader's history
+::
+++  tg-read-run
+  |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
+  =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
+  ^-  form:m
+  ::  an empty text is left out of the run; a run of nothing else is not
+  ::  read. The run is one conversation's new messages, oldest first,
+  ::  read together so a message further down that resolves an earlier
+  ::  one is seen before anything is proposed from the earlier one alone.
   =/  fresh=(list [msg=tg-msg:orr who=@t])  (run-fresh:orr run kind)
-  ?~  fresh  (pure:m [| | ~ ~ ~ ~['a question states nothing'] ~])
+  ?~  fresh  (pure:m [| | ~ ~ ~ ~['nothing to read'] ~])
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   =/  gen=config:orr  (de-config:orr gen-j)
   ::  no key is a model that cannot be reached: the run waits, as for
@@ -9321,6 +9355,53 @@
   =?  notes.facts  ?=(^ esc)  (snoc notes.facts (rap 3 'escalate: ' (crip (a-co:co e)) ~))
   =?  escalate.facts  &(?=(^ esc) (gte e escalate.cfg))  `(urgent-ids:orr facts)
   (pure:m [& | facts])
+::  +verdict-add: entries appended to the reader's day under /verdicts
+::  (version 102). A reader's runs are one fiber's, one at a time, so a
+::  day's grub has one writer. A day's first entry drops the days past
+::  forty.
+::
+++  verdict-add
+  |=  [kind=reader-kind:orr now=@da entries=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  entries  (pure:m ~)
+  =/  dir=path  ~[%verdicts `@ta`channel.kind]
+  =/  day=@ta  (end [3 10] (en-iso:orr now))
+  ;<  ex=?  bind:m  (peek-exists:io (rf 0 dir day))
+  ;<  had=json  bind:m  ?.(ex (pure:(fiber:fiber:nexus ,json) [%a ~]) (read-json (rf 0 dir day)))
+  ;<  ~  bind:m  (put-json (rf 0 dir day) a+(weld ?:(?=([%a *] had) p.had ~) `(list json)`entries))
+  ?:  ex  (pure:m ~)
+  ;<  days=(list @ta)  bind:m  (grub-days 0 dir)
+  =/  edge=@ta  (end [3 10] (en-iso:orr (sub now verdict-keep:orr)))
+  =/  old=(list @ta)  (skim days |=(d=@ta &((aor d edge) !=(d edge))))
+  |-
+  ?~  old  (pure:m ~)
+  ;<  *  bind:m  (cull-soft:io (rf 0 dir i.old))
+  $(old t.old)
+::  +serve-verdicts: GET /api/verdicts?reader=&day=: a reader's history
+::  for a day (today, UTC, by default), and the days it holds; owner only
+::
+++  serve-verdicts
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  q=(map @t @t)  (~(gas by *(map @t @t)) args)
+  =/  reader=@t  (~(gut by q) 'reader' 'telegram')
+  ?.  (~(has in (sy `(list @t)`~['telegram' 'chat' 'mail' 'web' 'browsing'])) reader)
+    (send-err eyre-id 400 'reader: one of telegram, chat, mail, web, browsing')
+  ;<  now=@da  bind:m  get-time:io
+  =/  day=@t  (~(gut by q) 'day' (end [3 10] (en-iso:orr now)))
+  =/  dir=path  ~[%verdicts `@ta`reader]
+  ;<  days=(list @ta)  bind:m  (grub-days 1 dir)
+  =/  has=?  (lien days |=(d=@ta =(d day)))
+  ;<  got=json  bind:m  ?.(has (pure:(fiber:fiber:nexus ,json) [%a ~]) (read-json (rf 1 dir `@ta`day)))
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['reader' s+reader]
+      ['day' s+day]
+      ['days' a+(turn days |=(d=@ta `json`s+d))]
+      ['entries' got]
+  ==
 ::  +tg-status-check: analyze.status_check: each status proposed for a
 ::  person put to the decider; one it calls a feeling with 60 or more is
 ::  dropped with a note
