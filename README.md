@@ -188,7 +188,11 @@ A chat's new messages are read together, as one run: everything that arrived in 
 
 The reader is also given the ship's open actions, under tags, and the gate knows that a reply about one is worth reading (version 61): when a conversation says one has been carried out (you answer "done" or "fixed", or the person who asked says it is sorted) the action is marked done, and when it is no longer wanted it is dismissed, signed by the reader with the reason in its record. A reader never approves or reschedules an action; that stays with the inbox, the page and the brief. Your own words reach a reader only where it reads them: on Telegram your user id must be in `people` as `person/me`, the chat reader reads your messages only with `read_own` on, and the mail reader reads only what others send.
 
-The last five free-text messages per chat are kept a day as the next message's context, in the reader's own file and nowhere else, a chat's window dropped once it leaves the settings. They are the one message text the ship holds, and no view, key or share sees them.
+The last thirty free-text messages per chat, three days back at most, are kept as the next message's context (five, a day back, before version 102), in the reader's own file and nowhere else, a chat's window dropped once it leaves the settings. So a plan settled earlier in a conversation is still in sight when the talk turns to who brings what. They and the readers' history below are the message text the ship holds; no view, key or share sees them, and the history is served to the owner alone.
+
+Since version 102 a question is read like any other message: the gate and the analyst see it, so a reply, a task or a calendar event can come from it, though grounding still keeps no fact from a question. And when a conversation is about a plan that is going ahead, and neither it nor the ship says when or where, the analyst proposes one task asking the owner for what is missing, rather than letting the plan pass unrecorded.
+
+Since version 102 every reader keeps a history, so a message it passed over can be traced: what became of each run (read and filed, read with nothing to file, refused at the gate and its score, the model down), each Telegram update ignored or held and why, and each Tlon message from a sender the ship does not know. Each entry has the message ids and the first 2000 bytes of what was read (a page's text left out, since the browsing reader keeps it). One grub a day per reader under `/verdicts/<reader>/`, forty days; `GET /verdicts?reader=&day=` serves a day.
 
 With Telegram Premium a Business connection delivers your own private chats to the same webhook; a connection whose owner is not in `people` is ignored. `max_daily_messages` (500) bounds the messages the analyst is asked about, not questions. Changing the token on the card starts the update ids over, so it also resets the reader's last-handled one.
 
@@ -488,7 +492,8 @@ Orrery is a desk in the grubbery shell, and everything it keeps is a grub: a fil
   reconcile.sig               the reconcile fiber, twice a day and on demand
   reconcile-last.json         what its last run did
   telegram.json               the reader's settings; the bot token and webhook secret live here and are never served
-  telegram-recent.json        the last five messages per chat, kept a day as context
+  telegram-recent.json        the last thirty messages per chat, three days at most, as context
+  verdicts/<reader>/<day>     what each reader did with each run and update, forty days (version 102)
   telegram-last.json          the last update handled
   telegram-connections.json   the Business connections checked
   telegram-inbox/<update_id>  an update the webhook took, until the reader has read it
@@ -572,6 +577,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /apps/orrery/telegram` | Telegram's webhook, outside `/api`; the secret header is its whole credential, 403 on a wrong or missing one; 413 on a body over 64 KB, answered before the parse; a disabled reader, or an update whose id is not past the last one handled, answers 200 and drops |
 | `GET` and `PUT /telegram` | the reader's settings, the token and secret masked as `token_set` and `secret_set`; a blank token or secret on PUT keeps the stored one, a JSON `null` clears any key, a secret under 16 bytes is refused; `PUT` answers the settings as stored once the write has landed; owner only |
 | `GET /telegram/last` | the last update handled: outcome, notes, messages read today |
+| `GET /verdicts?reader=&day=` | a reader's history for a day (UTC, today unless given) and the days held: each entry's `at`, `reader` (`telegram`, `chat`, `mail`, `web`, `browsing`), `chat`, `ids`, `outcome` (`facts`, `nothing`, `not read`, `down`, `ignored`, `held`, `stranger`), `facts`, `notes` (the gate's score among them) and `text`; owner only |
 | `POST /telegram/webhook` | register this ship's webhook with Telegram, from the token, secret and public URL on the card, asking for one connection at a time; the owner or a key with `write` (version 38), so a client walking the owner through the setup can finish it |
 | `GET /telegram/webhook` | what Telegram holds for the bot: the url, updates waiting, its last delivery error; the owner or a key with `write` |
 | `POST /telegram/wake` | wake the reader: drain the inbox now, an update kept through a model outage included, or restart a reader that crashed; owner only |

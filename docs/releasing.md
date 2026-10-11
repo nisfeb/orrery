@@ -224,6 +224,15 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 102's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- **Questions are read.** A message that asks something now reaches the gate and the reader's model like any other, so "should I bring candles to the party?" can become a reply or a task. Expect a few more model calls a day on busy chats.
+- **A plan with no time or place is asked about.** When a conversation is about something going ahead, a party or a dinner, and neither it nor orrery says when or where, you get one task in your Inbox asking.
+- **More context.** Each chat's last thirty messages, three days back, go along as context, where five from the last day went before.
+- **A history.** Every reader keeps forty days of what it did with each message: read and filed, read with nothing to file, refused at the gate (with the score), ignored and why. Ask for it at `/apps/orrery/api/verdicts?reader=telegram` (or `chat`, `mail`, `web`, `browsing`).
+
 ### Version 101's owner steps
 
 Nothing to do on the ship: no new roads, so no consent prompt. Update the browser extension to its matching release. Its popup gains "This page in Orrery": what Orrery tied the page to, each with "Not related"; "File under it" and "It's the place for it" for your open plans; "Never read this site"; and a pause for an hour or until midnight. The day page gains a Browsing card with your interests, the pages filed under a plan and the forms you left.
