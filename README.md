@@ -346,6 +346,8 @@ Since version 83 the ship knows when the owner is away from home, and while they
 - for a situation they go to of six hours or more at a point forty kilometres or more from home, a sailing trip an hour off as much as a flight, unless it says `away: no`;
 - while the phone's last fix is a hundred and fifty kilometres or more from home, however old: coming home is a move, and the phone says so. Until version 83 a fix older than twelve hours was dropped and the trip planned from home.
 
+Since version 103 coming home ends a stretch away: once the phone has sent a fix forty kilometres or more from home during it, a later fix within two kilometres of home ends it then, not at its `ends`. A fix at home before leaving does not end it. The ship keeps the time of the newest far fix as `left` in `position.json`, beside the fix itself.
+
 The distances need home's point: `place/home`'s `geo`, or its `address`, which the ship geocodes. Without it only `away: yes` counts, and an appointment whose point is not known is taken to be at home.
 
 ### Place lookups
