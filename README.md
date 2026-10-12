@@ -441,7 +441,7 @@ The unit of sharing is one body. Nothing else on your ship is visible to her. `D
 
 ## Clients and keys
 
-A phone app, a triager or a bot that does not run a ship gets a key instead of your cookie. A key has a name, an identity it writes as, and a scope.
+A phone app, a triager or a bot that does not run a ship gets a key instead of your cookie. A key has a name, an identity it writes as (its name when left blank, since version 104), and a scope.
 
 ```bash
 post clients '{"name": "The phone client", "by": "phone",
