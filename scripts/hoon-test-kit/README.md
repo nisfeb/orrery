@@ -11,6 +11,7 @@ dojo**, and check that they actually catch breaks.
 - `grubbery_clay.py`: for a grubbery app, rewrites each lib's grubbery
   imports (`/<`, `/&`) into clay's on the way to the test desk, so libs
   written for grubbery's builder test unchanged.
+- `offline-test.py`: runs one suite's `test-` arms through `vere eval` with no ship at all, in seconds. It covers pure libs only (no clay, scries or agents), so it is the inner loop and the ship run stays the verdict. Run it from the app repo: it resolves each `/+` import from `hoon-test.conf`'s `FILES` and `LIBS`, then `lib/` and `vendor/`, then a mounted `%base` (`$BASE_DIR`, else the fleet dev platform's), and `OFFLINE_LIB_<name>=path` overrides one. It follows imports inside the libs too (`/+`, and `/-` under `sur/`), building each lib once. With `DIALECT=grubbery` it reads `/<` imports under `CODE`, binds a `/&` directory as the `(axal (map @ta mime))` grubbery hands over (calendar's 599 zone files make a suite take about a minute), and puts each `PRELUDE` face in every lib's subject, as on the ship.
 - `hoon-mutate.py`: breaks one thing at a time in those libs (a boundary,
   a guard's condition, a branch, an equality, a flag), reruns the suites,
   and reports every break that no test noticed.
@@ -32,8 +33,8 @@ Vendor the kit, write one config file, and set up a desk once per ship.
 
 ```sh
 # from the app repo
-rsync -a --delete --exclude .git ~/software/personal/hoon-test-kit/ scripts/hoon-test-kit/
-git -C ~/software/personal/hoon-test-kit rev-parse --short HEAD > scripts/hoon-test-kit/.kit-version
+rsync -a --delete --exclude .git ~/software/personal/hoon-development/kit/ scripts/hoon-test-kit/
+git -C ~/software/personal/hoon-development rev-parse --short HEAD > scripts/hoon-test-kit/.kit-version
 cp scripts/hoon-test-kit/hoon-test.conf.example hoon-test.conf   # then edit it
 ```
 
@@ -87,6 +88,7 @@ NOSYNC=1 scripts/hoon-test-kit/hoon-test.sh <pier>        # commit the mount as 
 scripts/hoon-test-kit/hoon-mutate.py <pier> --list                   # size a run first
 scripts/hoon-test-kit/hoon-mutate.py <pier>                          # boundary,conjunct
 scripts/hoon-test-kit/hoon-mutate.py <pier> --ops wide               # just the wide &( |( conditions
+scripts/hoon-test-kit/hoon-mutate.py <pier> --live --only <fiber-arms> # judged by a running app (below)
 scripts/hoon-test-kit/hoon-mutate.py <pier> --ops branch,equal,flag
 scripts/hoon-test-kit/hoon-mutate.py <pier> --only arm-a,arm-b       # recheck after a fix
 scripts/hoon-test-kit/hoon-mutate.py <pier> --since main              # only the arms a diff touches
@@ -107,7 +109,9 @@ mutants, and `--since HEAD` after one review pass was 428.
 | 3 | a lib did not build (named). The compiler's message is only on the ship's terminal: clay slogs it and answers `~`. |
 | 4 | the ship did not answer. This is never a test verdict. |
 
-`hoon-mutate.py` needs about 10 s **and one commit** per mutant (more for
+`MUTANT_T=<s>` sets how long a mutant may run before it counts as a spin
+(default 120). A spin can kill the ship sooner, so set it near a few
+honest runs. `hoon-mutate.py` needs about 10 s **and one commit** per mutant (more for
 a big lib: each mutant rebuilds the whole lib and every test file, so
 orrery's 6,200 lines take about 16 s, and 15 to 60 s on a busy host), and every
 commit costs the ship loom. Size a run with `--list` first, and run long
@@ -154,7 +158,10 @@ through the nexus's `+on-file`, and reads back what it did:
 reads (now, our, entropy), pokes and makes, recording every dart. It stops
 `%done`, `%fail`, or `%wait` on something only the test can answer (a peek,
 a keen, a timer). `+feed` supplies an answer and goes on, and
-`+answer-peek` answers the last peek with a view (`[%none ~]` for "no such
+`+answer-peek` answers the last peek with a view. `+run-behind` starts a
+process with a real input delivered BEFORE its start kick, as grubbery
+does after a reload (crash-loop rule 9), and every step runs under `mule`,
+so a crashing step is a `%fail`, as grubbery makes it. `+answer-peek` answers the last peek with a view (`[%none ~]` for "no such
 grub"). The `world` sets the clock, the ship, `refuse` (road prefixes a weir
 refuses; a dart there gets `%veto`), and `nack` (poke marks refused on
 consumption, the way a crashed, waiting fiber refuses them). Those two are
@@ -164,6 +171,27 @@ given mark, `+responses` the HTTP responses, `+status` a request's one
 response. Test through `+on-file`, not internal arms: the nexus file's
 product is cast to `nexus:nexus`, which hides them, and the grub's own
 fiber is the boundary grubbery calls anyway.
+
+## Mutating what only a running app exercises
+
+A nexus's fibers are control flow around reads and writes: no unit test
+reaches them, but a live route does. `hoon-mutate.py --live` deploys each
+mutant to a **dev** instance and judges it by the app's own live checks,
+named in `hoon-test.conf`:
+
+| key | meaning |
+|---|---|
+| `LIVE_DEPLOY` | a command that deploys `$LIVE_FILE` (the raw source, which the instance builds itself) as `$LIVE_SRC` (its repo path). Exit 0 built, 3 did not build, anything else: the ship is in trouble, and the run stops. |
+| `LIVE_CHECK` | a command that exercises the app. Exit 0 all pass (the mutant SURVIVED), 1 a check failed (killed), anything else: it couldn't finish, and the run stops. |
+
+Both run from the repo root. The clean files are deployed again at the
+end, however the run ends, and a ^C stops it between mutants. On a
+grubbery desk, `write-text` answers only once the desk has rebuilt and
+the nexus reloaded, so a deploy script can simply check the file's
+`?info=1` `build.status` afterwards (`vase` means built). Auspex's
+`scripts/live-deploy.sh` and `scripts/live-check.sh` are a worked example:
+every route, plus mail both ways between two ships. At about 80 s a
+mutant, use `--only` for the fibers you mean.
 
 ## Logging in without a dojo
 
