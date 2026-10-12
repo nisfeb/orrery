@@ -8473,12 +8473,36 @@
 ++  far-from-home
   |=  [pos=json home=(unit [lat=@t lon=@t])]
   ^-  (unit @ud)
-  ?~  home  ~
-  ?.  &((coordinate (gs pos 'lat') 90) (coordinate (gs pos 'lon') 180))  ~
-  =/  m  (metres-between u.home [(gs pos 'lat') (gs pos 'lon')])
+  =/  m  (fix-off pos home)
   ?~  m  ~
   ?.  (gte u.m 150.000)  ~
   `(div u.m 1.000)
+::  +fix-off: how many metres the phone's fix is from home
+::
+++  fix-off
+  |=  [pos=json home=(unit [lat=@t lon=@t])]
+  ^-  (unit @ud)
+  ?~  home  ~
+  ?.  &((coordinate (gs pos 'lat') 90) (coordinate (gs pos 'lon') 180))  ~
+  (metres-between u.home [(gs pos 'lat') (gs pos 'lon')])
+::  +home-again: a stretch away ends at the phone's fix within two
+::  kilometres of home, once a fix forty or more from home came in it
+::  (left, kept in position.json): the owner is back when they are, not
+::  when the trip was said to end, and a fix at home before they leave
+::  does not end it (version 103)
+::
+++  home-again
+  |=  [spans=(list away-span) pos=json home=(unit [lat=@t lon=@t])]
+  ^-  (list away-span)
+  =/  at=(unit @da)  (de-iso (gs pos 'at'))
+  =/  left=(unit @da)  (de-iso (gs pos 'left'))
+  =/  off=(unit @ud)  (fix-off pos home)
+  ?.  &(?=(^ at) ?=(^ left) ?=(^ off))  spans
+  ?.  &((lth u.off 2.000) (gth u.at u.left))  spans
+  %+  turn  spans
+  |=  s=away-span
+  ?.  &((gte u.left from.s) (lth u.at to.s))  s
+  s(to u.at)
 ::  +away-skips: whether time to leave passes an appointment over because
 ::  the owner is away then: in a stretch away (not the trip itself), or
 ::  with the phone far from home, at a point near home or not known;

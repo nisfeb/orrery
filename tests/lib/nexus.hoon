@@ -1636,7 +1636,18 @@
   =/  there=appointment:orr  ['situation/dinner' 'Dinner' (add now ~d2) ~ 'Dock 9, Lakeside' ~ %yes %go]
   =/  later=appointment:orr  ['situation/game' 'Game' (add now ~d8) ~ 'School, home town' ~ %yes %go]
   =/  itself=appointment:orr  ['situation/sail' 'Sail weekend' (add now ~d10) ~ 'Dock 9, Lakeside' ~ %yes %go]
+  =/  fix
+    |=  [lat=@t left=@dr at=@dr]
+    ^-  json
+    (pairs:enjs:format ~[['lat' s+lat] ['lon' s+'-89.65'] ['left' s+(en-iso:orr (add now left))] ['at' s+(en-iso:orr (add now at))]])
   ;:  weld
+    ::  home again: a fix about a kilometre from home, after one away in
+    ::  the trip, ends the trip there; the sail ahead keeps its end
+    (expect-eq !>(`(list @da)`~[(add now ~d3) (add now ~d12)]) !>((turn (home-again:orr spans (fix '39.79' ~d2 ~d3) hp) |=(s=away-span:orr to.s))))
+    ::  at home before leaving, still away, or near but not home: not
+    (expect-eq !>(spans) !>((home-again:orr spans (fix '39.79' ~h12 ~d1.h12) hp)))
+    (expect-eq !>(spans) !>((home-again:orr spans (fix '39.79' ~d3 ~d3) hp)))
+    (expect-eq !>(spans) !>((home-again:orr spans (fix '39.83' ~d2 ~d3) hp)))
     (expect-eq !>(`(unit [@t @t])``['39.78' '-89.65']) !>(hp))
     (expect-eq !>(`(list [@t @t])`~[['situation/trip' 'said to be away'] ['situation/sail' '52 km from home']]) !>((turn spans |=(s=away-span:orr [id.s why.s]))))
     (expect-eq !>(`(unit @t)``'situation/trip') !>(=/(s (away-at:orr spans (add now ~d3)) ?~(s ~ `id.u.s))))

@@ -7583,7 +7583,9 @@
 ::  +serve-position: POST /api/position {lat, lon, acc?, at?}: where the
 ::  owner is now, from their phone. One grub, overwritten: never an
 ::  observation, so never a history and never in a body shared with
-::  another ship. The leave fiber is poked to look again
+::  another ship. Left is the time of the newest fix forty kilometres or
+::  more from home, so coming home ends a stretch away (version 103).
+::  The leave fiber is poked to look again
 ::
 ++  serve-position
   |=  [eyre-id=@ta jon=json]
@@ -7596,13 +7598,21 @@
   ?.  &((coordinate:orr lat 90) (coordinate:orr lon 180))
     (send-err eyre-id 400 'lat, lon: decimal degrees are required')
   ;<  now=@da  bind:m  get-time:io
-  =/  at=@da  (fall (de-iso:orr (gs:orr jon 'at')) now)
+  =/  at=@da  (min now (fall (de-iso:orr (gs:orr jon 'at')) now))
+  ;<  old=json  bind:m  (read-json (rf 1 / %'position.json'))
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  gc=json  bind:m  (read-json (rf 1 / %'geocache.json'))
+  =/  off=(unit @ud)
+    (fix-off:orr (pairs:enjs:format ~[['lat' s+lat] ['lon' s+lon]]) (home-point:orr all (multi-of:orr schema) now gc))
+  =/  left=@t  ?:(&(?=(^ off) (gte u.off 40.000)) (en-iso:orr at) (gs:orr old 'left'))
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['lat' s+lat]
         ['lon' s+lon]
         ['acc' s+(num 'acc')]
-        ['at' s+(en-iso:orr (min at now))]
+        ['at' s+(en-iso:orr at)]
+        ['left' ?:(=('' left) ~ s+left)]
     ==
   ;<  ~  bind:m  (over:io (rf 1 / %'position.json') [[/ %json] doc])
   ::  the phone is answered first: a poke waits until its loop takes it,
@@ -8590,7 +8600,7 @@
   ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
   ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
   =/  home  (home-point:orr all multi now gc)
-  (pure:m [(away-spans:orr all multi now home gc) (far-from-home:orr pos home) home gc])
+  (pure:m [(home-again:orr (away-spans:orr all multi now home gc) pos home) (far-from-home:orr pos home) home gc])
 ::  +away-now: why the owner is away now, or ~
 ::
 ++  away-now
