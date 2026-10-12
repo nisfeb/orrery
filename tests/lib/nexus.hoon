@@ -469,8 +469,10 @@
     (expect-eq !>('name: 1 to 200 bytes') !>((why '' 'b' sc)))
     (expect-eq !>('name: 1 to 200 bytes') !>((why (crip (reap 201 'n')) 'b' sc)))
     (expect-eq !>('ok') !>((why (crip (reap 200 'n')) 'b' sc)))
-    (expect-eq !>('by: 1 to 64 bytes') !>((why 'n' '' sc)))
-    (expect-eq !>('by: 1 to 64 bytes') !>((why 'n' (crip (reap 65 'b')) sc)))
+    ::  writes as left blank: the name
+    (expect-eq !>(['n' 'n']) !>(=/(g (de-mint:orr (pairs:enjs:format ~[['name' s+'n'] ['by' s+''] ['scope' sc]])) ?>(?=(%& -.g) [name.p.g by.p.g]))))
+    (expect-eq !>('writes as (by): 64 bytes at most, and the name stands in when it is blank') !>((why (crip (reap 65 'n')) '' sc)))
+    (expect-eq !>('writes as (by): 64 bytes at most, and the name stands in when it is blank') !>((why 'n' (crip (reap 65 'b')) sc)))
     (expect-eq !>('ok') !>((why 'n' (crip (reap 64 'b')) sc)))
     (expect-eq !>('scope: expected an object') !>((why 'n' 'b' s+'x')))
     (expect !>(?=(%& -.good)))

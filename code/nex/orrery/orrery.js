@@ -909,7 +909,7 @@
     }
     out += '<div class="card"><h2>Mint a key</h2><div id="mint">' +
       '<p><label class="field">name <input name="name" maxlength="200" placeholder="Talon on the phone"></label> ' +
-      '<label class="field">writes as <input name="by" maxlength="64" placeholder="talon"></label></p>' +
+      '<label class="field">writes as <input name="by" maxlength="64" placeholder="the name, if blank"></label></p>' +
       '<p><span class="muted">sees</span> ' + boxes('kinds', kinds, true) + '</p>' +
       '<p><span class="muted">may propose</span> ' + boxes('actions', actions, false) + '</p>' +
       '<p><label class="box"><input type="checkbox" name="write"> may write</label> ' +

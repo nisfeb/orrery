@@ -11878,7 +11878,8 @@
 ::  ==  keys and the telegram filter (version 60)
 ::
 ::  +de-mint: a request to mint a key: a name, the identity its writes
-::  are signed with, and its scope, or why not
+::  are signed with (the name when left blank, version 104), and its
+::  scope, or why not
 ::
 ++  de-mint
   |=  jon=json
@@ -11887,7 +11888,8 @@
   =/  name=@t  (gs jon 'name')
   ?:  |(=('' name) (gth (met 3 name) max-name))  [%| 'name: 1 to 200 bytes']
   =/  who=@t  (gs jon 'by')
-  ?:  |(=('' who) (gth (met 3 who) max-by))  [%| 'by: 1 to 64 bytes']
+  =?  who  =('' who)  name
+  ?:  (gth (met 3 who) max-by)  [%| 'writes as (by): 64 bytes at most, and the name stands in when it is blank']
   =/  sc  (de-scope (gj jon 'scope'))
   ?:  ?=(%| -.sc)  [%| p.sc]
   [%& name who p.sc]
