@@ -48,6 +48,30 @@
   ^-  trail
   (drive w p st ~ ~ ~)
 ::
+::  +run-behind: start a process the way grubbery restarts one after a
+::  reload: an input already waiting reaches it BEFORE the start's null
+::  kick. A first step that only sends a dart asserts it was kicked, so
+::  it crashes here, and a fiber that takes its kick first holds the
+::  input (%skip) and gets it once it wants it.
+::
+++  run-behind
+  |=  [w=world p=process:fiber:nexus st=vase ahead=intake]
+  ^-  trail
+  =/  got  (mule |.((p [st `ahead])))
+  ?:  ?=(%| -.got)  [~ %fail p.got st ~ p]
+  =/  out  p.got
+  =/  st2=vase  [p.st state.out]
+  =/  ans  (answers w 0 darts.out)
+  ?-    -.next.out
+      %done  [darts.out %done ~ st2 ans p]
+      %fail  [darts.out %fail err.next.out st2 ans p]
+  ::  it held the input: the kick comes next, then the held input
+      %skip  (drive w p st2 darts.out (weld ans ~[ahead]) ~)
+  ::  it took the input and waits, or went on: the kick is still due
+      %wait  (drive w p st2 darts.out ans ~)
+      %cont  (drive w self.next.out st2 darts.out ans ~)
+  ==
+::
 ::  +feed: hand a stopped run the answer it is waiting for, and go on.
 ::
 ++  feed
@@ -66,7 +90,10 @@
   ^-  trail
   =/  in=(unit intake)  ~
   |-
-  =/  out  (p [st in])
+  ::  a step that crashes is a %fail, as grubbery makes it one
+  =/  got  (mule |.((p [st in])))
+  ?:  ?=(%| -.got)  [darts %fail p.got st (weld skipped queue) p]
+  =/  out  p.got
   =/  n=@ud  (lent darts)
   =.  darts  (weld darts darts.out)
   =.  st  [p.st state.out]

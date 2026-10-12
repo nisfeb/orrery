@@ -9,7 +9,7 @@ the clean lib is synced back when the run ends, however it ends. A mutant
 that loops forever stops the run, since only ^C typed in the ship's dojo
 ends a spinning event; with DOJO_PANE=<tmux pane> the runner types it.
 """
-import argparse, os, re, shlex, signal, subprocess, sys, time
+import argparse, os, re, shlex, signal, subprocess, sys, tempfile, time
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, KIT)
@@ -208,7 +208,7 @@ def touched_arms(rev):
     """The arms a git diff against rev touches, per lib: where a big lib's
     change is, so the expensive ops run there and not over every arm."""
     arms = set()
-    for path, lib in LIBS:
+    for path, _, lib in LIBS:
         diff = subprocess.run(['git', '-C', ROOT, 'diff', '-U0', rev, '--', path],
                               capture_output=True, text=True, check=True).stdout
         lines = open(path).readlines()
@@ -237,6 +237,85 @@ def run(pier, env=None, timeout=None):
                           start_new_session=True)
 
 
+def live(a, todo):
+    """Mutate code that only a running app exercises (a nexus's fibers).
+    Each mutant is deployed to a dev instance with the config's
+    LIVE_DEPLOY, and judged by its LIVE_CHECK, commands run from the repo
+    root. LIVE_DEPLOY gets LIVE_FILE (the file to deploy: the raw source,
+    since the instance builds it itself) and LIVE_SRC (its repo path), and
+    exits 0 when the instance built it, 3 when it did not build, anything
+    else when the ship is in trouble. LIVE_CHECK exits 0 when every check
+    passes, 1 when one fails, anything else when it could not finish.
+    The clean files go back at the end, however it ends."""
+    deploy, check = _c.get('LIVE_DEPLOY'), _c.get('LIVE_CHECK')
+    if not (deploy and check):
+        sys.exit('--live needs LIVE_DEPLOY and LIVE_CHECK in hoon-test.conf')
+    def sh(cmd, env, timeout):
+        return subprocess.run(cmd, shell=True, cwd=ROOT, env={**os.environ, **env},
+                              capture_output=True, text=True, timeout=timeout,
+                              start_new_session=True)
+    srcs = {lib: src for src, dest, lib in LIBS}
+    def put(lib, text=None):
+        path = srcs[lib]
+        if text is not None:
+            fd, path = tempfile.mkstemp(suffix='.hoon')
+            with os.fdopen(fd, 'w') as f:
+                f.write(text)
+        try:
+            return sh(deploy, {'LIVE_FILE': path, 'LIVE_SRC': os.path.relpath(srcs[lib], ROOT)}, 900).returncode
+        finally:
+            if text is not None:
+                os.unlink(path)
+    libs = sorted({m[0] for m in todo})
+    for lib in libs:
+        if put(lib) != 0:
+            sys.exit(f'{lib}: the clean code did not deploy; fix that first')
+    if sh(check, {}, 1800).returncode != 0:
+        sys.exit('the live check fails on the clean code; fix that first')
+    stop = []
+    def ask_stop(sig, frame):
+        if stop:
+            raise KeyboardInterrupt
+        stop.append(1)
+        print('stopping after this mutant; ^C again to stop now', flush=True)
+    signal.signal(signal.SIGINT, ask_stop)
+    tally, survivors = {}, []
+    try:
+        for i, (lib, line, arm, what, text) in enumerate(todo, 1):
+            if stop:
+                print(f'[{i}/{len(todo)}] stopped by request; the rest did not run', flush=True)
+                break
+            t0 = time.time()
+            d = put(lib, text)
+            if d == 3:
+                verdict = 'no-build'
+            elif d != 0:
+                print(f'[{i}/{len(todo)}] deploying {lib}:{line} +{arm} {what} failed ({d}): '
+                      'is the ship answering? results from here are void', flush=True)
+                break
+            else:
+                try:
+                    c = sh(check, {}, 1800).returncode
+                except subprocess.TimeoutExpired:
+                    c = None
+                if c not in (0, 1):
+                    print(f'[{i}/{len(todo)}] the check on {lib}:{line} +{arm} {what} did not finish '
+                          f'({c}): the ship may be down or spinning; results from here are void', flush=True)
+                    break
+                verdict = 'SURVIVED' if c == 0 else 'killed'
+            tally[verdict] = tally.get(verdict, 0) + 1
+            if verdict == 'SURVIVED':
+                survivors.append((lib, line, arm, what))
+            print(f'[{i}/{len(todo)}] {verdict:8} {lib}:{line} +{arm} {what} ({time.time() - t0:.0f}s)', flush=True)
+    finally:
+        for lib in libs:
+            if put(lib) != 0:
+                print(f'could not put the clean {lib} back on the instance: deploy it by hand')
+    print('\n' + '  '.join(f'{k}: {v}' for k, v in sorted(tally.items())))
+    for lib, line, arm, what in survivors:
+        print(f'SURVIVED  {lib}:{line}  +{arm}  {what}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('pier')
@@ -244,6 +323,8 @@ def main():
     ap.add_argument('--since', metavar='REV',
                     help='only the arms a git diff against REV touches (a branch, a tag, HEAD)')
     ap.add_argument('--list', action='store_true', help='print the mutants and stop')
+    ap.add_argument('--live', action='store_true',
+                    help="mutate on a running dev instance, judged by the conf's LIVE_CHECK")
     ap.add_argument('--ops', default='boundary,conjunct',
                     help=f'comma-separated, from: {",".join(MENU)} (default: %(default)s)')
     a = ap.parse_args()
@@ -256,6 +337,8 @@ def main():
             print(f'{lib}:{line}  +{arm}  {what}')
         print(f'{len(todo)} mutants')
         return
+    if a.live:
+        return live(a, todo)
     if run(a.pier).returncode != 0:
         sys.exit('the suites fail on the clean libs; fix that first')
     tally, survivors = {}, []
@@ -284,7 +367,9 @@ def main():
             put_lib(a.pier, src, dest, text)
             last = (src, dest)
             t0 = time.time()
-            r = run(a.pier, {'NOSYNC': '1', 'TEST_T': '120'})
+            # MUTANT_T: seconds before a mutant counts as spinning. A spin can
+            # kill the ship before 120 s, so set it near a few honest runs
+            r = run(a.pier, {'NOSYNC': '1', 'TEST_T': os.environ.get('MUTANT_T', '120')})
             if r.returncode == 4:  # no answer: the ship is down, stop here
                 print(f'[{i}/{len(todo)}] the ship stopped answering during {lib}:{line} +{arm} {what}; '
                       'results from here are void', flush=True)

@@ -160,6 +160,42 @@ after the change.
   `authenticated` is `%.y`, so every request in a test looked like the
   owner's and an auth check passed everything. Set each flag the arm
   reads. The mutant on the auth check is what showed it (calendar).
+- **`*mold` from a `/-` sur does not always bunt to that type in a test
+  file.** On the MUD, `*room` resolved to a gate's type (its bunt had no
+  `id`) and the nest-fail named a gate. Build the value through the lib's
+  own parser (`parse-world-json` on a small JSON object) or bind the mold
+  first (`=/  r=room  …`).
+- **`face.arm` wings do not resolve on arms**, only on legs: `instances.parsed`
+  and `p.area-json` fail when `parsed`/`area-json` are arms. Use `face:arm`,
+  or bind the arm's product with `=/` and then take the face.
+- **`expect-eq`'s nest check runs both ways in practice.** A bare constant
+  (`%locked`) passed against a door-state fork where the ``!>(`@tas`%locked)``
+  cast failed; conversely a `@tas` actual needs a cast on the expected
+  side. When a cast fails one way, try the other.
+- **`levy` over an untyped literal list mull-grows**, like `roll`/`weld`:
+  cast it (`` `(list @)`~[1 2 3] ``).
+- **`zing` over nested `turn`s fuse-loops**: cast each layer
+  (`^-  (list (list @ud))` on the inner `turn`, `` `(list @ud)` `` on the
+  result) before the `zing`.
+- **`(gulf 1 0)` crashes**, so a property that numbers its input with
+  `(gulf 1 (lent w))` refutes itself on the empty list. Guard `?~  w`.
+  (dojo-unix, 2026-10-11.)
+- **A pure lib needs no ship for its inner loop.** `vere eval` has hoon
+  and zuse: splice each `/+` import in by hand (`=+` for `*lib`, `=/
+  face` otherwise) and `mule` each test arm. dojo-unix's
+  `scripts/offline-test.py` runs a 16-property suite in 5 s, and the same
+  harness runs mutants with no commits. `%quiz`'s `~&` counterexample does
+  not print there: swap `chk` for `check-verbose` and `~|` the
+  `q.u.defy` into the crash to see it. The ship's run stays the verdict.
+- **A sample typed `rule` refuses real parsers.** `rule` is the type of
+  one particular gate, so `(jest 'x')` fails to nest. Type a parser
+  sample `$-(nail edge)`. (dojo-unix, 2026-10-11.)
+- **A red "known bug" test blocks every mutation run** ("the suites fail on
+  the clean libs"). Keep the test but rename its arm off `test-` until the
+  bug is fixed, then restore it; the mutants it covers are provable only
+  then. (MUD instances, 2026-10-07: three generator bugs found by the first
+  suite.)
+
 ## Writing the missing test
 
 - **Put it in the test that already owns the rule.** Add a new test only
@@ -216,6 +252,49 @@ app is a couple of hundred commits.
   2026-09-25, `~nec`'s vere process was still listed while the ship was
   dying, and an agent read it as slow. The runner now names the mutant
   that was running.
+- **Never let a conn.sock client hang up before its answer.** On vere 4.6 a
+  client that closes the socket while its khan thread is still queued or
+  running makes the king segfault writing the reply: the log shows `newt:
+  write failed broken pipe`, then `loom: external fault` in
+  `u3_king_commence`, whatever the loom size. A busy ship (a big desk
+  commit or build ahead in the queue) makes short timeouts dangerous, so
+  the kit's default socket timeout is now 600 s, and so is `ship-cookie.sh`'s
+  (300 s was not enough: a login during a 25-minute desk commit crashed
+  the ship, 2026-10-09). A `MUTANT_T` expiry closes the socket the same way, which is how
+  a spinning mutant can take the ship down: interrupt the spin in the dojo
+  (`DOJO_PANE`) rather than relying on the timeout. Found on the MUD's dev
+  ship, 2026-10-08, after two such crashes.
+- **Keep a thread's product small.** A khan thread that returned a
+  200,000-character `[%leaf tape]` over conn.sock hung the ship for 25
+  minutes on vere 4.6: the worker finished, but the main process sat at
+  100 % CPU handling the reply, ignoring SIGTERM, and only a restart (its
+  events were already committed, so nothing was lost) cleared it. SIGINT to
+  the worker does not help in that state. Return compact nouns or a few
+  short lines, and write bulk output to a file on the desk's mount instead.
+  (MUD dev ship, 2026-10-08.)
+- **`vere eval --cue` truncates at 64 KiB into a pipe.** The kit's runner
+  now cues into a temporary file and reads it back, so a long report (or a
+  big failure trace) is never cut off silently. Seen by the MUD's balance
+  simulator, 2026-10-08.
+- **Some sur type names resolve to lull's in a test file.** A test that
+  imports an app's sur with `/-  *app` and the kit with `/+  *test` still
+  sees lull's `room` and `shop` (the Gall and Eyre types) first, so
+  `=/  r=room  …` checks against the wrong type and fails with a confusing
+  nest error. Leave such values unannotated, or build them through the
+  app's own parser. Seen in the MUD's travel tests, 2026-10-09.
+- **A full run fails if any suite on disk did not report.** The thread
+  lists the desk's own tests/lib, so a run that started before a sync's new
+  files landed once printed "hoon tests passed: 229" and exited 0 with three
+  whole suites missing. The runner now compares the suites on disk with the
+  report and exits 2 ("suites that did not run: …") when one is absent.
+  Rerun; if it persists, the desk is not taking the sync. (MUD, 2026-10-09.)
+- **A loop-free arm can still spin through its callers.** Excluding arms
+  that contain `|-` is not enough: a branch mutant in a sort comparator
+  (no loop of its own) spun the arms that loop over its order, the runner's
+  MUTANT_T expired, the socket closed, and vere 4.6 segfaulted in
+  u3_king_commence. Exclude comparators and other arms whose callers loop,
+  or mutate on a ship with a dojo pane to interrupt the spin. (MUD,
+  2026-10-09.)
 - **A crash is not always a full loom.** `~wex` (`--loom 33`) and `~nec`
   (the default 2 GB) both died during kit runs with `loom: external
   fault: 0`, a fault at address 0, outside the loom. After `~nec`'s
@@ -225,14 +304,58 @@ app is a couple of hundred commits.
   afternoon (`external fault: 0x10`), 37 mutants after a meld that had
   freed 562 MB, on a harmless mutant. So neither a fresh meld nor a count
   of commits predicts it (10, about 110 and 37 commits between deaths).
+  `~feb` (default loom) died the same way on 2026-09-26, and **twice on
+  the same mutant**: lattice-clip's `+parse-num` with `(gte c '0')`
+  dropped, so `(sub c '0')` underflows on any byte below `'0'`. So at
+  least one trigger is a mutant, not the ship's history. When a ship
+  dies, note the mutant, and rerun it alone before blaming vere.
+  Its third death that day came on lattice-md's `+block-start`
+  `gth`->`gte`: the worker sat at 100% CPU (a spinning mutant), then
+  segfaulted before the runner's timeout sent its ^C. A mutant that
+  loops can kill the ship, not only park it.
+  The fourth death followed the same shape: `+rb` spun 228 s, took the
+  ^C, and 60 mutants later another `+rb` mutant killed the ship. Set
+  `MUTANT_T` near a few honest runs (30 s where a mutant takes 7), and
+  once an arm spins, move on without its other mutants.
+  With `MUTANT_T=30`, lattice's next pass took two spins and lived, but
+  `+block-start` `gth`->`gte` killed `~feb` again at 30 s: the spin ran
+  the worker to 1.1 GB, `hoon-test.sh` exited 4 (no answer), so the
+  runner read it as a dead ship and sent no ^C, and the ^C sent by hand
+  was followed within seconds by the segfault. `MUTANT_T` shortens
+  runs; it does not save the ship. **Keep a list of the arms whose
+  mutants kill the ship, and leave them out of every run** (`--only`
+  the rest).
   The cause is open; the common factor is vere 4.6 under the kit's
   steady socket traffic, a commit and a build every few seconds. To size
   the risk on your ship, read `total marked:` from `|mass` before and
   after a few mutants.
+- **A killed ship can come back with a corrupt snapshot.** On ecash
+  (2026-09-28) `+powmod` with its `?:` flipped (a loop that never ends)
+  segfaulted vere 4.6 on the first mutant of a branch pass, and the
+  restart failed with `loom: checkpoint version mismatch`. The event log
+  was fine: move `<pier>/.urb/chk/image.bin` aside and run `vere play
+  <pier>`, which replays from boot (about 20 minutes for two hours of
+  kit traffic), then start the ship. Only on a ship that is yours to
+  restart. A loop that ends on a numeric test (`=(0 exp)`, a counter)
+  is the shape to leave out of branch passes.
+- **Some mutants leave a live ship "not answering".** On ecash
+  (2026-09-28) `+jac-to-affine` and `+jac-dbl` with a branch flipped made
+  nearly every test crash deep inside a 257-step loop. The ship ran the
+  suite (its slogs printed), then logged `newt: write canceled` and never
+  delivered the report, so `hoon-test.sh` exited 4 in 16 s and the
+  runner stopped the pass. It reproduces by hand; the ship stays healthy,
+  and a clean run passes right after. The tests did catch the mutant, so
+  count it killed, but check the ship with a clean run before trusting
+  that. Running a long pass one arm per `--only` call, with a clean run
+  after any arm that ends this way, lets the pass go on.
 - **A batch of passes must stop at the first dead ship.** A script that
   runs one `hoon-mutate.py` pass after another should check the first's
   output for "stopped answering" before starting the next.
 
+- **A ship booted with `-t` ignores a tmux dojo.** Lines typed into its
+  pane echo and never run, so `|new-desk` waits forever. Boot a test
+  ship without `-t` if you will drive its dojo by `send-keys` (or by
+  `DOJO_PANE`, which can't ^C a spin there either). (~fen, 2026-10-11.)
 - **Never type into a dojo someone may be using.** `|new-desk` and `|mount`
   are the owner's to run: if the pane shows input you did not send (a
   `|pack`, a half-typed line), stop and ask.
@@ -352,6 +475,31 @@ order of value per hour. Auspex took the first two on 2026-09-25
      auspex), so mutate by arm with `--only`: the route handlers you
      tested, and the router, whose survivors are exactly the routes no
      fiber test reaches yet.
+
+## Mutating fibers against a running app (`--live`)
+
+When the pure decisions are lifted and covered, what is left in a fiber
+is control flow: acting on a refusal, dispatch, "nothing changed" early
+returns. `hoon-mutate.py --live` measures it with the app's own live
+checks (README, "Mutating what only a running app exercises"). What
+auspex's first runs taught (2026-09-26, 70 live mutants, about 2 h):
+
+- **A survivor is first a question about the judge.** Every survivor of
+  auspex's first live run pointed at a step no check took: a reply into
+  an existing thread, an archived thread getting mail, an attachment
+  fetched from another ship, a forgotten peer. Adding each step killed
+  the mutants behind it (18 survivors to 9 to 3). Ask which user-visible
+  step would have noticed, and add it.
+- **Check where the effect is not masked.** A rule's label was written
+  only when a thread's archive state didn't change, so checking it on
+  the thread whose un-archiving rewrote everything missed it.
+- **Some survivors are decisions after all.** A one-line "did this write
+  anything" that other logic depends on is worth lifting and testing.
+- **State the ship keeps can hide a mutant.** A /proto already in the
+  farm, a cached peer record. Clear what the API lets you (auspex's
+  `forget-peer`), and name what it doesn't.
+- **The judge is re-read for every mutant.** Don't edit the check
+  scripts during a run.
 
 ## Never ship a crash loop (grubbery apps)
 
@@ -512,6 +660,17 @@ changing them.
   Write `(trip 10)`.
 - **A product that is itself `[%leaf tape]` arrives bare** (`%leaf 79 75 …
   0`, no brackets), unlike a failed thread's leaf. The report decodes both.
+- **vere 4.3 keeps conn.sock open after it answers** (4.6 closes it). socat
+  then waits out its whole idle timeout, `T` (60 s by default), on every
+  call: a hash poll, a commit, the test run. A run that takes 10 s on a
+  4.6 ship took 4.5 minutes on a 4.3 one, and with `T=900` it looked hung
+  while the ship sat idle. On a 4.3 ship set `T` to a few seconds and
+  `TEST_T` just above the suites' real run time, or use a 4.6 ship
+  (ecash, 2026-09-28).
+- **A pier path over ~100 characters can't be reached.** A Unix socket
+  path is limited to 108 bytes, so `<pier>/.urb/conn.sock` under a long
+  scratch directory fails to connect though vere listens. Point the kit
+  at a short symlink to the pier.
 - **The commit lands after the poke acks.** The runner polls `/cz/<desk>`
   until the hash moves, and skips the commit when nothing changed, or it
   would wait forever.
