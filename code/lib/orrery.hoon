@@ -6919,22 +6919,33 @@
     =/  sit=?  =(%situation kind.body.l)
     =/  begins=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
     ?~  begins  ~
-    ::  a series' end is the until of the calendar's next row for that
-    ::  occurrence: the reader stamps each next with its occurrence's
-    ::  end. Not the winner's: reconcile writes the same next later with
-    ::  a day's until, and its row wins the fold (version 71)
-    =/  ends=(unit @da)
-      ?:  sit  (de-iso (winner-text w 'ends'))
-      =/  said=json  s+(en-iso u.begins)
+    ::  the occurrence window. A situation keeps the winner's start and
+    ::  its ends. A series takes its start and end from the calendar's
+    ::  own next row, which the reader stamps with the true start and
+    ::  end: reconcile rewrites the same next later with a day-long until
+    ::  that wins the fold (version 71), and sometimes with a stale time
+    ::  when a lesson has moved an hour. So find the calendar next row
+    ::  nearest the winner, within six hours, newest first, and take its
+    ::  start and end, so a reconcile and calendar disagreement still
+    ::  lands on the right occurrence with a real end a pick-up can use
+    ::  ponytail: six hours assumes occurrences sit more than that apart
+    =/  da-of  |=(r=row ?.(?=([%s *] value.obs.r) `(unit @da)`~ (de-iso p.value.obs.r)))
+    =/  gap  |=(d=@da ?:((gth d u.begins) (sub d u.begins) (sub u.begins d)))
+    =/  win=[start=@da ends=(unit @da)]
+      ?:  sit  [u.begins (de-iso (winner-text w 'ends'))]
       =/  cal=(list row)
         %+  skim  rows.l
         |=  r=row
         ?&  =('next' attr.obs.r)  =('calendar' kind.source.obs.r)
-            !retracted.obs.r  =(said value.obs.r)
+            !retracted.obs.r  ?=(^ (da-of r))
+            (lte (gap (fall (da-of r) now)) ~h6)
         ==
-      ?~  cal  ~
-      until.obs.i.cal
-    ?:  &(?=(^ ends) (gte u.ends u.begins) (gte (sub u.ends u.begins) ~h20))  ~
+      =/  sorted=(list row)  (sort cal |=([a=row b=row] (gth at.obs.a at.obs.b)))
+      ?~  sorted  [u.begins ~]
+      [(fall (da-of i.sorted) u.begins) until.obs.i.sorted]
+    =/  start=@da  start.win
+    =/  ends=(unit @da)  ends.win
+    ?:  &(?=(^ ends) (gte u.ends start) (gte (sub u.ends start) ~h20))  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
@@ -6946,15 +6957,13 @@
     ?:  &(?=(~ place) |(=('' where) (online where)))  ~
     ::  each trip is to be there at the start, or at the end for a
     ::  pick-up; one with no end known is left out
-    =/  start=@da  u.begins
-    =/  end=(unit @da)  ends
     %+  murn  (trips l multi now (day-in start tz))
     |=  [lg=leg vd=verdict]
     ^-  (unit appointment)
-    =/  at=(unit @da)  ?:(=(%pick lg) end `start)
+    =/  at=(unit @da)  ?:(=(%pick lg) ends `start)
     ?~  at  ~
     ?.  &((gth u.at now) (lte u.at (add now horizon)))  ~
-    `[id.l name.body.l u.at end where place vd lg]
+    `[id.l name.body.l u.at ends where place vd lg]
   (sort each |=([a=appointment b=appointment] (lth starts.a starts.b)))
 ::  +appt-key: one alert per occurrence: a series' next moves on
 ::
@@ -6962,6 +6971,28 @@
   |=  a=appointment
   ^-  @t
   (rap 3 id.a '@' (crip (a-co:co (ms-of starts.a))) ?:(=(%go leg.a) '' (cat 3 '/' leg.a)) ~)
+::  +pinned-until: when a commitment the owner keeps elsewhere stops them
+::  from leaving for an appointment on time, so the ship should not nag.
+::  A pick-up they go to (someone to collect) that falls after this
+::  appointment's leave-by and no later than its start means they are
+::  collecting one child when they would have to set off for the other:
+::  two places at once. Answers the latest such pick-up time, else ~
+::
+++  pinned-until
+  |=  [a=appointment ahead=(list appointment) leave=@da now=@da]
+  ^-  (unit @da)
+  =/  key=@t  (appt-key a)
+  =/  pins=(list @da)
+    %+  murn  ahead
+    |=  b=appointment
+    ^-  (unit @da)
+    ?.  ?&  !=(key (appt-key b))  =(%pick leg.b)  !=(%no verdict.b)
+            (gth starts.b leave)  (lte starts.b starts.a)  (gth starts.b now)
+        ==
+      ~
+    `starts.b
+  =/  sorted=(list @da)  (sort pins gth)
+  ?~(sorted ~ `i.sorted)
 ::  +leave-times: when to leave and when to say so: the start less the
 ::  drive and the minutes to park and walk in, and that less the lead
 ::

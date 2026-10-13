@@ -1020,4 +1020,49 @@
     (expect !>((is-closed:orr (mk 'closed'))))
     (expect !>(!(is-closed:orr (mk 'open'))))
   ==
+::  the fencing clash: a weekly series whose winning next is a stale
+::  reconcile row (an hour early, a day-long until) still yields a
+::  pick-up appointment, at the end of the calendar's own occurrence
+++  test-appointments-series-pick-from-calendar
+  =/  fb  'activity/magnus-fencing-lesson'
+  =/  ob
+    |=  [attr=@t v=json src=@t at=@da un=(unit @da)]
+    ^-  obs:orr
+    [fb attr v at un 100 [src ''] src at | '']
+  =/  now  ~2026.10.19..18.00.00
+  =/  rows=(list row:orr)
+    :~  (r 'rec' (ob 'next' s+'2026-10-19T20:00:00Z' 'reconcile' ~2026.10.13..02.21.55 [~ ~2026.10.20..20.00.00]))
+        (r 'cal' (ob 'next' s+'2026-10-19T21:00:00Z' 'calendar' ~2026.10.12..21.00.00 [~ ~2026.10.19..22.00.00]))
+        (r 'loc' (ob 'location' (jo '{"ref":"place/north-florida-fencing-club"}') 'owner' ~2026.10.7..19.31.15 ~))
+        (r 'pik' (ob 'pick-up' (jo '{"ref":"person/me"}') 'owner' ~2026.10.7..19.31.15 ~))
+        (r 'sts' (ob 'status' s+'active' 'reconcile' ~2026.8.24..21.00.00 ~))
+    ==
+  =/  lo=loaded:orr  [fb [%activity 'Magnus Fencing Lesson' ~ t0 ~] rows]
+  =/  got=(list appointment:orr)
+    (appointments-ahead:orr ~[lo] (sy ~['pick-up' 'drop-off']) now ~h8)
+  ?.  ?=([* ~] got)  (expect-eq !>(1) !>((lent got)))
+  =/  a=appointment:orr  i.got
+  ;:  weld
+    (expect-eq !>(%pick) !>(leg.a))
+    (expect-eq !>(~2026.10.19..22.00.00) !>(starts.a))
+    (expect-eq !>(`(unit @da)`[~ ~2026.10.19..22.00.00]) !>(ends.a))
+    (expect-eq !>(`(unit bid:orr)`[~ 'place/north-florida-fencing-club']) !>(place.a))
+  ==
+::  a game to get to and a pick-up at the same time: the owner cannot do
+::  both, so the game's leave-by is pinned by the pick-up. A pick-up
+::  after the game starts does not pin it
+++  test-pinned-until
+  =/  game=appointment:orr
+    ['situation/game' 'Game' ~2026.10.19..22.00.00 [~ ~2026.10.20..0.0.0] '' ~ %yes %go]
+  =/  pick=appointment:orr
+    ['activity/magnus-fencing-lesson' 'Fencing' ~2026.10.19..22.00.00 [~ ~2026.10.19..22.00.00] '' [~ 'place/x'] %yes %pick]
+  =/  later-pick=appointment:orr
+    pick(starts ~2026.10.19..23.00.00)
+  =/  leave  ~2026.10.19..21.30.00
+  =/  now  ~2026.10.19..21.00.00
+  ;:  weld
+    (expect-eq !>(`(unit @da)`[~ ~2026.10.19..22.00.00]) !>((pinned-until:orr game ~[game pick] leave now)))
+    (expect-eq !>(`(unit @da)`~) !>((pinned-until:orr game ~[game later-pick] leave now)))
+    (expect-eq !>(`(unit @da)`~) !>((pinned-until:orr game ~[game] leave now)))
+  ==
 --
