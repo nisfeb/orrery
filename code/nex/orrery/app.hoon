@@ -7867,9 +7867,12 @@
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  multi=(set @t)  (multi-of:orr schema)
-  ::  one left quiet is passed over, so the one after it is planned
+  ::  every appointment ahead, kept for the pin check (a quieted pick-up
+  ::  the owner is already at still counts there), and one left quiet is
+  ::  passed over for the plan, so the one after it is planned
+  =/  ahead=(list appointment:orr)  (appointments-ahead:orr all multi now horizon.cfg)
   =/  mine=(list appointment:orr)
-    %+  skip  (appointments-ahead:orr all multi now horizon.cfg)
+    %+  skip  ahead
     |=(a=appointment:orr |(=(%no verdict.a) (lien quiet |=(k=@t =(k (appt-key:orr a))))))
   ::  away: home's appointments are others' to go to (version 83)
   ;<  away=away-view  bind:m  (away-state all multi now)
@@ -7992,6 +7995,18 @@
       %drop  (cat 3 'to drop off at ' name.a)
       %pick  (cat 3 'to pick up at ' name.a)
     ==
+  ::  pinned: an earlier pick-up keeps the owner collecting one child when
+  ::  they would have to set off for this one, two places at once. No nag
+  ::  to leave, and no phone alarm: a trip toward it begins when they are
+  ::  free of the pick-up, so the running-late text to whoever is there
+  ::  goes out as they set off. The key goes quiet, like a hush
+  =/  pin=(unit @da)  (pinned-until:orr a ahead leave now)
+  ?^  pin
+    =/  pinned-trip=json  (trip-doc a key u.pin u.dest buffer spot tell via kids now)
+    ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] pinned-trip])
+    =/  note=@t  (rap 3 'no nag ' for ': collecting elsewhere until ' (hhmm:orr u.pin tz) ~)
+    ;<  ~  bind:m  (leave-record last now ~[note] ~ alerted [key quiet])
+    (pure:m `(add starts.a ~m1))
   ::  the look after the alert (version 76): a second push only when the
   ::  leave-by came five minutes or more sooner and the phone does not
   ::  show the owner gone already; the same tag, so it replaces the first
@@ -8064,24 +8079,43 @@
 ::  ==  on the way (version 73)
 ::
 ::  +late-contact: whom to tell when the owner runs late, and how: who
-::  organized it, when that is a person other than the owner, by chat
-::  when they have a ship or by telegram when they have an id; nobody
-::  otherwise
+::  organized it, then whoever drops off or picks up for it, then the
+::  owner's spouse, taking the first that is a person other than the
+::  owner the ship can reach, by chat when they have a ship or by
+::  telegram when they have an id; nobody otherwise. The spouse catches
+::  a child's game the owner attends, where the organizer is the league
+::  and the co-parent is already there (version NN)
 ::
 ++  late-contact
   |=  [all=(list loaded:orr) multi=(set @t) now=@da l=(unit loaded:orr)]
   ^-  [@t @t]
-  ?~  l  ['' '']
-  =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.l multi now)) 'organizer') ~)
-  ?~  r  ['' '']
-  =/  ref=@t  (gs:orr value.obs.i.r 'ref')
-  ?:  |(=('' ref) =('person/me' ref) !=('person' (kind-of:orr ref)))  ['' '']
-  =/  p=(unit loaded:orr)  (loaded-of:orr all ref)
-  ?~  p  ['' '']
-  =/  w=(map @t (list row:orr))  (fold:orr rows.u.p multi now)
-  ?.  =('' (winner-text:orr w 'ship'))  [ref 'chat']
-  ?.  =('' (winner-text:orr w 'telegram'))  [ref 'telegram']
-  ['' '']
+  ::  the person a single-valued ref attr of a body names, '' for none
+  =/  ref-in
+    |=  [lo=(unit loaded:orr) attr=@t]
+    ^-  @t
+    ?~  lo  ''
+    =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.lo multi now)) attr) ~)
+    ?~(r '' (gs:orr value.obs.i.r 'ref'))
+  ::  can the ship reach this person, and how
+  =/  reach
+    |=  ref=@t
+    ^-  [@t @t]
+    ?:  |(=('' ref) =('person/me' ref) !=('person' (kind-of:orr ref)))  ['' '']
+    =/  p=(unit loaded:orr)  (loaded-of:orr all ref)
+    ?~  p  ['' '']
+    =/  w=(map @t (list row:orr))  (fold:orr rows.u.p multi now)
+    ?.  =('' (winner-text:orr w 'ship'))  [ref 'chat']
+    ?.  =('' (winner-text:orr w 'telegram'))  [ref 'telegram']
+    ['' '']
+  =/  tries=(list @t)
+    :~  (ref-in l 'organizer')  (ref-in l 'drop-off')  (ref-in l 'pick-up')
+        (ref-in (loaded-of:orr all 'person/me') 'spouse')
+    ==
+  |-  ^-  [@t @t]
+  ?~  tries  ['' '']
+  =/  got=[@t @t]  (reach i.tries)
+  ?.  =('' -.got)  got
+  $(tries t.tries)
 ::  +trip-doc: the trip the owner is on, in trip.json, never served: the
 ::  occurrence, the time to be there and to have left, where it is, the
 ::  minutes to park as planned, what its learning is kept under, and
