@@ -1065,4 +1065,29 @@
     (expect-eq !>(`(unit @da)`~) !>((pinned-until:orr game ~[game later-pick] leave now)))
     (expect-eq !>(`(unit @da)`~) !>((pinned-until:orr game ~[game] leave now)))
   ==
+::  the flight-status parser reads an AeroDataBox answer, and flight-change
+::  tells the owner only when something notable moved
+++  test-flight-status
+  =/  body=json
+    %-  jo
+    '''
+    [{"number":"DL 2627","status":"Expected","departure":{"airport":{"iata":"JAX"},"scheduledTime":{"utc":"2026-10-18 23:00Z","local":"x"},"revisedTime":{"utc":"2026-10-18 23:20Z"},"terminal":"S","gate":"C7"},"arrival":{"scheduledTime":{"utc":"2026-10-19 01:05Z"},"revisedTime":{"utc":"2026-10-19 01:30Z"},"gate":"B14"}}]
+    '''
+  =/  v=(unit flight-view:orr)  (flight-status:orr body)
+  ?~  v  (expect-eq !>('parsed') !>('none'))
+  =/  delayed=flight-view:orr  u.v(status 'Delayed')
+  ;:  weld
+    (expect-eq !>('Expected') !>(status.u.v))
+    (expect-eq !>('2026-10-18 23:20Z') !>(dep-revised.u.v))
+    (expect-eq !>('C7') !>(dep-gate.u.v))
+    (expect-eq !>('B14') !>(arr-gate.u.v))
+    (expect-eq !>(`(unit @t)`~) !>((flight-change:orr u.v u.v)))
+    (expect-eq !>(`(unit @t)`[~ 'status Delayed']) !>((flight-change:orr u.v delayed)))
+  ==
+++  test-has-phrase
+  ;:  weld
+    (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))
+    (expect !>(!(has-phrase:orr 'ETIAS is not yet in force' 'now required')))
+    (expect !>(!(has-phrase:orr 'anything' '')))
+  ==
 --
