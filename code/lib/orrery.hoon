@@ -10767,6 +10767,8 @@
   ?:  &(=('GET' meth) ?=([%api %follow ~] suffix))              `[%get-follow %own]
   ?:  &(=('GET' meth) ?=([%api %travel ~] suffix))              `[%get-travel %writes]
   ?:  &(=('PUT' meth) ?=([%api %travel ~] suffix))              `[%put-travel %own]
+  ?:  &(=('GET' meth) ?=([%api %watches ~] suffix))             `[%get-watches %own]
+  ?:  &(=('PUT' meth) ?=([%api %watches ~] suffix))             `[%put-watches %own]
   ?:  &(=('GET' meth) ?=([%api %travel %last ~] suffix))        `[%get-travel-last %own]
   ?:  &(=('POST' meth) ?=([%api %travel %wake ~] suffix))       `[%post-travel-wake %own]
   ?:  &(=('POST' meth) ?=([%api %position ~] suffix))           `[%post-position %writes]
