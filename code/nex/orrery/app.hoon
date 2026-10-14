@@ -228,6 +228,10 @@
           [%fall %& [/ %'armillary.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'leave.sig'] [[/ %sig] ~]]
+          ::  watches (version NN): the flight API and page watches, and
+          ::  the hourly fiber that checks them
+          [%fall %& [/ %'watches.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'watch.sig'] [[/ %sig] ~]]
           ::  rise.json: per fiber, its crashes in a row and when it tries
           ::  again (+rise-later, version 60)
           [%fall %& [/ %'rise.json'] [[/ %json] [%o ~]]]
@@ -469,6 +473,19 @@
         ;<  ~  bind:m  (set-timer:io /leave wake)
         ;<  ~  bind:m  (idle-until-poke /leave)
         ;<  ~  bind:m  (cancel-timer:io /leave)
+        $
+          ::  the watch fiber (version NN): an hour's look; each watch
+          ::  due is checked and the owner told when it changed. A new
+          ::  watch or a set key pokes it
+          [~ %'watch.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery watch: failed")
+        |-
+        ;<  wake=(unit @da)  bind:m  watch-pass
+        ;<  now=@da  bind:m  get-time:io
+        =/  at=@da  ?~(wake (add now ~h1) (max (add now ~m1) (min u.wake (add now ~h1))))
+        ;<  ~  bind:m  (set-timer:io /watch at)
+        ;<  ~  bind:m  (idle-until-poke /watch)
+        ;<  ~  bind:m  (cancel-timer:io /watch)
         $
           ::  the daily brief (version 52): at seven on the owner's clock,
           ::  one mail from the owner to the owner through auspex; the
@@ -8116,6 +8133,115 @@
   =/  got=[@t @t]  (reach i.tries)
   ?.  =('' -.got)  got
   $(tries t.tries)
+::  ==  watches (version NN): orrery checks a flight or a page on a
+::  schedule and telegrams the owner when what it found changes
+::
+::  +owner-chat: the owner's telegram chat id, the people map's key whose
+::  value is person/me, '' when none is known
+::
+++  owner-chat
+  |=  tgj=json
+  ^-  @t
+  =/  pj=json  (gj:orr tgj 'people')
+  ?.  ?=([%o *] pj)  ''
+  =/  hits=(list [@t json])
+    %+  skim  ~(tap by p.pj)
+    |=([k=@t v=json] =('person/me' ?:(?=([%s *] v) (trim-cord:orr p.v) '')))
+  ?~(hits '' -.i.hits)
+::  +notify-owner: one telegram to the owner, nothing when the chat or
+::  the bot token is not known
+::
+++  notify-owner
+  |=  [tg=tg-config:orr chat=@t text=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  |(=('' chat) =('' token.tg))  (pure:m ~)
+  ;<  *  bind:m  (send-telegram tg (pairs:enjs:format ~[['chat_id' s+chat] ['text' s+text]]))
+  (pure:m ~)
+::  +watch-pass: the hour's look. Each watch whose next is past is
+::  checked and its next pushed a cadence on; a changed flight or a page
+::  the phrase appeared on telegrams the owner. Answers the soonest next
+::
+++  watch-pass
+  =/  m  (fiber:fiber:nexus ,(unit @da))
+  ^-  form:m
+  ;<  wj=json  bind:m  (read-json (rf 0 / %'watches.json'))
+  =/  all=(list json)  (ga:orr wj 'watches')
+  ?~  all  (pure:m ~)
+  =/  cfg=watch-config:orr  (de-watch-config:orr (gj:orr wj 'flight_api'))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tgj=json  bind:m  (read-json (rf 0 / %'telegram.json'))
+  =/  tg=tg-config:orr  (de-tg-config:orr tgj)
+  =/  chat=@t  (owner-chat tgj)
+  =/  done=(list json)  ~
+  =/  nexts=(list @da)  ~
+  =/  rest=(list json)  all
+  |-  ^-  form:m
+  ?~  rest
+    ;<  ~  bind:m  (over:io (rf 0 / %'watches.json') [[/ %json] (set-key:orr wj 'watches' a+(flop done))])
+    =/  sorted=(list @da)  (sort `(list @da)`nexts lth)
+    (pure:m ?~(sorted ~ `i.sorted))
+  =/  w=json  i.rest
+  =/  nx=(unit @da)  (de-iso:orr (gs:orr w 'next'))
+  ?:  &(?=(^ nx) (gth u.nx now))
+    $(rest t.rest, done [w done], nexts [u.nx nexts])
+  ;<  w2=json  bind:m  (check-watch cfg tg chat w now)
+  =/  nx2=(unit @da)  (de-iso:orr (gs:orr w2 'next'))
+  $(rest t.rest, done [w2 done], nexts ?~(nx2 nexts [u.nx2 nexts]))
+::  +check-watch: run one watch now, its next pushed a cadence on first
+::  (a floor of fifteen minutes, a default of three hours)
+::
+++  check-watch
+  |=  [cfg=watch-config:orr tg=tg-config:orr chat=@t w=json now=@da]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  =/  cadence=@dr  (mul ~m1 (max 15 (fall (gn:orr w 'cadence_min') 180)))
+  =/  w1=json  (set-key:orr w 'next' s+(en-iso:orr (add now cadence)))
+  =/  kind=@t  (gs:orr w 'kind')
+  ?:  =('flight' kind)  (check-flight cfg tg chat w1 now)
+  ?:  =('page' kind)  (check-page tg chat w1 now)
+  (pure:m w1)
+::  +check-flight: ask the flight API for the flight on its date and tell
+::  the owner when the status, a revised time or the gate moved. The key
+::  is the owner's (headers for RapidAPI); no key, nothing to ask
+::
+++  check-flight
+  |=  [cfg=watch-config:orr tg=tg-config:orr chat=@t w=json now=@da]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ?:  =('' key.cfg)  (pure:m (set-key:orr w 'note' s+'no flight API key set'))
+  =/  url=@t  (rap 3 url.cfg '/flights/number/' (gs:orr w 'flight') '/' (gs:orr w 'date') ~)
+  =/  req=request:http
+    [%'GET' url ~[['x-rapidapi-key' key.cfg] ['x-rapidapi-host' host.cfg]] ~]
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json req ~s30 %watch)
+  ?.  =(200 status.got)
+    (pure:m (set-key:orr w 'note' s+(rap 3 'flight API answered ' (crip (a-co:co status.got)) ~)))
+  =/  new=(unit flight-view:orr)  (flight-status:orr (fall (de:json:html body.got) ~))
+  ?~  new  (pure:m (set-key:orr w 'note' s+'no flight in the answer'))
+  =/  old=(unit flight-view:orr)  (de-flight-view:orr (gj:orr w 'last'))
+  =/  msg=(unit @t)  ?~(old ~ (flight-change:orr u.old u.new))
+  =/  w1=json  (set-key:orr (set-key:orr w 'last' (en-flight-view:orr u.new)) 'note' s+'')
+  ?~  msg  (pure:m w1)
+  ;<  ~  bind:m  (notify-owner tg chat (rap 3 (gs:orr w 'label') ': ' u.msg ~))
+  (pure:m w1)
+::  +check-page: fetch a page and tell the owner the first time a phrase
+::  appears on it (has ETIAS gone live?)
+::
+++  check-page
+  |=  [tg=tg-config:orr chat=@t w=json now=@da]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  =/  url=@t  (gs:orr w 'url')
+  ?:  =('' url)  (pure:m (set-key:orr w 'note' s+'no url set'))
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json [%'GET' url ~ ~] ~s30 %watch)
+  ?.  =(200 status.got)
+    (pure:m (set-key:orr w 'note' s+(rap 3 'page answered ' (crip (a-co:co status.got)) ~)))
+  =/  found=?  (has-phrase:orr body.got (gs:orr w 'look'))
+  =/  was=?  =([%b %.y] (gj:orr w 'found'))
+  =/  w1=json  (set-key:orr (set-key:orr w 'found' b+found) 'note' s+'')
+  ?.  &(found !was)  (pure:m w1)
+  ;<  ~  bind:m  (notify-owner tg chat (rap 3 (gs:orr w 'label') ': ' (gs:orr w 'look') ~))
+  (pure:m w1)
 ::  +trip-doc: the trip the owner is on, in trip.json, never served: the
 ::  occurrence, the time to be there and to have left, where it is, the
 ::  minutes to park as planned, what its learning is kept under, and

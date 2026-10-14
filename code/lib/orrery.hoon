@@ -8780,6 +8780,107 @@
       ['buffer_min' (numb:enjs:format (div buffer.c ~m1))]
       ['horizon_hours' (numb:enjs:format (div horizon.c ~h1))]
   ==
+::  ==  watches: orrery checks a source on a schedule and tells the owner
+::  when what it found changes (version NN). A flight by its number and
+::  date through a flight API, or a web page through the browsing reader
+::
++$  flight-view
+  $:  status=@t
+      dep-sched=@t  dep-revised=@t  dep-gate=@t  dep-term=@t
+      arr-sched=@t  arr-revised=@t  arr-gate=@t
+  ==
+::  +flight-status: the first flight in an AeroDataBox answer (an array
+::  of flights for the number and date), normalised to the status and the
+::  departure and arrival times, gate and terminal. Times are {utc, local}
+::  objects, the utc kept. ~ when the answer names no flight. Defensive: a
+::  missing field reads blank, so a shifted schema degrades, never crashes
+::  ponytail: field paths are AeroDataBox's; adjust against a live answer
+::
+++  flight-status
+  |=  body=json
+  ^-  (unit flight-view)
+  =/  flights=(list json)  ?:(?=([%a *] body) p.body ~)
+  ?~  flights  ~
+  =/  f=json  i.flights
+  =/  dep=json  (gj f 'departure')
+  =/  arr=json  (gj f 'arrival')
+  =/  utc  |=(o=json ^-(@t (gs o 'utc')))
+  :-  ~
+  :*  (trim-cord (gs f 'status'))
+      (utc (gj dep 'scheduledTime'))  (utc (gj dep 'revisedTime'))
+      (gs dep 'gate')  (gs dep 'terminal')
+      (utc (gj arr 'scheduledTime'))  (utc (gj arr 'revisedTime'))
+      (gs arr 'gate')
+  ==
+::  +flight-change: what to tell the owner when a flight moves, the last
+::  view against the new one: a changed status, a revised departure or
+::  arrival time, or a new gate. ~ when nothing notable moved. A revised
+::  time or gate that merely went blank (the API dropping a field) is not
+::  news, so only a non-blank new value counts
+::
+++  flight-change
+  |=  [old=flight-view new=flight-view]
+  ^-  (unit @t)
+  =/  moved  |=([was=@t now=@t label=@t] ?:(|(=(was now) =('' now)) ~ ~[(rap 3 label now ~)]))
+  =/  bits=(list @t)
+    %-  zing
+    :~  (moved status.old status.new 'status ')
+        (moved dep-revised.old dep-revised.new 'departs ')
+        (moved arr-revised.old arr-revised.new 'arrives ')
+        (moved dep-gate.old dep-gate.new 'gate ')
+    ==
+  ?~  bits  ~
+  =/  out=@t  i.bits
+  =/  rest=(list @t)  t.bits
+  |-
+  ?~  rest  `out
+  $(out (rap 3 out ', ' i.rest ~), rest t.rest)
+::  +en-flight-view, +de-flight-view: a flight's last-seen state in and
+::  out of a watch's stored "last", so the next look can compare
+::
+++  en-flight-view
+  |=  v=flight-view
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['status' s+status.v]  ['dep_sched' s+dep-sched.v]  ['dep_revised' s+dep-revised.v]
+      ['dep_gate' s+dep-gate.v]  ['dep_term' s+dep-term.v]  ['arr_sched' s+arr-sched.v]
+      ['arr_revised' s+arr-revised.v]  ['arr_gate' s+arr-gate.v]
+  ==
+++  de-flight-view
+  |=  j=json
+  ^-  (unit flight-view)
+  ?.  ?=([%o *] j)  ~
+  :-  ~
+  :*  (gs j 'status')  (gs j 'dep_sched')  (gs j 'dep_revised')
+      (gs j 'dep_gate')  (gs j 'dep_term')  (gs j 'arr_sched')
+      (gs j 'arr_revised')  (gs j 'arr_gate')
+  ==
+::  +has-phrase: whether a page's text holds a phrase, case folded, for a
+::  page watch (has ETIAS gone live?). An empty phrase never matches
+::
+++  has-phrase
+  |=  [hay=@t need=@t]
+  ^-  ?
+  ?:  =('' need)  |
+  !=(~ (find (cass (trip need)) (cass (trip hay))))
+::  +watch-config: the flight API a flight watch calls. The key is the
+::  owner's to set and is never read back (en-watch-config-masked)
+::
++$  watch-config  [url=@t key=@t host=@t]
+++  de-watch-config
+  |=  j=json
+  ^-  watch-config
+  =/  url=@t  (gs j 'url')
+  :*  ?:(=('' url) 'https://aerodatabox.p.rapidapi.com' url)
+      (gs j 'key')
+      (gs j 'host')
+  ==
+++  en-watch-config-masked
+  |=  c=watch-config
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['url' s+url.c]  ['host' s+host.c]  ['key_set' b+!=('' key.c)]
+  ==
 ::  +brief-leaving: the brief's lines for today's appointments the ship
 ::  will say when to leave for, and those it is not sure the owner goes
 ::  to, with the reply that says so
