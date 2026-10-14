@@ -976,6 +976,7 @@
   ?:  =('set-search' op)  (do-set-search jon)
   ?:  =('follow-armillary' op)  (do-follow-armillary jon)
   ?:  =('set-travel' op)  (do-set-travel jon)
+  ?:  =('set-watches' op)  (do-set-watches jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
@@ -1536,6 +1537,8 @@
     %post-follow-wake       (serve-prod eyre-id %'follow.sig' 'follow')
     %get-travel             (serve-travel eyre-id)
     %put-travel             (serve-set-doc eyre-id 'set-travel' jon)
+    %get-watches            (serve-watches eyre-id)
+    %put-watches            (serve-set-watches eyre-id jon)
     %get-travel-last        (serve-doc eyre-id %'leave-last.json')
     %post-travel-wake       (serve-prod eyre-id %'leave.sig' 'leave')
     %post-position          (serve-position eyre-id jon)
@@ -8242,6 +8245,71 @@
   ?.  &(found !was)  (pure:m w1)
   ;<  ~  bind:m  (notify-owner tg chat (rap 3 (gs:orr w 'label') ': ' (gs:orr w 'look') ~))
   (pure:m w1)
+::  +serve-watches: the watches and the flight API config, the key never
+::  read back (owner only)
+::
+++  serve-watches
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  wj=json  bind:m  (read-json (rf 1 / %'watches.json'))
+  =/  cfg=watch-config:orr  (de-watch-config:orr (gj:orr wj 'flight_api'))
+  =/  ws=json  (gj:orr wj 'watches')
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['flight_api' (en-watch-config-masked:orr cfg)]
+      ['watches' ?:(?=([%a *] ws) ws [%a ~])]
+  ==
+::  +serve-set-watches: the owner sets the flight API key and the watch
+::  list. The writer merges (+do-set-watches); the masked config answers
+::
+++  serve-set-watches
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  pk=json  (pairs:enjs:format ~[['op' s+'set-watches'] ['doc' jon]])
+  %^  write-then  eyre-id  pk
+  =/  tries=@ud  6
+  |-
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (send-wait:io (add now ~s0..3333))
+  ;<  ~  bind:m  (take-wake:io ~)
+  ;<  cur=json  bind:m  (read-json (rf 1 / %'watches.json'))
+  ?.  |(?=([%o *] (gj:orr cur 'flight_api')) =(0 tries))
+    $(tries (dec tries))
+  =/  cfg=watch-config:orr  (de-watch-config:orr (gj:orr cur 'flight_api'))
+  =/  ws=json  (gj:orr cur 'watches')
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  ['flight_api' (en-watch-config-masked:orr cfg)]
+      ['watches' ?:(?=([%a *] ws) ws [%a ~])]
+  ==
+::  +do-set-watches: merge the owner's watches settings over the stored
+::  ones; a blank flight API key keeps the stored one; the watch fiber
+::  wakes to take them
+::
+++  do-set-watches
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  doc=json  (gj:orr jon 'doc')
+  ?.  ?=([%o *] doc)  (refuse 'set-watches' 'doc: expected an object')
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'watches.json'))
+  =/  cur-api=json  (gj:orr cur 'flight_api')
+  =/  new-api=json  (gj:orr doc 'flight_api')
+  =/  api=json
+    ?.  ?=([%o *] new-api)  cur-api
+    ?:  =('' (gs:orr new-api 'key'))  (set-key:orr new-api 'key' (gj:orr cur-api 'key'))
+    new-api
+  =/  dw=json  (gj:orr doc 'watches')
+  =/  cw=json  (gj:orr cur 'watches')
+  =/  watches=json  ?:(?=([%a *] dw) dw ?:(?=([%a *] cw) cw [%a ~]))
+  =/  merged=json  (set-key:orr (set-key:orr cur 'flight_api' api) 'watches' watches)
+  ;<  ~  bind:m  (over:io (rf 0 / %'watches.json') [[/ %json] merged])
+  ;<  ~  bind:m  (note-by 'set-watches' & '' 'http')
+  ;<  *  bind:m  (poke-soft:io (rf 0 / %'watch.sig') [[/ %sig] ~])
+  (pure:m |)
 ::  +trip-doc: the trip the owner is on, in trip.json, never served: the
 ::  occurrence, the time to be there and to have left, where it is, the
 ::  minutes to park as planned, what its learning is kept under, and
