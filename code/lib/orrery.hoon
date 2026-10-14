@@ -174,7 +174,7 @@
 ::  winter and in summer, and which summer rule it keeps. west is the
 ::  side of UTC the clock is on.
 ::
-+$  zone  [west=? std=@ud dst=@ud rule=?(%us %uk %none)]
++$  zone  [west=? std=@ud dst=@ud rule=?(%us %uk %au %nz %none)]
 ::  +zones: the zones the ship can render a local clock for. The owner's
 ::  timezone is a name from the generator's config, and any name not
 ::  here leaves the time in UTC.
@@ -183,14 +183,75 @@
   ^-  (map @t zone)
   %-  ~(gas by *(map @t zone))
   ^-  (list [@t zone])
-  :~  ['America/New_York' & 300 240 %us]
+  :~  ::  North America (US DST rule); Arizona and Hawaii do not shift
+      ['America/New_York' & 300 240 %us]
+      ['America/Detroit' & 300 240 %us]
+      ['America/Toronto' & 300 240 %us]
       ['America/Chicago' & 360 300 %us]
+      ['America/Winnipeg' & 360 300 %us]
       ['America/Denver' & 420 360 %us]
+      ['America/Edmonton' & 420 360 %us]
       ['America/Phoenix' & 420 420 %none]
       ['America/Los_Angeles' & 480 420 %us]
+      ['America/Vancouver' & 480 420 %us]
       ['America/Anchorage' & 540 480 %us]
+      ['America/Halifax' & 240 180 %us]
+      ['America/St_Johns' & 210 150 %us]
       ['Pacific/Honolulu' & 600 600 %none]
+      ['America/Mexico_City' & 360 360 %none]
+      ['America/Sao_Paulo' & 180 180 %none]
+      ['America/Argentina/Buenos_Aires' & 180 180 %none]
+      ['America/Bogota' & 300 300 %none]
+      ::  Europe and Africa (EU/UK DST rule: same dates as the UK)
       ['Europe/London' | 0 60 %uk]
+      ['Europe/Dublin' | 0 60 %uk]
+      ['Europe/Lisbon' | 0 60 %uk]
+      ['Atlantic/Reykjavik' | 0 0 %none]
+      ['Europe/Madrid' | 60 120 %uk]
+      ['Europe/Paris' | 60 120 %uk]
+      ['Europe/Berlin' | 60 120 %uk]
+      ['Europe/Rome' | 60 120 %uk]
+      ['Europe/Amsterdam' | 60 120 %uk]
+      ['Europe/Brussels' | 60 120 %uk]
+      ['Europe/Zurich' | 60 120 %uk]
+      ['Europe/Vienna' | 60 120 %uk]
+      ['Europe/Prague' | 60 120 %uk]
+      ['Europe/Warsaw' | 60 120 %uk]
+      ['Europe/Stockholm' | 60 120 %uk]
+      ['Europe/Oslo' | 60 120 %uk]
+      ['Europe/Copenhagen' | 60 120 %uk]
+      ['Europe/Athens' | 120 180 %uk]
+      ['Europe/Helsinki' | 120 180 %uk]
+      ['Europe/Bucharest' | 120 180 %uk]
+      ['Europe/Kyiv' | 120 180 %uk]
+      ['Europe/Istanbul' | 180 180 %none]
+      ['Europe/Moscow' | 180 180 %none]
+      ['Africa/Cairo' | 120 120 %none]
+      ['Africa/Johannesburg' | 120 120 %none]
+      ['Africa/Lagos' | 60 60 %none]
+      ['Africa/Nairobi' | 180 180 %none]
+      ::  Asia and the Gulf (no DST)
+      ['Asia/Dubai' | 240 240 %none]
+      ['Asia/Karachi' | 300 300 %none]
+      ['Asia/Kolkata' | 330 330 %none]
+      ['Asia/Dhaka' | 360 360 %none]
+      ['Asia/Bangkok' | 420 420 %none]
+      ['Asia/Jakarta' | 420 420 %none]
+      ['Asia/Shanghai' | 480 480 %none]
+      ['Asia/Singapore' | 480 480 %none]
+      ['Asia/Hong_Kong' | 480 480 %none]
+      ['Asia/Taipei' | 480 480 %none]
+      ['Asia/Manila' | 480 480 %none]
+      ['Asia/Tokyo' | 540 540 %none]
+      ['Asia/Seoul' | 540 540 %none]
+      ::  Australia and New Zealand (southern-hemisphere DST)
+      ['Australia/Perth' | 480 480 %none]
+      ['Australia/Brisbane' | 600 600 %none]
+      ['Australia/Sydney' | 600 660 %au]
+      ['Australia/Melbourne' | 600 660 %au]
+      ['Australia/Adelaide' | 570 630 %au]
+      ['Pacific/Auckland' | 720 780 %nz]
+      ['UTC' | 0 0 %none]
   ==
 ::  +dow: the day of the week of a date, 0 for Sunday (Sakamoto's)
 ::
@@ -223,15 +284,30 @@
   |=  [z=zone when=@da]
   ^-  ?
   ?:  ?=(%none rule.z)  |
-  =/  t=@da  ?:(?=(%us rule.z) (sub when (mul std.z ~m1)) when)
+  ::  the US, AU and NZ rules switch on the standard local clock (east
+  ::  zones add the offset, west zones subtract it); the EU/UK rule
+  ::  switches at 01:00 UTC, the same instant whatever the offset
+  =/  shift=@dr  (mul std.z ~m1)
+  =/  t=@da  ?:(?=(%uk rule.z) when ?:(west.z (sub when shift) (add when shift)))
   =/  [[* y=@ud] *]  (yore t)
-  =/  [start=@da end=@da]
-    ?:  ?=(%us rule.z)
-      :-  (year [[& y] 3 (add 7 (first-sunday y 3)) 2 0 0 ~])
-      (year [[& y] 11 (first-sunday y 11) 1 0 0 ~])
-    :-  (year [[& y] 3 (last-sunday y 3 31) 1 0 0 ~])
-    (year [[& y] 10 (last-sunday y 10 31) 1 0 0 ~])
-  &((gte t start) (lth t end))
+  ?:  ?=(%us rule.z)
+    =/  start=@da  (year [[& y] 3 (add 7 (first-sunday y 3)) 2 0 0 ~])
+    =/  end=@da  (year [[& y] 11 (first-sunday y 11) 1 0 0 ~])
+    &((gte t start) (lth t end))
+  ?:  ?=(%uk rule.z)
+    =/  start=@da  (year [[& y] 3 (last-sunday y 3 31) 1 0 0 ~])
+    =/  end=@da  (year [[& y] 10 (last-sunday y 10 31) 1 0 0 ~])
+    &((gte t start) (lth t end))
+  ::  southern hemisphere: summer wraps the new year, so DST holds before
+  ::  the autumn end (first Sunday of April) or after the spring start
+  ?:  ?=(%au rule.z)
+    =/  spring=@da  (year [[& y] 10 (first-sunday y 10) 2 0 0 ~])
+    =/  autumn=@da  (year [[& y] 4 (first-sunday y 4) 3 0 0 ~])
+    |((gte t spring) (lth t autumn))
+  ::  %nz: last Sunday of September to the first Sunday of April
+  =/  spring=@da  (year [[& y] 9 (last-sunday y 9 30) 2 0 0 ~])
+  =/  autumn=@da  (year [[& y] 4 (first-sunday y 4) 3 0 0 ~])
+  |((gte t spring) (lth t autumn))
 ::  +local-iso: an ISO UTC time as a named zone's clock reads it, with
 ::  its offset: 2026-09-17T16:00:00Z in America/New_York is
 ::  2026-09-17T12:00:00-04:00. A message says "until 11:30" against the
