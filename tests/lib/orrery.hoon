@@ -1090,4 +1090,19 @@
     (expect !>(!(has-phrase:orr 'ETIAS is not yet in force' 'now required')))
     (expect !>(!(has-phrase:orr 'anything' '')))
   ==
+::  the expanded zones render a local clock with the right offset, both
+::  hemispheres (DST wraps the new year in the south) and fixed-offset
+++  test-zones-local-iso
+  =/  li  |=([at=@t tz=@t] ^-(@t (local-iso:orr at tz)))
+  ;:  weld
+    (expect-eq !>('2026-07-15T08:00:00-04:00') !>((li '2026-07-15T12:00:00Z' 'America/New_York')))
+    (expect-eq !>('2026-01-15T07:00:00-05:00') !>((li '2026-01-15T12:00:00Z' 'America/New_York')))
+    (expect-eq !>('2026-07-15T14:00:00+02:00') !>((li '2026-07-15T12:00:00Z' 'Europe/Madrid')))
+    (expect-eq !>('2026-01-15T13:00:00+01:00') !>((li '2026-01-15T12:00:00Z' 'Europe/Madrid')))
+    (expect-eq !>('2026-01-15T23:00:00+11:00') !>((li '2026-01-15T12:00:00Z' 'Australia/Sydney')))
+    (expect-eq !>('2026-07-15T22:00:00+10:00') !>((li '2026-07-15T12:00:00Z' 'Australia/Sydney')))
+    (expect-eq !>('2026-07-15T21:00:00+09:00') !>((li '2026-07-15T12:00:00Z' 'Asia/Tokyo')))
+    (expect-eq !>('2026-01-15T17:30:00+05:30') !>((li '2026-01-15T12:00:00Z' 'Asia/Kolkata')))
+    (expect-eq !>('2026-07-15T12:00:00+00:00') !>((li '2026-07-15T12:00:00Z' 'UTC')))
+  ==
 --

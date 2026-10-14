@@ -580,7 +580,7 @@
         ;<  ~  bind:m  (rise-later prod "%orrery review: failed")
         |-
         ;<  now=@da  bind:m  get-time:io
-        ;<  tz=@t  bind:m  owner-tz
+        ;<  tz=@t  bind:m  local-tz
         =/  day=@t  (local-day:orr now tz)
         =/  sunday=?  =(0 (dow-of:orr day))
         =/  six=@da  (utc-of:orr (add (fall (day-da:orr day) now) ~h18) tz)
@@ -605,7 +605,7 @@
         ;<  ~  bind:m  (rise-later prod "%orrery brief: failed")
         |-
         ;<  now=@da  bind:m  get-time:io
-        ;<  tz=@t  bind:m  owner-tz
+        ;<  tz=@t  bind:m  local-tz
         =/  day=@t  (local-day:orr now tz)
         =/  seven=@da  (seven-of:orr day tz)
         ;<  ~  bind:m
@@ -4433,6 +4433,27 @@
   =/  grants=(list loc-grant:orr)  (de-loc-grants:orr doc)
   ;<  now=@da  bind:m  get-time:io
   ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  ::  seed the HOME zone once, from the phone, when none is set yet: the
+  ::  first device zone the ship can render becomes home. It is never
+  ::  overwritten after, so travel does not move home; the owner edits it
+  ::  by hand if they move. The brief, nudges and rhythm follow the device
+  ::  zone (local-tz); home events stay on this home zone (owner-tz)
+  ;<  ~  bind:m
+    =/  dz=@t  (gs:orr pos 'zone')
+    ?.  (~(has by zones:orr) dz)  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  schema=json  bind:(fiber:fiber:nexus ,~)  (read-json (rf 0 / %'schema.json'))
+    ;<  all=(list loaded:orr)  bind:(fiber:fiber:nexus ,~)  (load-bodies 0)
+    ?.  =('' (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone'))
+      (pure:(fiber:fiber:nexus ,~) ~)
+    ::  only when the generator config has no zone either: a set home must
+    ::  outrank a travel zone, or owner-tz would flip to where the phone is
+    ;<  gen-j=json  bind:(fiber:fiber:nexus ,~)  (read-json (rf 0 / %'generator.json'))
+    ?.  =('' timezone:(de-config:orr gen-j))  (pure:(fiber:fiber:nexus ,~) ~)
+    ;<  *  bind:(fiber:fiber:nexus ,~)
+      %+  file-ops-on
+        (observe-ops:orr ~ ~[(obs-row:orr 'person/me' 'timezone' s+dz now ~ 100 ['device' 'device-zone'] 'http')])
+      /location
+    (pure:(fiber:fiber:nexus ,~) ~)
   =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
   =/  fix=(unit [lat=@t lon=@t])
     ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  ~
@@ -6643,6 +6664,18 @@
   ?.  =('' mine)  (pure:m mine)
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   (pure:m timezone:(de-config:orr gen-j))
+::  +local-tz: the owner's CURRENT zone, the phone's last device zone when
+::  it is one the ship can render, else the home zone (owner-tz). Things
+::  that follow the owner (the brief and review timing, nudges, the
+::  rhythm) use this; things anchored at home (events, leave) use owner-tz
+::
+++  local-tz
+  =/  m  (fiber:fiber:nexus ,@t)
+  ^-  form:m
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  z=@t  (gs:orr pos 'zone')
+  ?:  &(!=('' z) (~(has by zones:orr) z))  (pure:m z)
+  owner-tz
 ::  ==  the read channel (version 59)
 ::
 ::  +read-drain: every item in the read inbox, oldest first, each read
@@ -7626,6 +7659,12 @@
   =/  off=(unit @ud)
     (fix-off:orr (pairs:enjs:format ~[['lat' s+lat] ['lon' s+lon]]) (home-point:orr all (multi-of:orr schema) now gc))
   =/  left=@t  ?:(&(?=(^ off) (gte u.off 40.000)) (en-iso:orr at) (gs:orr old 'left'))
+  ::  the phone's current device zone (version NN): kept as the local
+  ::  zone, which the brief, nudges and rhythm follow. Stored only when
+  ::  the ship can render it, else the old one; events stay on the home
+  ::  zone (owner-tz), which this never changes
+  =/  dz=@t  (gs:orr jon 'zone')
+  =/  zone=@t  ?:((~(has by zones:orr) dz) dz (gs:orr old 'zone'))
   =/  doc=json
     %-  pairs:enjs:format
     :~  ['lat' s+lat]
@@ -7633,6 +7672,7 @@
         ['acc' s+(num 'acc')]
         ['at' s+(en-iso:orr at)]
         ['left' ?:(=('' left) ~ s+left)]
+        ['zone' ?:(=('' zone) ~ s+zone)]
     ==
   ;<  ~  bind:m  (over:io (rf 1 / %'position.json') [[/ %json] doc])
   ::  the phone is answered first: a poke waits until its loop takes it,
@@ -8546,7 +8586,10 @@
   ;<  last=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
   ?:  &(!forced =(day (gs:orr last 'day')))  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
+  ::  tz is home (events, leave times); local is where the phone is, which
+  ::  the owner's own rhythm follows (version NN). They are equal at home
   ;<  tz=@t  bind:m  owner-tz
+  ;<  local=@t  bind:m  local-tz
   ;<  our=@p  bind:m  get-our:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
@@ -8562,14 +8605,14 @@
   ::  compiler (fuse-loop)
   =/  habit-lines=(list @t)
     =/  r=rhythm:orr  (de-rhythm:orr rhythm-j)
-    =/  hs=(list habit:orr)  (habits:orr all multi now tz)
-    =/  busy=(list [@da @da])  (weld (day-busy:orr all multi now from (add to ~h6)) (family-busy:orr day tz r))
+    =/  hs=(list habit:orr)  (habits:orr all multi now local)
+    =/  busy=(list [@da @da])  (weld (day-busy:orr all multi now from (add to ~h6)) (family-busy:orr day local r))
     =/  per=(list (list @t))
-      %+  turn  (habit-windows:orr day tz r)
+      %+  turn  (habit-windows:orr day local r)
       |=  [f=@da t=@da]
       ^-  (list @t)
       ?.  (gth t now)  ~
-      (turn (plan-habits:orr hs busy (max f now) t per-window.r) |=([h=habit:orr s=@da e=@da] (habit-line:orr h s tz)))
+      (turn (plan-habits:orr hs busy (max f now) t per-window.r) |=([h=habit:orr s=@da e=@da] (habit-line:orr h s local)))
     (zing per)
   ;<  wx=json  bind:m  (read-json (rf 0 / %'weather.json'))
   ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
@@ -8674,7 +8717,9 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  ;<  tz=@t  bind:m  owner-tz
+  ::  the nudges follow the owner to local time (version NN): they are
+  ::  about the owner's own rhythm and free time, not any home event
+  ;<  tz=@t  bind:m  local-tz
   ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
   =/  r=rhythm:orr  (de-rhythm:orr rhythm-j)
   ?:  (quiet-hour:orr now tz r)  (pure:m ~)
@@ -8977,7 +9022,10 @@
   ;<  last=json  bind:m  (read-json (rf 0 / %'review-last.json'))
   ?:  &(!forced =(day (gs:orr last 'day')))  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
+  ::  tz is home (the week's events); local is where the phone is, which
+  ::  the habits and baseline follow (version NN). Equal at home
   ;<  tz=@t  bind:m  owner-tz
+  ;<  local=@t  bind:m  local-tz
   ;<  our=@p  bind:m  get-our:io
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
@@ -9022,7 +9070,7 @@
   =/  ahead=(list @t)  (week-ahead:orr (appointments-ahead:orr all multi now ~d7) tz)
   ::  habits this week, and the targets: the owner's, or a notch above
   ::  the baseline proposed once, when it is in (version 75)
-  =/  hs=(list habit:orr)  (habits:orr all multi now tz)
+  =/  hs=(list habit:orr)  (habits:orr all multi now local)
   =/  me=(unit loaded:orr)  (loaded-of:orr all 'person/me')
   =/  mine
     |=  a=@t
@@ -9031,7 +9079,7 @@
     =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.me multi now)) a) ~)
     ?~(r '' (ref-or-text:orr value.obs.i.r))
   =/  set-targets=?  |(!=('' (mine 'steps-target')) !=('' (mine 'sleep-target')) !=('' (mine 'bedtime-target')))
-  =/  base  (baseline:orr health-j day tz)
+  =/  base  (baseline:orr health-j day local)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  proposed-before=?
     %+  lien  acts
