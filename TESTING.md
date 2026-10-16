@@ -75,6 +75,8 @@ ONLY=<header words> python3 -u scripts/api-matrix.py http://localhost:8122 /tmp/
 $F reset orrery compiled
 ```
 
+The generator's Armillary key, read from the offer at each call, needs Armillary on `~wyl` too: install it from the armillary repo with its `scripts/dev-deploy.py http://localhost:8122 /tmp/wyl.jar --add`, then run `python3 -u scripts/armillary-key-matrix.py http://localhost:8122 /tmp/wyl.jar` (11 checks, ~65 s). It runs its own stub model, lays test offers into Armillary's `app-inference.json` and puts both files back after.
+
 `node scripts/page-test.js`, `scripts/code-closure.py code` and
 `scripts/load-rows.py` need no ship.
 
