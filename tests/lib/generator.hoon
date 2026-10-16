@@ -1131,8 +1131,14 @@
     (expect-eq !>(`(list @t)`~['thing/subaru' 'place/shop']) !>((urgent-ids:orr [~ things ~ ~ ~])))
     (expect-eq !>(5) !>((lent (urgent-ids:orr [~ many ~ ~ ~]))))
     (expect-eq !>(`(list @t)`~) !>((urgent-ids:orr [~ ~[(o 'person/me' 'status')] ~ ~ ~])))
+    ::  the decisions route beside the chat url: OpenRouter's, an
+    ::  Armillary proxy's (Armillary 34), a stub's, a trailing slash
     (expect-eq !>('https://openrouter.ai/api/alpha/decisions') !>((decider-url:orr 'https://openrouter.ai/api/v1')))
-    (expect-eq !>('http://127.0.0.1:8099/api/alpha/decisions') !>((decider-url:orr 'http://127.0.0.1:8099')))
+    (expect-eq !>('https://openrouter.ai/api/alpha/decisions') !>((decider-url:orr 'https://openrouter.ai/api/v1/')))
+    (expect-eq !>('https://v.example/apps/armillary/alpha/decisions') !>((decider-url:orr 'https://v.example/apps/armillary/v1')))
+    (expect-eq !>('http://127.0.0.1:8099/alpha/decisions') !>((decider-url:orr 'http://127.0.0.1:8099/v1')))
+    (expect-eq !>('http://127.0.0.1:8099/alpha/decisions') !>((decider-url:orr 'http://127.0.0.1:8099')))
+    (expect-eq !>('http://127.0.0.1:8099/alpha/decisions') !>((decider-url:orr 'http://127.0.0.1:8099/')))
   ==
 ::  ==  the decider bodies
 ::

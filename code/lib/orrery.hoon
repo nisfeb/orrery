@@ -3222,22 +3222,21 @@
       ==
       ?:(on ~[['reasoning' reasoning.c]] ~[['temperature' (numb:enjs:format 0)]])
   ==
-::  +decider-url: the decisions route at the model host: the origin of
-::  the chat url (scheme, host, port) with openrouter's path, so a stub
-::  standing in for the model answers the decider too
+::  +decider-url: the decisions route beside the chat url: a trailing
+::  slash trimmed, a trailing /v1 taken off, /alpha/decisions put on.
+::  OpenRouter's https://openrouter.ai/api/v1 is its .../api/alpha/decisions,
+::  an Armillary proxy's .../apps/armillary/v1 its
+::  .../apps/armillary/alpha/decisions (Armillary 34), and a stub standing
+::  in for the model answers it at its base
 ::
 ++  decider-url
   |=  url=@t
   ^-  @t
   =/  t=tape  (trip url)
-  =/  origin=tape
-    =/  scheme=(unit @ud)  (find "://" t)
-    ?~  scheme  t
-    =/  rest=tape  (slag (add 3 u.scheme) t)
-    =/  slash=(unit @ud)  (find "/" rest)
-    ?~  slash  t
-    (scag (add 3 (add u.scheme u.slash)) t)
-  (crip (weld origin "/api/alpha/decisions"))
+  =?  t  &(!=(~ t) =('/' (snag (dec (lent t)) t)))  (scag (dec (lent t)) t)
+  =/  n=@ud  (lent t)
+  =?  t  &((gte n 3) =("/v1" (slag (sub n 3) t)))  (scag (sub n 3) t)
+  (crip (weld t "/alpha/decisions"))
 ::  +answer-of: the model's text and the usage out of a chat completion,
 ::  or why there is none
 ::
