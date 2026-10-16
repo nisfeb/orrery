@@ -3047,7 +3047,9 @@
   ^-  @ux
   `@ux`(sham (join-cords nl (scag 4 parts)))
 ::  +$  config: generator.json as the nexus reads it. Off until the owner
-::  turns it on and gives a key. The key is read here and nowhere else.
+::  turns it on and gives a key. The key is read here and nowhere else;
+::  while the file follows Armillary, address and key are the offer's,
+::  laid over the file at each call (+gen-live).
 ::
 +$  config
   $:  enabled=?
@@ -10383,6 +10385,9 @@
 ::  of a followed model, address or key is that pick. The decider has no
 ::  setting of its own: it takes the vendor's decision model, kept in
 ::  generator.json as decider_model, and typesafe/jev-1.13 without one.
+::  The generator's address and key are not copied: a call that follows
+::  reads them from the offer (+gen-live), so generator.json holds no
+::  key of the vendor's and a rotated key is used at the next call.
 ::
 ::  +armillary-files: each setting that follows, and its file
 ::
@@ -10413,13 +10418,8 @@
   =/  model-of  |=(f=@t ^-(@t =/(own=@t (gs ms f) ?:(=('' own) (gs ms 'default') own))))
   =/  set=(list [@t json])
     ?:  =('generator' name)
-      =/  url=@t  (gs offer 'base_url')
-      =/  key=@t  (gs offer 'key')
-      =/  mo=@t  (model-of 'orrery_generator')
-      ?:  |(=('' url) =('' key) =('' mo))  ~
-      :~  ['url' s+url]
-          ['api_key' s+key]
-          ['model' s+mo]
+      ?~  (gen-offered offer)  ~
+      :~  ['model' s+(model-of 'orrery_generator')]
           ['decider_model' s+(gs ms 'orrery_decider')]
       ==
     ?:  =('search' name)
@@ -10433,7 +10433,61 @@
     ?:(=('' mo) ~ ~[['model' s+mo]])
   ?~  set  [%o base]
   =?  base  &(=('search' name) !(~(has by base) 'enabled'))  (~(put by base) 'enabled' b+&)
-  [%o (~(gas by base) ['armillary_rev' (numb:enjs:format (fall (gn sug 'rev') 0))] set)]
+  =/  out  (~(gas by base) ['armillary_rev' (numb:enjs:format (fall (gn sug 'rev') 0))] set)
+  [%o ?:(=('generator' name) (gen-strip out) out)]
+::  +gen-offered: the address and key Armillary's offer gives the
+::  generator, or ~ when it gives no address, key or model for it
+::
+++  gen-offered
+  |=  offer=json
+  ^-  (unit [url=@t key=@t])
+  =/  url=@t  (gs offer 'base_url')
+  =/  key=@t  (gs offer 'key')
+  =/  ms=json  (gj (gj offer 'suggested') 'models')
+  =/  mo=@t  =/(own=@t (gs ms 'orrery_generator') ?:(=('' own) (gs ms 'default') own))
+  ?:  |(=('' url) =('' key) =('' mo))  ~
+  `[url key]
+::  +gen-follows: whether generator.json follows Armillary: unless the
+::  owner picked their own
+::
+++  gen-follows
+  |=  doc=(map @t json)
+  ^-  ?
+  !=(`b+| (~(get by doc) 'follow_armillary'))
+::  +gen-live: generator.json as a model call reads it: while it follows
+::  and the offer gives an address and key, those, read from the offer at
+::  the call. Without Armillary, or on the owner's own pick, the file's.
+::
+++  gen-live
+  |=  [doc=json offer=(unit json)]
+  ^-  json
+  =/  base=(map @t json)  ?:(?=([%o *] doc) p.doc ~)
+  ?.  (gen-follows base)  doc
+  =/  got  ?~(offer ~ (gen-offered u.offer))
+  ?~  got  doc
+  [%o (~(gas by base) ~[['url' s+url.u.got] ['api_key' s+key.u.got]])]
+::  +gen-strip: a generator.json that follows, once Armillary has laid
+::  its offer over it, without an address or key: those are the offer's,
+::  read at each call. Run on every save and at the writer's rise, so an
+::  install from before drops its copy.
+::
+++  gen-strip
+  |=  doc=(map @t json)
+  ^-  (map @t json)
+  ?.  &((~(has by doc) 'armillary_rev') (gen-follows doc))  doc
+  (~(del by (~(del by doc) 'url')) 'api_key')
+::  +gen-save: what an owner's save of generator.json stores: their fields
+::  over the document as the page was shown it (the offer's address and
+::  key laid in, and the default address where none is held), so sending
+::  those back is no pick, then stripped while it still follows
+::
+++  gen-save
+  |=  [doc=json offer=(unit json) new=(map @t json)]
+  ^-  json
+  =/  live=json  (gen-live doc offer)
+  =/  shown=(map @t json)
+    (~(put by ?:(?=([%o *] live) p.live ~)) 'url' s+url:(de-config live))
+  [%o (gen-strip (settings-merge 'set-generator' shown new))]
 ::  +settings-merge: an owner's settings document over the stored one,
 ::  for every settings op. A blank secret keeps the stored one. When the
 ::  file holds Armillary's values, a followed field that really changes

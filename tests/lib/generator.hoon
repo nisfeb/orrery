@@ -2294,16 +2294,17 @@
       '"orrery_mail":"z/1","orrery_decider":"typesafe/jev-2"}},'
       '"search":{"url":"https://v/apps/armillary/brave","key":"id.sec"}}'
   ==
-::  every setting follows by default: the generator takes the address,
-::  key, its model and the decider's; a reader its own model, else the
-::  default; search the proxy and turns on once; other fields stay
+::  every setting follows by default: the generator takes its model and
+::  the decider's, and runs on the offer's address and key read at the
+::  call; a reader its own model, else the default; search the proxy and
+::  turns on once; other fields stay
 ::
 ++  test-armillary-apply
   =/  gen  (armillary-apply:orr 'generator' (jo '{"enabled":false,"max_tokens":7}') offer |)
   =/  srch  (armillary-apply:orr 'search' (jo '{"monthly_cap":9}') offer |)
   ;:  weld
-    (expect-eq !>('https://or/api/v1') !>((gs:orr gen 'url')))
-    (expect-eq !>('sk-1') !>((gs:orr gen 'api_key')))
+    (expect-eq !>('https://or/api/v1') !>(url:(de-config:orr (gen-live:orr gen `offer))))
+    (expect-eq !>('sk-1') !>(api-key:(de-config:orr (gen-live:orr gen `offer))))
     (expect-eq !>('g/1') !>((gs:orr gen 'model')))
     (expect-eq !>('typesafe/jev-2') !>((gs:orr gen 'decider_model')))
     (expect-eq !>(`(unit @ud)``3) !>((gn:orr gen 'armillary_rev')))
@@ -2389,6 +2390,81 @@
     (same (jo '{"enabled":false,"max_tokens":7}'))
     (same (jo '{"url":"https://old/v1","model":"g/0","armillary_rev":2}'))
     (same (jo '{"model":"mine/1","follow_armillary":false}'))
+  ==
+::  while the generator follows, the offer's address and key are never
+::  stored: an apply leaves them out and drops a copy an older release
+::  laid, and so does the writer's rise. A call reads them from the
+::  offer, so a key rotated in app-inference.json is the next call's with
+::  no apply between. The owner's own key wins; without Armillary the
+::  file's key stands; with the offer gone nothing is left to call with
+::
+++  test-generator-key-at-call
+  =/  old  (jo '{"url":"https://or/api/v1","api_key":"sk-1","model":"g/1","armillary_rev":2,"enabled":true}')
+  =/  applied  (armillary-apply:orr 'generator' old offer |)
+  =/  rotated
+    %-  jo
+    %+  rap  3
+    :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-2",'
+        '"suggested":{"rev":3,"models":{"default":"f/1","orrery_generator":"g/1"}}}'
+    ==
+  =/  own  (jo '{"url":"https://mine/v1","api_key":"sk-own","model":"m/1","follow_armillary":false,"armillary_rev":2}')
+  =/  bare  (jo '{"url":"https://mine/v1","api_key":"sk-own"}')
+  =/  live  |=([d=json o=(unit json)] (de-config:orr (gen-live:orr d o)))
+  =/  stripped  |=(j=json ^-(json ?.(?=([%o *] j) j [%o (gen-strip:orr p.j)])))
+  ;:  weld
+    ::  an apply, over an older release's copy and over nothing
+    (expect-eq !>(`json`~) !>((gj:orr applied 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr applied 'url')))
+    (expect-eq !>('g/1') !>((gs:orr applied 'model')))
+    (expect-eq !>(b+&) !>((gj:orr applied 'enabled')))
+    (expect-eq !>(`(unit @ud)``3) !>((gn:orr applied 'armillary_rev')))
+    (expect-eq !>(`json`~) !>((gj:orr (armillary-apply:orr 'generator' [%o ~] offer |) 'api_key')))
+    ::  the writer's rise: a following copy goes, the owner's stays
+    (expect-eq !>(`json`~) !>((gj:orr (stripped old) 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr (stripped old) 'url')))
+    (expect-eq !>('g/1') !>((gs:orr (stripped old) 'model')))
+    (expect-eq !>(own) !>((stripped own)))
+    (expect-eq !>(bare) !>((stripped bare)))
+    ::  a call: the offer's address and key, rotated at once
+    (expect-eq !>('https://or/api/v1') !>(url:(live applied `offer)))
+    (expect-eq !>('sk-1') !>(api-key:(live applied `offer)))
+    (expect-eq !>('sk-2') !>(api-key:(live applied `rotated)))
+    ::  the owner's own key wins; no Armillary, the file's; the offer
+    ::  over a key typed before Armillary came, as an apply did
+    (expect-eq !>('sk-own') !>(api-key:(live own `offer)))
+    (expect-eq !>('https://mine/v1') !>(url:(live own `offer)))
+    (expect-eq !>('sk-own') !>(api-key:(live bare ~)))
+    (expect-eq !>('sk-1') !>(api-key:(live bare `offer)))
+    (expect-eq !>('') !>(api-key:(live applied ~)))
+    ::  api_key_set: true from either source, never the key itself
+    (expect-eq !>(b+&) !>((gj:orr (en-config-masked:orr (live applied `offer)) 'api_key_set')))
+    (expect-eq !>(b+&) !>((gj:orr (en-config-masked:orr (live own ~)) 'api_key_set')))
+    (expect-eq !>(b+|) !>((gj:orr (en-config-masked:orr (live applied ~)) 'api_key_set')))
+    (expect-eq !>(`json`~) !>((gj:orr (en-config-masked:orr (live applied `offer)) 'api_key')))
+  ==
+::  a save from the page sends back the address it was shown: no pick,
+::  and stored without the offer's address or key; the default address
+::  shown with no offer is no pick either; a key typed is the owner's
+::
+++  test-generator-save-following
+  =/  applied  (armillary-apply:orr 'generator' (jo '{"enabled":true}') offer |)
+  =/  fol  |=(j=json (gj:orr j 'follow_armillary'))
+  =/  saved  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'g/1'] ['enabled' b+|]]))
+  =/  gone  (gen-save:orr applied ~ (my ~[['url' s+'https://openrouter.ai/api/v1'] ['model' s+'g/1']]))
+  =/  typed  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'g/1'] ['api_key' s+'sk-mine']]))
+  =/  bare  (gen-save:orr (jo '{"url":"https://mine/v1","api_key":"sk-own"}') ~ (my ~[['url' s+'https://mine/v1'] ['enabled' b+&]]))
+  ;:  weld
+    (expect-eq !>(`json`~) !>((fol saved)))
+    (expect-eq !>(`json`~) !>((gj:orr saved 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr saved 'url')))
+    (expect-eq !>(b+|) !>((gj:orr saved 'enabled')))
+    (expect-eq !>(`json`~) !>((fol gone)))
+    (expect-eq !>(`json`~) !>((gj:orr gone 'url')))
+    (expect-eq !>(b+|) !>((fol typed)))
+    (expect-eq !>('sk-mine') !>((gs:orr typed 'api_key')))
+    (expect-eq !>('https://or/api/v1') !>((gs:orr typed 'url')))
+    (expect-eq !>('sk-own') !>((gs:orr bare 'api_key')))
+    (expect-eq !>(`json`~) !>((fol bare)))
   ==
 ::  a save that sends the followed values again, or a blank key, still
 ::  follows; a model, address or key that really changes is the owner's

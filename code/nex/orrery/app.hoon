@@ -111,8 +111,9 @@
           ::  secret with a name, an identity and a scope (spec section 11,
           ::  phase 3)
           [%fall %& [/ %'clients.json'] [[/ %json] [%o ~]]]
-          ::  the on-ship generator: its settings (the key lives here and
-          ::  is never served) and what its last pass did
+          ::  the on-ship generator: its settings (the owner's own key
+          ::  lives here and is never served; Armillary's is read from its
+          ::  offer at each call, never kept here) and what its last pass did
           [%fall %& [/ %'generator.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'generator-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'gen.sig'] [[/ %sig] ~]]
@@ -265,6 +266,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery writer: failed")
         ;<  ~  bind:m  upgrade-schema
+        ;<  ~  bind:m  strip-generator
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         ;<  changed=?  bind:m  (apply from sage)
@@ -772,6 +774,20 @@
   ?:  =(cur next)  (pure:m ~)
   ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema-before.json') [[/ %json] cur] [/ %json])
   ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema.json') [[/ %json] next] [/ %json])
+  (pure:m ~)
+::  +strip-generator: a generator.json that follows Armillary drops the
+::  address and key an older release copied into it from the offer
+::  (+gen-strip), at the writer's rise like +upgrade-schema. Soft, and
+::  with no clock, for the same reason
+::
+++  strip-generator
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ?.  ?=([%o *] cur)  (pure:m ~)
+  =/  next=(map @t json)  (gen-strip:orr p.cur)
+  ?:  =(p.cur next)  (pure:m ~)
+  ;<  *  bind:m  (over-as-soft:io (rf 0 / %'generator.json') [[/ %json] [%o next]] [/ %json])
   (pure:m ~)
 ::  +record-park: a weir that refuses a road every fiber needs, kept
 ::  once in rise.json under parked and said once, at >>>, with the
@@ -2598,7 +2614,7 @@
   =/  m  (fiber:fiber:nexus ,[code=@ud body=json])
   ^-  form:m
   =/  fail  |=([code=@ud msg=@t] ^-([code=@ud body=json] [code (err-json:orr msg)]))
-  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  ;<  cfg-j=json  bind:m  (gen-doc 1)
   =/  cfg=config:orr  (de-config:orr cfg-j)
   ?:  =('' api-key.cfg)  (pure:m (fail 503 'the generator has no key'))
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
@@ -2971,7 +2987,7 @@
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  doc=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  ;<  doc=json  bind:m  (gen-doc 1)
   (send-json eyre-id 200 (en-config-masked:orr (de-config:orr doc)))
 ::  +serve-telegram: the reader's settings without the token or secret
 ::
@@ -3116,9 +3132,14 @@
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
   =/  name=@ta  (settings-file op)
   ;<  base=(map @t json)  bind:m  (read-map (rf 1 / name))
+  ::  the generator is stored without the offer's address and key, and
+  ::  shown with them
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  =/  gen=?  =('set-generator' op)
   =/  expected=json
+    ?:  gen  (gen-save:orr [%o base] offer p.jon)
     ?+  op  jon
-        $?  %'set-generator'  %'set-telegram'  %'set-chat'  %'set-mail'  %'set-read'
+        $?  %'set-telegram'  %'set-chat'  %'set-mail'  %'set-read'
             %'set-travel'  %'set-search'  %'set-rhythm'  %'set-outdoors'  %'set-browsing'
         ==
       [%o (settings-merge:orr op base p.jon)]
@@ -3128,7 +3149,8 @@
   =/  tries=@ud  10
   |-
   ;<  cur=json  bind:m  (read-json (rf 1 / name))
-  ?:  |(=(cur expected) =(0 tries))  (send-json eyre-id 200 (settings-view op cur))
+  ?:  |(=(cur expected) =(0 tries))
+    (send-json eyre-id 200 (settings-view op ?:(gen (gen-live:orr cur offer) cur)))
   ;<  now=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-wait:io (add now ~s0..3333))
   ;<  ~  bind:m  (take-wake:io ~)
@@ -5289,7 +5311,7 @@
   |=  [force=? urgent=(unit (list @t))]
   =/  m  (fiber:fiber:nexus ,(unit @da))
   ^-  form:m
-  ;<  cfg-json=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  cfg-json=json  bind:m  (gen-doc 0)
   =/  cfg=config:orr  (de-config:orr cfg-json)
   ?.  enabled.cfg  (pure:m ~)
   ;<  rev=json  bind:m  (read-json (rf 0 /beacon %rev))
@@ -5505,7 +5527,9 @@
 ::  +do-set-generator: merge the owner's generator settings over the
 ::  stored ones. A blank or missing api_key keeps the stored key, so the
 ::  page can save every other field without holding the secret; a JSON
-::  null clears it. Settings are not model state: the beacon does not move.
+::  null clears it. While it follows Armillary, the offer's address and
+::  key are not stored (+gen-save). Settings are not model state: the
+::  beacon does not move.
 ::
 ++  do-set-generator
   |=  jon=json
@@ -5513,8 +5537,9 @@
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-generator' 'doc: expected an object')
-  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'generator.json'))
-  =/  merged=json  [%o (settings-merge:orr 'set-generator' base p.doc)]
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  =/  merged=json  (gen-save:orr cur offer p.doc)
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
   ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
   (pure:m |)
@@ -5533,6 +5558,17 @@
   ?~  jon  (pure:m ~)
   ?.  ?=([%o *] u.jon)  (pure:m ~)
   (pure:m jon)
+::  +gen-doc: generator.json as a model call reads it, the offer's address
+::  and key laid in while it follows (+gen-live), so a rotated key is
+::  used at once and the vendor's key is never stored
+::
+++  gen-doc
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf up / %'generator.json'))
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  (pure:m (gen-live:orr doc offer))
 ::  +do-follow-armillary: Armillary's offer laid over each setting that
 ::  follows, and over those named in .attach, which follow again. Only
 ::  a setting that changes is written. Settings are not model state:
@@ -5897,7 +5933,7 @@
   ?:  =('' text)  (send-err eyre-id 400 'text: required')
   ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
   ;<  now=@da  bind:m  get-time:io
-  ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'generator.json'))
+  ;<  cfg-j=json  bind:m  (gen-doc 1)
   =/  cfg=config:orr  (de-config:orr cfg-j)
   ?:  =('' api-key.cfg)  (send-err eyre-id 503 'the generator has no key')
   ;<  gl=json  bind:m  (read-json (rf 1 / %'generator-last.json'))
@@ -6064,7 +6100,7 @@
       ==
       ['schema' schema]
       ['policy' policy]
-      ['generator' (en-config-masked:orr (de-config:orr generator))]
+      ['generator' (en-config-masked:orr (de-config:orr (gen-live:orr generator offer)))]
       ['generator_last' generator-last]
       ['reconcile_last' reconcile-last]
       ['telegram' (en-tg-config-masked:orr (de-tg-config:orr telegram))]
@@ -6987,7 +7023,7 @@
   =/  edge=@t  (day-of:orr (sub now ~d7))
   ;<  visits=(list json)  bind:m  (load-visits (skim days |=(d=@ta &(=(10 (met 3 d)) (aor edge d)))))
   ?~  visits  (pure:m ~)
-  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  gen-j=json  bind:m  (gen-doc 0)
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)  (pure:m ~)
   =/  small=config:orr  gen(model model.cfg, max-tokens 1.000, reasoning [%o (my ~[['enabled' b+|]])])
@@ -8635,7 +8671,7 @@
   =/  decided=(list [id=@ta a=action:orr])
     %+  sort  (skim acts |=([* a=action:orr] ?=(?(%done %dismissed %failed) status.a)))
     |=([[* a=action:orr] [* b=action:orr]] (lth proposed.a proposed.b))
-  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  gen-j=json  bind:m  (gen-doc 0)
   =/  gen=config:orr  (de-config:orr gen-j)
   ;<  [suggestions=@t said-note=@t]  bind:m
     =/  n  (fiber:fiber:nexus ,[@t @t])
@@ -9178,7 +9214,7 @@
   =/  sorted=(list [r=mail-msg:orr root=@t])
     (sort replies |=([a=[r=mail-msg:orr *] b=[r=mail-msg:orr *]] (lth sent.r.a sent.r.b)))
   ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
-  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  gen-j=json  bind:m  (gen-doc 0)
   =/  gen=config:orr  (de-config:orr gen-j)
   =|  handled=(list @t)
   =|  notes=(list @t)
@@ -9571,7 +9607,7 @@
   ::  one is seen before anything is proposed from the earlier one alone.
   =/  fresh=(list [msg=tg-msg:orr who=@t])  (run-fresh:orr run kind)
   ?~  fresh  (pure:m [| | ~ ~ ~ ~['nothing to read'] ~])
-  ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
+  ;<  gen-j=json  bind:m  (gen-doc 0)
   =/  gen=config:orr  (de-config:orr gen-j)
   ::  no key is a model that cannot be reached: the run waits, as for
   ::  one that is down, rather than being taken as read
