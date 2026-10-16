@@ -514,7 +514,7 @@ owner_only('the settings are the owner\'s, even to a writing key', 'GET', '/gene
 # a ship with no Armillary, or one orrery may not read yet, says so; on
 # one with Armillary every setting follows, a hand pick stops only that
 # setting, and one tap follows it again
-ARM_SETTINGS = {'generator', 'mail', 'chat', 'telegram', 'read', 'search'}
+ARM_SETTINGS = {'generator', 'mail', 'chat', 'telegram', 'read', 'search', 'browsing'}
 def arm_of(name):
     code, st = curl('GET', API + '/armillary')
     return dictish(dictish(dictish(st).get('settings')).get(name))
