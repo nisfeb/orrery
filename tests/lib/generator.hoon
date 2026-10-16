@@ -2328,6 +2328,68 @@
     (expect-eq !>((jo '{"model":"m"}')) !>((armillary-apply:orr 'mail' (jo '{"model":"m"}') none |)))
     (expect-eq !>((jo '{"x":1}')) !>((armillary-apply:orr 'generator' (jo '{"x":1}') none |)))
   ==
+::  Armillary 31's fifth tier, transcription, rides in suggested.models
+::  beside default, and Armillary 30 puts Talon's dictation there too.
+::  Neither is Orrery's: every setting, followed or the owner's own, comes
+::  out as it does without them, and none runs either model, not even
+::  when the transcription model is all the vendor offers
+::
+++  test-armillary-transcription
+  =/  plain
+    %-  jo
+    %+  rap  3
+    :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-1",'
+        '"suggested":{"rev":3,"tiers":{"frontier":"f/1"},'
+        '"models":{"default":"f/1","orrery_generator":"g/1","orrery_decider":"typesafe/jev-2"}},'
+        '"search":{"url":"https://v/apps/armillary/brave","key":"id.sec"}}'
+    ==
+  =/  more
+    %-  jo
+    %+  rap  3
+    :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-1",'
+        '"suggested":{"rev":3,"tiers":{"frontier":"f/1","transcription":"openai/whisper-large-v3-turbo"},'
+        '"models":{"default":"f/1","orrery_generator":"g/1","orrery_decider":"typesafe/jev-2",'
+        '"dictation":"d/1","transcription":"openai/whisper-large-v3-turbo"}},'
+        '"search":{"url":"https://v/apps/armillary/brave","key":"id.sec"}}'
+    ==
+  =/  only
+    %-  jo
+    %+  rap  3
+    :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-1",'
+        '"suggested":{"rev":3,"tiers":{"transcription":"openai/whisper-large-v3-turbo"},'
+        '"models":{"transcription":"openai/whisper-large-v3-turbo"}},"search":{}}'
+    ==
+  =/  bare
+    (jo '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-1","suggested":{"rev":3,"tiers":{},"models":{}},"search":{}}')
+  ::  every setting from .doc, with and without following again
+  =/  same
+    |=  doc=json
+    ^-  tang
+    =/  laid
+      |=  [offer=json attach=?]
+      (turn armillary-files:orr |=([name=@t file=@ta] (armillary-apply:orr name doc offer attach)))
+    =/  theirs
+      |=  j=json
+      ^-  ?
+      ?.  ?=([%o *] j)  |
+      (lien ~(val by p.j) |=(v=json |(=(s+'openai/whisper-large-v3-turbo' v) =(s+'d/1' v))))
+    ;:  weld
+      (expect-eq !>((laid plain |)) !>((laid more |)))
+      (expect-eq !>((laid plain &)) !>((laid more &)))
+      (expect-eq !>((laid bare |)) !>((laid only |)))
+      (expect-eq !>((laid bare &)) !>((laid only &)))
+      (expect !>(!(lien :(weld (laid more |) (laid more &) (laid only |) (laid only &)) theirs)))
+    ==
+  ;:  weld
+    ::  the offer with the new keys still lays its models: not vacuous
+    (expect-eq !>('g/1') !>((gs:orr (armillary-apply:orr 'generator' [%o ~] more |) 'model')))
+    (expect-eq !>('f/1') !>((gs:orr (armillary-apply:orr 'mail' [%o ~] more |) 'model')))
+    (expect-eq !>('') !>((gs:orr (armillary-apply:orr 'browsing' [%o ~] more |) 'model')))
+    (same [%o ~])
+    (same (jo '{"enabled":false,"max_tokens":7}'))
+    (same (jo '{"url":"https://old/v1","model":"g/0","armillary_rev":2}'))
+    (same (jo '{"model":"mine/1","follow_armillary":false}'))
+  ==
 ::  a save that sends the followed values again, or a blank key, still
 ::  follows; a model, address or key that really changes is the owner's
 ::  pick; a file Armillary never filled has nothing to stop following
