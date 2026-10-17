@@ -260,7 +260,7 @@
     ], "notes": ["the breakdown situation has no ended"]}
     '''
   =/  events=(list @t)  ~['Ballet' 'Parent meeting' 'The breakdown']
-  =/  got  (validate:gen answer known taken events schema.f 5)
+  =/  got  (validate:gen answer known taken events schema.f 5 ~)
   =/  titles=(list @t)  (turn acts.got |=(a=json (gs:orr a 'title')))
   =/  joined=@t  (join-cords:gen ' ' notes.got)
   =/  nine=json  (jo '{"actions":[{"kind":"task","title":"Task 1"},{"kind":"task","title":"Task 2"},{"kind":"task","title":"Task 3"},{"kind":"task","title":"Task 4"}]}')
@@ -275,7 +275,7 @@
     (expect !>((has-sub joined 'kind email')))
     (expect !>((has-sub joined 'thing/tesla')))
     (expect !>((has-sub joined 'model note: the breakdown situation has no ended')))
-    (expect-eq !>(3) !>((lent acts:(validate:gen nine known ~ ~ schema.f 3))))
+    (expect-eq !>(3) !>((lent acts:(validate:gen nine known ~ ~ schema.f 3 ~))))
   ==
 ++  test-restates
   ;:  weld
@@ -299,7 +299,7 @@
       {"kind": "task", "title": "Sort out the overlap between ballet and the parent meeting", "about": ["activity/ballet", "situation/2026-12-05-meeting"]}
     ]}
     '''
-  =/  got  (validate:gen answer known ~ events schema.f 5)
+  =/  got  (validate:gen answer known ~ events schema.f 5 ~)
   =/  joined=@t  (join-cords:gen ' ' notes.got)
   ;:  weld
     (expect-eq !>(`(list @t)`~['Pack ballet shoes and tights for the first class' 'Sort out the overlap between ballet and the parent meeting']) !>(`(list @t)`(turn acts.got |=(a=json (gs:orr a 'title')))))
@@ -634,7 +634,7 @@
     %-  jo
     '{"actions": [{"kind": "resolve", "title": "Deck permit approved", "about": ["thing/deck-permit"], "payload": {"situation": "situation/2026-09-18-deck-permit", "outcome": "approved on Oct 2"}, "why": "it came through"}, {"kind": "resolve", "title": "Close the application", "about": [], "payload": {"outcome": "approved"}}, {"kind": "resolve", "title": "Boiler fixed", "about": [], "payload": {"situation": "situation/nope", "outcome": "fixed"}}, {"kind": "resolve", "title": "Permit card", "about": [], "payload": {"situation": "thing/deck-permit", "outcome": "collected"}}]}'
   =/  known=(set @t)  (sy ~['situation/2026-09-18-deck-permit' 'thing/deck-permit'])
-  =/  v  (validate:orr answer known ~ ~['Deck permit application'] starter-schema:orr 5)
+  =/  v  (validate:orr answer known ~ ~['Deck permit application'] starter-schema:orr 5 ~)
   ;:  weld
     ::  a resolve of a situation the ship holds is kept, its title no
     ::  restating of the event, and is about that situation whether or
@@ -647,6 +647,24 @@
     (expect !>((lien notes.v |=(n=@t =(n 'dropped Close the application: payload lacks situation')))))
     (expect !>((lien notes.v |=(n=@t =(n 'dropped Boiler fixed: the ship holds no such situation')))))
     (expect !>((lien notes.v |=(n=@t =(n 'dropped Permit card: the ship holds no such situation')))))
+  ==
+::  a situation that has not begun is not over, whatever need was met: a
+::  resolve of one is dropped with its start, unless it was cancelled;
+::  one under way may close
+::
+++  test-validate-resolve-not-begun
+  =/  all=(list loaded:orr)  all:fixture
+  =/  ahead=(map @t @da)  (not-begun:orr all ~ now)
+  =/  answer=json
+    %-  jo
+    '{"actions": [{"kind": "resolve", "title": "Massage done", "about": [], "payload": {"situation": "situation/2026-12-05-meeting", "outcome": "booked and confirmed"}}, {"kind": "resolve", "title": "Meeting called off", "about": [], "payload": {"situation": "situation/2026-12-05-meeting", "outcome": "Cancelled by the school"}}, {"kind": "resolve", "title": "Car fixed", "about": [], "payload": {"situation": "situation/2026-09-16-breakdown", "outcome": "fixed"}}]}'
+  =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
+  =/  v  (validate:orr answer known ~ ~ starter-schema:orr 5 ahead)
+  ;:  weld
+    ::  only the meeting is ahead: the breakdown started, the walk ended
+    (expect-eq !>(`(list @t)`~['situation/2026-12-05-meeting']) !>(~(tap in ~(key by ahead))))
+    (expect-eq !>(`(list @t)`~['Meeting called off' 'Car fixed']) !>((turn acts.v |=(a=json (gs:orr a 'title')))))
+    (expect !>((lien notes.v |=(n=@t =(n 'dropped Massage done: situation/2026-12-05-meeting has not begun, it starts 2026-12-05T19:00:00Z')))))
   ==
 ++  test-ground-needs
   =/  schema=json

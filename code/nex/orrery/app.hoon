@@ -5381,7 +5381,7 @@
   =/  events=(list @t)
     %+  murn  all
     |=(l=loaded:orr ?:(?=(?(%situation %activity) kind.body.l) `name.body.l ~))
-  =/  v  (validate:orr u.parsed known taken events schema max-actions.cfg)
+  =/  v  (validate:orr u.parsed known taken events schema max-actions.cfg (not-begun:orr all (multi-of:orr schema) now))
   =/  offered=@ud  (lent (ga:orr u.parsed 'actions'))
   =/  todo=(list json)  acts.v
   =/  filed=@ud  0

@@ -1883,6 +1883,22 @@
   =/  who=@t  (ref-or-text value.obs.r)
   ?~  (parse-bid who)  ~
   `[who by.obs.r]
+::  +not-begun: the situations that have not begun, each with its start:
+::  no started, and a scheduled start still ahead
+::
+++  not-begun
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (map @t @da)
+  %-  ~(gas by *(map @t @da))
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit [@t @da])
+  ?.  =(%situation kind.body.l)  ~
+  =/  w  (fold rows.l multi now)
+  ?.  =('' (winner-text w 'started'))  ~
+  =/  s=(unit @da)  (de-iso-any (winner-text w 'starts'))
+  ?.  &(?=(^ s) (gth u.s now))  ~
+  `[id.l u.s]
 ::  +situation-end: when it ended, else when it ends, else ~
 ::
 ++  situation-end
@@ -3332,13 +3348,14 @@
 ::  or decided, not a todo for an event the calendar already holds (a
 ::  title that reads as an open situation's or an activity's name),
 ::  every about body known, every required payload key present, a due
-::  that parses, the why in the payload for the page; at
+::  that parses, no resolve of a situation that has not begun (.ahead,
+::  +not-begun) unless it was cancelled, the why in the payload for the page; at
 ::  most limit, looking at twice that. Notes name what was dropped and
 ::  carry the model's own notes. Each kept action is the JSON an act op
 ::  takes, before fill-act-as stamps proposed and by.
 ::
 ++  validate
-  |=  [answer=json known=(set @t) taken=(list @t) events=(list @t) schema=json limit=@ud]
+  |=  [answer=json known=(set @t) taken=(list @t) events=(list @t) schema=json limit=@ud ahead=(map @t @da)]
   ^-  [acts=(list json) notes=(list @t)]
   =/  kinds=(set @t)
     =/  a=(list @t)  (strings (ga schema 'actions'))
@@ -3385,6 +3402,13 @@
     ?~(j '' ?:(?=([%s *] u.j) p.u.j ''))
   ?:  &(=('resolve' kind) !&(=('situation' (kind-of sit)) (~(has in known) sit)))
     $(todo t.todo, notes [(rap 3 'dropped ' title ': the ship holds no such situation' ~) notes])
+  ::  a resolve says the situation is over, and one that has not begun
+  ::  is not, whatever need was met: a booking made is not the massage
+  ::  had. Only a cancellation ends it before its start
+  =/  starts=(unit @da)  ?.(=('resolve' kind) ~ (~(get by ahead) sit))
+  =/  outcome=@t  (lower (ref-or-text (~(gut by payload) 'outcome' s+'')))
+  ?:  &(?=(^ starts) ?=(~ (find "cancel" (trip outcome))))
+    $(todo t.todo, notes [(rap 3 'dropped ' title ': ' sit ' has not begun, it starts ' (en-iso u.starts) ~) notes])
   =?  about  &(=('resolve' kind) !(lien about |=(b=@t =(b sit))))  [sit about]
   =/  why=@t  (end [3 300] (gs a 'why'))
   =?  payload  !=('' why)  (~(put by payload) 'why' s+why)
