@@ -10527,7 +10527,9 @@
 ::  +gen-save: what an owner's save of generator.json stores: their fields
 ::  over the document as the page was shown it (the offer's address and
 ::  key laid in, and the default address where none is held), so sending
-::  those back is no pick, then stripped while it still follows
+::  those back is no pick, then stripped while it still follows. Shown
+::  the offer's address and key, the document is Armillary's, revision
+::  or not, so a url or key typed over them is the owner's pick
 ::
 ++  gen-save
   |=  [doc=json offer=(unit json) new=(map @t json)]
@@ -10535,6 +10537,8 @@
   =/  live=json  (gen-live doc offer)
   =/  shown=(map @t json)
     (~(put by ?:(?=([%o *] live) p.live ~)) 'url' s+url:(de-config live))
+  =?  shown  &(!=(live doc) !(~(has by shown) 'armillary_rev'))
+    (~(put by shown) 'armillary_rev' (numb:enjs:format ?~(offer 0 (fall (gn (gj u.offer 'suggested') 'rev') 0))))
   [%o (gen-strip (settings-merge 'set-generator' shown new))]
 ::  +settings-merge: an owner's settings document over the stored one,
 ::  for every settings op. A blank secret keeps the stored one. When the

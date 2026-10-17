@@ -2497,7 +2497,19 @@
   =/  gone  (gen-save:orr applied ~ (my ~[['url' s+'https://openrouter.ai/api/v1'] ['model' s+'g/1']]))
   =/  typed  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'g/1'] ['api_key' s+'sk-mine']]))
   =/  bare  (gen-save:orr (jo '{"url":"https://mine/v1","api_key":"sk-own"}') ~ (my ~[['url' s+'https://mine/v1'] ['enabled' b+&]]))
+  ::  a file Armillary never laid a revision on, the offer shown over it:
+  ::  a key typed is still the owner's pick, and a save of what was shown
+  ::  still follows, stored without the offer's address or key
+  =/  norev  (jo '{"enabled":true}')
+  =/  typed2  (gen-save:orr norev `offer (my ~[['url' s+'https://mine/v1'] ['api_key' s+'sk-mine']]))
+  =/  kept2  (gen-save:orr norev `offer (my ~[['url' s+'https://or/api/v1'] ['enabled' b+|]]))
   ;:  weld
+    (expect-eq !>(b+|) !>((fol typed2)))
+    (expect-eq !>('sk-mine') !>((gs:orr typed2 'api_key')))
+    (expect-eq !>('https://mine/v1') !>((gs:orr typed2 'url')))
+    (expect-eq !>(`json`~) !>((fol kept2)))
+    (expect-eq !>(`json`~) !>((gj:orr kept2 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr kept2 'url')))
     (expect-eq !>(`json`~) !>((fol saved)))
     (expect-eq !>(`json`~) !>((gj:orr saved 'api_key')))
     (expect-eq !>(`json`~) !>((gj:orr saved 'url')))
