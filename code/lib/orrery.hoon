@@ -5626,7 +5626,32 @@
   =/  vo  (validate-obs (ga answer 'observations') ctx known.vb alias.vb ids context-ids at-of last)
   =/  va
     (validate-acts (ga answer 'actions') ctx known.vb alias.vb ids context-ids at-of text-of last)
-  [bodies.vb obs.vo acts.va :(weld notes.vb notes.vo notes.va) ~]
+  ::  each action says why: the message it stands on, who sent it, its words
+  =/  said=(map @t window-row)  (~(gas by *(map @t window-row)) (turn rows |=(r=window-row [id.r r])))
+  =/  acts=(list json)
+    %+  turn  acts.va
+    |=  a=json
+    =/  r=(unit window-row)  (~(get by said) (gs a 'message'))
+    ?~(r a (with-why a (quoted who.u.r text.u.r)))
+  [bodies.vb obs.vo acts :(weld notes.vb notes.vo notes.va) ~]
+::  +with-why: an action whose payload says why it was proposed, for the
+::  card, unless its proposer said already
+::
+++  with-why
+  |=  [a=json why=@t]
+  ^-  json
+  ?.  ?=([%o *] a)  a
+  =/  pay=json  (gj a 'payload')
+  =/  p=(map @t json)  ?:(?=([%o *] pay) p.pay ~)
+  ?:  (~(has by p) 'why')  a
+  [%o (~(put by p.a) 'payload' [%o (~(put by p) 'why' s+why)])]
+::  +quoted: who said it and their words, the first 200 bytes of them
+::
+++  quoted
+  |=  [who=@t text=@t]
+  ^-  @t
+  =/  cut=@t  (cut-utf8 text 200)
+  (rap 3 ?:(=('' who) 'A message' who) ': "' cut ?:(=(cut text) '"' '..."') ~)
 ::  ==  the reader's grounding: the facts a message bears out (bot.grounded)
 ::
 ::  a small model writes what it remembers as readily as what it read, so

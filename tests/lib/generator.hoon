@@ -1007,6 +1007,26 @@
     (expect-eq !>(`(list @t)`~['thing/subaru']) !>((strings:orr (ga:orr (snag 2 acts.got) 'about'))))
     (expect-eq !>('2026-09-18T00:00:00Z') !>((gs:orr (snag 2 acts.got) 'due')))
     (expect-eq !>('telegram/1/2') !>((gs:orr (snag 2 acts.got) 'message')))
+    ::  each says why: the message it stands on, who sent it, its words
+    =/  said=@t  'person/me: "home now, car is at the shop; dinner with sarah friday at 8 at the usual place"'
+    %+  weld
+      (expect-eq !>(said) !>((gs:orr (gj:orr (snag 2 acts.got) 'payload') 'why')))
+    (expect-eq !>(said) !>((gs:orr (gj:orr (snag 0 acts.got) 'payload') 'why')))
+  ==
+::  why an action was proposed, for its card: the words it was made from,
+::  cut at 200 bytes and never inside a character; a proposer's own why
+::  stands; an unknown sender is a message
+::
+++  test-action-why
+  =/  a199=@t  (fil 3 199 'a')
+  =/  long=@t  (rap 3 a199 'é and more' ~)
+  ;:  weld
+    (expect-eq !>('You said: "move it to Friday"') !>((quoted:orr 'You said' 'move it to Friday')))
+    (expect-eq !>('A message: "hi"') !>((quoted:orr '' 'hi')))
+    (expect-eq !>((rap 3 'person/sam: "' a199 '..."' ~)) !>((quoted:orr 'person/sam' long)))
+    (expect-eq !>('x') !>((gs:orr (gj:orr (with-why:orr (jo '{"kind":"task","payload":{"why":"x"}}') 'y') 'payload') 'why')))
+    (expect-eq !>('y') !>((gs:orr (gj:orr (with-why:orr (jo '{"kind":"task","title":"t"}') 'y') 'payload') 'why')))
+    (expect-eq !>('t') !>((gs:orr (with-why:orr (jo '{"kind":"task","title":"t"}') 'y') 'title')))
   ==
 ::  +conf: a confidence the model wrote as a string or a fraction is still a
 ::  number, as python's int() reads it

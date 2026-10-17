@@ -869,6 +869,7 @@ me = dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get(
 check('the owner\'s status stands, checked as a circumstance', me.get('value') == 'stranded, waiting for a tow', me)
 acts = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if a.get('title') == 'Call a tow for the gate car']
 check('the task was filed by telegram', len(acts) == 1 and acts[0].get('by') == 'telegram', acts)
+check('the task says why: who wrote what', len(acts) == 1 and dictish(acts[0].get('payload')).get('why') == 'person/me: "car died on route 9, stranded waiting for a tow"', acts)
 MADE.extend(a['id'] for a in acts)
 # the urgent pass runs on the generator's own fiber after the poke; its record follows the reader's
 deadline = time.time() + 90
@@ -2540,6 +2541,7 @@ check('an instruction answers the reply, files the two kinds the ship knows and 
 asked = [b for p, h, b in seen[n_instruct:] if p.endswith('/chat/completions') and system_of(b).startswith('You carry out')]
 user_text = json.dumps(asked[0].get('messages', [])[-1]) if asked else ''
 check('the model was asked once, with the owner\'s words and the body in focus', len(asked) == 1 and TOLD in user_text and STRUCK in user_text, len(asked))
+check('an instructed fact says why: the owner\'s words', any(dictish(dictish(action(i)).get('payload')).get('why') == 'You said: "%s"' % TOLD for i in IDS if dictish(action(i)).get('kind') == 'fact'), [dictish(action(i)).get('payload') for i in IDS])
 curl('POST', API + '/exec/wake', {})
 check('with apply, the executor carries both out: Rome is struck and the job stands',
       until(lambda: ROME not in live('city') and EMP in live('employer'), 90), (live('city'), live('employer')))

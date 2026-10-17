@@ -97,6 +97,11 @@ ok('about names the body when the state is at hand, with the id on hover, and fa
   render.inbox(inbox, state).includes('about <a href="#body/thing/subaru" title="thing/subaru">the &lt;b&gt;Subaru&lt;/b&gt;</a>')
   && render.inbox(inbox, state).includes('<a href="#body/person/sarah" title="person/sarah">person/sarah</a>'));
 ok('an empty inbox says so', render.inbox([]).includes('Nothing waiting'));
+// why it was proposed, in the proposer's words, ids named; not again among the payload's fields
+const whyHtml = render.inbox([{ id: 'w1', kind: 'resolve', title: 'The massage is over', status: 'proposed', proposed: '2026-10-16T22:10:00Z', by: 'generator', about: ['thing/subaru'],
+  payload: { situation: 'thing/subaru', outcome: 'done', why: 'thing/subaru ended at 21:00 on the calendar' }, history: [] }], state);
+ok('an action says why it was proposed', whyHtml.includes('<div class="why"><span class="muted">why</span> the &lt;b&gt;Subaru&lt;/b&gt; ended at 21:00 on the calendar</div>') && (whyHtml.match(/ended at 21:00/g) || []).length === 1);
+ok('an action with no why has no why line', !inboxHtml.includes('class="why"'));
 ok('a proposed action has a refine box and a button with its id', inboxHtml.includes('<input data-refine-text="p1" placeholder="a note for this action">') && inboxHtml.includes('<button data-refine="p1">refine</button>'));
 ok('an approved or claimed action has no refine box', !inboxHtml.includes('data-refine="a1"') && !inboxHtml.includes('data-refine-text="a1"') && !inboxHtml.includes('data-refine="c1"'));
 ok('the refine note is empty on render', inboxHtml.includes('<span class="muted" data-refine-note="p1"></span>'));
@@ -324,7 +329,7 @@ ok('the read card carries its settings and last read, between mail and the brief
   && readSettings.includes('data-save-read="1"') && readSettings.includes('Last read at 2026-09-24 20:00:00: read 1, filed 4. Read today: 3.') && readSettings.includes('1790000000000-0xab: The tow'));
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
 const payloadHtml = render.inbox([{ id: 'a1', kind: 'message', title: 'Wish Sarah happy birthday', status: 'proposed', proposed: '2026-09-20T10:00:00Z', by: 'generator', about: [], payload: { via: 'chat', to: 'person/sarah', text: 'Happy <b>birthday</b>', why: 'it is today' } }], state);
-ok('the inbox shows what an action will do, escaped, the recipient linked, the why left out', payloadHtml.includes('class="payload"') && payloadHtml.includes('>via</span> chat') && payloadHtml.includes('Happy &lt;b&gt;birthday&lt;/b&gt;') && !payloadHtml.includes('<b>birthday</b>') && payloadHtml.includes('href="#body/person/sarah"') && !payloadHtml.includes('it is today'));
+ok('the inbox shows what an action will do, escaped, the recipient linked, the why on its own line and not among the payload', payloadHtml.includes('class="payload"') && payloadHtml.includes('>via</span> chat') && payloadHtml.includes('Happy &lt;b&gt;birthday&lt;/b&gt;') && !payloadHtml.includes('<b>birthday</b>') && payloadHtml.includes('href="#body/person/sarah"') && (payloadHtml.match(/it is today/g) || []).length === 1 && !/class="payload"[^]*it is today/.test(payloadHtml));
 const libVersion = parseInt((require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'lib', 'orrery.hoon'), 'utf8').match(/\n\+\+  version  (\d+)\n/) || [])[1], 10);
 const jsonVersion = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'version.json'), 'utf8')).version;
 ok('the lib\'s version is the desk\'s', libVersion === jsonVersion, [libVersion, jsonVersion]);

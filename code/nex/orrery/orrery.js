@@ -441,6 +441,11 @@
       return '<span class="muted">' + esc(k) + '</span> ' + namedValue(p[k], byId);
     }).join(' &middot; ') + '</div>';
   }
+  // why the proposer proposed it, in its words: the generator's sentence,
+  // the message a reader read, the owner's own instruction
+  function whyLine(p, byId) {
+    return p && typeof p.why === 'string' && p.why ? '<div class="why"><span class="muted">why</span> ' + namedText(p.why, byId) + '</div>' : '';
+  }
   // a value as a person reads it: a body it names by that body's name (its
   // id when the ship has no name for it), linked; anything else as it is
   function namedValue(v, byId) {
@@ -458,7 +463,7 @@
         (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
         ' <strong>' + namedText(a.title, byId) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + byWho(a.by, state) + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' + forWhom(a, state) +
-        (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + payloadLine(a.payload, byId) + '<div>';
+        (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + whyLine(a.payload, byId) + payloadLine(a.payload, byId) + '<div>';
       (MOVES[a.status] || []).forEach(function (s) {
         out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
       });

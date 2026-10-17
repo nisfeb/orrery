@@ -5978,7 +5978,9 @@
   =/  kept=(list json)
     ?~  scope.act  acts.out
     (skim acts.out |=(j=json (action-in-scope:orr u.scope.act `@tas`(gs:orr j 'kind'))))
-  =/  ops=(list json)  (turn kept |=(j=json (pairs:enjs:format ~[['op' s+'act'] ['action' j]])))
+  ::  each says why: the words it was made from
+  =/  said=@t  (quoted:orr ?:(owner.act 'You said' (cat 3 by.act ' said')) text)
+  =/  ops=(list json)  (turn kept |=(j=json (pairs:enjs:format ~[['op' s+'act'] ['action' (with-why:orr j said)]])))
   ;<  *  bind:m  (keep:io /instruct (rf 1 /beacon %rev) ~)
   ;<  ~  bind:m  (poke-each 1 ops)
   ;<  ~  bind:m  ?~(ops (pure:(fiber:fiber:nexus ,~) ~) (settle /instruct))
