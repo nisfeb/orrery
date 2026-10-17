@@ -75,7 +75,7 @@ ONLY=<header words> python3 -u scripts/api-matrix.py http://localhost:8122 /tmp/
 $F reset orrery compiled
 ```
 
-The generator's Armillary key, read from the offer at each call, needs Armillary on `~wyl` too: install it from the armillary repo with its `scripts/dev-deploy.py http://localhost:8122 /tmp/wyl.jar --add`, then run `python3 -u scripts/armillary-key-matrix.py http://localhost:8122 /tmp/wyl.jar` (14 checks, ~50 s). It runs its own stub model, lays test offers into Armillary's `app-inference.json` with a `/v1` address as the vendor's proxy has, checks the decider asks `<address without /v1>/alpha/decisions` (Armillary 34), and puts the files it touched back after.
+The generator's Armillary key, read from the offer at each call, needs Armillary on `~wyl` too: install it from the armillary repo with its `scripts/dev-deploy.py http://localhost:8122 /tmp/wyl.jar --add`, then run `python3 -u scripts/armillary-key-matrix.py http://localhost:8122 /tmp/wyl.jar` (25 checks, ~2.5 min). It runs its own stub model, lays test offers into Armillary's `app-inference.json` with a `/v1` address as the vendor's proxy has, checks the decider asks `<address without /v1>/alpha/decisions` (Armillary 34), that a model picked by hand keeps the vendor's key while a typed address and key are the owner's (version 106), reloads orrery twice to check the start sorts an own pick from before, and checks place lookups hold no proxy key. It puts every file it touched back after.
 
 `node scripts/page-test.js`, `scripts/code-closure.py code` and
 `scripts/load-rows.py` need no ship.
