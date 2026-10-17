@@ -648,6 +648,28 @@
     (expect !>((lien notes.v |=(n=@t =(n 'dropped Boiler fixed: the ship holds no such situation')))))
     (expect !>((lien notes.v |=(n=@t =(n 'dropped Permit card: the ship holds no such situation')))))
   ==
+::  a why that names facts and dates runs long: it is cut at 400 bytes,
+::  never inside a character; and the prompt asks for one, and says a
+::  situation with a time is over only once it has passed
+::
+++  test-validate-why
+  =/  a399=@t  (fil 3 399 'a')
+  =/  answer=json
+    %-  pairs:enjs:format
+    :~  :-  'actions'
+        :-  %a
+        :~  %-  pairs:enjs:format
+            :~  ['kind' s+'task']  ['title' s+'Book a ride to the dentist']  ['about' a+~]
+                ['why' s+(rap 3 a399 'é, and more' ~)]
+    ==  ==  ==
+  =/  v  (validate:orr answer ~ ~ ~ starter-schema:orr 5 ~)
+  =/  prompt=tape  (trip system-prompt:orr)
+  ;:  weld
+    (expect-eq !>(a399) !>((gs:orr (gj:orr (snag 0 acts.v) 'payload') 'why')))
+    (expect !>(?=(^ (find "one sentence naming the facts in the state that call for it" prompt))))
+    (expect !>(?=(^ (find "A situation with a time is over only once that time has passed or it was cancelled" prompt))))
+    (expect !>(?=(~ (find "the need has been met" prompt))))
+  ==
 ::  a situation that has not begun is not over, whatever need was met: a
 ::  resolve of one is dropped with its start, unless it was cancelled;
 ::  one under way may close
