@@ -224,6 +224,12 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 105's owner steps
+
+Nothing to do: no new roads, so no consent prompt. Every action card now says why it was proposed: the generator's reason, the message a reader read and who sent it, or your own words for an instruction. The generator no longer proposes closing a situation that has not begun, unless it was cancelled. Orrery can watch a flight or a web page and alert you on Talon when it changes (`PUT /api/watches`; a flight watch needs an AeroDataBox key). The brief, the nudges and the day's rhythm follow your phone's local zone when you travel, and a pickup that pins you is seen as yours, with no nag to leave.
+
+On a ship with Armillary, the generator's address and key are no longer copied into its settings: each model call reads them from Armillary, so a rotated key works at the next call, and the copy an older version kept is removed at the first start. If the Generator card then says no key is set, check that orrery may read Armillary's settings on `/apps/grubbery/permits` (approved since version 96) and reload orrery. The decider reaches the decisions route of an Armillary vendor's proxy (Armillary 34).
+
 ### Version 104's owner steps
 
 Nothing to do: no new roads, so no consent prompt. Minting a key with "writes as" left blank no longer fails with "by: 1 to 64 bytes": the key writes as its name.
