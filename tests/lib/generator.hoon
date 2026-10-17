@@ -2356,7 +2356,10 @@
     (expect-eq !>(`(unit @ud)``7) !>((gn:orr gen 'max_tokens')))
     (expect-eq !>('z/1') !>((gs:orr (armillary-apply:orr 'mail' ~ offer |) 'model')))
     (expect-eq !>('f/1') !>((gs:orr (armillary-apply:orr 'chat' ~ offer |) 'model')))
-    (expect-eq !>('https://v/apps/armillary/brave') !>((gs:orr srch 'api_url')))
+    (expect-eq !>(`json`~) !>((gj:orr srch 'api_url')))
+    (expect-eq !>(`json`~) !>((gj:orr srch 'api_key')))
+    (expect-eq !>('https://v/apps/armillary/brave') !>((gs:orr (creds-live:orr 'search' srch `offer) 'api_url')))
+    (expect-eq !>('id.sec') !>((gs:orr (creds-live:orr 'search' srch `offer) 'api_key')))
     (expect-eq !>(b+&) !>((gj:orr srch 'enabled')))
     (expect-eq !>(b+|) !>((gj:orr (armillary-apply:orr 'search' (jo '{"enabled":false}') offer |) 'enabled')))
   ==
@@ -2451,7 +2454,7 @@
     :~  '{"mode":"lease","base_url":"https://or/api/v1","key":"sk-2",'
         '"suggested":{"rev":3,"models":{"default":"f/1","orrery_generator":"g/1"}}}'
     ==
-  =/  own  (jo '{"url":"https://mine/v1","api_key":"sk-own","model":"m/1","follow_armillary":false,"armillary_rev":2}')
+  =/  own  (jo '{"url":"https://mine/v1","api_key":"sk-own","model":"m/1","follow_armillary":false,"armillary_rev":2,"own_key":true}')
   =/  bare  (jo '{"url":"https://mine/v1","api_key":"sk-own"}')
   =/  live  |=([d=json o=(unit json)] (de-config:orr (gen-live:orr d o)))
   =/  stripped  |=(j=json ^-(json ?.(?=([%o *] j) j [%o (gen-strip:orr p.j)])))
@@ -2493,18 +2496,31 @@
 ++  test-generator-save-following
   =/  applied  (armillary-apply:orr 'generator' (jo '{"enabled":true}') offer |)
   =/  fol  |=(j=json (gj:orr j 'follow_armillary'))
+  =/  own  |=(j=json (gj:orr j 'own_key'))
+  =/  live  |=(j=json (de-config:orr (gen-live:orr j `offer)))
   =/  saved  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'g/1'] ['enabled' b+|]]))
   =/  gone  (gen-save:orr applied ~ (my ~[['url' s+'https://openrouter.ai/api/v1'] ['model' s+'g/1']]))
+  ::  a key typed alone is the owner's, and goes to the default address,
+  ::  never the vendor's
   =/  typed  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'g/1'] ['api_key' s+'sk-mine']]))
+  ::  a model picked by hand is the owner's model on the vendor's key
+  =/  picked  (gen-save:orr applied `offer (my ~[['url' s+'https://or/api/v1'] ['model' s+'m/own']]))
+  ::  an address typed alone has no key until one is given
+  =/  addr  (gen-save:orr applied `offer (my ~[['url' s+'https://mine/v1'] ['model' s+'g/1']]))
+  ::  a null key clears it: the owner's word, no key
+  =/  cleared  (gen-save:orr applied `offer (my ~[['api_key' ~]]))
   =/  bare  (gen-save:orr (jo '{"url":"https://mine/v1","api_key":"sk-own"}') ~ (my ~[['url' s+'https://mine/v1'] ['enabled' b+&]]))
   ::  a file Armillary never laid a revision on, the offer shown over it:
-  ::  a key typed is still the owner's pick, and a save of what was shown
-  ::  still follows, stored without the offer's address or key
+  ::  a key typed is still the owner's, and a save of what was shown still
+  ::  follows, stored without the offer's address or key
   =/  norev  (jo '{"enabled":true}')
   =/  typed2  (gen-save:orr norev `offer (my ~[['url' s+'https://mine/v1'] ['api_key' s+'sk-mine']]))
   =/  kept2  (gen-save:orr norev `offer (my ~[['url' s+'https://or/api/v1'] ['enabled' b+|]]))
+  ::  following again takes the offer's back
+  =/  back  (armillary-apply:orr 'generator' typed offer &)
   ;:  weld
-    (expect-eq !>(b+|) !>((fol typed2)))
+    (expect-eq !>(b+&) !>((own typed2)))
+    (expect-eq !>(`json`~) !>((fol typed2)))
     (expect-eq !>('sk-mine') !>((gs:orr typed2 'api_key')))
     (expect-eq !>('https://mine/v1') !>((gs:orr typed2 'url')))
     (expect-eq !>(`json`~) !>((fol kept2)))
@@ -2516,11 +2532,77 @@
     (expect-eq !>(b+|) !>((gj:orr saved 'enabled')))
     (expect-eq !>(`json`~) !>((fol gone)))
     (expect-eq !>(`json`~) !>((gj:orr gone 'url')))
-    (expect-eq !>(b+|) !>((fol typed)))
+    (expect-eq !>(b+&) !>((own typed)))
+    (expect-eq !>(`json`~) !>((fol typed)))
     (expect-eq !>('sk-mine') !>((gs:orr typed 'api_key')))
-    (expect-eq !>('https://or/api/v1') !>((gs:orr typed 'url')))
+    (expect-eq !>('https://openrouter.ai/api/v1') !>((gs:orr typed 'url')))
+    (expect-eq !>('sk-mine') !>(api-key:(live typed)))
+    (expect-eq !>(b+|) !>((fol picked)))
+    (expect-eq !>(`json`~) !>((own picked)))
+    (expect-eq !>(`json`~) !>((gj:orr picked 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr picked 'url')))
+    (expect-eq !>('sk-1') !>(api-key:(live picked)))
+    (expect-eq !>('https://or/api/v1') !>(url:(live picked)))
+    (expect-eq !>('m/own') !>(model:(live picked)))
+    (expect-eq !>(b+&) !>((own addr)))
+    (expect-eq !>('https://mine/v1') !>((gs:orr addr 'url')))
+    (expect-eq !>('') !>(api-key:(live addr)))
+    (expect-eq !>(b+&) !>((own cleared)))
+    (expect-eq !>('') !>(api-key:(live cleared)))
+    (expect-eq !>(`json`~) !>((own back)))
+    (expect-eq !>(`json`~) !>((gj:orr back 'api_key')))
+    (expect-eq !>('sk-1') !>(api-key:(live back)))
     (expect-eq !>('sk-own') !>((gs:orr bare 'api_key')))
     (expect-eq !>(`json`~) !>((fol bare)))
+  ==
+::  the writer's rise, for a file from before 106: an own pick that took
+::  the vendor's key with a model loses the copy and keeps its model; one
+::  with a key of the owner's keeps it, marked theirs, and so does any
+::  when the offer cannot be read; a following copy goes as in 105; a
+::  file Armillary never touched is left alone. Place lookups: a copy of
+::  the vendor's key goes and they follow again; the owner's stays
+::
+++  test-creds-migrate
+  =/  copy  (my ~[['follow_armillary' b+|] ['armillary_rev' n+'2'] ['url' s+'https://or/api/v1'] ['api_key' s+'sk-1'] ['model' s+'m/own']])
+  =/  mine  (~(put by copy) 'api_key' s+'sk-own')
+  =/  fol  (my ~[['armillary_rev' n+'2'] ['url' s+'https://or/api/v1'] ['api_key' s+'sk-1']])
+  =/  never  (my ~[['url' s+'https://mine/v1'] ['api_key' s+'sk-own']])
+  =/  scopy  (my ~[['follow_armillary' b+|] ['armillary_rev' n+'2'] ['api_url' s+'https://mine.example'] ['api_key' s+'id.sec']])
+  =/  smine  (~(put by scopy) 'api_key' s+'BSA-mine')
+  =/  m  |=([n=@t d=(map @t json) o=(unit json)] (creds-migrate:orr n d o))
+  ;:  weld
+    (expect-eq !>((my ~[['follow_armillary' b+|] ['armillary_rev' n+'2'] ['model' s+'m/own']])) !>((m 'generator' copy `offer)))
+    (expect-eq !>((~(put by mine) 'own_key' b+&)) !>((m 'generator' mine `offer)))
+    (expect-eq !>((~(put by copy) 'own_key' b+&)) !>((m 'generator' copy ~)))
+    (expect-eq !>((my ~[['armillary_rev' n+'2']])) !>((m 'generator' fol `offer)))
+    (expect-eq !>(never) !>((m 'generator' never `offer)))
+    (expect-eq !>((my ~[['armillary_rev' n+'2']])) !>((m 'search' scopy `offer)))
+    (expect-eq !>(smine) !>((m 'search' smine `offer)))
+    ::  and again changes nothing
+    (expect-eq !>((m 'generator' copy `offer)) !>((m 'generator' (m 'generator' copy `offer) `offer)))
+    (expect-eq !>((m 'generator' mine `offer)) !>((m 'generator' (m 'generator' mine `offer) `offer)))
+  ==
+::  place lookups run on the vendor's proxy and key read at each lookup:
+::  none stored; a save of what was shown still follows; a key typed
+::  alone is the owner's and goes to Brave, never the vendor's proxy; the
+::  card says a key is set
+::
+++  test-search-creds
+  =/  applied  (armillary-apply:orr 'search' (jo '{"monthly_cap":9}') offer |)
+  =/  shown  (creds-save:orr 'search' applied `offer (my ~[['api_url' s+'https://v/apps/armillary/brave'] ['monthly_cap' n+'12']]))
+  =/  typed  (creds-save:orr 'search' applied `offer (my ~[['api_url' s+'https://v/apps/armillary/brave'] ['api_key' s+'BSA-mine']]))
+  ;:  weld
+    (expect-eq !>(`json`~) !>((gj:orr applied 'api_key')))
+    (expect-eq !>(b+&) !>((gj:orr applied 'enabled')))
+    (expect-eq !>(`json`~) !>((gj:orr shown 'api_key')))
+    (expect-eq !>(`json`~) !>((gj:orr shown 'api_url')))
+    (expect-eq !>(`json`~) !>((gj:orr shown 'follow_armillary')))
+    (expect-eq !>(`(unit @ud)``12) !>((gn:orr shown 'monthly_cap')))
+    (expect-eq !>(b+|) !>((gj:orr typed 'follow_armillary')))
+    (expect-eq !>('BSA-mine') !>((gs:orr typed 'api_key')))
+    (expect-eq !>('https://api.search.brave.com') !>((gs:orr typed 'api_url')))
+    (expect-eq !>(b+&) !>((gj:orr (en-search-masked:orr (de-search:orr (creds-live:orr 'search' applied `offer))) 'api_key_set')))
+    (expect-eq !>('BSA-mine') !>(key:(de-search:orr (creds-live:orr 'search' typed `offer))))
   ==
 ::  a save that sends the followed values again, or a blank key, still
 ::  follows; a model, address or key that really changes is the owner's
@@ -2534,7 +2616,8 @@
     (expect-eq !>(~) !>((fol (settings-merge:orr 'set-generator' base (my ~[['url' s+'https://a/v1'] ['model' s+'m1'] ['api_key' s+'']])))))
     (expect-eq !>(~) !>((fol (settings-merge:orr 'set-generator' base (my ~[['enabled' b+|]])))))
     (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-generator' base (my ~[['model' s+'m2']])))))
-    (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'k2']])))))
+    ::  the generator's pick is its model alone; a key is +creds-save's
+    (expect-eq !>(~) !>((fol (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'k2']])))))
     (expect-eq !>(`b+|) !>((fol (settings-merge:orr 'set-mail' base (my ~[['model' s+'m2']])))))
     (expect-eq !>(~) !>((fol (settings-merge:orr 'set-mail' base (my ~[['url' s+'https://b']])))))
     (expect-eq !>(`b+&) !>((fol (settings-merge:orr 'set-mail' base (my ~[['model' s+'m2'] ['follow_armillary' b+&]])))))

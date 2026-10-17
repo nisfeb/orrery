@@ -10430,12 +10430,14 @@
 ::  address, the key and a model per feature, read from Armillary's
 ::  app-inference.json. Every setting follows unless the owner picked
 ::  their own (follow_armillary false in that file), and a hand change
-::  of a followed model, address or key is that pick. The decider has no
+::  of a followed model is that pick. The decider has no
 ::  setting of its own: it takes the vendor's decision model, kept in
 ::  generator.json as decider_model, and typesafe/jev-1.13 without one.
-::  The generator's address and key are not copied: a call that follows
-::  reads them from the offer (+gen-live), so generator.json holds no
-::  key of the vendor's and a rotated key is used at the next call.
+::  The generator's and place lookups' address and key are not copied:
+::  a call reads them from the offer (+creds-live), so no file holds a
+::  key of the vendor's and a rotated key is used at the next call. A
+::  model picked by hand keeps them; an address or key typed is the
+::  owner's own (version 106).
 ::
 ::  +armillary-files: each setting that follows, and its file
 ::
@@ -10459,30 +10461,37 @@
   |=  [name=@t doc=json offer=json attach=?]
   ^-  json
   =/  base=(map @t json)  ?:(?=([%o *] doc) p.doc ~)
+  =/  creds=?  |(=('generator' name) =('search' name))
   =?  base  attach  (~(del by base) 'follow_armillary')
+  ::  following again takes the offer's address and key over the owner's,
+  ::  when it gives them
+  =?  base  &(attach creds ?=(^ (creds-offered name `offer)))
+    =/  at  (creds-at name)
+    (~(del by (~(del by (~(del by base) 'own_key')) ua.at)) ka.at)
   ?:  =(`b+| (~(get by base) 'follow_armillary'))  [%o base]
   =/  sug=json  (gj offer 'suggested')
   =/  ms=json  (gj sug 'models')
   =/  model-of  |=(f=@t ^-(@t =/(own=@t (gs ms f) ?:(=('' own) (gs ms 'default') own))))
-  =/  set=(list [@t json])
+  ::  what the offer lays: the generator its model and the decider's,
+  ::  place lookups nothing but the revision (their address and key are
+  ::  read at each lookup), a reader its model
+  =/  set=(unit (list [@t json]))
     ?:  =('generator' name)
       ?~  (gen-offered offer)  ~
+      :-  ~
       :~  ['model' s+(model-of 'orrery_generator')]
           ['decider_model' s+(gs ms 'orrery_decider')]
       ==
     ?:  =('search' name)
-      =/  url=@t  (gs (gj offer 'search') 'url')
-      =/  key=@t  (gs (gj offer 'search') 'key')
-      ?:  |(=('' url) =('' key))  ~
-      ~[['api_url' s+url] ['api_key' s+key]]
+      ?~((creds-offered 'search' `offer) ~ `~)
     ::  the browsing reader takes only the model Armillary names for it,
     ::  which the vendor may set only to a ZDR one: never the default
     =/  mo=@t  ?:(=('browsing' name) (gs ms 'orrery_browsing') (model-of (cat 3 'orrery_' name)))
-    ?:(=('' mo) ~ ~[['model' s+mo]])
+    ?:(=('' mo) ~ `~[['model' s+mo]])
   ?~  set  [%o base]
   =?  base  &(=('search' name) !(~(has by base) 'enabled'))  (~(put by base) 'enabled' b+&)
-  =/  out  (~(gas by base) ['armillary_rev' (numb:enjs:format (fall (gn sug 'rev') 0))] set)
-  [%o ?:(=('generator' name) (gen-strip out) out)]
+  =/  out  (~(gas by base) ['armillary_rev' (numb:enjs:format (fall (gn sug 'rev') 0))] u.set)
+  [%o ?:(creds (creds-strip name out) out)]
 ::  +gen-offered: the address and key Armillary's offer gives the
 ::  generator, or ~ when it gives no address, key or model for it
 ::
@@ -10495,51 +10504,128 @@
   =/  mo=@t  =/(own=@t (gs ms 'orrery_generator') ?:(=('' own) (gs ms 'default') own))
   ?:  |(=('' url) =('' key) =('' mo))  ~
   `[url key]
-::  +gen-follows: whether generator.json follows Armillary: unless the
-::  owner picked their own
+::  ==  Armillary's address and key, read at the call (versions 105, 106)
 ::
-++  gen-follows
-  |=  doc=(map @t json)
+::  The generator and place lookups run on the address and key the offer
+::  gives and store neither: each call lays the offer's over the file.
+::  The owner's own address and key are kept in the file. The
+::  generator's model follows apart from them (follow_armillary), so a
+::  model picked by hand keeps the vendor's key; own_key says the address
+::  and key are the owner's. Place lookups have no model:
+::  follow_armillary false is their own address and key.
+::
+::  +creds-at: where a setting keeps its address and key, and the address
+::  an owner's key goes to when they give none
+::
+++  creds-at
+  |=  name=@t
+  ^-  [ua=@t ka=@t default=@t]
+  ?:  =('search' name)  ['api_url' 'api_key' 'https://api.search.brave.com']
+  ['url' 'api_key' 'https://openrouter.ai/api/v1']
+::  +creds-offered: the address and key the offer gives a setting, or ~
+::
+++  creds-offered
+  |=  [name=@t offer=(unit json)]
+  ^-  (unit [url=@t key=@t])
+  ?~  offer  ~
+  ?.  =('search' name)  (gen-offered u.offer)
+  =/  url=@t  (gs (gj u.offer 'search') 'url')
+  =/  key=@t  (gs (gj u.offer 'search') 'key')
+  ?:(|(=('' url) =('' key)) ~ `[url key])
+::  +creds-own: whether the file's address and key are the owner's
+::
+++  creds-own
+  |=  [name=@t doc=(map @t json)]
   ^-  ?
-  !=(`b+| (~(get by doc) 'follow_armillary'))
-::  +gen-live: generator.json as a model call reads it: while it follows
-::  and the offer gives an address and key, those, read from the offer at
-::  the call. Without Armillary, or on the owner's own pick, the file's.
+  ?:  =('search' name)  =(`b+| (~(get by doc) 'follow_armillary'))
+  =(`b+& (~(get by doc) 'own_key'))
+::  +creds-live: a setting's file as a call reads it: the offer's address
+::  and key laid over it unless the owner gave their own; without
+::  Armillary, or with nothing offered, the file's
 ::
-++  gen-live
-  |=  [doc=json offer=(unit json)]
+++  creds-live
+  |=  [name=@t doc=json offer=(unit json)]
   ^-  json
   =/  base=(map @t json)  ?:(?=([%o *] doc) p.doc ~)
-  ?.  (gen-follows base)  doc
-  =/  got  ?~(offer ~ (gen-offered u.offer))
+  ?:  (creds-own name base)  doc
+  =/  got  (creds-offered name offer)
   ?~  got  doc
-  [%o (~(gas by base) ~[['url' s+url.u.got] ['api_key' s+key.u.got]])]
-::  +gen-strip: a generator.json that follows, once Armillary has laid
-::  its offer over it, without an address or key: those are the offer's,
-::  read at each call. Run on every save and at the writer's rise, so an
-::  install from before drops its copy.
+  =/  at  (creds-at name)
+  [%o (~(gas by base) ~[[ua.at s+url.u.got] [ka.at s+key.u.got]])]
+::  +creds-strip: a file Armillary has laid its revision on, without an
+::  address or key that are not the owner's: those are the offer's, read
+::  at each call
 ::
-++  gen-strip
-  |=  doc=(map @t json)
+++  creds-strip
+  |=  [name=@t doc=(map @t json)]
   ^-  (map @t json)
-  ?.  &((~(has by doc) 'armillary_rev') (gen-follows doc))  doc
-  (~(del by (~(del by doc) 'url')) 'api_key')
-::  +gen-save: what an owner's save of generator.json stores: their fields
-::  over the document as the page was shown it (the offer's address and
-::  key laid in, and the default address where none is held), so sending
-::  those back is no pick, then stripped while it still follows. Shown
-::  the offer's address and key, the document is Armillary's, revision
-::  or not, so a url or key typed over them is the owner's pick
+  ?.  &((~(has by doc) 'armillary_rev') !(creds-own name doc))  doc
+  =/  at  (creds-at name)
+  (~(del by (~(del by doc) ua.at)) ka.at)
+::  +creds-save: what an owner's save of the setting stores: their fields
+::  over the document as the page showed it (the offer's address and key
+::  laid in, the default address where none is held), so sending those
+::  back is no pick and they stay unstored. An address or key typed over
+::  them makes both the owner's: a key given alone goes to the default
+::  address, never the vendor's, and an address alone has no key until
+::  one is given, so neither key goes where it was not meant to. Shown
+::  the offer's, the document counts as Armillary's, revision or not
 ::
-++  gen-save
-  |=  [doc=json offer=(unit json) new=(map @t json)]
+++  creds-save
+  |=  [name=@t doc=json offer=(unit json) new=(map @t json)]
   ^-  json
-  =/  live=json  (gen-live doc offer)
+  =/  at  (creds-at name)
+  =/  live=json  (creds-live name doc offer)
+  =/  vendor=?  !=(live doc)
   =/  shown=(map @t json)
-    (~(put by ?:(?=([%o *] live) p.live ~)) 'url' s+url:(de-config live))
-  =?  shown  &(!=(live doc) !(~(has by shown) 'armillary_rev'))
+    =/  u=@t  (gs live ua.at)
+    (~(put by ?:(?=([%o *] live) p.live ~)) ua.at s+?:(=('' u) default.at u))
+  =?  shown  &(vendor !(~(has by shown) 'armillary_rev'))
     (~(put by shown) 'armillary_rev' (numb:enjs:format ?~(offer 0 (fall (gn (gj u.offer 'suggested') 'rev') 0))))
-  [%o (gen-strip (settings-merge 'set-generator' shown new))]
+  ::  given, and not what was shown: a JSON null for the key is the
+  ::  owner clearing it
+  =/  typed
+    |=  k=@t
+    ^-  ?
+    =/  v=(unit json)  (~(get by new) k)
+    ?~  v  |
+    ?~  u.v  =(k ka.at)
+    &(?=([%s *] u.v) !=('' p.u.v) !=(u.v (~(gut by shown) k ~)))
+  =/  merged=(map @t json)  (settings-merge (cat 3 'set-' name) shown new)
+  ?.  &((~(has by shown) 'armillary_rev') !(creds-own name shown) |((typed ua.at) (typed ka.at)))
+    [%o (creds-strip name merged)]
+  ::  the owner's own from now on
+  =/  new-of  |=(k=@t ^-(json =/(v (~(gut by new) k ~) ?~(v s+'' v))))
+  =/  url=json  ?:((typed ua.at) (new-of ua.at) ?:(vendor s+default.at (~(gut by merged) ua.at s+default.at)))
+  =/  key=json  ?:((typed ka.at) (new-of ka.at) ?:(vendor s+'' (~(gut by merged) ka.at s+'')))
+  =.  merged  (~(gas by merged) ~[[ua.at url] [ka.at key]])
+  [%o (~(put by merged) ?:(=('search' name) ['follow_armillary' b+|] ['own_key' b+&]))]
+::  +creds-migrate: a file as the writer's rise leaves it. The 105 strip;
+::  and an own pick from before 106, which held the address and key with
+::  the model: the owner's, unless the key is the offer's, a copy a model
+::  pick took, which goes (the address with it) and the setting follows
+::  the offer's again. An offer that cannot be read strips nothing
+::
+++  creds-migrate
+  |=  [name=@t doc=(map @t json) offer=(unit json)]
+  ^-  (map @t json)
+  =/  at  (creds-at name)
+  =/  key=@t  (gs [%o doc] ka.at)
+  ?.  ?&  (~(has by doc) 'armillary_rev')  =(`b+| (~(get by doc) 'follow_armillary'))
+          !(~(has by doc) 'own_key')  !=('' key)
+      ==
+    (creds-strip name doc)
+  =/  got  (creds-offered name offer)
+  ?:  &(?=(^ got) =(key key.u.got))
+    =/  out  (~(del by (~(del by doc) ua.at)) ka.at)
+    ?:(=('search' name) (~(del by out) 'follow_armillary') out)
+  ?:  =('search' name)  doc
+  (~(put by doc) 'own_key' b+&)
+::  the generator's, by its own names
+::
+++  gen-live   |=([doc=json offer=(unit json)] ^-(json (creds-live 'generator' doc offer)))
+++  gen-strip  |=(doc=(map @t json) ^-((map @t json) (creds-strip 'generator' doc)))
+++  gen-save   |=([doc=json offer=(unit json) new=(map @t json)] ^-(json (creds-save 'generator' doc offer new)))
 ::  +settings-merge: an owner's settings document over the stored one,
 ::  for every settings op. A blank secret keeps the stored one. When the
 ::  file holds Armillary's values, a followed field that really changes
@@ -10558,7 +10644,7 @@
     ==
   =/  keys=(list @t)
     ?+  op  `(list @t)`~
-      %'set-generator'  `(list @t)`~['url' 'model' 'api_key']
+      %'set-generator'  `(list @t)`~['model']
       %'set-search'     `(list @t)`~['api_url' 'api_key']
       $?(%'set-telegram' %'set-chat' %'set-mail' %'set-read' %'set-browsing')  `(list @t)`~['model']
     ==
@@ -10573,7 +10659,8 @@
   ?.(picked merged (~(put by merged) 'follow_armillary' b+|))
 ::  +armillary-state: what GET /api/armillary answers: whether
 ::  Armillary offers anything, its revision and mode, and per setting
-::  whether it follows and the model it runs
+::  whether it follows (the generator: its model), the model it runs,
+::  and own_key, the generator's own address and key
 ::
 ++  armillary-state
   |=  [offer=(unit json) docs=(list [name=@t doc=json])]
@@ -10590,6 +10677,7 @@
       %-  pairs:enjs:format
       :~  ['following' b+!=(b+| (gj doc 'follow_armillary'))]
           ['applied' b+!=(~ (gj doc 'armillary_rev'))]
+          ['own_key' b+=(b+& (gj doc 'own_key'))]
           ['model' s+(gs doc 'model')]
       ==
   ==

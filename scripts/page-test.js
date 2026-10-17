@@ -497,6 +497,9 @@ const armOn = armWeek({ offered: true, rev: 3, mode: 'lease', settings: {
 ok('the Armillary card names the vendor\'s model and offers the way back for a hand pick',
   armOn.includes('<h2>Armillary</h2>') && armOn.includes('<code>g/1</code>')
   && armOn.includes('data-follow-armillary="mail"') && armOn.includes('data-follow-armillary=""'));
+// the generator's model and its address and key follow apart (version 106)
+const armSplit = armWeek({ offered: true, mode: 'lease', rev: 1, settings: { generator: { following: false, own_key: false, applied: true, model: 'm/own' }, mail: { following: true, applied: true, model: 'z/1' } } });
+ok('the Armillary card says the generator runs your model on your vendor\'s key', armSplit.includes('Generator: your own model <code>m/own</code>, your vendor\'s address and key <button data-follow-armillary="generator">'));
 ok('a ship whose Armillary offers nothing shows no Armillary card',
   !armWeek({ offered: false }).includes('<h2>Armillary</h2>') && !armWeek(undefined).includes('<h2>Armillary</h2>'));
 // the browsing reader (version 98)

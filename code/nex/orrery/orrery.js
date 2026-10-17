@@ -497,12 +497,18 @@
     var rows = Object.keys(ARM_NAMES).map(function (k) {
       var x = st[k] || {};
       var what = k === 'search' ? 'search through your vendor' : (x.model ? '<code>' + esc(x.model) + '</code>' : 'nothing yet');
+      // the generator's model and its address and key follow apart (version 106)
+      if (k === 'generator' && (x.following === false || x.own_key)) {
+        own++;
+        return '<li>' + ARM_NAMES[k] + ': ' + (x.following === false ? 'your own model' : 'your vendor\'s model') + (x.model ? ' <code>' + esc(x.model) + '</code>' : '') +
+          ', ' + (x.own_key ? 'your own address and key' : 'your vendor\'s address and key') + ' <button data-follow-armillary="generator">use your vendor\'s</button></li>';
+      }
       if (x.following === false) own++;
       return '<li>' + ARM_NAMES[k] + ': ' + (x.following === false
         ? 'your own pick <button data-follow-armillary="' + esc(k) + '">use your vendor\'s</button>'
         : (x.applied ? 'your vendor\'s, ' + what : 'your vendor\'s, once it offers one')) + '</li>';
     }).join('');
-    return '<div class="card"><h2>Armillary</h2><p class="muted">Your Armillary vendor runs your AI (revision ' + esc(a.rev || 0) + ', ' + esc(a.mode || '') + ' mode). Changing a setting\'s model, address or key below makes it your own pick.</p>' +
+    return '<div class="card"><h2>Armillary</h2><p class="muted">Your Armillary vendor runs your AI (revision ' + esc(a.rev || 0) + ', ' + esc(a.mode || '') + ' mode). Changing a setting\'s model below makes that model your own; the generator keeps your vendor\'s address and key until you give your own.</p>' +
       '<ul>' + rows + '</ul>' +
       (own ? '<p><button data-follow-armillary="">Use Armillary AI defaults for everything</button></p>' : '') + '</div>';
   }

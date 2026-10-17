@@ -775,20 +775,25 @@
   ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema-before.json') [[/ %json] cur] [/ %json])
   ;<  *  bind:m  (over-as-soft:io (rf 0 / %'schema.json') [[/ %json] next] [/ %json])
   (pure:m ~)
-::  +strip-generator: a generator.json that follows Armillary drops the
-::  address and key an older release copied into it from the offer
-::  (+gen-strip), at the writer's rise like +upgrade-schema. Soft, and
+::  +strip-generator: generator.json and search.json as +creds-migrate
+::  leaves them: no address or key the offer gives, and an own pick from
+::  before 106 sorted into the owner's key or a copy of the vendor's.
+::  At the writer's rise like +upgrade-schema, before any poke; soft, and
 ::  with no clock, for the same reason
 ::
 ++  strip-generator
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  cur=json  bind:m  (read-json (rf 0 / %'generator.json'))
-  ?.  ?=([%o *] cur)  (pure:m ~)
-  =/  next=(map @t json)  (gen-strip:orr p.cur)
-  ?:  =(p.cur next)  (pure:m ~)
-  ;<  *  bind:m  (over-as-soft:io (rf 0 / %'generator.json') [[/ %json] [%o next]] [/ %json])
-  (pure:m ~)
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  =/  todo=(list [name=@t file=@ta])  ~[['generator' %'generator.json'] ['search' %'search.json']]
+  |-
+  ?~  todo  (pure:m ~)
+  ;<  cur=json  bind:m  (read-json (rf 0 / file.i.todo))
+  ?.  ?=([%o *] cur)  $(todo t.todo)
+  =/  next=(map @t json)  (creds-migrate:orr name.i.todo p.cur offer)
+  ?:  =(p.cur next)  $(todo t.todo)
+  ;<  *  bind:m  (over-as-soft:io (rf 0 / file.i.todo) [[/ %json] [%o next]] [/ %json])
+  $(todo t.todo)
 ::  +record-park: a weir that refuses a road every fiber needs, kept
 ::  once in rise.json under parked and said once, at >>>, with the
 ::  remedy; a park already recorded is not news (docs/logging.md)
@@ -3132,15 +3137,18 @@
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
   =/  name=@ta  (settings-file op)
   ;<  base=(map @t json)  bind:m  (read-map (rf 1 / name))
-  ::  the generator is stored without the offer's address and key, and
-  ::  shown with them
+  ::  the generator and place lookups are stored without the offer's
+  ::  address and key, and shown with them
   ;<  offer=(unit json)  bind:m  armillary-offer
-  =/  gen=?  =('set-generator' op)
+  =/  creds=(unit @t)
+    ?:  =('set-generator' op)  `'generator'
+    ?:  =('set-search' op)  `'search'
+    ~
   =/  expected=json
-    ?:  gen  (gen-save:orr [%o base] offer p.jon)
+    ?^  creds  (creds-save:orr u.creds [%o base] offer p.jon)
     ?+  op  jon
         $?  %'set-telegram'  %'set-chat'  %'set-mail'  %'set-read'
-            %'set-travel'  %'set-search'  %'set-rhythm'  %'set-outdoors'  %'set-browsing'
+            %'set-travel'  %'set-rhythm'  %'set-outdoors'  %'set-browsing'
         ==
       [%o (settings-merge:orr op base p.jon)]
     ==
@@ -3150,7 +3158,7 @@
   |-
   ;<  cur=json  bind:m  (read-json (rf 1 / name))
   ?:  |(=(cur expected) =(0 tries))
-    (send-json eyre-id 200 (settings-view op ?:(gen (gen-live:orr cur offer) cur)))
+    (send-json eyre-id 200 (settings-view op ?~(creds cur (creds-live:orr u.creds cur offer))))
   ;<  now=@da  bind:m  get-time:io
   ;<  ~  bind:m  (send-wait:io (add now ~s0..3333))
   ;<  ~  bind:m  (take-wake:io ~)
@@ -5569,6 +5577,16 @@
   ;<  doc=json  bind:m  (read-json (rf up / %'generator.json'))
   ;<  offer=(unit json)  bind:m  armillary-offer
   (pure:m (gen-live:orr doc offer))
+::  +search-doc: search.json as a place lookup reads it, the offer's
+::  proxy address and key laid in while it follows (version 106)
+::
+++  search-doc
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf up / %'search.json'))
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  (pure:m (creds-live:orr 'search' doc offer))
 ::  +do-follow-armillary: Armillary's offer laid over each setting that
 ::  follows, and over those named in .attach, which follow again. Only
 ::  a setting that changes is written. Settings are not model state:
@@ -5675,8 +5693,9 @@
   ^-  form:m
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-search' 'doc: expected an object')
-  ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'search.json'))
-  ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] [%o (settings-merge:orr 'set-search' base p.doc)]])
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'search.json'))
+  ;<  offer=(unit json)  bind:m  armillary-offer
+  ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] (creds-save:orr 'search' cur offer p.doc)])
   ;<  ~  bind:m  (note-by 'set-search' & '' 'http')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'parks.sig') [[/ %sig] ~])
   (pure:m |)
@@ -6132,7 +6151,7 @@
       ['outdoors' (en-outdoors:orr (de-outdoors:orr outdoors))]
       ['weather_last' (pairs:enjs:format ~[['forecast_at' s+(gs:orr weather 'forecast_at')] ['note' s+(gs:orr weather 'note')] ['alerts' (numb:enjs:format (lent (ga:orr weather 'alerts')))]])]
       ['parks_last' parks-last]
-      ['search' (en-search-masked:orr (de-search:orr search))]
+      ['search' (en-search-masked:orr (de-search:orr (creds-live:orr 'search' search offer)))]
       ['search_last' (del-key:orr search-last 'seen')]
       ['browsing' (en-browsing-config:orr (de-browsing-config:orr browsing))]
       ['browsing_last' browsing-last]
@@ -7780,7 +7799,7 @@
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  doc=json  bind:m  (read-json (rf 1 / %'search.json'))
+  ;<  doc=json  bind:m  (search-doc 1)
   (send-json eyre-id 200 (en-search-masked:orr (de-search:orr doc)))
 ::  +search-pass: Brave Search fills in thin places (version 87): ten at
 ::  most a pass, a second apart, each looked up once a month, the
@@ -7792,7 +7811,7 @@
 ++  search-pass
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  cfg-j=json  bind:m  (read-json (rf 0 / %'search.json'))
+  ;<  cfg-j=json  bind:m  (search-doc 0)
   =/  cfg=search-config:orr  (de-search:orr cfg-j)
   ?.  &(enabled.cfg !=('' key.cfg))  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
