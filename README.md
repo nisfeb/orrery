@@ -458,6 +458,8 @@ The answer carries the `token` once; the ship keeps only a salted hash. The clie
 curl -s -H "Authorization: Bearer $TOKEN" $API/state
 ```
 
+What you write yourself, through the page or with the owner's cookie, is signed `owner` since version 114: facts, actions, moves and settings changes alike, unless the request names another `by`. Rows from before carry `http` (the cookie's old signature) or `user` (an approval's), and the ship reads both as yours, so a client that trusts "the owner filed this" checks for `owner`, `user` or `http`. A key signs as its own `by`, and the MCP tools as `mcp`.
+
 What a key sees is bounded by its scope: only the kinds it was given, never the attributes named in `policy.sensitive`, never a body outside its kinds, not even through a relation pointing at one. Everything it writes is signed `by` its own identity, whatever the request said. `write: false` makes it read-only, though it may still propose actions of its kinds for you to approve. A key minted with `"sensitive": "write"` may observe the attributes `policy.sensitive` names without ever reading one back, which is how a messenger files a medical fact it overheard. The address attributes `ship` and `telegram` take the same grant, since a key that could change them would redirect your approved messages; a key may not propose a merge. `GET /api/clients` lists the keys; `DELETE /api/clients/<id>` revokes one. The page's Keys view does all three: mint with a form, read the token once, revoke with a button. The rules are in `docs/keys.md`, and the contract a client follows is the client guide, [writing-a-client.md](https://github.com/nisfeb/orrery-utils/blob/main/docs/writing-a-client.md) in orrery-utils.
 
 ## Tools for an AI analyst

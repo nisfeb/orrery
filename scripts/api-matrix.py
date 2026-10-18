@@ -327,7 +327,7 @@ code, acts = curl('GET', API + '/actions?status=done')
 msg = [x for x in acts if isinstance(x, dict) and x.get('id') == MID] if isinstance(acts, list) else []
 hist = [(h.get('status'), h.get('by')) for h in dictish(msg[0] if msg else {}).get('history', [])]
 check('the history reads proposed, approved, claimed and done',
-      hist == [('proposed', 'api-matrix'), ('approved', 'user'), ('claimed', 'exec-a'), ('done', 'exec-a')], hist)
+      hist == [('proposed', 'api-matrix'), ('approved', 'owner'), ('claimed', 'exec-a'), ('done', 'exec-a')], hist)
 #  the route answers before the writer applies, so two claims in one
 #  instant can both hear ok; the writer keeps the first and the history
 #  is the proof
@@ -377,7 +377,7 @@ code, allacts = curl('GET', API + '/actions?status=done')
 done = [x for x in allacts if isinstance(x, dict) and x.get('id') == AID] if isinstance(allacts, list) else []
 hist = done[0].get('history', []) if done else []
 check('done is in the history with the actor', bool(hist)
-      and hist[-1].get('status') == 'done' and hist[-1].get('by') == 'user', done)
+      and hist[-1].get('status') == 'done' and hist[-1].get('by') == 'owner', done)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 #  among the newest entries: the executor's mirror files whenever the
 #  calendar moves, which another session's tests can make it do
@@ -2733,6 +2733,19 @@ code, d = curl('POST', API + '/actions/' + MA, {'status': 'done'}, jar=None, tok
 check('and marks it done once sent', code == 200 and dictish(d).get('status') == 'done', (code, d))
 if dictish(mk).get('id'): curl('DELETE', API + '/clients/' + dictish(mk)['id'])
 curl('DELETE', API + '/body/person/gate-mailee')
+
+# ---- the owner's signature (version 114): what the owner writes over the cookie is signed owner ----
+SIGRUN = time.strftime('%H%M%S')
+code, d = curl('POST', API + '/observe', {'bodies': [], 'observations': [{'subject': 'person/me', 'attr': 'mood', 'value': 'gate sig ' + SIGRUN}]})
+row = dictish(dictish(dictish(curl('GET', API + '/body/person/me')[1]).get('attrs')).get('mood'))
+check('a fact the owner writes is signed owner, its source theirs', row.get('by') == 'owner' and dictish(row.get('source')) == {'kind': 'user', 'id': 'owner'}, row)
+if row.get('obs'): curl('POST', API + '/retract', {'id': row['obs'], 'note': 'gate'})
+code, sg = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate sig ' + SIGRUN})
+SG = dictish(sg).get('id', '')
+code, d = curl('POST', API + '/actions/' + SG, {'status': 'done'})
+mine = next((dictish(a) for a in listish(curl('GET', API + '/actions?status=all&limit=50')[1]) if dictish(a).get('id') == SG), {})
+check('an action the owner files and moves is signed owner throughout', mine.get('by') == 'owner'
+      and all(dictish(h).get('by') in ('owner', 'policy') for h in listish(mine.get('history'))), mine)
 
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'

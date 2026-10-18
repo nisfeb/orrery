@@ -7027,7 +7027,7 @@
   ?:  |(=('no' said) =('false' said))  %no
   =/  parts=(list row)  (fall (~(get by w) 'participants') ~)
   =/  me  |=(r=row =('person/me' (ref-or-text value.obs.r)))
-  =/  theirs=(list row)  (skim parts |=(r=row |(=('owner' by.obs.r) =('user' by.obs.r))))
+  =/  theirs=(list row)  (skim parts |=(r=row (owner-by by.obs.r)))
   =/  mine=?  (lien theirs me)
   ?.  =(~ theirs)  ?:(mine %yes %no)
   ?:((lien parts me) %unsure %no)
@@ -8616,9 +8616,11 @@
   =/  s=@t  (slug t)
   ?:(=('' s) ~ `(cat 3 'sphere/' s))
 ::  +owner-by: a row the owner wrote, on the page, through a key as
-::  themselves, or by approving an action
+::  themselves, or by approving an action. Since version 114 the owner
+::  signs as owner; user (the writer's old default) and http (the
+::  cookie's old signature) are the owner's in older rows
 ::
-++  owner-by  |=(by=@t |(=('owner' by) =('user' by)))
+++  owner-by  |=(by=@t |(=('owner' by) =('user' by) =('http' by)))
 ::  +sphere-trusted: the owner confirms the first three a model files in
 ::  each sphere; after that a model's word stands (the owner's choice,
 ::  2026-10-07: wait for a few taps while we learn what works)

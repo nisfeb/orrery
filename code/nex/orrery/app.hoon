@@ -1695,7 +1695,7 @@
   =/  stamp
     |=  j=json
     ^-  json
-    ?:(owner.act (fill-obs:orr j now 'http') (fill-obs-as:orr j now by.act))
+    ?:(owner.act (fill-obs:orr j now 'owner') (fill-obs-as:orr j now by.act))
   =/  all-obs=(list json)  (turn (ga:orr jon 'observations') stamp)
   ::  a ship source is the inbox's to set, from the transport: a local
   ::  client sending one would be forging another ship's claim, so the
@@ -2132,7 +2132,7 @@
   =/  id=@t  (gs:orr jon 'id')
   =/  want=@t  (gs:orr jon 'status')
   =/  why=@t  (gs:orr jon 'note')
-  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'owner' b))
   ?:  (gth (met 3 why) max-note:orr)  (refuse 'set-action' 'note: over 500 bytes')
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
   ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
@@ -2157,7 +2157,7 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  id=@t  (gs:orr jon 'id')
-  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'owner' b))
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
   ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
   ?:  ?=(%| -.got)
@@ -2188,7 +2188,7 @@
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  id=@t  (gs:orr jon 'id')
-  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'owner' b))
   =/  road=road:tarball  (rf 0 /actions `@ta`id)
   ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
   ?:  ?=(%| -.got)
@@ -2457,7 +2457,7 @@
     ==
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
-  =/  who=@t  ?:(owner.act ?:(=('' (gs:orr jon 'by')) 'http' (gs:orr jon 'by')) by.act)
+  =/  who=@t  ?:(owner.act ?:(=('' (gs:orr jon 'by')) 'owner' (gs:orr jon 'by')) by.act)
   =/  op=json
     (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+who]])
   %^  write-then  eyre-id  op
@@ -2492,7 +2492,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
-  =/  stamped=json  ?:(owner.act (fill-act:orr jon now 'http') (fill-act-as:orr jon now by.act))
+  =/  stamped=json  ?:(owner.act (fill-act:orr jon now 'owner') (fill-act-as:orr jon now by.act))
   =/  got  (de-action:orr stamped now by.act)
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
   =/  refused=(unit [code=@ud why=@t])  (act-refusal:orr act p.got)
@@ -2561,7 +2561,7 @@
   ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
   ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
   =/  said=@t  ?:(owner.act (gs:orr jon 'by') by.act)
-  =/  who=@t  ?:(=('' said) 'user' said)
+  =/  who=@t  ?:(=('' said) 'owner' said)
   ::  a move to the status it already has is done (version 111): a second
   ::  tap while the first was in flight is no error. Not a claim, which
   ::  says whose the action is
@@ -2689,7 +2689,7 @@
   ?.  (lien kinds.ctx |=(k=@t =(k `@t`kind.a)))
     (pure:m (fail 409 'only a task, a calendar event or a message can be refined'))
   =/  tz=@t  (owner-zone:orr all0 (multi-of:orr schema) now timezone.cfg)
-  =/  who=@t  ?:(owner.act 'user' by.act)
+  =/  who=@t  ?:(owner.act 'owner' by.act)
   =/  shown=action:orr  (seen-by act a)
   ::  a refine is a model call like the generator's: under the day's
   ::  cap, counted, and its cost added to the month's
@@ -4562,7 +4562,7 @@
     ?.  =('' timezone:(de-config:orr gen-j))  (pure:(fiber:fiber:nexus ,~) ~)
     ;<  *  bind:(fiber:fiber:nexus ,~)
       %+  file-ops-on
-        (observe-ops:orr ~ ~[(obs-row:orr 'person/me' 'timezone' s+dz now ~ 100 ['device' 'device-zone'] 'http')])
+        (observe-ops:orr ~ ~[(obs-row:orr 'person/me' 'timezone' s+dz now ~ 100 ['device' 'device-zone'] 'owner')])
       /location
     (pure:(fiber:fiber:nexus ,~) ~)
   =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
@@ -5631,7 +5631,7 @@
   ;<  offer=(unit json)  bind:m  armillary-offer
   =/  merged=json  (gen-save:orr cur offer p.doc)
   ;<  ~  bind:m  (over:io (rf 0 / %'generator.json') [[/ %json] merged])
-  ;<  ~  bind:m  (note-by 'set-generator' & '' 'http')
+  ;<  ~  bind:m  (note-by 'set-generator' & '' 'owner')
   (pure:m |)
 ::  +armillary-offer: this ship's Armillary's app-inference.json, or ~
 ::  when Armillary is not installed or the owner refused orrery the file
@@ -5763,7 +5763,7 @@
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'travel.json'))
   =/  merged=json  [%o (merge-settings:orr base p.doc (sy ~['token']))]
   ;<  ~  bind:m  (over:io (rf 0 / %'travel.json') [[/ %json] merged])
-  ;<  ~  bind:m  (note-by 'set-travel' & '' 'http')
+  ;<  ~  bind:m  (note-by 'set-travel' & '' 'owner')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'leave.sig') [[/ %sig] ~])
   (pure:m |)
 ::  +do-set-search: the place lookups' settings, merged; a blank key keeps
@@ -5778,7 +5778,7 @@
   ;<  cur=json  bind:m  (read-json (rf 0 / %'search.json'))
   ;<  offer=(unit json)  bind:m  armillary-offer
   ;<  ~  bind:m  (over:io (rf 0 / %'search.json') [[/ %json] (creds-save:orr 'search' cur offer p.doc)])
-  ;<  ~  bind:m  (note-by 'set-search' & '' 'http')
+  ;<  ~  bind:m  (note-by 'set-search' & '' 'owner')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'parks.sig') [[/ %sig] ~])
   (pure:m |)
 ::  +do-set-outdoors: the weather and parks settings, merged; both
@@ -8525,7 +8525,7 @@
   =/  watches=json  ?:(?=([%a *] dw) dw ?:(?=([%a *] cw) cw [%a ~]))
   =/  merged=json  (set-key:orr (set-key:orr cur 'flight_api' api) 'watches' watches)
   ;<  ~  bind:m  (over:io (rf 0 / %'watches.json') [[/ %json] merged])
-  ;<  ~  bind:m  (note-by 'set-watches' & '' 'http')
+  ;<  ~  bind:m  (note-by 'set-watches' & '' 'owner')
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'watch.sig') [[/ %sig] ~])
   (pure:m |)
 ::  +trip-doc: the trip the owner is on, in trip.json, never served: the
@@ -10809,7 +10809,9 @@
   |=  [req=inbound-request:eyre src=@p our=@p]
   =/  m  (fiber:fiber:nexus ,(unit actor))
   ^-  form:m
-  ?:  &(authenticated.req =(src our))  (pure:m `[& 'http' ~])
+  ::  the owner signs as owner (version 114); until then http, and the
+  ::  writer's default user, both still read as the owner (+owner-by)
+  ?:  &(authenticated.req =(src our))  (pure:m `[& 'owner' ~])
   =/  au=(unit @t)  (get-header:http 'authorization' header-list.request.req)
   ?~  au  (pure:m ~)
   =/  tok=(unit [id=@t secret=@t])  (parse-bearer:orr u.au)

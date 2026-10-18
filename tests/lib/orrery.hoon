@@ -1275,6 +1275,16 @@
     (expect-eq !>((add t0 ~h5)) !>((last-change:orr moved)))
     (expect-eq !>(t0) !>((last-change:orr a(history ~))))
   ==
+::  the owner signs as owner since version 114; user and http, the old
+::  signatures, are still the owner's
+++  test-owner-by
+  ;:  weld
+    (expect !>((owner-by:orr 'owner')))
+    (expect !>((owner-by:orr 'user')))
+    (expect !>((owner-by:orr 'http')))
+    (expect !>(!(owner-by:orr 'talon')))
+    (expect !>(!(owner-by:orr 'generator')))
+  ==
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))
