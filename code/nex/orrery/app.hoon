@@ -8277,6 +8277,8 @@
     =/  sorted=(list @da)  (sort `(list @da)`nexts lth)
     (pure:m ?~(sorted ~ `i.sorted))
   =/  w=json  i.rest
+  ::  a flight that has landed is done: kept, never asked for again
+  ?:  =([%b %.y] (gj:orr w 'done'))  $(rest t.rest, done [w done])
   =/  nx=(unit @da)  (de-iso:orr (gs:orr w 'next'))
   ?:  &(?=(^ nx) (gth u.nx now))
     $(rest t.rest, done [w done], nexts [u.nx nexts])
@@ -8284,7 +8286,9 @@
   =/  nx2=(unit @da)  (de-iso:orr (gs:orr w2 'next'))
   $(rest t.rest, done [w2 done], nexts ?~(nx2 nexts [u.nx2 nexts]))
 ::  +check-watch: run one watch now, its next pushed a cadence on first
-::  (a floor of fifteen minutes, a default of three hours)
+::  (a floor of fifteen minutes, a default of three hours). A flight's
+::  next then follows its departure (+flight-every), and a flight that
+::  has landed is done
 ::
 ++  check-watch
   |=  [cfg=watch-config:orr w=json now=@da]
@@ -8293,7 +8297,13 @@
   =/  cadence=@dr  (mul ~m1 (max 15 (fall (gn:orr w 'cadence_min') 180)))
   =/  w1=json  (set-key:orr w 'next' s+(en-iso:orr (add now cadence)))
   =/  kind=@t  (gs:orr w 'kind')
-  ?:  =('flight' kind)  (check-flight cfg w1 now)
+  ?:  =('flight' kind)
+    ;<  w2=json  bind:m  (check-flight cfg w1 now)
+    =/  v=(unit flight-view:orr)  (de-flight-view:orr (gj:orr w2 'last'))
+    ?~  v  (pure:m w2)
+    =/  every=(unit @dr)  (flight-every:orr u.v now cadence)
+    ?~  every  (pure:m (set-key:orr w2 'done' b+&))
+    (pure:m (set-key:orr w2 'next' s+(en-iso:orr (add now u.every))))
   ?:  =('page' kind)  (check-page w1 now)
   (pure:m w1)
 ::  +check-flight: ask the flight API for the flight on its date and tell

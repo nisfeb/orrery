@@ -8964,6 +8964,29 @@
       (utc (gj arr 'scheduledTime'))  (utc (gj arr 'revisedTime'))
       (gs arr 'gate')
   ==
+::  +adb-time: an AeroDataBox time ("2026-10-18 23:00Z") as a date
+::
+++  adb-time
+  |=  t=@t
+  ^-  (unit @da)
+  (de-iso-any (crip (turn (trip t) |=(c=@tD ?:(=(' ' c) 'T' c)))))
+::  +flight-every: how long a flight watch waits for its next look
+::  (version 109): a twelfth of the time left to the departure, revised
+::  or scheduled, five minutes at least and the watch's cadence at most,
+::  so it looks more often as the flight nears; the cadence once it has
+::  left. ~ once it has landed, or a day after it was due to: the watch
+::  is done, and asks no more
+::
+++  flight-every
+  |=  [v=flight-view now=@da cadence=@dr]
+  ^-  (unit @dr)
+  =/  arr=(unit @da)  (adb-time arr-sched.v)
+  ?:  =('arrived' (crip (cass (trip status.v))))  ~
+  ?:  &(?=(^ arr) (gth now (add u.arr ~d1)))  ~
+  =/  dep=(unit @da)  (adb-time ?:(=('' dep-revised.v) dep-sched.v dep-revised.v))
+  ?~  dep  `cadence
+  ?:  (lte u.dep now)  `cadence
+  `(max ~m5 (min cadence (div (sub u.dep now) 12)))
 ::  +flight-change: what to tell the owner when a flight moves, the last
 ::  view against the new one: a changed status, a revised departure or
 ::  arrival time, or a new gate. ~ when nothing notable moved. A revised

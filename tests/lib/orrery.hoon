@@ -1148,6 +1148,27 @@
     (expect-eq !>(~[['x-api-market-key' 'k'] ['accept' 'application/json']]) !>((flight-headers:orr am)))
     (expect-eq !>(~[['x-rapidapi-key' 'k'] ['x-rapidapi-host' 'aerodatabox.p.rapidapi.com']]) !>((flight-headers:orr ra)))
   ==
+::  a flight watch looks more often as the departure nears, down to every
+::  five minutes; the cadence once the flight has left; done once it has
+::  landed or is a day past its arrival
+++  test-flight-every
+  =/  v=flight-view:orr  ['Expected' '2026-10-18 23:00Z' '' '' '' '2026-10-19 00:19Z' '' '']
+  =/  dep=@da  (need (adb-time:orr '2026-10-18 23:00Z'))
+  =/  every  |=([w=flight-view:orr t=@da] (flight-every:orr w t ~h3))
+  ;:  weld
+    (expect-eq !>(~2026.10.18..23.00.00) !>(dep))
+    (expect-eq !>(`(unit @dr)``~h3) !>((every v (sub dep ~d3))))
+    (expect-eq !>(`(unit @dr)``~h1) !>((every v (sub dep ~h12))))
+    (expect-eq !>(`(unit @dr)``~m10) !>((every v (sub dep ~h2))))
+    (expect-eq !>(`(unit @dr)``~m5) !>((every v (sub dep ~m30))))
+    ::  a revised departure is the one counted to
+    (expect-eq !>(`(unit @dr)``~h1) !>((every v(dep-revised '2026-10-19 09:00Z') (sub dep ~h2))))
+    (expect-eq !>(`(unit @dr)``~h3) !>((every v(status 'Departed') (add dep ~m10))))
+    (expect-eq !>(`(unit @dr)`~) !>((every v(status 'Arrived') (add dep ~h2))))
+    (expect-eq !>(`(unit @dr)`~) !>((every v (add dep ~d2))))
+    ::  no departure to count to: the cadence
+    (expect-eq !>(`(unit @dr)``~h3) !>((every v(dep-sched '') (sub dep ~h2))))
+  ==
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))
