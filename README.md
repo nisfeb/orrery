@@ -224,7 +224,7 @@ As the last step before a message leaves the ship, whether by `sendMessage` or t
 
 The schema's note for `message.text` and the shared prompts carry the same rules word for word: no em dashes, no semicolons or colons joining independent clauses, simple direct sentences of varied length, a sentence with more than one parenthetical thought split in two.
 
-A message with no address (no `telegram` attribute and not in `people`, no `ship` attribute), or a Telegram one while the reader has no bot token, is not claimed: it stays approved and is named in the record's `notes` on every pass until it is dismissed or the address is added. An action a client left `claimed` past its lease is not taken by the ship either; the owner dismisses it.
+A message with no address (no `telegram` attribute and not in `people`, no `ship` attribute), or a Telegram one while the reader has no bot token, is not claimed: it stays approved and is named in the record's `notes` on every pass until it is dismissed or the address is added. A message via `mail` to a person with no ship but an `email` attribute is how a mail sender outside the ship gets its work (version 113): it stays approved, its note says it waits for an outside mail sender and gives the address, and the sender claims it (`POST /actions/<id>` with `{"status": "claimed"}`, under its own key), sends it, and moves it to `done` or `failed`. An action a client left `claimed` past its lease is not taken by the ship either; the owner dismisses it.
 
 A task is placed without a claim and stays `approved` until it is done, and the mirror runs both ways:
 

@@ -2714,6 +2714,26 @@ check('a since that is no time is refused', code == 400 and dictish(d).get('erro
 code, d = curl('GET', API + '/actions?limit=many')
 check('a limit that is no number is refused', code == 400, (code, d))
 
+# ---- mail for an outside sender (version 113): a message via mail to a person with an email and no ship waits approved for a sender to claim ----
+MAILRUN = time.strftime('%H%M%S')
+curl('POST', API + '/observe', {'bodies': [{'id': 'person/gate-mailee', 'name': 'Gate Mailee'}], 'observations': [
+    {'subject': 'person/gate-mailee', 'attr': 'email', 'value': 'mailee@example.test', 'source': {'kind': 'user', 'id': 'gate'}}]})
+code, ma = curl('POST', API + '/act', {'kind': 'message', 'title': 'Gate mail ' + MAILRUN, 'by': 'api-matrix', 'payload': {'via': 'mail', 'to': 'person/gate-mailee', 'text': 'hello'}})
+MA = dictish(ma).get('id', '')
+curl('POST', API + '/actions/' + MA, {'status': 'approved'})
+curl('POST', API + '/exec/wake')
+mail_note = gate.wait('the executor leaves it with a note for an outside sender', lambda: next((n for n in listish(dictish(curl('GET', API + '/exec/last')[1]).get('notes'))
+                                                                                     if 'gate-mailee has no ship: it waits for an outside mail sender, to mailee@example.test' in n), None), 60)
+mine = next((dictish(a) for a in listish(curl('GET', API + '/actions?status=all&limit=50')[1]) if dictish(a).get('id') == MA), {})
+check('it stays approved, via mail', mine.get('status') == 'approved' and dictish(mine.get('payload')).get('via') == 'mail', mine)
+code, mk = curl('POST', API + '/clients', {'name': 'gate mail bridge', 'by': 'gate-mail-bridge', 'scope': {'kinds': ['person'], 'actions': ['message'], 'write': True}})
+code, d = curl('POST', API + '/actions/' + MA, {'status': 'claimed'}, jar=None, token=dictish(mk).get('token'))
+check('a sender\'s key claims it, signed by the key', code == 200 and dictish(d).get('by') == 'gate-mail-bridge', (code, d))
+code, d = curl('POST', API + '/actions/' + MA, {'status': 'done'}, jar=None, token=dictish(mk).get('token'))
+check('and marks it done once sent', code == 200 and dictish(d).get('status') == 'done', (code, d))
+if dictish(mk).get('id'): curl('DELETE', API + '/clients/' + dictish(mk)['id'])
+curl('DELETE', API + '/body/person/gate-mailee')
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect

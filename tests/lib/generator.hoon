@@ -1281,6 +1281,24 @@
     (expect-eq !>(%todo) !>(target:(~(got by by-id) 't1')))
     (expect-eq !>('todo') !>((gs:orr body:(~(got by by-id) 't1') 'cat')))
   ==
+::  a message via mail to someone with no ship waits approved; with an
+::  email, its note names the outside sender's address (version 113)
+++  test-plan-exec-mail-email
+  =/  pay  |=(t=@t ^-(json (need (de:json:html t))))
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['e1' [%message 'Tell Kim' (pay '{"via": "mail", "to": "person/kim", "text": "hi"}') ~ ~ 'mcp' now %approved '' ~]]
+        ['e2' [%message 'Tell Eve' (pay '{"via": "mail", "to": "person/eve", "text": "hi"}') ~ ~ 'mcp' now %approved '' ~]]
+    ==
+  =/  bodies=(list loaded:orr)
+    :~  (mkb 'person/kim' %person 'Kim' ~ ~[['email' s+'kim@example.test']] now)
+        (mkb 'person/eve' %person 'Eve' ~ ~ now)
+    ==
+  =/  by-id  (~(gas by *(map @ta exec-plan:orr)) (turn (plan-exec:orr acts bodies ~ ~ now '' ['' '']) |=(p=exec-plan:orr [id.p p])))
+  ;:  weld
+    (expect-eq !>('') !>(to:(~(got by by-id) 'e1')))
+    (expect-eq !>('person/kim has no ship: it waits for an outside mail sender, to kim@example.test') !>(note:(~(got by by-id) 'e1')))
+    (expect-eq !>('person/eve has no ship attribute') !>(note:(~(got by by-id) 'e2')))
+  ==
 ::  the calendars the owner named go on the poke: a task's todo to one,
 ::  a calendar event to the other; none named, no cal, the default
 ++  test-exec-cals

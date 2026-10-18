@@ -6910,7 +6910,13 @@
       ::  needs no ship
       =/  nest=@t  ?:(=('chat' via) (trim-cord (gs payload.a 'channel')) '')
       =?  to  !=('' nest)  nest
-      =/  note=@t  ?.(=('' to) '' (rap 3 who ' has no ship attribute' ~))
+      ::  mail to a person with no ship and an email waits, approved, for
+      ::  a mail sender outside the ship to claim it (version 113)
+      =/  email=@t  ?.(=('mail' via) '' (attr-text all multi now who 'email'))
+      =/  note=@t
+        ?.  =('' to)  ''
+        ?.  =('' email)  (rap 3 who ' has no ship: it waits for an outside mail sender, to ' email ~)
+        (rap 3 who ' has no ship attribute' ~)
       :-  ~
       :*  id  kind.a  ?:(=('mail' via) %mail %chat)  to
           (pairs:enjs:format ~[['subject' s+title.a] ['text' s+text] ['channel' s+nest] ['who' s+who]])
