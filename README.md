@@ -531,7 +531,7 @@ When the desk lands, a consent prompt on `/apps/grubbery/permits` asks you to ap
 
 A part of orrery that crashes, or that loses a road it needs because a permit is refused or unticked, never takes the ship down with it (version 60). Each long-running part (the writer, the readers, the brief, the executor, the generator, reconcile, sync) waits and then goes on by itself: a minute after the first crash, then 2, 4 and up to 60 minutes if it crashes again, the count starting over after two quiet hours. Only the first two crashes print their whole trace. While a part waits, anything sent to it is refused at once, so a write to a crashed writer fails where you can see it instead of vanishing. With the clock or the timer refused it waits for a poke instead, and approving the permits (which reloads the app) brings it back. `rise.json` in the instance holds each part's crashes in a row and when it next tries. A request that crashes ends at once.
 
-First settings, all under Settings on the page: rename `person/me` and give it a `timezone`; on the Generator card set the model and the key and turn it on if you want the ship to propose; on the Telegram card set the bot token, a secret and the ship's public URL, list the chats and map the people, and press register if you want the ship to read Telegram. A later release that adds a road raises the consent prompt again; anything else lands on its own whenever the publisher republishes `code/version.json`. `docs/releasing.md` is the maintainer's side of that.
+First settings, all under Settings on the page: rename `person/me` and give it a `timezone` (until it has one, orrery takes the calendar's zone, and with neither it reads every time as UTC and the Generator card says so); on the Generator card set the model and the key and turn it on if you want the ship to propose; on the Telegram card set the bot token, a secret and the ship's public URL, list the chats and map the people, and press register if you want the ship to read Telegram. A later release that adds a road raises the consent prompt again; anything else lands on its own whenever the publisher republishes `code/version.json`. `docs/releasing.md` is the maintainer's side of that.
 
 ## Under the hood
 
@@ -566,7 +566,7 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `GET /state?at=&kind=&rev=` | every body with its attributes and involvements, the open situations, the open actions, the beacon, the time it was folded at, `me` and the schema. With `rev` (and no `at`) equal to the beacon, nothing changed since the caller's copy, and the answer is only `{"rev", "same": true}` |
 | `GET /body/<kind>/<slug>?at=` | one body with its timeline |
 | `GET /resolve?q=` | bodies a phrase could mean: an exact hit on a ship, an email address, a phone number, a name or an alias, then bodies sharing every word of it, then prefixes; at most 20 |
-| `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations |
+| `POST /observe` | `{"bodies": [...], "observations": [...]}`: bodies upserted first, then observations; a result per item; at most 50 bodies and 200 observations; an observation naming no `source` is filed as `{"kind": "user", "id": by}` |
 | `POST /retract` | `{"id", "note"}` |
 | `POST /bodies` | upsert one body |
 | `DELETE /body/<kind>/<slug>` | remove the body and its observations; owner only |

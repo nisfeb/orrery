@@ -6076,6 +6076,8 @@
   ;<  policy=json  bind:m  (doc %'policy.json')
   ;<  generator=json  bind:m  (doc %'generator.json')
   ;<  generator-last=json  bind:m  (doc %'generator-last.json')
+  ;<  home-all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  home-now=@da  bind:m  get-time:io
   ;<  reconcile-last=json  bind:m  (doc %'reconcile-last.json')
   ;<  telegram=json  bind:m  (doc %'telegram.json')
   ;<  telegram-last=json  bind:m  (doc %'telegram-last.json')
@@ -6121,7 +6123,13 @@
       ==
       ['schema' schema]
       ['policy' policy]
-      ['generator' (en-config-masked:orr (de-config:orr (gen-live:orr generator offer)))]
+      ::  the home zone the times are read in, '' when none the ship can
+      ::  render is set (then every time is UTC): the card says so
+      :-  'generator'
+      %^  set-key:orr  (en-config-masked:orr (de-config:orr (gen-live:orr generator offer)))
+        'home_zone'
+      =/  z=@t  =/(f=@t (attr-text:orr home-all (multi-of:orr schema) home-now 'person/me' 'timezone') ?:(=('' f) timezone:(de-config:orr generator) f))
+      s+?:((~(has by zones:orr) z) z '')
       ['generator_last' generator-last]
       ['reconcile_last' reconcile-last]
       ['telegram' (en-tg-config-masked:orr (de-tg-config:orr telegram))]
@@ -10407,6 +10415,12 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  seen-json=json  bind:m  (read-json (rf 0 / %'calendar-seen.json'))
   ;<  tz=@t  bind:m  owner-tz
+  ::  no home zone yet: the calendar's own, laid once on person/me
+  =/  seed=(unit @t)  (cal-zone-seed:orr tz u.store.cal)
+  ;<  *  bind:m
+    ?~  seed  (pure:(fiber:fiber:nexus ,@ud) 0)
+    (file-ops-on (observe-ops:orr ~ ~[(obs-row:orr 'person/me' 'timezone' s+u.seed now ~ 100 ['calendar' 'zone'] 'calendar')]) /exec)
+  =?  tz  ?=(^ seed)  u.seed
   =/  multi=(set @t)  (multi-of:orr schema)
   =/  seen=(map @t @t)
     %-  ~(gas by *(map @t @t))

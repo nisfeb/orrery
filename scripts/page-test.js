@@ -330,6 +330,11 @@ ok('the read card carries its settings and last read, between mail and the brief
 const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'nex', 'orrery', 'orrery.js'), 'utf8');
 const payloadHtml = render.inbox([{ id: 'a1', kind: 'message', title: 'Wish Sarah happy birthday', status: 'proposed', proposed: '2026-09-20T10:00:00Z', by: 'generator', about: [], payload: { via: 'chat', to: 'person/sarah', text: 'Happy <b>birthday</b>', why: 'it is today' } }], state);
 ok('the inbox shows what an action will do, escaped, the recipient linked, the why on its own line and not among the payload', payloadHtml.includes('class="payload"') && payloadHtml.includes('>via</span> chat') && payloadHtml.includes('Happy &lt;b&gt;birthday&lt;/b&gt;') && !payloadHtml.includes('<b>birthday</b>') && payloadHtml.includes('href="#body/person/sarah"') && (payloadHtml.match(/it is today/g) || []).length === 1 && !/class="payload"[^]*it is today/.test(payloadHtml));
+// the home zone every time is read in: said when set; when not, a warning and the browser's zone offered
+const zonedGen = render.settings({ kinds: {} }, {}, { home_zone: 'America/New_York' }, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
+const unzonedGen = render.settings({ kinds: {} }, {}, { home_zone: '' }, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {}, {});
+ok('the generator card names the home time zone', zonedGen.includes('Home time zone: America/New_York.') && !zonedGen.includes('No home time zone'));
+ok('with none, it warns that every time is UTC and offers the browser\'s zone', unzonedGen.includes('No home time zone is set, so orrery reads and shows every time in UTC') && (unzonedGen.includes('data-home-zone="') || unzonedGen.includes('PUT /api/generator')));
 const libVersion = parseInt((require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'lib', 'orrery.hoon'), 'utf8').match(/\n\+\+  version  (\d+)\n/) || [])[1], 10);
 const jsonVersion = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'code', 'version.json'), 'utf8')).version;
 ok('the lib\'s version is the desk\'s', libVersion === jsonVersion, [libVersion, jsonVersion]);

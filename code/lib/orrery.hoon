@@ -573,7 +573,21 @@
 ++  fill-obs
   |=  [j=json now=@da by=@t]
   ^-  json
-  (with-string (with-default j 'at' s+(en-iso now)) 'by' s+by)
+  (with-source (with-string (with-default j 'at' s+(en-iso now)) 'by' s+by))
+::  +with-source: an observation naming no source kind gets the one a
+::  fact stated directly has, user, its id who wrote it: a client or a
+::  model writing facts it was told has nothing else to name, and every
+::  such write was refused. Stamped before both decoders, so the request
+::  and the writer compute one id
+::
+++  with-source
+  |=  j=json
+  ^-  json
+  ?.  ?=([%o *] j)  j
+  =/  s=json  (~(gut by p.j) 'source' ~)
+  ?.  =('' (gs s 'kind'))  j
+  =/  id=@t  =/(i (gs s 'id') ?:(=('' i) (gs j 'by') i))
+  [%o (~(put by p.j) 'source' (pairs:enjs:format ~[['kind' s+'user'] ['id' s+id]]))]
 ++  fill-act
   |=  [j=json now=@da by=@t]
   ^-  json
@@ -2303,7 +2317,7 @@
 ++  fill-obs-as
   |=  [j=json now=@da by=@t]
   ^-  json
-  (force-string (with-default j 'at' s+(en-iso now)) 'by' s+by)
+  (with-source (force-string (with-default j 'at' s+(en-iso now)) 'by' s+by))
 ++  fill-act-as
   |=  [j=json now=@da by=@t]
   ^-  json
@@ -11946,6 +11960,19 @@
   [%& u.parsed]
 ::  +owner-zone: person/me's timezone, else the fallback given
 ::
+::  +cal-zone-seed: the home zone to take from the calendar, once: its own
+::  zone (the owner set it on the calendar's page), when the ship has no
+::  home zone yet (.tz, person/me's fact else the generator's) and can
+::  render it. Without one every time is read and shown in UTC, and an
+::  all-day event and a late evening land on the wrong day
+::
+++  cal-zone-seed
+  |=  [tz=@t store=json]
+  ^-  (unit @t)
+  ?.  =('' tz)  ~
+  =/  cz=@t  (gs store 'zone')
+  ?.  (~(has by zones) cz)  ~
+  `cz
 ++  owner-zone
   |=  [all=(list loaded) multi=(set @t) now=@da fallback=@t]
   ^-  @t

@@ -515,7 +515,15 @@
   function generatorCard(g, last) {
     g = g || {}; last = last || {};
     var effort = g.reasoning && g.reasoning.enabled === false ? 'off' : (g.reasoning && g.reasoning.effort) || '';
-    var out = '<div class="card"><h2>Generator</h2><div id="generator">' +
+    // the home zone every time is read in: without one, all of them are
+    // UTC, and an all-day event or a late evening lands on the wrong day
+    var zone = '';
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+    var home = g.home_zone === undefined ? '' : (g.home_zone
+      ? '<p class="muted">Home time zone: ' + esc(g.home_zone) + '.</p>'
+      : '<p class="bad">No home time zone is set, so orrery reads and shows every time in UTC: an all-day event or a late evening can land on the wrong day. ' +
+        (zone ? '<button data-home-zone="' + esc(zone) + '">use ' + esc(zone) + '</button>' : 'Set one with PUT /api/generator {"timezone": "America/New_York"}.') + '</p>');
+    var out = '<div class="card"><h2>Generator</h2>' + home + '<div id="generator">' +
       '<p><label class="box"><input type="checkbox" name="enabled"' + (g.enabled ? ' checked' : '') + '> on: a pass runs when the state changes</label></p>' +
       '<p><label class="field">API base <input name="url" value="' + esc(g.url || '') + '" placeholder="https://openrouter.ai/api/v1"></label> ' +
       '<label class="field">model <input name="model" value="' + esc(g.model || '') + '" placeholder="moonshotai/kimi-k3"></label></p>' +
@@ -1936,6 +1944,9 @@
       minted = null;
       dirty = false;
       refresh(true);
+    } else if (b.dataset.homeZone) {
+      say('setting the home time zone to ' + b.dataset.homeZone);
+      post('/generator', { timezone: b.dataset.homeZone }, 'PUT').then(function () { say('home time zone set'); refresh(true); }).catch(oops);
     } else if (b.dataset.followArmillary != null) {
       var feature = b.dataset.followArmillary;
       say(feature ? 'following your Armillary vendor for ' + feature : 'following your Armillary vendor for everything');

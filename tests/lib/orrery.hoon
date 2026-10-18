@@ -160,6 +160,36 @@
     (expect-eq !>('until: must be after at') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"2026-09-16T22:05:00Z","until":"2026-09-16T22:05:00Z","source":{"kind":"user"}}')))
     (expect-eq !>('until: must be after at') !>((bad '{"subject":"thing/subaru","attr":"location","value":1,"at":"2026-09-16T22:05:00Z","until":"2026-09-16T21:00:00Z","source":{"kind":"user"}}')))
   ==
+::  a fact stated with no source, through the MCP tool, a key or the
+::  owner's own request, is the user's, its id who wrote it, and decodes;
+::  a source named stands, and one with an id but no kind keeps the id
+::
+++  test-fill-obs-source
+  =/  bare=json  (jo '{"subject":"thing/subaru","attr":"location","value":"the shop"}')
+  =/  f=json  (fill-obs:orr bare t0 'mcp')
+  =/  k=json  (fill-obs-as:orr bare t0 'talon')
+  =/  named=json  (jo '{"subject":"thing/subaru","attr":"location","value":1,"source":{"kind":"chat","id":"m1"}}')
+  =/  idonly=json  (jo '{"subject":"thing/subaru","attr":"location","value":1,"source":{"id":"m9"}}')
+  =/  df  (de-obs:orr f t0 'mcp')
+  =/  dk  (de-obs:orr k t0 'talon')
+  ;:  weld
+    (expect-eq !>((jo '{"kind":"user","id":"mcp"}')) !>((gj:orr f 'source')))
+    (expect-eq !>((jo '{"kind":"user","id":"talon"}')) !>((gj:orr k 'source')))
+    (expect !>(?=(%& -.df)))
+    (expect !>(?=(%& -.dk)))
+    (expect-eq !>((jo '{"kind":"chat","id":"m1"}')) !>((gj:orr (fill-obs:orr named t0 'mcp') 'source')))
+    (expect-eq !>((jo '{"kind":"user","id":"m9"}')) !>((gj:orr (fill-obs:orr idonly t0 'mcp') 'source')))
+  ==
+::  the calendar's zone is taken for home only when none is set and the
+::  ship can render it
+::
+++  test-cal-zone-seed
+  ;:  weld
+    (expect-eq !>(`(unit @t)``'America/New_York') !>((cal-zone-seed:orr '' (jo '{"zone":"America/New_York","events":[]}'))))
+    (expect-eq !>(`(unit @t)`~) !>((cal-zone-seed:orr 'Europe/Madrid' (jo '{"zone":"America/New_York"}'))))
+    (expect-eq !>(`(unit @t)`~) !>((cal-zone-seed:orr '' (jo '{"zone":null}'))))
+    (expect-eq !>(`(unit @t)`~) !>((cal-zone-seed:orr '' (jo '{"zone":"Mars/Olympus"}'))))
+  ==
 ++  test-de-action-ok
   =/  got
     %^  de-action:orr
