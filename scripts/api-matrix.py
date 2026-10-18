@@ -2689,6 +2689,31 @@ check('lists the owner empties are not flagged', fix_file('chat-lists-seen.json'
 fix_lay('chat.json', chat_was)
 fix_lay('chat-lists-seen.json', seen_was)
 
+# ---- actions since (version 112): what was filed, moved or revised after a time, and the newest n ----
+SINCERUN = time.strftime('%H%M%S')
+since_t = iso(datetime.now(timezone.utc))
+time.sleep(2)
+code, sa = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate since ' + SINCERUN, 'by': 'api-matrix'})
+SA = dictish(sa).get('id', '')
+def last_change(a):
+    return max([str(a.get('proposed', ''))] + [str(dictish(h).get('at', '')) for h in listish(a.get('history'))])
+code, got = curl('GET', API + '/actions?since=' + urllib.parse.quote(since_t))
+check('since lists what was filed after it, and nothing older', code == 200 and any(dictish(a).get('id') == SA for a in listish(got))
+      and all(last_change(dictish(a)) > since_t for a in listish(got)), (code, [(dictish(a).get('id'), last_change(dictish(a))) for a in listish(got)]))
+moved_t = iso(datetime.now(timezone.utc))
+time.sleep(2)
+curl('POST', API + '/actions/' + SA, {'status': 'done', 'note': 'gate'})
+code, got = curl('GET', API + '/actions?since=' + urllib.parse.quote(moved_t))
+check('a move to done is a change, listed under since whatever its status', any(dictish(a).get('id') == SA and dictish(a).get('status') == 'done' for a in listish(got)), got)
+code, got = curl('GET', API + '/actions?since=2099-01-01T00:00:00Z')
+check('since the future, nothing', code == 200 and got == [], (code, got))
+code, got = curl('GET', API + '/actions?status=all&limit=2')
+check('limit keeps the newest n', code == 200 and len(listish(got)) == 2, (code, len(listish(got))))
+code, d = curl('GET', API + '/actions?since=yesterday')
+check('a since that is no time is refused', code == 400 and dictish(d).get('error') == 'since: an ISO 8601 UTC time', (code, d))
+code, d = curl('GET', API + '/actions?limit=many')
+check('a limit that is no number is refused', code == 400, (code, d))
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect

@@ -1043,6 +1043,13 @@
   ?~  back  proposed.a
   ?:  =(%claimed status.i.back)  at.i.back
   $(back t.back)
+::  +last-change: when an action last changed: its newest history step,
+::  else when it was proposed (version 112)
+::
+++  last-change
+  |=  a=action
+  ^-  @da
+  (max proposed.a (roll (turn history.a |=(st=step at.st)) max))
 ::  +move-refusal: why this actor cannot move this action now, or ~.
 ::  The table first, then the claim: while the lease is live the action
 ::  is held against another actor, and done or failed is the claimant's

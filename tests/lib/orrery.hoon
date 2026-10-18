@@ -1265,6 +1265,16 @@
   =/  body=json  (chat-body-with:orr c 'sys' ~['one' '' 'three'])
   =/  user=json  (rear (ga:orr body 'messages'))
   (expect-eq !>(~['one' 'three']) !>((turn (ga:orr user 'content') |=(b=json (gs:orr b 'text')))))
+::  an action last changed at its newest step, else when it was proposed
+::  (version 112)
+++  test-last-change
+  =/  a=action:orr  [%task 'T' ~ ~ ~ 'http' t0 %proposed '' ~[[t0 %proposed 'http']]]
+  =/  moved=action:orr  a(history ~[[t0 %proposed 'http'] [(add t0 ~h2) %approved 'user'] [(add t0 ~h5) %done 'user']])
+  ;:  weld
+    (expect-eq !>(t0) !>((last-change:orr a)))
+    (expect-eq !>((add t0 ~h5)) !>((last-change:orr moved)))
+    (expect-eq !>(t0) !>((last-change:orr a(history ~))))
+  ==
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))

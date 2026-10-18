@@ -2516,24 +2516,35 @@
   %^  send-json  eyre-id  200
   (pairs:enjs:format ~[['id' s+(act-id:orr a)] ['status' s+status.a] ['existing' b+|]])
 ::  +serve-actions: ?status=open (the default: proposed, approved and
-::  claimed), all, or one status; newest first
+::  claimed), all, or one status; newest first. ?since=<time> keeps the
+::  ones filed, moved or revised after it, and then every status unless
+::  one is asked, since a move to done is a change too; ?limit=<n> the
+::  newest n (version 112)
 ::
 ++  serve-actions
   |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  want=@t  (fall (get-key:kv:html-utils 'status' args) 'open')
+  =/  since-s=(unit @t)  (get-key:kv:html-utils 'since' args)
+  =/  since=(unit @da)  (biff since-s de-iso-any:orr)
+  ?:  &(?=(^ since-s) ?=(~ since))  (send-err eyre-id 400 'since: an ISO 8601 UTC time')
+  =/  limit-s=(unit @t)  (get-key:kv:html-utils 'limit' args)
+  =/  limit=(unit @ud)  (biff limit-s (curr rush dem))
+  ?:  &(?=(^ limit-s) ?=(~ limit))  (send-err eyre-id 400 'limit: a number')
+  =/  want=@t  (fall (get-key:kv:html-utils 'status' args) ?~(since 'open' 'all'))
   ;<  all0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  all=(list [id=@ta a=action:orr])  acts:(view-of act ~ all0 ~)
   =/  keep
     |=  [id=@ta a=action:orr]
     ^-  ?
+    ?:  &(?=(^ since) (lte (last-change:orr a) u.since))  |
     ?:  =('all' want)  &
     ?:  =('open' want)  (is-open:orr a)
     =(want `@t`status.a)
   =/  shown=(list [id=@ta a=action:orr])
     %+  sort  (skim all keep)
     |=([x=[id=@ta a=action:orr] y=[id=@ta a=action:orr]] (gth proposed.a.x proposed.a.y))
+  =?  shown  ?=(^ limit)  (scag u.limit shown)
   (send-json eyre-id 200 a+(turn shown |=([id=@ta a=action:orr] (en-action:orr id a))))
 ::  +serve-set-action: POST a new status for one action. The transition
 ::  is checked here as well as in the writer, so the client gets a 409
