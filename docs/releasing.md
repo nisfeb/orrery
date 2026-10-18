@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 108's owner steps
+
+Nothing to do: no new roads, so no consent prompt. A flight watch now takes an AeroDataBox key from API.market as well as from RapidAPI: set `flight_api` to `{"url": "https://prod.api.market/api/v1/aedbx/aerodatabox", "key": ...}` with `PUT /api/watches`. A RapidAPI key set with no host gets RapidAPI's. A watch now follows the flight leaving on its `date` by the local clock, and from the airport its `from` names (`"from": "JAX"`), since a flight number flies several legs a day. Give each flight watch its `from`, or it follows the number's first leg that day.
+
 ### Version 107's owner steps
 
 Nothing to do: no new roads, so no consent prompt. A fact written with no `source`, through the MCP tool, a key or the API, is now filed as stated by whoever wrote it (`{"kind": "user", "id": <by>}`) instead of being refused. If `person/me` has no `timezone` and the generator none either, orrery takes the calendar's own zone once, the one the calendar's globe button sets; with neither, every time is read in UTC, and the Generator card now says so, with a button for your browser's zone.
