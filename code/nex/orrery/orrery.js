@@ -435,7 +435,7 @@
   // cancel. A title says what the proposer meant; the payload is what
   // the executor sends.
   function payloadLine(p, byId) {
-    var keys = Object.keys(p || {}).filter(function (k) { return k !== 'why' && k !== 'twin'; }).sort();
+    var keys = Object.keys(p || {}).filter(function (k) { return k !== 'why' && k !== 'twin' && k !== 'priority' && k !== 'snooze_until'; }).sort();
     if (!keys.length) return '';
     return '<div class="payload">' + keys.map(function (k) {
       return '<span class="muted">' + esc(k) + '</span> ' + namedValue(p[k], byId);
@@ -453,20 +453,52 @@
     if (id && /^[a-z0-9-]+\/[^\s]+$/.test(id) && (byId[id] || typeof v === 'object' || id.indexOf('person/') === 0)) return links([id], byId);
     return fmtValue(v);
   }
-  function inbox(actions, state) {
+  function moveButtons(a) {
+    return (MOVES[a.status] || []).map(function (s) {
+      return '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
+    }).join('');
+  }
+  // an open action marked high whose due has passed and that is not
+  // snoozed is late (version 110): the ship nags about it every fifteen
+  // minutes, and the Inbox shows it first and in red. How late, in ms
+  function lateBy(a, now) {
+    var p = a.payload || {};
+    if ((a.status !== 'proposed' && a.status !== 'approved') || p.priority !== 'high' || !a.due) return 0;
+    var due = Date.parse(a.due), snooze = Date.parse(p.snooze_until || '');
+    if (isNaN(due) || due >= now || (!isNaN(snooze) && snooze > now)) return 0;
+    return now - due;
+  }
+  function span(ms) {
+    var m = Math.round(ms / 60000);
+    return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+  }
+  function lateCard(actions, byId, now) {
+    var late = actions.filter(function (a) { return lateBy(a, now) > 0; });
+    if (!late.length) return '';
+    return '<div class="card late"><h2>Late</h2><ul>' + late.map(function (a) {
+      return '<li><strong>' + namedText(a.title, byId) + '</strong> <span class="bad">due ' + fmtTime(a.due) + ', ' + span(lateBy(a, now)) + ' ago</span> ' +
+        moveButtons(a) + ' <button data-snooze="' + esc(a.id) + '">snooze 1 h</button></li>';
+    }).join('') + '</ul></div>';
+  }
+  function inbox(actions, state, now) {
+    now = now || Date.now();
     var out = '<h1>Inbox</h1>' + instructBox('', '', 'Tell the ship anything: "Dana was not in Barcelona", "Sam and Samuel are one person", "never propose calls"');
     if (!actions || !actions.length) return out + '<p class="muted">Nothing waiting.</p>';
     var byId = index(state);
-    out += '<ul class="actions">';
+    out += lateCard(actions, byId, now) + '<ul class="actions">';
     actions.forEach(function (a) {
-      out += '<li class="card">' + badge(a.status) +
+      var high = !!(a.payload && a.payload.priority === 'high'), late = lateBy(a, now);
+      var open = a.status === 'proposed' || a.status === 'approved';
+      out += '<li class="card' + (late ? ' late' : '') + '">' + badge(a.status) + (high ? ' <span class="status bad">high</span>' : '') +
         (a.status === 'claimed' ? ' <span class="muted">claimed by ' + esc(claimant(a)) + '</span>' : '') +
         ' <strong>' + namedText(a.title, byId) + '</strong> <span class="muted">' + esc(a.kind) +
         ' &middot; proposed ' + fmtTime(a.proposed) + ' by ' + byWho(a.by, state) + (a.due ? ' &middot; due ' + fmtTime(a.due) : '') + '</span>' + forWhom(a, state) +
+        (late ? ' <span class="bad">late by ' + span(late) + '</span>' : '') +
         (a.about && a.about.length ? '<div>about ' + links(a.about, byId) + '</div>' : '') + whyLine(a.payload, byId) + payloadLine(a.payload, byId) + '<div>';
-      (MOVES[a.status] || []).forEach(function (s) {
-        out += '<button data-move="' + esc(a.id) + ':' + s + '"' + (s === 'dismissed' || s === 'failed' ? ' class="danger"' : '') + '>' + s + '</button>';
-      });
+      out += moveButtons(a);
+      // high (version 110): nagged about once late; only a due makes it late
+      if (open && a.due) out += ' <button class="small" data-priority="' + esc(a.id) + '" data-level="' + (high ? '' : 'high') + '">' + (high ? 'not high' : 'mark high') + '</button>';
+      if (late) out += ' <button class="small" data-snooze="' + esc(a.id) + '">snooze 1 h</button>';
       out += '</div>';
       // A note under a proposed action refines it before approval (version 36).
       // The ship refines the reader's three kinds and no other, since a merge
@@ -2024,6 +2056,10 @@
     } else if (b.dataset.savePeerPush) {
       var choice = (view.querySelector('input[name="peer_push"]:checked') || {}).value || 'asks';
       api('/policy').then(function (pol) { pol.peer_push = choice; return post('/policy', pol, 'PUT'); }).then(function () { say('saved'); }).catch(oops);
+    } else if (b.dataset.priority) {
+      post('/actions/' + seg(b.dataset.priority) + '/priority', { priority: b.dataset.level || '' }).then(function () { say(b.dataset.level ? 'marked high' : 'no longer high'); later(); }).catch(oops);
+    } else if (b.dataset.snooze) {
+      post('/actions/' + seg(b.dataset.snooze) + '/snooze', { minutes: 60 }).then(function () { say('snoozed for an hour'); later(); }).catch(oops);
     } else if (b.dataset.assign) {
       var sel = (b.closest('.assign') || view).querySelector('[name="assign-who"]');
       post('/actions/' + seg(b.dataset.assign) + '/assign', { assignee: sel ? sel.value : '' }).then(function () { say('assigned'); later(); }).catch(oops);

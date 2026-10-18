@@ -1169,6 +1169,44 @@
     ::  no departure to count to: the cadence
     (expect-eq !>(`(unit @dr)``~h3) !>((every v(dep-sched '') (sub dep ~h2))))
   ==
+::  a high-priority action is not urgent until its due passes; late, it
+::  is nagged until it is snoozed, done, dismissed or unmarked
+++  test-late-high
+  =/  a=action:orr  [%task 'Check in for DL 2627' (jo '{"priority":"high"}') ~ `t0 'http' (sub t0 ~d5) %approved '' ~]
+  =/  plain=action:orr  a(payload (jo '{"notes":"x"}'))
+  ::  t0 is 22:05Z: snoozed until 00:00Z
+  =/  snoozed=action:orr  a(payload (jo '{"priority":"high","snooze_until":"2026-09-17T00:00:00Z"}'))
+  =/  late  |=([acts=(list [@ta action:orr]) now=@da] (turn (late-high:orr acts now) |=([id=@ta * l=@dr] [id l])))
+  ;:  weld
+    (expect-eq !>(`(list [@ta @dr])`~) !>((late ~[['a' a]] (sub t0 ~m1))))
+    (expect-eq !>(`(list [@ta @dr])`~[['a' ~h2]]) !>((late ~[['a' a]] (add t0 ~h2))))
+    (expect-eq !>(`(list [@ta @dr])`~[['p' ~h2]]) !>((late ~[['p' a(status %proposed)]] (add t0 ~h2))))
+    (expect-eq !>(`(list [@ta @dr])`~) !>((late ~[['p' plain] ['d' a(status %done)] ['x' a(status %dismissed)] ['c' a(status %claimed)]] (add t0 ~h2))))
+    (expect-eq !>(`(list [@ta @dr])`~) !>((late ~[['s' snoozed]] (add t0 ~h1))))
+    (expect-eq !>(`(list [@ta @dr])`~[['s' ~h3]]) !>((late ~[['s' snoozed]] (add t0 ~h3))))
+    (expect-eq !>(`(list [@ta @dr])`~) !>((late ~[['n' a(due ~)]] (add t0 ~h2))))
+  ==
+::  a late one is pushed again once fifteen minutes have passed since the
+::  last push, and at once when it has none
+++  test-nag-now
+  =/  a=action:orr  [%task 'T' (jo '{"priority":"high"}') ~ `t0 'http' t0 %approved '' ~]
+  =/  late=(list [id=@ta a=action:orr late=@dr])  ~[['a' a ~h1] ['b' a ~h1]]
+  =/  now=@da  (add t0 ~h1)
+  =/  ids  |=(l=(list [id=@ta a=action:orr late=@dr]) (turn l |=([id=@ta *] id)))
+  =/  last=json  (pairs:enjs:format ~[['a' s+(en-iso:orr (sub now ~m10))] ['b' s+(en-iso:orr (sub now ~m15))]])
+  ;:  weld
+    (expect-eq !>(`(list @ta)`~['a' 'b']) !>((ids (nag-now:orr late ~ now))))
+    (expect-eq !>(`(list @ta)`~['b']) !>((ids (nag-now:orr late last now))))
+  ==
+::  the push says what, when it was due on the owner's clock (with the
+::  day once a day late), how late, and the note
+++  test-nag-text
+  =/  a=action:orr  [%task 'Check in for DL 2627' (jo '{"priority":"high","notes":"Seats 31C."}') ~ `~2026.10.17..23.05.00 'http' t0 %approved '' ~]
+  ;:  weld
+    (expect-eq !>(['Late: Check in for DL 2627' 'Due 19:05, 2 h 10 late. Seats 31C.']) !>((nag-text:orr a ~h2.m10 'America/New_York')))
+    (expect-eq !>(['Late: Check in for DL 2627' 'Due 19:05, 40 min late.']) !>((nag-text:orr a(payload (jo '{"priority":"high"}')) ~m40 'America/New_York')))
+    (expect-eq !>(['Late: Check in for DL 2627' 'Due Sat 19:05, 26 h late. Seats 31C.']) !>((nag-text:orr a ~h26 'America/New_York')))
+  ==
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))

@@ -1219,6 +1219,7 @@
       [92 ~ ~ ~]
       [94 ~ ~[['situation' ~['shared-with']]] ~['shared-with']]
       [98 ~['close'] ~[['situation' ~['research']] ['activity' ~['research']]] ~['research']]
+      [110 ~ ~ ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1313,10 +1314,13 @@
   (set-key new 'schema_version' (numb:enjs:format schema-newest))
 ::  +schema-payload-adds: fields a release added to a kind's payload shape
 ::
-++  schema-payload-adds  ^-((list [v=@ud kind=@t field=@t]) ~[[92 'task' 'assignee']])
+++  schema-payload-adds  ^-((list [v=@ud kind=@t field=@t]) ~[[92 'task' 'assignee'] [110 'task' 'priority']])
 ++  assignee-note
   ^-  @t
   'optional: who does it when it is not the owner, a ref to the person ({"ref": "person/x"}), by who the facts say does the thing (their leg, their errand). A person with their own orrery gets it in their Inbox once the owner approves it here'
+++  priority-note
+  ^-  @t
+  'optional: "high" only for a task with a due whose missing it costs what cannot be had back (checking in for a flight, a deadline, a form or a payment that closes); once it is late the ship nags the owner every fifteen minutes until it is done. Leave it out otherwise'
 ::  +schema-new-kinds: the kinds a release brought in after the first
 ::
 ++  schema-new-kinds  `(set @t)`(sy `(list @t)`~['sphere'])
@@ -1440,7 +1444,7 @@
       %-  pairs:enjs:format
       %+  weld  writer-shapes
       ^-  (list [@t json])
-      :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence'] ['assignee' assignee-note]])]
+      :~  ['task' (shape ~[['notes' 'optional: what to do, in a sentence'] ['assignee' assignee-note] ['priority' priority-note]])]
           ['note' (shape ~[['text' 'required: the note for the owner']])]
           :-  'message'
           %-  shape
@@ -7799,6 +7803,55 @@
   |=  [now=@da tz=@t r=rhythm]
   ^-  ?
   (in-span (clock-minutes now tz) from.quiet.r to.quiet.r)
+::  ==  nags (version 110): a high-priority action that is late
+::
+::  +late-high: the open actions marked high (payload priority) whose due
+::  has passed and whose snooze, if any, is over, each with how late. An
+::  action is not urgent when it is filed; being late makes it urgent
+::
+++  late-high
+  |=  [acts=(list [id=@ta a=action]) now=@da]
+  ^-  (list [id=@ta a=action late=@dr])
+  %+  murn  acts
+  |=  [id=@ta a=action]
+  ^-  (unit [id=@ta a=action late=@dr])
+  ?.  ?=(?(%proposed %approved) status.a)  ~
+  ?.  =('high' (gs payload.a 'priority'))  ~
+  ?~  due.a  ~
+  ?.  (lth u.due.a now)  ~
+  =/  snooze=(unit @da)  (de-iso (gs payload.a 'snooze_until'))
+  ?:  &(?=(^ snooze) (gth u.snooze now))  ~
+  `[id a (sub now u.due.a)]
+::  +nag-every: how often a late one is pushed again
+::  ponytail: one pace for every nag; a setting if owners ask
+::
+++  nag-every  ~m15
+::  +nag-now: of the late ones, those last pushed a nag-every ago or
+::  never, by nag-last.json's map of id to when
+::
+++  nag-now
+  |=  [late=(list [id=@ta a=action late=@dr]) last=json now=@da]
+  ^-  (list [id=@ta a=action late=@dr])
+  %+  skim  late
+  |=  [id=@ta *]
+  =/  at=(unit @da)  (de-iso (gs last id))
+  ?~  at  &
+  (gte now (add u.at nag-every))
+::  +nag-text: the push for a late one: what, when it was due on the
+::  owner's clock (with the weekday once it is a day late), how late,
+::  and its note
+::
+++  nag-text
+  |=  [a=action late=@dr tz=@t]
+  ^-  [title=@t body=@t]
+  =/  due=@da  (fall due.a *@da)
+  =/  when=@t
+    ?:  (lth late ~d1)  (hhmm due tz)
+    =/  day=@t  (cut 3 [0 10] (local-iso (en-iso due) tz))
+    (rap 3 (end [3 3] (snag (dow-of day) weekday-names)) ' ' (hhmm due tz) ~)
+  =/  notes=@t  (end [3 200] (gs payload.a 'notes'))
+  :-  (cat 3 'Late: ' title.a)
+  (rap 3 'Due ' when ', ' (hours (div late ~m1)) ' late.' ?:(=('' notes) '' (cat 3 ' ' notes)) ~)
 ::  +at-clock: a local date's moment at minutes past midnight
 ::
 ++  at-clock
@@ -11148,6 +11201,8 @@
   ?:  &(=('POST' meth) ?=([%api %sphere-leave ~] suffix))       `[%post-sphere-leave %own]
   ?:  &(=('POST' meth) ?=([%api %leave ~] suffix))              `[%post-leave %own]
   ?:  &(=('POST' meth) ?=([%api %actions @ %assign ~] suffix))  `[%post-actions-assign %own]
+  ?:  &(=('POST' meth) ?=([%api %actions @ %priority ~] suffix))  `[%post-actions-priority %writes]
+  ?:  &(=('POST' meth) ?=([%api %actions @ %snooze ~] suffix))  `[%post-actions-snooze %writes]
   ?:  &(=('POST' meth) ?=([%api %pairing ~] suffix))            `[%post-pairing %own]
   ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
   ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]

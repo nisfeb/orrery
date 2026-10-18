@@ -2779,7 +2779,7 @@
     (expect-eq !>('v/zdr') !>((gs:orr (armillary-apply:orr 'browsing' [%o ~] with |) 'model')))
     (expect-eq !>('v/read') !>((gs:orr (armillary-apply:orr 'read' [%o ~] offer |) 'model')))
     (expect !>((lien armillary-files:orr |=([n=@t f=@ta] =('browsing' n)))))
-    (expect-eq !>(98) !>(schema-newest:orr))
+    (expect-eq !>(110) !>(schema-newest:orr))
   ==
 ::  ==  what the owner has been into, and forms left (version 99)
 ::

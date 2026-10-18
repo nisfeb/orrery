@@ -97,6 +97,25 @@ ok('about names the body when the state is at hand, with the id on hover, and fa
   render.inbox(inbox, state).includes('about <a href="#body/thing/subaru" title="thing/subaru">the &lt;b&gt;Subaru&lt;/b&gt;</a>')
   && render.inbox(inbox, state).includes('<a href="#body/person/sarah" title="person/sarah">person/sarah</a>'));
 ok('an empty inbox says so', render.inbox([]).includes('Nothing waiting'));
+// late (version 110): a high one past its due is shown first and in red,
+// with how late and a snooze; a normal one past its due, or a snoozed one,
+// is not; only an open action with a due can be marked high
+const NOW = Date.parse('2026-10-18T21:00:00Z');
+const hiLate = { id: 'h1', kind: 'task', status: 'approved', title: 'Check in for DL 2627', proposed: '2026-10-13T18:21:33Z', by: 'http', due: '2026-10-17T23:05:00Z', about: [], payload: { priority: 'high', notes: 'Seats 31C' } };
+const plainLate = Object.assign({}, hiLate, { id: 'n1', title: 'Plain late', payload: { notes: 'x' } });
+const snoozed = Object.assign({}, hiLate, { id: 's1', title: 'Snoozed one', payload: { priority: 'high', snooze_until: '2026-10-18T22:00:00Z' } });
+const undue = Object.assign({}, hiLate, { id: 'u1', title: 'No due', due: null, payload: {} });
+const lateHtml = render.inbox([plainLate, hiLate, snoozed, undue], null, NOW);
+ok('a late high action leads the inbox in a Late card, with how late and a snooze',
+  lateHtml.indexOf('<div class="card late"><h2>Late</h2>') >= 0 && lateHtml.indexOf('<div class="card late">') < lateHtml.indexOf('<ul class="actions">')
+  && lateHtml.includes('21 h 55 min ago') && lateHtml.includes('data-snooze="h1"'), lateHtml.slice(0, 600));
+ok('its own card is red and says late by', lateHtml.includes('<li class="card late">') && lateHtml.includes('late by 21 h 55 min'));
+ok('a plain late action and a snoozed one are not late', !/data-snooze="(n1|s1)"/.test(lateHtml) && (lateHtml.match(/<li class="card late">/g) || []).length === 1);
+ok('high is a badge, and the toggle unmarks it or marks a plain one', lateHtml.includes('<span class="status bad">high</span>')
+  && lateHtml.includes('data-priority="h1" data-level="">not high') && lateHtml.includes('data-priority="n1" data-level="high">mark high'));
+ok('no due, no high toggle', !lateHtml.includes('data-priority="u1"'));
+ok('priority and snooze are not shown again among the payload fields', !/<span class="muted">(priority|snooze_until)<\/span>/.test(lateHtml));
+ok('nothing late, no Late card', !render.inbox([plainLate, snoozed], null, NOW).includes('<h2>Late</h2>'));
 // why it was proposed, in the proposer's words, ids named; not again among the payload's fields
 const whyHtml = render.inbox([{ id: 'w1', kind: 'resolve', title: 'The massage is over', status: 'proposed', proposed: '2026-10-16T22:10:00Z', by: 'generator', about: ['thing/subaru'],
   payload: { situation: 'thing/subaru', outcome: 'done', why: 'thing/subaru ended at 21:00 on the calendar' }, history: [] }], state);

@@ -17,6 +17,8 @@ header nav a:hover { text-decoration: underline; }
 .count:not(:empty) { display: inline-block; min-width: 1.4em; padding: 0 .4em; border-radius: 1em; background: var(--amber); color: var(--ink); font-size: .8em; text-align: center; }
 .status { margin-left: auto; color: var(--muted); font-size: .85em; }
 .status.bad, p.bad { color: var(--bad); }
+span.bad { color: var(--bad); }
+.card.late { border-left: 4px solid var(--bad); }
 main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
 h1 { font-size: 1.4rem; margin: .2rem 0 .6rem; }
 h2 { font-size: 1.05rem; margin: 1.2rem 0 .4rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }

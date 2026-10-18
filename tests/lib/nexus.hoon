@@ -1062,7 +1062,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with' 'research']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 98]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 110]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
@@ -1346,6 +1346,8 @@
       (expect-eq !>(`(list @t)`~['p0' 'p1' part 'now']) !>((with-peer:orr ~['p0' 'p1' 'now'] peer)))
       (expect-eq !>(`(list @t)`~['p0' 'now']) !>((with-peer:orr ~['p0' 'now'] [%o ~])))
     ==
+    ::  the task shape a release adds the priority to (version 110)
+    (expect-eq !>(s+priority-note:orr) !>((gj:orr (gj:orr (gj:orr (schema-upgrade:orr (set-key:orr (set-key:orr starter-schema:orr 'schema_version' (numb:enjs:format 109)) 'payloads' (set-key:orr (gj:orr starter-schema:orr 'payloads') 'task' (pairs:enjs:format ~[['notes' s+'mine']])))) 'payloads') 'task') 'priority')))
     ::  the task shape a release adds the assignee to
     (expect-eq !>(s+assignee-note:orr) !>((gj:orr (gj:orr (gj:orr (schema-upgrade:orr (set-key:orr (set-key:orr starter-schema:orr 'schema_version' (numb:enjs:format 91)) 'payloads' (set-key:orr (gj:orr starter-schema:orr 'payloads') 'task' (pairs:enjs:format ~[['notes' s+'mine']])))) 'payloads') 'task') 'assignee')))
   ==

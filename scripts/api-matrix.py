@@ -2613,15 +2613,94 @@ curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()
 srv.server_close()
 
+# ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
+NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+#  through the file API: a ?raw=1 read answers a redirect
+def nag_raw(name):
+    code, d = gate.curl('GET', HOST + '/grubbery/api/file' + NAG_APP + '/' + name, jar=JAR)
+    return d if code == 200 and isinstance(d, dict) else {}
+#  a file put back whole: PUT /rhythm merges, so it cannot clear a field
+def nag_lay(name, doc):
+    gate.curl('POST', HOST + '/grubbery/ball' + NAG_APP + '/' + name, jar=JAR, raw=urllib.parse.urlencode({'action': 'write-text', 'content': json.dumps(doc)}),
+              headers=['content-type: application/x-www-form-urlencoded'])
+def nag_wake():
+    curl('POST', API + '/nudge/wake')
+def nag_open(aid):
+    return next((dictish(a) for a in listish(curl('GET', API + '/actions')[1]) if dictish(a).get('id') == aid), {})
+rhythm_was = nag_raw('rhythm.json')
+#  the quiet hours hold every nag, and at this hour some clock is in
+#  them: a span from a time to itself is never quiet
+curl('PUT', API + '/rhythm', dict(rhythm_was, quiet_from='00:00', quiet_to='00:00'))
+nag_due = iso(datetime.now(timezone.utc) - timedelta(hours=2))
+code, hi = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate nag: check in', 'due': nag_due, 'by': 'api-matrix', 'payload': {'notes': 'Seats 31C.'}})
+check('a task two hours past its due is filed', code == 200 and dictish(hi).get('status') == 'approved', (code, hi))
+HI = dictish(hi).get('id', '')
+code, lo = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate nag: plain', 'due': nag_due, 'by': 'api-matrix'})
+LO = dictish(lo).get('id', '')
+MADE.extend([HI, LO])
+nag_wake()
+time.sleep(5)
+check('late but not high, nothing is nagged', HI not in nag_raw('nag-last.json') and LO not in nag_raw('nag-last.json'), nag_raw('nag-last.json'))
+code, d = curl('POST', API + '/actions/' + HI + '/priority', {'priority': 'urgent'})
+check('a priority is high or nothing', code == 400, (code, d))
+code, d = curl('POST', API + '/actions/' + HI + '/priority', {'priority': 'high'})
+check('the owner marks it high', code == 200 and dictish(d).get('priority') == 'high', (code, d))
+check('high is kept in its payload, and its history is untouched', dictish(nag_open(HI).get('payload')).get('priority') == 'high'
+      and len(listish(nag_open(HI).get('history'))) == 2, nag_open(HI))
+nag_wake()
+first = gate.wait('the late high task is nagged', lambda: nag_raw('nag-last.json').get(HI), 60)
+check('the plain one still is not', LO not in nag_raw('nag-last.json'), nag_raw('nag-last.json'))
+nag_wake()
+time.sleep(5)
+check('a second look inside fifteen minutes does not nag again', nag_raw('nag-last.json').get(HI) == first, nag_raw('nag-last.json'))
+code, d = curl('POST', API + '/actions/' + HI + '/snooze', {'minutes': 99999})
+check('a snooze is a week at most', code == 400, (code, d))
+code, d = curl('POST', API + '/actions/' + HI + '/snooze', {'minutes': 60})
+check('the owner snoozes it an hour', code == 200 and bool(dictish(d).get('snooze_until')), (code, d))
+nag_wake()
+gate.wait('snoozed, it leaves the nag list', lambda: HI not in nag_raw('nag-last.json') or None, 60)
+time.sleep(1)
+code, d = curl('POST', API + '/actions/' + HI + '/snooze', {'minutes': 0})
+check('a snooze of 0 ends it', code == 200 and 'snooze_until' not in dictish(nag_open(HI).get('payload')), (code, d, nag_open(HI)))
+nag_wake()
+again = gate.wait('the snooze over, it is nagged again at once', lambda: nag_raw('nag-last.json').get(HI), 60)
+check('afresh, not on the old clock', str(again) > str(first), (first, again))
+code, k = curl('POST', API + '/clients', {'name': 'gate nag looker', 'by': 'gate-nag-looker', 'scope': {'kinds': [], 'actions': ['task'], 'write': False}})
+code, d = curl('POST', API + '/actions/' + HI + '/snooze', {'minutes': 30}, jar=None, token=dictish(k).get('token'))
+check('a read only key may not snooze', code == 403, (code, d))
+code, k2 = curl('POST', API + '/clients', {'name': 'gate nag writer', 'by': 'gate-nag-writer', 'scope': {'kinds': [], 'actions': ['note'], 'write': True}})
+code, d = curl('POST', API + '/actions/' + HI + '/priority', {'priority': ''}, jar=None, token=dictish(k2).get('token'))
+check('a key whose scope lacks tasks does not see it', code == 404, (code, d))
+code, k3 = curl('POST', API + '/clients', {'name': 'gate nag tasker', 'by': 'gate-nag-tasker', 'scope': {'kinds': [], 'actions': ['task'], 'write': True}})
+code, d = curl('POST', API + '/actions/' + LO + '/priority', {'priority': 'high'}, jar=None, token=dictish(k3).get('token'))
+check('a writing key with tasks in scope marks one high', code == 200, (code, d))
+nag_wake()
+gate.wait('marked high late, it is nagged too', lambda: nag_raw('nag-last.json').get(LO), 60)
+curl('POST', API + '/actions/' + HI, {'status': 'done', 'note': 'nag gate'})
+curl('POST', API + '/actions/' + LO, {'status': 'dismissed', 'note': 'nag gate'})
+code, d = curl('POST', API + '/actions/' + HI + '/priority', {'priority': ''})
+check('a done action is not marked', code == 409, (code, d))
+nag_wake()
+gate.wait('done or dismissed, they leave the nag list', lambda: (HI not in nag_raw('nag-last.json') and LO not in nag_raw('nag-last.json')) or None, 60)
+code, fh = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate nag: filed high', 'due': nag_due, 'by': 'api-matrix', 'payload': {'priority': 'high'}})
+check('a task filed high keeps it, as the generator files one', dictish(nag_open(dictish(fh).get('id', '')).get('payload')).get('priority') == 'high', (code, fh))
+curl('POST', API + '/actions/' + dictish(fh).get('id', ''), {'status': 'dismissed', 'note': 'nag gate'})
+for kk in (k, k2, k3):
+    if dictish(kk).get('id'): curl('DELETE', API + '/clients/' + dictish(kk)['id'])
+nag_lay('rhythm.json', rhythm_was)
+check('the rhythm is put back', nag_raw('rhythm.json') == rhythm_was, nag_raw('rhythm.json'))
+
 # ---- a reload keeps the settings (version 97): the place lookups' key and the sharing trust survive a load ----
 # a grub no on-load row declares is dropped at every load: until 97 that
 # was search.json, search-last.json and sphere-trust.json, and ricsul's
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
 RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json']
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json']
+#  through the file API: a ?raw=1 read answers a redirect, which came
+#  back as nothing and skipped every check below until version 110
 def reload_raw(name):
-    return gate.curl('GET', HOST + '/grubbery/ball' + RELOAD_APP + '/' + name + '?raw=1', jar=JAR)[1]
+    return gate.curl('GET', HOST + '/grubbery/api/file' + RELOAD_APP + '/' + name, jar=JAR)[1]
 code, reload_before = curl('GET', API + '/search')
 curl('PUT', API + '/search', {'api_key': 'reload-gate-key', 'enabled': dictish(reload_before).get('enabled') is True})
 held_before = {n: reload_raw(n) for n in RELOAD_FILES}

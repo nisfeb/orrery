@@ -340,6 +340,8 @@ Since version 84 a body can say which parts of the owner's life it belongs to: a
 
 ### Away
 
+Since version 110 an action can be high priority: `"priority": "high"` in its payload, from the owner (`POST /actions/<id>/priority`, or "mark high" on the Inbox), a key, or the generator and the readers when missing the due costs what cannot be had back (a flight's check-in, a deadline, a form or a payment that closes). It is not urgent when filed. It becomes urgent by being late: once an open one's `due` has passed, the ship pushes "Late: <title>" with when it was due, how late it is and its note, every fifteen minutes, one push per action tagged `orrery-overdue-<id>`, until it is done, dismissed, unmarked or snoozed (`POST /actions/<id>/snooze`, or "snooze 1 h"). The quiet hours hold the nags. The nudges' three a day and being away do not, since a trip is when a missed one costs most. The Inbox shows the late ones first, in a Late card and in red.
+
 Since version 83 the ship knows when the owner is away from home, and while they are, home's trips are others' to make: time to leave says nothing for an appointment near home (one where the owner is, at the trip's end of things, still has its alert, and so does the trip's own start), the nudges wait, the brief's When to leave says "Away: … until …" in their place, and the weather is where the phone is. Nothing to set up. The owner is away:
 
 - for a situation said to be away (`away: yes`): the owner's word, or a model's from what it read ("I'm in Barcelona the 19th to the 24th", a trip plainly abroad), from its `starts` to its `ends`;
@@ -642,6 +644,8 @@ Under `/apps/orrery/api`, JSON in and out, times as ISO 8601 UTC. The owner cook
 | `POST /sphere-leave` | `{"host", "sphere"}`: stop following a sphere shared with you; the other ship drops you, and what you hold stays |
 | `POST /leave` | `{"host", "id"}`: the same for a body shared with you alone |
 | `POST /actions/<id>/assign` | `{"assignee": "person/x"}`, or `""` for no one: who does a proposed action |
+| `POST /actions/<id>/priority` | `{"priority": "high"}`, or `""` for none: an open action nagged about once it is late (version 110); the owner or a key that writes and whose scope holds the kind; 409 unless proposed or approved |
+| `POST /actions/<id>/snooze` | `{"minutes": 60}`, 0 to 10080, 0 ending a snooze: no nags until then (version 110); who may mark it may snooze it |
 | `GET` and `POST /pairing` | the matches by name a followed sphere waits on, and the owner's word on one: `{"key", "there", "same"}` (version 91) |
 | `POST /private` | `{"id", "private"}`: a row kept to yourself never enters a sphere's feed |
 | `GET /location` | `{"out", "in", "peers"}`: who the owner shares their position with and until when, the positions shared with them (each with `km_from_home`), and the people here with a ship (version 88) |

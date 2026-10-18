@@ -32,6 +32,7 @@
 ::    /trip.json  /trips.json           the trip the owner is on, and what their arrivals taught (version 73)
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
+::    /nag-last.json                    when each late high-priority action was last pushed (version 110)
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
 ::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
@@ -207,6 +208,7 @@
           [%fall %& [/ %'review-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'review.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'nag-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'rhythm.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'outdoors.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'weather.json'] [[/ %json] [%o ~]]]
@@ -570,6 +572,7 @@
           [~ %'nudge.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
         |-
+        ;<  ~  bind:m  nag-pass
         ;<  ~  bind:m  nudge-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
@@ -978,6 +981,7 @@
   ?:  =('act' op)  (do-act jon)
   ?:  =('set-action' op)  (do-set-action jon)
   ?:  =('revise-action' op)  (do-revise-action jon)
+  ?:  =('mark-action' op)  (do-mark-action jon)
   ?:  =('set-schema' op)  (do-set-doc %'schema.json' 'set-schema' jon)
   ?:  =('set-preferences' op)  (do-set-preferences jon)
   ?:  =('unalias' op)  (do-unalias jon)
@@ -1609,6 +1613,8 @@
     %post-sphere-leave      (serve-sphere-leave eyre-id jon)
     %post-leave             (serve-leave eyre-id jon)
     %post-actions-assign    (serve-assign eyre-id s2 jon act)
+    %post-actions-priority  (serve-mark eyre-id s2 jon act |)
+    %post-actions-snooze    (serve-mark eyre-id s2 jon act &)
     %post-pairing           (serve-pair eyre-id jon)
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
@@ -2135,6 +2141,37 @@
   =/  next=action:orr  (transition:orr a `@tas`want who why now)
   ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 next]])
   ;<  ~  bind:m  (note-by 'set-action' & '' who)
+  (pure:m &)
+::  +do-mark-action: an open action's priority or snooze, kept in its
+::  payload (version 110): {"id", "priority": "high"} marks it and
+::  {"priority": ""} unmarks it; {"id", "snooze_until": "<iso>"} holds
+::  its nags until then and {"snooze_until": ""} ends that. No history
+::  step, since neither changes what the action is
+::
+++  do-mark-action
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  =/  who=@t  =/(b (gs:orr jon 'by') ?:(=('' b) 'user' b))
+  =/  road=road:tarball  (rf 0 /actions `@ta`id)
+  ;<  got=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 0 `@ta`id)
+  ?:  ?=(%| -.got)
+    (refuse 'mark-action' ?:(?=(%absent p.got) (cat 3 'no action ' id) 'unreadable action'))
+  =/  a=action:orr  p.got
+  ?.  ?=(?(%proposed %approved) status.a)  (refuse 'mark-action' 'only an open action is marked')
+  =/  pri=@t  (gs:orr jon 'priority')
+  ?.  |(=('' pri) =('high' pri))  (refuse 'mark-action' 'priority: high, or empty')
+  =/  sn=@t  (gs:orr jon 'snooze_until')
+  =/  until=(unit @da)  (de-iso:orr sn)
+  ?:  &(!=('' sn) ?=(~ until))  (refuse 'mark-action' 'snooze_until: an ISO 8601 UTC time, or empty')
+  =/  pay=json  ?:(?=([%o *] payload.a) payload.a [%o ~])
+  =?  pay  (has-key:orr jon 'priority')
+    ?:(=('' pri) (del-key:orr pay 'priority') (set-key:orr pay 'priority' s+'high'))
+  =?  pay  (has-key:orr jon 'snooze_until')
+    ?~(until (del-key:orr pay 'snooze_until') (set-key:orr pay 'snooze_until' s+(en-iso:orr u.until)))
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 a(payload pay)]])
+  ;<  ~  bind:m  (note-by 'mark-action' & '' who)
   (pure:m &)
 ::  +do-revise-action: the owner's rewrite of a proposed action's title,
 ::  payload, about and due, applied in place with a history step. A
@@ -3623,6 +3660,30 @@
   =/  op=json  (revise-action-op:orr id title.a next ~(tap in about.a) due.a 'owner')
   %^  write-then  eyre-id  op
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id] ['assignee' s+who]]))
+::  +serve-mark: an open action marked high or not, {"priority": "high"}
+::  or {"priority": ""}, or its nags held for a while, {"minutes": 60},
+::  where 0 ends a snooze (version 110); the owner, or a key that writes
+::  and whose scope holds the kind
+::
+++  serve-mark
+  |=  [eyre-id=@ta id=@ta jon=json act=actor snooze=?]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
+  ?.  ?=(?(%proposed %approved) status.p.got)  (send-err eyre-id 409 'only an open action is marked')
+  =/  pri=@t  (gs:orr jon 'priority')
+  ?:  &(!snooze !=('' pri) !=('high' pri))  (send-err eyre-id 400 'priority: "high", or "" for none')
+  =/  mins=@ud  (fall (gn:orr jon 'minutes') 10.081)
+  ?:  &(snooze (gth mins 10.080))  (send-err eyre-id 400 'minutes: 0 to 10080')
+  ;<  now=@da  bind:m  get-time:io
+  =/  field=[@t json]
+    ?.  snooze  ['priority' s+pri]
+    ['snooze_until' s+?:(=(0 mins) '' (en-iso:orr (add now (mul ~m1 mins))))]
+  =/  op=json
+    (pairs:enjs:format ~[['op' s+'mark-action'] ['id' s+id] field ['by' s+?:(owner.act 'owner' by.act)]])
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id] field]))
 ::  +take-feed-moved: a ship we follow wrote to its feed: read it now.
 ::  Only a ship we follow wakes the follower, and nothing is taken from
 ::  what it sent
@@ -8781,6 +8842,36 @@
       ['map' s+overlay]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
+::  +nag-pass: each late high-priority action pushed again every fifteen
+::  minutes until it is done, dismissed, snoozed or moved (version 110),
+::  under its own tag so the phone shows one per action. Only the quiet
+::  hours hold it, on the owner's local clock: not the nudges' three a
+::  day and not being away, since a trip is when a missed one costs most
+::  ponytail: every action read each five minutes; an index of the high
+::  ones if that shows
+::
+++  nag-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  local-tz
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  ?:  (quiet-hour:orr now tz (de-rhythm:orr rhythm-j))  (pure:m ~)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  late=(list [id=@ta a=action:orr late=@dr])  (late-high:orr acts now)
+  ;<  last=json  bind:m  (read-json (rf 0 / %'nag-last.json'))
+  ::  only the late ones are kept, so a snoozed or finished one starts
+  ::  afresh if it is late again
+  =/  kept=json
+    %-  pairs:enjs:format
+    (murn late |=([id=@ta *] =/(at=json (gj:orr last id) ?~(at ~ `[`@t`id at]))))
+  =/  due=(list [id=@ta a=action:orr late=@dr])  (nag-now:orr late last now)
+  ?:  &(?=(~ due) =(kept last))  (pure:m ~)
+  |-
+  ?~  due  (over:io (rf 0 / %'nag-last.json') [[/ %json] kept])
+  =/  say  (nag-text:orr a.i.due late.i.due tz)
+  ;<  ~  bind:m  (notify-owner (cat 3 'orrery-overdue-' id.i.due) title.say body.say)
+  $(due t.due, kept (set-key:orr kept id.i.due s+(en-iso:orr now)))
 ::  +nudge-pass: one nudge, when one is due (version 75). Never in the
 ::  owner's quiet hours, never past three a day on their clock, never in
 ::  the half hour before a leave alert. In order: a habit whose slot in
