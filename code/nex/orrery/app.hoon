@@ -33,6 +33,8 @@
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
 ::    /nag-last.json                    when each late high-priority action was last pushed (version 110)
+::    /chat-lists-seen.json             how many DMs and channels the chat reader last held, so emptied lists are flagged (version 111)
+::    /model-down.json                  since when the model has not answered, so the owner is told once (version 111)
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
 ::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
@@ -146,6 +148,8 @@
           ::  ids it has read, its window, and the fiber that polls
           [%fall %& [/ %'chat.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'chat-lists-seen.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'model-down.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat.sig'] [[/ %sig] ~]]
@@ -2547,6 +2551,11 @@
   ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
   =/  said=@t  ?:(owner.act (gs:orr jon 'by') by.act)
   =/  who=@t  ?:(=('' said) 'user' said)
+  ::  a move to the status it already has is done (version 111): a second
+  ::  tap while the first was in flight is no error. Not a claim, which
+  ::  says whose the action is
+  ?:  &(=(want `@t`status.p.got) !=(%claimed status.p.got))
+    (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['status' s+want] ['by' s+who] ['ok' b+&] ['unchanged' b+&]]))
   ;<  now=@da  bind:m  get-time:io
   =/  no=(unit @t)  (move-refusal:orr p.got `@tas`want who now)
   ?^  no  (send-err eyre-id 409 u.no)
@@ -5431,7 +5440,8 @@
   ?.  =(200 s)
     =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
     ;<  ~  bind:m  (gen-record ?:(passing ~ `dg) 0 0 ~ ~ `why secs.got | rev)
-    (pure:m ~)
+    ?.  (down-status:orr s)  (pure:m ~)
+    (model-health `why)
   =/  resp=json  (fall (de:json:html body.got) [%o ~])
   =/  ans  (answer-of:orr resp)
   ?:  ?=(%| -.ans)
@@ -5465,7 +5475,7 @@
       ?~  urgent  notes.v
       [(cat 3 'urgent pass' ?~(u.urgent '' (cat 3 ': ' (join-cords:orr ', ' u.urgent)))) notes.v]
     ;<  ~  bind:m  (gen-record `(digest:orr after) filed (sub offered (min offered filed)) said usage.p.ans ~ secs.got | rev)
-    (pure:m ~)
+    (model-health ~)
   =/  stamped=json  (fill-act-as:orr i.todo now 'generator')
   ;<  err=(unit tang)  bind:m
     (poke-soft:io (rf 0 / %'main.sig') [[/ %json] (pairs:enjs:format ~[['op' s+'act'] ['action' stamped]])])
@@ -5812,8 +5822,18 @@
   =/  doc=json  (gj:orr jon 'doc')
   ?.  ?=([%o *] doc)  (refuse 'set-chat' 'doc: expected an object')
   ;<  base=(map @t json)  bind:m  (read-map (rf 0 / %'chat.json'))
+  =/  merged=(map @t json)  (settings-merge:orr 'set-chat' base p.doc)
   ;<  ~  bind:m
-    (over:io (rf 0 / %'chat.json') [[/ %json] [%o (settings-merge:orr 'set-chat' base p.doc)]])
+    (over:io (rf 0 / %'chat.json') [[/ %json] [%o merged]])
+  ::  the owner emptying both lists means it: nothing to flag (version 111)
+  =/  emptied=?
+    ?&  |((~(has by p.doc) 'dms') (~(has by p.doc) 'channels'))
+        =(~ dms:(de-chat-config:orr [%o merged]))
+        =(~ channels:(de-chat-config:orr [%o merged]))
+    ==
+  ;<  ~  bind:m
+    ?.  emptied  (pure:(fiber:fiber:nexus ,~) ~)
+    (over:io (rf 0 / %'chat-lists-seen.json') [[/ %json] [%o ~]])
   ;<  ~  bind:m  (note 'set-chat' & '')
   (pure:m |)
 ::  +do-set-mail, +do-set-doc: a settings document merged over the
@@ -5870,6 +5890,7 @@
         ['at' s+(en-iso:orr at)]
         ['by' s+by.act]
         ['scope' ?~(scope.act ~ (en-scope:orr u.scope.act))]
+        ['facts_only' b+=([%b %.y] (gj:orr jon 'facts_only'))]
     ==
   ;<  *  bind:m  (make-soft:io (rf 1 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
   ;<  ~  bind:m  (over:io (rf 1 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
@@ -6145,6 +6166,7 @@
   ;<  exec-last=json  bind:m  (doc %'exec-last.json')
   ;<  chat=json  bind:m  (doc %'chat.json')
   ;<  chat-last=json  bind:m  (doc %'chat-last.json')
+  ;<  chat-seen=json  bind:m  (doc %'chat-lists-seen.json')
   ;<  calendar-last=json  bind:m  (doc %'calendar-events-last.json')
   ;<  mail=json  bind:m  (doc %'mail.json')
   ;<  mail-last=json  bind:m  (doc %'mail-last.json')
@@ -6197,7 +6219,7 @@
       ['telegram_last' telegram-last]
       ['exec_last' exec-last]
       ['chat' (en-chat-config:orr (de-chat-config:orr chat))]
-      ['chat_last' chat-last]
+      ['chat_last' (set-key:orr chat-last 'lists_seen' chat-seen)]
       ['chat_lists' lists]
       ['calendar_last' calendar-last]
       ['mail' (en-mail-config:orr (de-mail-config:orr mail))]
@@ -6425,6 +6447,15 @@
   =/  cfg=chat-config:orr  (de-chat-config:orr cfg-j)
   ?.  enabled.cfg  (pure:m poll.cfg)
   ;<  now=@da  bind:m  get-time:io
+  ::  how many DMs and channels the lists hold, kept while they hold any,
+  ::  so lists found empty later are flagged on the card (version 111)
+  ;<  seen=json  bind:m  (read-json (rf 0 / %'chat-lists-seen.json'))
+  =/  held=[dms=@ud channels=@ud]  [~(wyt in dms.cfg) ~(wyt in channels.cfg)]
+  ;<  ~  bind:m
+    ?:  =(0 (add dms.held channels.held))  (pure:(fiber:fiber:nexus ,~) ~)
+    ?:  &(=(`dms.held (gn:orr seen 'dms')) =(`channels.held (gn:orr seen 'channels')))  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  over:io  (rf 0 / %'chat-lists-seen.json')
+    [[/ %json] (pairs:enjs:format ~[['dms' (numb:enjs:format dms.held)] ['channels' (numb:enjs:format channels.held)] ['at' s+(en-iso:orr now)]])]
   ;<  last=json  bind:m  (read-json (rf 0 / %'chat-last.json'))
   ::  the first pass looks back backfill hours and reads nothing sent
   ::  before that; a later pass takes whatever the scry says changed,
@@ -6566,6 +6597,12 @@
   |=  [file=@ta last=json now=@da since=@da t=chat-tally notes=(list @t) down=(unit (list @t))]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ::  down, or read by a model that answered (version 111)
+  ;<  ~  bind:m
+    ::  the model's own error is the last note, after the gate's
+    ?^  down  (model-health `?~(u.down 'the model is down' (rear u.down)))
+    ?:  =(0 read.t)  (pure:(fiber:fiber:nexus ,~) ~)
+    (model-health ~)
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  (day-count:orr last 'read_today' now)
   =/  said=(list @t)  (scag 20 (weld notes notes.t))
@@ -6852,6 +6889,10 @@
     (pure:m &)
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   =?  facts  ?=(^ sc.it)  (scope-facts:orr facts u.sc.it (key-hide:orr u.sc.it policy))
+  ::  facts_only (version 111): a backfill files what the text says and
+  ::  proposes nothing
+  =?  facts  &(=([%b %.y] (gj:orr item 'facts_only')) ?=(^ acts.facts))
+    facts(acts ~, notes (snoc notes.facts (rap 3 'facts only: ' (crip (a-co:co (lent acts.facts))) ' action(s) left out' ~)))
   ;<  ~  bind:m  (tg-file facts now kind)
   ::  a lattice page's read says which situation its follow is of
   ;<  ~  bind:m
@@ -8842,6 +8883,29 @@
       ['map' s+overlay]
       ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
   ==
+::  +model-health: one push when the model stops answering and one when
+::  it answers again (version 111), the outage kept in model-down.json.
+::  While it is down, texts handed in wait and are read once it is back,
+::  and the generator tries again at its next pass. Under one tag, so
+::  the second push takes the first one's place
+::
+++  model-health
+  |=  why=(unit @t)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'model-down.json'))
+  =/  since=(unit @da)  (de-iso:orr (gs:orr cur 'since'))
+  ?~  why
+    ?~  since  (pure:m ~)
+    ;<  ~  bind:m  (over:io (rf 0 / %'model-down.json') [[/ %json] [%o ~]])
+    ;<  tz=@t  bind:m  local-tz
+    (notify-owner 'orrery-model' 'Orrery\'s model answers again' (rap 3 'It stopped at ' (hhmm:orr u.since tz) '. What waited is being read now.' ~))
+  ?^  since  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ~  bind:m
+    %+  over:io  (rf 0 / %'model-down.json')
+    [[/ %json] (pairs:enjs:format ~[['since' s+(en-iso:orr now)] ['why' s+(end [3 300] u.why)]])]
+  (notify-owner 'orrery-model' 'Orrery\'s model is not answering' (rap 3 (end [3 160] u.why) '. Texts wait, and are read once it answers again.' ~))
 ::  +nag-pass: each late high-priority action pushed again every fifteen
 ::  minutes until it is done, dismissed, snoozed or moved (version 110),
 ::  under its own tag so the phone shows one per action. Only the quiet
@@ -9386,7 +9450,7 @@
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
   =/  moves=(list move:orr)  (moves-of:orr u.parsed tags known)
   ;<  moved=(list @t)  bind:m  (apply-moves moves acts now /mail 'brief')
-  =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx)
+  =/  facts=tg-facts:orr  (drop-stale:orr (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx) rows now)
   ;<  ~  bind:m  (tg-file facts now mail-kind:orr)
   %=  $
     sorted  t.sorted
@@ -9787,7 +9851,7 @@
     =/  mv=(list move:orr)  (reader-moves:orr p.answer tags known)
     ?.  =('browsing' channel.kind)  (apply-moves mv own-acts now /tg by.kind)
     (propose-closes mv own-acts now by.kind)
-  =/  facts=tg-facts:orr  (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx)
+  =/  facts=tg-facts:orr  (drop-stale:orr (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx) rows now)
   =.  notes.facts  (weld [gate-note moved] notes.facts)
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
   ;<  esc=(unit json)  bind:m
@@ -9927,6 +9991,7 @@
   |=  [now=@da uid=@ud notes=(list @t)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  ~  bind:m  (model-health `?~(notes 'the model is down' (rear notes)))
   ::  read again here: the model call took minutes, and a token saved
   ::  meanwhile reset update_id in this file
   ;<  last=json  bind:m  (read-json (rf 0 / %'telegram-last.json'))
@@ -9941,6 +10006,7 @@
   |=  [last=json now=@da uid=@ud chat=@t from=@t outcome=@t notes=(list @t) read=@ud]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  ~  bind:m  ?:(=(0 read) (pure:(fiber:fiber:nexus ,~) ~) (model-health ~))
   =/  day=@t  (end [3 10] (en-iso:orr now))
   =/  today=@ud  (day-count:orr last 'read_today' now)
   %+  over:io  (rf 0 / %'telegram-last.json')

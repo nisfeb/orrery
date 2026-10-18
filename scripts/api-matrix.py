@@ -2613,6 +2613,82 @@ curl('PUT', API + '/telegram', {'people': {'1001': 'person/me'}})
 srv.shutdown()
 srv.server_close()
 
+# ---- report fixes (version 111): a backfill files facts, a stale proposal is dropped, a model outage is kept, a repeated move is no error ----
+FIXRUN = time.strftime('%H%M%S')
+FIX_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+def fix_file(name):
+    code, d = gate.curl('GET', HOST + '/grubbery/api/file' + FIX_APP + '/' + name, jar=JAR)
+    return d if code == 200 and isinstance(d, dict) else {}
+def fix_lay(name, doc):
+    gate.curl('POST', HOST + '/grubbery/ball' + FIX_APP + '/' + name, jar=JAR, raw=urllib.parse.urlencode({'action': 'write-text', 'content': json.dumps(doc)}),
+              headers=['content-type: application/x-www-form-urlencoded'])
+srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
+curl('PUT', API + '/read/settings', {'enabled': True, 'gate': 0, 'model': 'stub/read'})
+TG_KEPT = TG_CANNED
+FIX_TITLE = 'Gate fix pay the bill ' + FIXRUN
+TG_CANNED = {'choices': [{'message': {'content': json.dumps({'bodies': [], 'observations': [], 'actions': [
+    {'kind': 'task', 'title': FIX_TITLE, 'about': [], 'due': iso(datetime.now(timezone.utc) - timedelta(days=2))}]})}}],
+    'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'cost': 0.0001}}
+def fix_read(body):
+    code, d = curl('POST', API + '/read', body)
+    rid = dictish(d).get('id', '')
+    return gate.wait('the text is read', lambda: (lambda l: l if rid and any(rid in n for n in listish(l.get('notes'))) else None)(dictish(curl('GET', API + '/read/last')[1])), 60) or {}
+def fix_open(title):
+    return [a for a in listish(curl('GET', API + '/actions?status=open')[1]) if dictish(a).get('title') == title]
+last = fix_read({'text': 'the gate bill is due ' + FIXRUN, 'facts_only': True})
+check('facts_only files no action, and says so', not fix_open(FIX_TITLE) and any('facts only: 1 action(s) left out' in n for n in listish(last.get('notes'))), last)
+last = fix_read({'text': 'the gate bill was due ' + FIXRUN, 'at': iso(datetime.now(timezone.utc) - timedelta(days=30))})
+check('a task already due, read from a month-old text, is dropped', not fix_open(FIX_TITLE)
+      and any('dropped action ' + FIX_TITLE + ': due before now, from a message over a day old' in n for n in listish(last.get('notes'))), last)
+last = fix_read({'text': 'reminder: the gate bill is overdue ' + FIXRUN})
+check('the same task from a fresh text stands, since it is overdue', len(fix_open(FIX_TITLE)) == 1, (fix_open(FIX_TITLE), last))
+#  the model down: the outage is kept once and the text waits; back, it is cleared
+DOWN = True
+curl('POST', API + '/read', {'text': 'gate down text ' + FIXRUN})
+gate.wait('the model down, the outage is kept with why', lambda: fix_file('model-down.json').get('since') and 'model' in fix_file('model-down.json').get('why', ''), 60)
+check('the text waits for the model', bool(dictish(dictish(curl('GET', API + '/read/last')[1]).get('down'))), curl('GET', API + '/read/last')[1])
+DOWN = False
+curl('POST', API + '/read/wake')
+gate.wait('the model back, the outage is cleared', lambda: (not fix_file('model-down.json').get('since')) or None, 90)
+TG_CANNED = TG_KEPT
+curl('PUT', API + '/read/settings', {'enabled': False})
+curl('PUT', API + '/generator', {'api_key': None})
+srv.shutdown()
+srv.server_close()
+for a in fix_open(FIX_TITLE):
+    curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
+#  a move to the status an action already has is done
+code, tw = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate fix twice ' + FIXRUN, 'by': 'api-matrix'})
+TW = dictish(tw).get('id', '')
+curl('POST', API + '/actions/' + TW, {'status': 'done', 'note': 'gate'})
+code, d = curl('POST', API + '/actions/' + TW, {'status': 'done', 'note': 'gate'})
+check('done twice is no error the second time', code == 200 and dictish(d).get('unchanged') is True, (code, d))
+code, d = curl('POST', API + '/actions/' + TW, {'status': 'approved'})
+check('a move the model does not allow is still refused', code == 409, (code, d))
+#  a note with no text says its title
+NOTE_TITLE = 'Gate fix note ' + FIXRUN
+code, nt = curl('POST', API + '/act', {'kind': 'note', 'title': NOTE_TITLE, 'by': 'api-matrix'})
+mine = fix_open(NOTE_TITLE)
+check('a note with no text says its title', bool(mine) and dictish(mine[0].get('payload')).get('text') == NOTE_TITLE, (code, nt, mine))
+for a in mine:
+    curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'gate'})
+#  the chat lists: held, kept count of; emptied by something else, flagged; by the owner, not
+chat_was, seen_was = fix_file('chat.json'), fix_file('chat-lists-seen.json')
+curl('PUT', API + '/chat', {'enabled': True, 'dms': ['~zod'], 'channels': []})
+curl('POST', API + '/chat/wake')
+gate.wait('the chat reader keeps how many DMs it holds', lambda: fix_file('chat-lists-seen.json').get('dms') == 1 or None, 60)
+fix_lay('chat.json', {'enabled': True})
+curl('POST', API + '/chat/wake')
+time.sleep(5)
+seen = dictish(dictish(dictish(curl('GET', API + '/settings')[1]).get('chat_last')).get('lists_seen'))
+check('lists emptied by something else stay flagged, and the settings carry the flag', seen.get('dms') == 1 and seen.get('channels') == 0, seen)
+curl('PUT', API + '/chat', {'dms': [], 'channels': []})
+check('lists the owner empties are not flagged', fix_file('chat-lists-seen.json') == {}, fix_file('chat-lists-seen.json'))
+fix_lay('chat.json', chat_was)
+fix_lay('chat-lists-seen.json', seen_was)
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect
@@ -2696,7 +2772,7 @@ check('the rhythm is put back', nag_raw('rhythm.json') == rhythm_was, nag_raw('r
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
 RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json']
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json']
 #  through the file API: a ?raw=1 read answers a redirect, which came
 #  back as nothing and skipped every check below until version 110
 def reload_raw(name):

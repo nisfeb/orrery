@@ -116,6 +116,12 @@ ok('high is a badge, and the toggle unmarks it or marks a plain one', lateHtml.i
 ok('no due, no high toggle', !lateHtml.includes('data-priority="u1"'));
 ok('priority and snooze are not shown again among the payload fields', !/<span class="muted">(priority|snooze_until)<\/span>/.test(lateHtml));
 ok('nothing late, no Late card', !render.inbox([plainLate, snoozed], null, NOW).includes('<h2>Late</h2>'));
+// chat lists the reader held that are now empty are flagged (version 111)
+const chatAt = (chat, seen) => render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, chat, { lists_seen: seen }, [], []);
+ok('emptied chat lists are flagged with what they held', chatAt({ dms: [], channels: [] }, { dms: 2, channels: 1, at: '2026-10-10T00:00:00Z' })
+  .includes('Your DM and channel lists are empty, but on 2026-10-'), chatAt({ dms: [], channels: [] }, { dms: 2, channels: 1, at: '2026-10-10T00:00:00Z' }).slice(0, 300));
+ok('lists that hold something, or were never kept, are not flagged', !chatAt({ dms: ['~zod'], channels: [] }, { dms: 2, channels: 1 }).includes('lists are empty')
+  && !chatAt({ dms: [], channels: [] }, {}).includes('lists are empty'));
 // why it was proposed, in the proposer's words, ids named; not again among the payload's fields
 const whyHtml = render.inbox([{ id: 'w1', kind: 'resolve', title: 'The massage is over', status: 'proposed', proposed: '2026-10-16T22:10:00Z', by: 'generator', about: ['thing/subaru'],
   payload: { situation: 'thing/subaru', outcome: 'done', why: 'thing/subaru ended at 21:00 on the calendar' }, history: [] }], state);

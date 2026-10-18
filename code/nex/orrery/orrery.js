@@ -682,12 +682,22 @@
     return hits.slice(0, 30).map(function (x) { return '<li><button class="small" data-pick="' + kind + '" data-id="' + esc(x.id) + '">add</button> ' + labelOf(x) + '</li>'; }).join('') +
       (hits.length > 30 ? '<li class="muted">' + (hits.length - 30) + ' more; type to narrow</li>' : '');
   }
+  // lists the reader held that are now empty (version 111): an update
+  // once emptied an owner's; emptying them here clears the flag
+  function listsGone(c, seen) {
+    seen = seen || {};
+    var had = (seen.dms || 0) + (seen.channels || 0);
+    if (!had || (c.dms && c.dms.length) || (c.channels && c.channels.length)) return '';
+    return '<p class="bad">Your DM and channel lists are empty, but on ' + fmtTime(seen.at) + ' they held ' + (seen.dms || 0) + ' DM' + (seen.dms === 1 ? '' : 's') + ' and ' + (seen.channels || 0) + ' channel' + (seen.channels === 1 ? '' : 's') +
+      '. Until you pick them again the reader reads every DM and no channel. If you emptied them on purpose, save them empty here and this goes.</p>';
+  }
   function chatCard(c, last, dms, channels) {
     c = c || {}; last = last || {}; dms = dms || {}; channels = channels || {};
     chatLists = { dms: dms.items || [], channels: channels.items || [] };
     var people = c.people ? JSON.stringify(c.people, null, 2) : '{}';
     var out = '<div class="card"><h2>Chat</h2><div id="chat">' +
       '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the Tlon DMs and channels below every few minutes</label></p>' +
+      listsGone(c, last.lists_seen) +
       '<h3>DMs and group DMs <span class="muted">(none picked: every DM)</span></h3>' + pickedList('dms', c.dms || []) + (dms.note ? '<p class="muted">' + esc(dms.note) + '</p>' : picker('dms', 'DM')) +
       '<h3>Channels</h3>' + pickedList('channels', c.channels || []) + (channels.note ? '<p class="muted">' + esc(channels.note) + '</p>' : picker('channels', 'channel')) +
       '<p><label class="field wide">people (ship to body id, JSON; a person body with a ship needs no row) <textarea name="people" rows="3">' + esc(people) + '</textarea></label></p>' +

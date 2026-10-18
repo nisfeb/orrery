@@ -1207,6 +1207,64 @@
     (expect-eq !>(['Late: Check in for DL 2627' 'Due 19:05, 40 min late.']) !>((nag-text:orr a(payload (jo '{"priority":"high"}')) ~m40 'America/New_York')))
     (expect-eq !>(['Late: Check in for DL 2627' 'Due Sat 19:05, 26 h late. Seats 31C.']) !>((nag-text:orr a ~h26 'America/New_York')))
   ==
+::  a read's proposals whose time has passed are dropped: an event that
+::  has ended, or begun with no end; a task due before now from a message
+::  over a day old. A fresh message's overdue task stands (version 111)
+++  test-drop-stale
+  =/  now=@da  ~2026.10.18..12.00.00
+  =/  rows=(list window-row:orr)
+    :~  ['old' '2026-09-18T12:00:00Z' 'person/me' 'the bill' |]
+        ['new' '2026-10-18T11:00:00Z' 'person/me' 'the bill' |]
+    ==
+  =/  task
+    |=  [t=@t msg=@t due=@t]
+    (pairs:enjs:format ~[['kind' s+'task'] ['title' s+t] ['message' s+msg] ['due' s+due]])
+  =/  cal
+    |=  [t=@t starts=@t ends=@t]
+    =/  p  (pairs:enjs:format (weld `(list [@t json])`~[['starts' s+starts]] `(list [@t json])`?:(=('' ends) ~ ~[['ends' s+ends]])))
+    (pairs:enjs:format ~[['kind' s+'calendar'] ['title' s+t] ['message' s+'new'] ['payload' p]])
+  =/  acts=(list json)
+    :~  (task 'old late' 'old' '2026-10-01T00:00:00Z')
+        (task 'old ahead' 'old' '2026-11-01T00:00:00Z')
+        (task 'fresh late' 'new' '2026-10-17T00:00:00Z')
+        (cal 'ended' '2026-10-17T10:00:00Z' '2026-10-17T11:00:00Z')
+        (cal 'begun no end' '2026-10-18T09:00:00Z' '')
+        (cal 'ahead' '2026-10-19T10:00:00Z' '')
+        (pairs:enjs:format ~[['kind' s+'task'] ['title' s+'no due'] ['message' s+'old']])
+    ==
+  =/  out=tg-facts:orr  (drop-stale:orr [~ ~ acts ~['kept'] ~] rows now)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['old ahead' 'fresh late' 'ahead' 'no due']) !>((turn acts.out |=(a=json (gs:orr a 'title')))))
+    %+  expect-eq
+      !>  ^-  (list @t)
+      :~  'kept'
+          'dropped action old late: due before now, from a message over a day old'
+          'dropped action ended: its time has passed'
+          'dropped action begun no end: its time has passed'
+      ==
+    !>(notes.out)
+  ==
+::  a note filed with no text says its title; one with text keeps it; a
+::  task is left alone (version 111)
+++  test-note-text
+  =/  got  (de-action:orr (jo '{"kind":"note","title":"Check the oil"}') t0 'mcp')
+  =/  with  (de-action:orr (jo '{"kind":"note","title":"T","payload":{"text":"own"}}') t0 'mcp')
+  =/  task  (de-action:orr (jo '{"kind":"task","title":"T"}') t0 'mcp')
+  ?.  ?=(%& -.got)  (expect-eq !>('decoded') !>(p.got))
+  ?.  ?=(%& -.with)  (expect-eq !>('decoded') !>(p.with))
+  ?.  ?=(%& -.task)  (expect-eq !>('decoded') !>(p.task))
+  ;:  weld
+    (expect-eq !>('Check the oil') !>((gs:orr payload.p.got 'text')))
+    (expect-eq !>('own') !>((gs:orr payload.p.with 'text')))
+    (expect-eq !>(`json`~) !>(payload.p.task))
+  ==
+::  an empty prompt part is left out of the request: Anthropic refuses an
+::  empty text block (version 111)
+++  test-chat-body-skips-empty
+  =/  c=config:orr  (de-config:orr (jo '{"model":"m"}'))
+  =/  body=json  (chat-body-with:orr c 'sys' ~['one' '' 'three'])
+  =/  user=json  (rear (ga:orr body 'messages'))
+  (expect-eq !>(~['one' 'three']) !>((turn (ga:orr user 'content') |=(b=json (gs:orr b 'text')))))
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))

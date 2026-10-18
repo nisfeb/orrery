@@ -528,6 +528,10 @@
   =/  payload=json  (gj jon 'payload')
   ?.  |(?=(~ payload) ?=([%o *] payload))  [%| 'payload: an object, or absent']
   ?:  (gth (met 3 (en:json:html payload)) max-payload)  [%| 'payload: over 4000 bytes']
+  ::  a note with no text says its title (version 111): the push carries
+  ::  a note's text, and one without said nothing
+  =?  payload  &(=('note' kind) =('' (trim-cord (gs payload 'text'))))
+    (set-key ?:(?=([%o *] payload) payload [%o ~]) 'text' s+title)
   =/  raw=(list json)  (ga jon 'about')
   ?:  (gth (lent raw) max-about)  [%| 'about: over 20']
   =/  about=(list @t)  (strings raw)
@@ -3238,6 +3242,9 @@
 ++  chat-body-with
   |=  [c=config system-text=@t parts=(list @t)]
   ^-  json
+  ::  an empty part is left out (version 111): Anthropic refuses an empty
+  ::  text block, and one with a cache mark (no open situations made one)
+  =.  parts  (skip parts |=(t=@t =('' t)))
   =/  blocks=(list json)
     =/  n=@ud  0
     |-
@@ -5652,6 +5659,42 @@
     out      [row out]
     planned  ?:(=('calendar' kind) (~(put in planned) msg) planned)
   ==
+::  +drop-stale: the actions a read proposes whose time has passed
+::  (version 111): an event that has ended, or begun with no end; and a
+::  task due before now from a message over a day old, as a backfill of
+::  old mail brings (the bill long paid, the appointment long gone). A
+::  fresh message's task that is already due stands: it says something
+::  is overdue
+::
+++  drop-stale
+  |=  [f=tg-facts rows=(list window-row) now=@da]
+  ^-  tg-facts
+  =/  at-of=(map @t @t)  (~(gas by *(map @t @t)) (turn rows |=(r=window-row [id.r at.r])))
+  =|  keep=(list json)
+  =|  said=(list @t)
+  =/  acts=(list json)  acts.f
+  |-
+  ?~  acts  f(acts (flop keep), notes (weld notes.f (flop said)))
+  =/  why=(unit @t)  (stale-why i.acts (de-iso-any (fall (~(get by at-of) (gs i.acts 'message')) '')) now)
+  ?~  why  $(acts t.acts, keep [i.acts keep])
+  $(acts t.acts, said [(rap 3 'dropped action ' (gs i.acts 'title') ': ' u.why ~) said])
+::  +stale-why: why one action's time has passed, or ~
+::
+++  stale-why
+  |=  [a=json sent=(unit @da) now=@da]
+  ^-  (unit @t)
+  ?:  =('calendar' (gs a 'kind'))
+    =/  p=json  (gj a 'payload')
+    =/  end=(unit @da)  (de-iso-any (ref-or-text (gj p 'ends')))
+    =/  over=(unit @da)  ?^(end end (de-iso-any (ref-or-text (gj p 'starts'))))
+    ?:  &(?=(^ over) (lth u.over now))  `'its time has passed'
+    ~
+  =/  due=(unit @da)  (de-iso-any (gs a 'due'))
+  ?~  due  ~
+  ?.  (lth u.due now)  ~
+  ?~  sent  ~
+  ?.  (lth u.sent (sub now ~d1))  ~
+  `'due before now, from a message over a day old'
 ::  +validate-reader: analyze.validate: the model's answer as the facts
 ::  orrery will take, with notes on what was dropped. Escalation is the
 ::  analyst's call, not the validator's, so it is left empty here
@@ -12033,6 +12076,19 @@
   :-  read
   ?~  g  'gate unavailable, analyst asked'
   (rap 3 'gate: ' (crip (a-co:co p)) ?:(read ', read' ', not read') ~)
+::  +down-status: a model's answer that says it is down, not that the ask
+::  was wrong: unreachable or timed out, 401 to 404 (a spent key, a cap),
+::  408, 429 and 5xx
+::
+++  down-status
+  |=  s=@ud
+  ^-  ?
+  ?|  =(0 s)
+      &((gte s 401) (lte s 404))
+      =(408 s)
+      =(429 s)
+      &((gte s 500) (lte s 599))
+  ==
 ::  +reader-answer: the analyst's answer as JSON, or why not and whether
 ::  the model counts as down, so the run waits and is asked again:
 ::  unreachable or timed out, 401 to 404, 408, 429 and 5xx, and a 200
@@ -12042,14 +12098,7 @@
   |=  [status=@ud body=@t]
   ^-  (each json [down=? why=@t])
   ?.  =(200 status)
-    :+  %|
-      ?|  =(0 status)
-          &((gte status 401) (lte status 404))
-          =(408 status)
-          =(429 status)
-          &((gte status 500) (lte status 599))
-      ==
-    (rap 3 'model: ' (crip (a-co:co status)) ' ' (end [3 200] body) ~)
+    [%| (down-status status) (rap 3 'model: ' (crip (a-co:co status)) ' ' (end [3 200] body) ~)]
   =/  resp=json  (fall (de:json:html body) [%o ~])
   =/  ans  (answer-of resp)
   ?:  ?=(%| -.ans)  [%| ?=(^ (gj resp 'error')) p.ans]
