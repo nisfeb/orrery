@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 109's owner steps
+
+Nothing to do: no new roads, so no consent prompt. A flight watch now looks more often as its departure nears: a twelfth of the time left, so an hour at twelve hours out and every five minutes in the last hour, never less often than its `cadence_min`. Once the flight has left it keeps its cadence, and once it has landed, or is a day past its arrival, the watch is done (`"done": true` in `GET /api/watches`) and asks the flight API no more. Count on about 55 asks a flight in the day and a half before it leaves, and set `cadence_min` higher if your plan is small.
+
 ### Version 108's owner steps
 
 Nothing to do: no new roads, so no consent prompt. A flight watch now takes an AeroDataBox key from API.market as well as from RapidAPI: set `flight_api` to `{"url": "https://prod.api.market/api/v1/aedbx/aerodatabox", "key": ...}` with `PUT /api/watches`. A RapidAPI key set with no host gets RapidAPI's. A watch now follows the flight leaving on its `date` by the local clock, and from the airport its `from` names (`"from": "JAX"`), since a flight number flies several legs a day. Give each flight watch its `from`, or it follows the number's first leg that day.
