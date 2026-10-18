@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 107's owner steps
+
+Nothing to do: no new roads, so no consent prompt. A fact written with no `source`, through the MCP tool, a key or the API, is now filed as stated by whoever wrote it (`{"kind": "user", "id": <by>}`) instead of being refused. If `person/me` has no `timezone` and the generator none either, orrery takes the calendar's own zone once, the one the calendar's globe button sets; with neither, every time is read in UTC, and the Generator card now says so, with a button for your browser's zone.
+
 ### Version 106's owner steps
 
 Nothing to do: no new roads, so no consent prompt. On a ship with Armillary, the generator's model and its address and key now follow apart. Change the model on the settings page and only the model is yours: the generator keeps running on your vendor's key. Type an address or a key and both are yours; a key given alone goes to OpenRouter's address, never your vendor's. The Armillary card says which parts are yours, and "use your vendor's" takes them all back. Place lookups read your vendor's proxy address and key at each lookup, so `search.json` no longer holds them; a Brave key of your own is kept.
