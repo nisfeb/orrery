@@ -8931,19 +8931,29 @@
       dep-sched=@t  dep-revised=@t  dep-gate=@t  dep-term=@t
       arr-sched=@t  arr-revised=@t  arr-gate=@t
   ==
-::  +flight-status: the first flight in an AeroDataBox answer (an array
+::  +flight-status: the watch's flight in an AeroDataBox answer (an array
 ::  of flights for the number and date), normalised to the status and the
-::  departure and arrival times, gate and terminal. Times are {utc, local}
-::  objects, the utc kept. ~ when the answer names no flight. Defensive: a
-::  missing field reads blank, so a shifted schema degrades, never crashes
-::  ponytail: field paths are AeroDataBox's; adjust against a live answer
+::  departure and arrival times, gate and terminal. The answer holds every
+::  leg the number flies that day and the flight that left the evening
+::  before and lands on it, so the one meant leaves on .date by its local
+::  clock (every flight when none does), from .from when the watch names
+::  an airport. Times are {utc, local} objects, the utc kept. ~ when the
+::  answer names no such flight. Defensive: a missing field reads blank,
+::  so a shifted schema degrades, never crashes
 ::
 ++  flight-status
-  |=  body=json
+  |=  [body=json date=@t from=@t]
   ^-  (unit flight-view)
   =/  flights=(list json)  ?:(?=([%a *] body) p.body ~)
-  ?~  flights  ~
-  =/  f=json  i.flights
+  =/  dep  |=(f=json (gj f 'departure'))
+  =/  on=(list json)
+    =/  d=(list json)  (skim flights |=(f=json =(date (end [3 10] (gs (gj (dep f) 'scheduledTime') 'local')))))
+    ?~(d flights d)
+  =/  at=(list json)
+    ?:  =('' from)  on
+    (skim on |=(f=json =((cass (trip from)) (cass (trip (gs (gj (dep f) 'airport') 'iata'))))))
+  ?~  at  ~
+  =/  f=json  i.at
   =/  dep=json  (gj f 'departure')
   =/  arr=json  (gj f 'arrival')
   =/  utc  |=(o=json ^-(@t (gs o 'utc')))
@@ -9013,10 +9023,20 @@
   |=  j=json
   ^-  watch-config
   =/  url=@t  (gs j 'url')
+  =/  host=@t  (gs j 'host')
   :*  ?:(=('' url) 'https://aerodatabox.p.rapidapi.com' url)
       (gs j 'key')
-      (gs j 'host')
+      ?:(=('' host) 'aerodatabox.p.rapidapi.com' host)
   ==
+::  +flight-headers: the key the way the seller wants it: API.market in
+::  its own header, RapidAPI (the default) with its host
+::
+++  flight-headers
+  |=  c=watch-config
+  ^-  (list [key=@t value=@t])
+  ?^  (find "api.market" (trip url.c))
+    ~[['x-api-market-key' key.c] ['accept' 'application/json']]
+  ~[['x-rapidapi-key' key.c] ['x-rapidapi-host' host.c]]
 ++  en-watch-config-masked
   |=  c=watch-config
   ^-  json

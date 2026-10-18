@@ -1103,7 +1103,7 @@
     '''
     [{"number":"DL 2627","status":"Expected","departure":{"airport":{"iata":"JAX"},"scheduledTime":{"utc":"2026-10-18 23:00Z","local":"x"},"revisedTime":{"utc":"2026-10-18 23:20Z"},"terminal":"S","gate":"C7"},"arrival":{"scheduledTime":{"utc":"2026-10-19 01:05Z"},"revisedTime":{"utc":"2026-10-19 01:30Z"},"gate":"B14"}}]
     '''
-  =/  v=(unit flight-view:orr)  (flight-status:orr body)
+  =/  v=(unit flight-view:orr)  (flight-status:orr body '2026-10-18' '')
   ?~  v  (expect-eq !>('parsed') !>('none'))
   =/  delayed=flight-view:orr  u.v(status 'Delayed')
   ;:  weld
@@ -1113,6 +1113,40 @@
     (expect-eq !>('B14') !>(arr-gate.u.v))
     (expect-eq !>(`(unit @t)`~) !>((flight-change:orr u.v u.v)))
     (expect-eq !>(`(unit @t)`[~ 'status Delayed']) !>((flight-change:orr u.v delayed)))
+  ==
+::  a number's answer holds each leg it flies that day and the flight that
+::  left the evening before: the watch takes the one leaving on its date,
+::  from its airport (live AeroDataBox answers of 2026-10-18, trimmed)
+++  test-flight-leg
+  =/  dl2627=json
+    %-  jo
+    '''
+    [{"status":"Expected","departure":{"airport":{"iata":"ATL"},"scheduledTime":{"utc":"2026-10-18 20:47Z","local":"2026-10-18 16:47-04:00"},"terminal":"S"},"arrival":{"airport":{"iata":"JAX"},"scheduledTime":{"utc":"2026-10-18 21:55Z","local":"2026-10-18 17:55-04:00"}}},{"status":"Expected","departure":{"airport":{"iata":"JAX"},"scheduledTime":{"utc":"2026-10-18 23:00Z","local":"2026-10-18 19:00-04:00"}},"arrival":{"airport":{"iata":"ATL"},"scheduledTime":{"utc":"2026-10-19 00:19Z","local":"2026-10-18 20:19-04:00"}}}]
+    '''
+  =/  dl194=json
+    %-  jo
+    '''
+    [{"status":"Arrived","departure":{"airport":{"iata":"ATL"},"scheduledTime":{"utc":"2026-10-18 02:05Z","local":"2026-10-17 22:05-04:00"},"revisedTime":{"utc":"2026-10-18 02:25Z","local":"2026-10-17 22:25-04:00"},"terminal":"I"},"arrival":{"airport":{"iata":"BCN"},"scheduledTime":{"utc":"2026-10-18 10:50Z","local":"2026-10-18 12:50+02:00"}}},{"status":"Expected","departure":{"airport":{"iata":"ATL"},"scheduledTime":{"utc":"2026-10-19 02:05Z","local":"2026-10-18 22:05-04:00"},"terminal":"I"},"arrival":{"airport":{"iata":"BCN"},"scheduledTime":{"utc":"2026-10-19 10:50Z","local":"2026-10-19 12:50+02:00"}}}]
+    '''
+  =/  dep  |=(v=(unit flight-view:orr) ?~(v '' dep-sched.u.v))
+  ;:  weld
+    (expect-eq !>('2026-10-18 23:00Z') !>((dep (flight-status:orr dl2627 '2026-10-18' 'JAX'))))
+    (expect-eq !>('2026-10-18 23:00Z') !>((dep (flight-status:orr dl2627 '2026-10-18' 'jax'))))
+    (expect-eq !>('2026-10-18 20:47Z') !>((dep (flight-status:orr dl2627 '2026-10-18' ''))))
+    (expect-eq !>(`(unit flight-view:orr)`~) !>((flight-status:orr dl2627 '2026-10-18' 'BCN')))
+    (expect-eq !>('2026-10-19 02:05Z') !>((dep (flight-status:orr dl194 '2026-10-18' 'ATL'))))
+    (expect-eq !>('2026-10-19 02:05Z') !>((dep (flight-status:orr dl194 '2026-10-18' ''))))
+    ::  no flight leaves on the date: every flight is a candidate
+    (expect-eq !>('2026-10-18 02:05Z') !>((dep (flight-status:orr dl194 '2026-10-20' ''))))
+  ==
+::  API.market takes the key in its own header; RapidAPI, the default,
+::  with its host, which a config naming none still sends
+++  test-flight-headers
+  =/  am  (de-watch-config:orr (jo '{"url":"https://prod.api.market/api/v1/aedbx/aerodatabox","key":"k"}'))
+  =/  ra  (de-watch-config:orr (jo '{"key":"k"}'))
+  ;:  weld
+    (expect-eq !>(~[['x-api-market-key' 'k'] ['accept' 'application/json']]) !>((flight-headers:orr am)))
+    (expect-eq !>(~[['x-rapidapi-key' 'k'] ['x-rapidapi-host' 'aerodatabox.p.rapidapi.com']]) !>((flight-headers:orr ra)))
   ==
 ++  test-has-phrase
   ;:  weld

@@ -8258,7 +8258,7 @@
   (trunk-notice tag title body)
 ::  +watch-pass: the hour's look. Each watch whose next is past is
 ::  checked and its next pushed a cadence on; a changed flight or a page
-::  the phrase appeared on telegrams the owner. Answers the soonest next
+::  the phrase appeared on alerts the owner. Answers the soonest next
 ::
 ++  watch-pass
   =/  m  (fiber:fiber:nexus ,(unit @da))
@@ -8298,7 +8298,9 @@
   (pure:m w1)
 ::  +check-flight: ask the flight API for the flight on its date and tell
 ::  the owner when the status, a revised time or the gate moved. The key
-::  is the owner's (headers for RapidAPI); no key, nothing to ask
+::  is the owner's (RapidAPI's or API.market's, +flight-headers); no key,
+::  nothing to ask. API.market answers a key once a second and the pass
+::  asks for each flight in turn, so each ask waits two seconds first
 ::
 ++  check-flight
   |=  [cfg=watch-config:orr w=json now=@da]
@@ -8306,12 +8308,13 @@
   ^-  form:m
   ?:  =('' key.cfg)  (pure:m (set-key:orr w 'note' s+'no flight API key set'))
   =/  url=@t  (rap 3 url.cfg '/flights/number/' (gs:orr w 'flight') '/' (gs:orr w 'date') ~)
-  =/  req=request:http
-    [%'GET' url ~[['x-rapidapi-key' key.cfg] ['x-rapidapi-host' host.cfg]] ~]
+  =/  req=request:http  [%'GET' url (flight-headers:orr cfg) ~]
+  ;<  t=@da  bind:m  get-time:io
+  ;<  ~  bind:m  (wait:io (add t ~s2))
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json req ~s30 %watch)
   ?.  =(200 status.got)
     (pure:m (set-key:orr w 'note' s+(rap 3 'flight API answered ' (crip (a-co:co status.got)) ~)))
-  =/  new=(unit flight-view:orr)  (flight-status:orr (fall (de:json:html body.got) ~))
+  =/  new=(unit flight-view:orr)  (flight-status:orr (fall (de:json:html body.got) ~) (gs:orr w 'date') (gs:orr w 'from'))
   ?~  new  (pure:m (set-key:orr w 'note' s+'no flight in the answer'))
   =/  old=(unit flight-view:orr)  (de-flight-view:orr (gj:orr w 'last'))
   =/  msg=(unit @t)  ?~(old ~ (flight-change:orr u.old u.new))
