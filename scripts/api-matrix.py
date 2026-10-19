@@ -2747,6 +2747,37 @@ mine = next((dictish(a) for a in listish(curl('GET', API + '/actions?status=all&
 check('an action the owner files and moves is signed owner throughout', mine.get('by') == 'owner'
       and all(dictish(h).get('by') in ('owner', 'policy') for h in listish(mine.get('history'))), mine)
 
+# ---- the journal and the world (version 116): each brief and review kept by day; the digest an agent reads as a session starts ----
+WORLDRUN = time.strftime('%H%M%S')
+curl('POST', API + '/brief/wake')
+bl = gate.wait('the brief is written', lambda: (lambda d: d if d.get('day') else None)(dictish(curl('GET', API + '/brief/last')[1])), 90) or {}
+code, days = curl('GET', API + '/briefs')
+check('the day\'s brief is kept by day', code == 200 and bl.get('day') in listish(dictish(days).get('days')), (code, days, bl.get('day')))
+code, kept = curl('GET', API + '/briefs/' + str(bl.get('day')))
+check('and reads back as the brief', code == 200 and dictish(kept).get('text') == bl.get('text') and bool(bl.get('text')), (code, str(kept)[:200]))
+code, d = curl('GET', API + '/briefs/1999-01-01')
+check('a day with no brief is a 404', code == 404, (code, d))
+curl('POST', API + '/review/wake')
+rl = gate.wait('the review is written', lambda: (lambda d: d if d.get('day') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
+code, rdays = curl('GET', API + '/reviews')
+check('the review is kept by day too', code == 200 and rl.get('day') in listish(dictish(rdays).get('days')), (code, rdays, rl.get('day')))
+WSIT = 'situation/gate-world-' + WORLDRUN
+curl('POST', API + '/observe', {'bodies': [{'id': WSIT, 'name': 'Gate world ' + WORLDRUN}], 'observations': [
+    {'subject': WSIT, 'attr': 'status', 'value': 'open'}, {'subject': WSIT, 'attr': 'needs', 'value': 'a gate answer'}]})
+code, w = curl('GET', API + '/world')
+check('the owner\'s world names the day and the open situation with what it needs', code == 200 and str(dictish(w).get('text', '')).startswith('Today is ')
+      and any(dictish(x).get('id') == WSIT and dictish(x).get('needs') == 'a gate answer' for x in listish(dictish(w).get('situations')))
+      and isinstance(dictish(w).get('proposed'), int), (code, str(w)[:400]))
+code, wk = curl('POST', API + '/clients', {'name': 'gate world reader', 'by': 'gate-world', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})
+code, kw = curl('GET', API + '/world', jar=None, token=dictish(wk).get('token'))
+check('a key that cannot see situations gets none, and no reason for being away', code == 200 and listish(dictish(kw).get('situations')) == [] and dictish(kw).get('away') is None, (code, str(kw)[:300]))
+if dictish(wk).get('id'): curl('DELETE', API + '/clients/' + dictish(wk)['id'])
+curl('POST', API + '/nudge/wake')
+wf = gate.wait('world.json is kept for lattice', lambda: (lambda d: d if any(dictish(x).get('id') == WSIT for x in listish(d.get('situations'))) else None)(
+    (lambda c, d: d if c == 200 and isinstance(d, dict) else {})(*gate.curl('GET', HOST + '/grubbery/api/file/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/world.json', jar=JAR))), 60) or {}
+check('and holds the same text as the route', wf.get('text') == dictish(curl('GET', API + '/world')[1]).get('text'), (wf.get('text'), dictish(curl('GET', API + '/world')[1]).get('text')))
+curl('DELETE', API + '/body/' + WSIT)
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect
@@ -2830,7 +2861,7 @@ check('the rhythm is put back', nag_raw('rhythm.json') == rhythm_was, nag_raw('r
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
 RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json']
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json', 'world.json']
 #  through the file API: a ?raw=1 read answers a redirect, which came
 #  back as nothing and skipped every check below until version 110
 def reload_raw(name):

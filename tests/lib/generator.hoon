@@ -1299,6 +1299,42 @@
     (expect-eq !>('person/kim has no ship: it waits for an outside mail sender, to kim@example.test') !>(note:(~(got by by-id) 'e1')))
     (expect-eq !>('person/eve has no ship attribute') !>(note:(~(got by by-id) 'e2')))
   ==
+::  the world digest an agent reads as a session starts: today's
+::  appointments ahead, what is late, the open situations with what they
+::  need and whose move, and what waits for a yes (version 116)
+++  test-world-of
+  =/  ref  |=(t=@t ^-(json (pairs:enjs:format ~[['ref' s+t]])))
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'Dana' ~ ~ now)
+        (mkb 'person/wren' %person 'Wren' ~ ~ now)
+        (mkb 'situation/dentist' %situation 'Dentist' ~ ~[['starts' s+'2026-09-18T15:00:00Z'] ['attending' s+'yes']] now)
+        (mkb 'situation/trip' %situation 'Lakeside trip' ~ ~[['status' s+'open'] ['needs' s+'a ride back'] ['waiting-on' (ref 'person/wren')]] now)
+        (mkb 'situation/done' %situation 'Old one' ~ ~[['status' s+'closed']] now)
+    ==
+  =/  pay  |=(t=@t ^-(json (need (de:json:html t))))
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['h1' [%task 'Check in for the flight' (pay '{"priority": "high"}') ~ `(sub now ~h2) 'owner' now %approved '' ~]]
+        ['p1' [%task 'Book the ride' ~ ~ ~ 'generator' now %proposed '' ~]]
+        ['p2' [%task 'Call Wren' ~ ~ ~ 'generator' now %proposed '' ~]]
+    ==
+  =/  w=json  (world-of:orr all ~ acts now '' `'Lakeside trip (away: yes)')
+  ;:  weld
+    (expect-eq !>(~['situation/dentist']) !>((turn (ga:orr w 'today') |=(j=json (gs:orr j 'id')))))
+    (expect-eq !>(~['h1']) !>((turn (ga:orr w 'late') |=(j=json (gs:orr j 'id')))))
+    (expect-eq !>(~['situation/trip']) !>((turn (ga:orr w 'situations') |=(j=json (gs:orr j 'id')))))
+    (expect-eq !>('Wren') !>((gs:orr (snag 0 (ga:orr w 'situations')) 'waiting_on')))
+    (expect-eq !>(`(unit @ud)``2) !>((gn:orr w 'proposed')))
+    %+  expect-eq
+      !>  %+  join-cords:orr  nl:orr
+          :~  'Today is Friday 2026-09-18, UTC.'
+              'Away: Lakeside trip (away: yes).'
+              'Today: 15:00 Dentist [situation/dentist].'
+              'Late: Check in for the flight [h1], 2 h late.'
+              'Open: Lakeside trip [situation/trip] needs a ride back, waiting on Wren.'
+              'Waiting for a yes: 2 proposed actions.'
+          ==
+    !>((gs:orr w 'text'))
+  ==
 ::  the calendars the owner named go on the poke: a task's todo to one,
 ::  a calendar event to the other; none named, no cal, the default
 ++  test-exec-cals

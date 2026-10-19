@@ -7908,6 +7908,103 @@
   =/  notes=@t  (end [3 200] (gs payload.a 'notes'))
   :-  (cat 3 'Late: ' title.a)
   (rap 3 'Due ' when ', ' (hours (div late ~m1)) ' late.' ?:(=('' notes) '' (cat 3 ' ' notes)) ~)
+::  ==  the world digest (version 116): what an agent should know as a
+::  session starts, kept small, from the ship's own state
+::
+::  +world-of: the owner's clock, why they are away, today's
+::  appointments still ahead, the late high-priority actions, the open
+::  situations with what they need and whose move it is, and how many
+::  actions wait for a yes; as JSON with a text form for a prompt
+::  ponytail: twelve situations at most; a setting if agents want more
+::
+++  world-of
+  |=  [all=(list loaded) multi=(set @t) acts=(list [id=@ta a=action]) now=@da tz=@t away=(unit @t)]
+  ^-  json
+  =/  day=@t  (local-day now tz)
+  =/  day-end=@da  (at-clock day 1.440 tz)
+  =/  name-of  |=(id=@t ^-(@t =/(l (loaded-of all id) ?~(l id ?:(=('' name.body.u.l) id name.body.u.l)))))
+  ::  what starts later today, a place or not (+appointments-ahead keeps
+  ::  only trips, for time to leave); not what is closed or declined
+  =/  today=(list [id=@t name=@t at=@da where=@t])
+    %+  sort
+      %+  murn  all
+      |=  l=loaded
+      ^-  (unit [id=@t name=@t at=@da where=@t])
+      ?.  ?=(?(%situation %activity) kind.body.l)  ~
+      =/  w=(map @t (list row))  (fold rows.l multi now)
+      ?:  (is-closed w)  ~
+      ?:  =('no' (lower (winner-text w 'attending')))  ~
+      =/  at=(unit @da)  (de-iso (winner-text w ?:(=(%situation kind.body.l) 'starts' 'next')))
+      ?~  at  ~
+      ?.  &((gte u.at now) (lth u.at day-end))  ~
+      =/  loc=(list row)  (fall (~(get by w) 'location') ~)
+      =/  where=@t  ?~(loc '' (ref-or-text value.obs.i.loc))
+      `[id.l ?:(=('' name.body.l) id.l name.body.l) u.at ?:(=('place' (kind-of where)) (name-of where) where)]
+    |=([a=[@t @t at=@da @t] b=[@t @t at=@da @t]] (lth at.a at.b))
+  =/  late=(list [id=@ta a=action late=@dr])  (late-high acts now)
+  =/  sits=(list [id=@t name=@t needs=@t waiting=@t])
+    %+  scag  12
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [id=@t name=@t needs=@t waiting=@t])
+    ?.  =(%situation kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    ?.  =('open' (lower (winner-text w 'status')))  ~
+    =/  wo=(list row)  (fall (~(get by w) 'waiting-on') ~)
+    =/  who=@t  ?~(wo '' (ref-or-text value.obs.i.wo))
+    `[id.l ?:(=('' name.body.l) id.l name.body.l) (winner-text w 'needs') ?:(=('' who) '' ?:(=('person/me' who) 'you' (name-of who)))]
+  =/  proposed=@ud  (lent (skim acts |=([* a=action] =(%proposed status.a))))
+  =/  lines=(list @t)
+    %-  zing
+    ::  the day, not the clock: the text is kept in world.json, written
+    ::  only when something but the time moved
+    :~  ~[(rap 3 'Today is ' (snag (dow-of day) weekday-names) ' ' day ?:(=('' tz) ', UTC' (rap 3 ', ' tz ~)) '.' ~)]
+        ?~(away ~ ~[(rap 3 'Away: ' u.away '.' ~)])
+        :_  ~
+        ?~  today  'Today: nothing more on the calendar.'
+        %+  rap  3
+        :~  'Today: '
+            %+  join-cords  '; '
+            (turn today |=([id=@t name=@t at=@da *] (rap 3 (hhmm at tz) ' ' name ' [' id ']' ~)))
+            '.'
+        ==
+        (turn late |=([id=@ta a=action l=@dr] (rap 3 'Late: ' title.a ' [' id '], ' (hours (div l ~m1)) ' late.' ~)))
+        ?~  sits  ~
+        :_  ~
+        %+  rap  3
+        :~  'Open: '
+            %+  join-cords  '; '
+            %+  turn  sits
+            |=  [id=@t name=@t needs=@t waiting=@t]
+            (rap 3 name ' [' id ']' ?:(=('' needs) '' (cat 3 ' needs ' needs)) ?:(=('' waiting) '' (cat 3 ', waiting on ' waiting)) ~)
+            '.'
+        ==
+        ?:(=(0 proposed) ~ ~[(rap 3 'Waiting for a yes: ' (crip (a-co:co proposed)) ' proposed action' ?:(=(1 proposed) '' 's') '.' ~)])
+    ==
+  %-  pairs:enjs:format
+  :~  ['at' s+(en-iso now)]
+      ['day' s+day]
+      ['time' s+(hhmm now tz)]
+      ['zone' s+tz]
+      ['away' ?~(away ~ s+u.away)]
+      :-  'today'
+      :-  %a
+      %+  turn  today
+      |=  [id=@t name=@t at=@da where=@t]
+      (pairs:enjs:format ~[['id' s+id] ['name' s+name] ['starts' s+(en-iso at)] ['time' s+(hhmm at tz)] ['where' s+where]])
+      :-  'late'
+      :-  %a
+      %+  turn  late
+      |=  [id=@ta a=action l=@dr]
+      (pairs:enjs:format ~[['id' s+id] ['title' s+title.a] ['due' ?~(due.a ~ s+(en-iso u.due.a))] ['late_minutes' (numb:enjs:format (div l ~m1))]])
+      :-  'situations'
+      :-  %a
+      %+  turn  sits
+      |=  [id=@t name=@t needs=@t waiting=@t]
+      (pairs:enjs:format ~[['id' s+id] ['name' s+name] ['needs' s+needs] ['waiting_on' s+waiting]])
+      ['proposed' (numb:enjs:format proposed)]
+      ['text' s+(join-cords nl lines)]
+  ==
 ::  +at-clock: a local date's moment at minutes past midnight
 ::
 ++  at-clock
@@ -11234,6 +11331,11 @@
   ?:  &(=('GET' meth) ?=([%api %mail %last ~] suffix))          `[%get-mail-last %own]
   ?:  &(=('POST' meth) ?=([%api %mail %wake ~] suffix))         `[%post-mail-wake %own]
   ?:  &(=('GET' meth) ?=([%api %brief %last ~] suffix))         `[%get-brief-last %own]
+  ?:  &(=('GET' meth) ?=([%api %briefs ~] suffix))             `[%get-briefs %own]
+  ?:  &(=('GET' meth) ?=([%api %briefs @ ~] suffix))           `[%get-brief-day %own]
+  ?:  &(=('GET' meth) ?=([%api %reviews ~] suffix))            `[%get-reviews %own]
+  ?:  &(=('GET' meth) ?=([%api %reviews @ ~] suffix))          `[%get-review-day %own]
+  ?:  &(=('GET' meth) ?=([%api %world ~] suffix))              `[%get-world %any]
   ?:  &(=('GET' meth) ?=([%api %brief %map ~] suffix))          `[%get-brief-map %own]
   ?:  &(=('POST' meth) ?=([%api %health ~] suffix))             `[%post-health %writes]
   ?:  &(=('GET' meth) ?=([%api %health ~] suffix))              `[%get-health %own]

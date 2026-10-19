@@ -35,6 +35,8 @@
 ::    /nag-last.json                    when each late high-priority action was last pushed (version 110)
 ::    /chat-lists-seen.json             how many DMs and channels the chat reader last held, so emptied lists are flagged (version 111)
 ::    /model-down.json                  since when the model has not answered, so the owner is told once (version 111)
+::    /briefs/<day>  /reviews/<day>     each day's brief and each Sunday's review, kept for a journal (version 116)
+::    /world.json                       the world digest an agent reads as a session starts (version 116)
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
 ::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
@@ -150,6 +152,9 @@
           [%fall %& [/ %'chat-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-lists-seen.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'model-down.json'] [[/ %json] [%o ~]]]
+          [%fall %| /briefs empty-dir:loader]
+          [%fall %| /reviews empty-dir:loader]
+          [%fall %& [/ %'world.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat.sig'] [[/ %sig] ~]]
@@ -577,6 +582,7 @@
         ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
         |-
         ;<  ~  bind:m  nag-pass
+        ;<  ~  bind:m  world-pass
         ;<  ~  bind:m  nudge-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
@@ -1592,6 +1598,11 @@
     %get-mail-last          (serve-doc eyre-id %'mail-last.json')
     %post-mail-wake         (serve-prod eyre-id %'mail.sig' 'mail')
     %get-brief-last         (serve-doc eyre-id %'brief-last.json')
+    %get-briefs             (serve-journal eyre-id %briefs %$)
+    %get-brief-day          (serve-journal eyre-id %briefs s2)
+    %get-reviews            (serve-journal eyre-id %reviews %$)
+    %get-review-day         (serve-journal eyre-id %reviews s2)
+    %get-world              (serve-world eyre-id act)
     %get-brief-map          (serve-brief-map eyre-id)
     %post-health            (serve-day eyre-id jon %'health.json' health-doc:orr)
     %get-health             (serve-doc eyre-id %'health.json')
@@ -8878,22 +8889,25 @@
     ;<  err=(unit tang)  bind:n  (poke-auspex u.aus our (brief-subject:orr day) text)
     (pure:n ?~(err ~ `(tang-head u.err)))
   =/  tags-j=json  [%o (~(gas by *(map @t json)) (turn tags.waiting |=([tag=@t id=@ta] [tag `json`s+id])))]
-  %+  over:io  (rf 0 / %'brief-last.json')
-  :-  [/ %json]
-  %-  pairs:enjs:format
-  :~  ['day' s+day]
-      ['at' s+(en-iso:orr now)]
-      ['sent' b+?=(~ sent)]
-      ['tags' tags-j]
-      ['text' s+text]
-      :-  'today'
-      :-  %a
-      %+  snoc  ?:(=(day (gs:orr last 'day')) (ga:orr last 'today') *(list json))
-      (pairs:enjs:format ~[['text' s+text] ['tags' tags-j]])
-      ['said' s+suggestions]
-      ['map' s+overlay]
-      ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
-  ==
+  =/  rec=json
+    %-  pairs:enjs:format
+    :~  ['day' s+day]
+        ['at' s+(en-iso:orr now)]
+        ['sent' b+?=(~ sent)]
+        ['tags' tags-j]
+        ['text' s+text]
+        :-  'today'
+        :-  %a
+        %+  snoc  ?:(=(day (gs:orr last 'day')) (ga:orr last 'today') *(list json))
+        (pairs:enjs:format ~[['text' s+text] ['tags' tags-j]])
+        ['said' s+suggestions]
+        ['map' s+overlay]
+        ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
+    ==
+  ::  each day's brief is kept as well, for a journal (version 116)
+  ::  ponytail: a couple of KB a day kept for good; prune by age if it shows
+  ;<  ~  bind:m  (put-json (rf 0 /briefs `@ta`day) rec)
+  (over:io (rf 0 / %'brief-last.json') [[/ %json] rec])
 ::  +model-health: one push when the model stops answering and one when
 ::  it answers again (version 111), the outage kept in model-down.json.
 ::  While it is down, texts handed in wait and are read once it is back,
@@ -8917,6 +8931,77 @@
     %+  over:io  (rf 0 / %'model-down.json')
     [[/ %json] (pairs:enjs:format ~[['since' s+(en-iso:orr now)] ['why' s+(end [3 300] u.why)]])]
   (notify-owner 'orrery-model' 'Orrery\'s model is not answering' (rap 3 (end [3 160] u.why) '. Texts wait, and are read once it answers again.' ~))
+::  +serve-journal: the briefs or the Sunday reviews kept by day (version
+::  116): with no day, the days held, newest first; with one, its record
+::
+++  serve-journal
+  |=  [eyre-id=@ta dir=@ta day=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  =(%$ day)
+    ;<  ex=?  bind:m  (peek-exists:io (rf 1 /[dir] day))
+    ?.  ex  (send-err eyre-id 404 'nothing kept for that day')
+    ;<  j=json  bind:m  (read-json (rf 1 /[dir] day))
+    (send-json eyre-id 200 j)
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 1 /[dir]) ~)
+  =/  days=(list @ta)
+    ?.  ?=([%ball *] vw)  ~
+    ?~  fil.ball.vw  ~
+    (sort (turn ~(tap by contents.u.fil.ball.vw) head) |=([a=@ta b=@ta] (aor b a)))
+  (send-json eyre-id 200 (pairs:enjs:format ~[['days' a+(turn days |=(d=@ta `json`s+d))]]))
+::  +world-now: the world digest as an actor sees it (version 116): the
+::  owner's whole; a key's only the kinds its scope holds, with nothing
+::  the policy marks sensitive, and why the owner is away only when it
+::  may see situations. up is the level the ship's state is read at: 0
+::  from a fiber, 1 from a request, so the zone and the away state are
+::  read here at that level rather than through +local-tz and +away-state
+::
+++  world-now
+  |=  [up=@ud act=actor]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf up / %'schema.json'))
+  ;<  policy=json  bind:m  (read-json (rf up / %'policy.json'))
+  ;<  gen-j=json  bind:m  (read-json (rf up / %'generator.json'))
+  ;<  pos=json  bind:m  (read-json (rf up / %'position.json'))
+  ;<  gc=json  bind:m  (read-json (rf up / %'geocache.json'))
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies up)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions up)
+  =/  multi=(set @t)  (multi-of:orr schema)
+  ::  the zone the owner is in: the phone's, else home's (+local-tz)
+  =/  tz=@t
+    =/  z=@t  (gs:orr pos 'zone')
+    ?:  &(!=('' z) (~(has by zones:orr) z))  z
+    =/  mine=@t  (attr-text:orr all0 multi now 'person/me' 'timezone')
+    ?.(=('' mine) mine timezone:(de-config:orr gen-j))
+  =/  home  (home-point:orr all0 multi now gc)
+  =/  away=away-view  [(home-again:orr (away-spans:orr all0 multi now home gc) pos home) (far-from-home:orr pos home) home gc]
+  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
+  =/  why=(unit @t)
+    ?~  scope.act  (away-now away now)
+    ?.  (kind-in-scope:orr u.scope.act %situation)  ~
+    (away-now away now)
+  (pure:m (world-of:orr all.seen multi acts.seen now tz why))
+::  +serve-world: GET /world, the digest for an agent's session start
+::
+++  serve-world
+  |=  [eyre-id=@ta act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  w=json  bind:m  (world-now 1 act)
+  (send-json eyre-id 200 w)
+::  +world-pass: the owner's digest kept in world.json for lattice to read
+::  (version 116), written only when something but the clock moved
+::
+++  world-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  w=json  bind:m  (world-now 0 ^-(actor [& 'owner' ~]))
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'world.json'))
+  =/  bare  |=(j=json (del-key:orr (del-key:orr j 'at') 'time'))
+  ?:  =((bare w) (bare cur))  (pure:m ~)
+  (over:io (rf 0 / %'world.json') [[/ %json] w])
 ::  +nag-pass: each late high-priority action pushed again every fifteen
 ::  minutes until it is done, dismissed, snoozed or moved (version 110),
 ::  under its own tag so the phone shows one per action. Only the quiet
@@ -9384,16 +9469,18 @@
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ ['Your week' line ~ `'/apps/orrery' `'orrery-review']] eny]]
   ;<  ~  bind:m  (trunk-notice 'orrery-review' 'Your week' line)
-  %+  over:io  (rf 0 / %'review-last.json')
-  :-  [/ %json]
-  %-  pairs:enjs:format
-  :~  ['day' s+day]
-      ['at' s+(en-iso:orr now)]
-      ['sent' b+?=(~ sent)]
-      ['text' s+text]
-      ['line' s+line]
-      ['notes' a+(turn (skip `(list @t)`~[(fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
-  ==
+  =/  rec=json
+    %-  pairs:enjs:format
+    :~  ['day' s+day]
+        ['at' s+(en-iso:orr now)]
+        ['sent' b+?=(~ sent)]
+        ['text' s+text]
+        ['line' s+line]
+        ['notes' a+(turn (skip `(list @t)`~[(fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
+    ==
+  ::  each Sunday's review is kept as well, for a journal (version 116)
+  ;<  ~  bind:m  (put-json (rf 0 /reviews `@ta`day) rec)
+  (over:io (rf 0 / %'review-last.json') [[/ %json] rec])
 ::  +calendar-cache: the calendar's order index, ~ without the desk or
 ::  the road
 ::
