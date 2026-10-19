@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 115's owner steps
+
+Nothing to do: no new roads, so no consent prompt. Orrery's icon is the family's: its orbits centred on Talon's rounded navy square, the tile the same navy, as Calendar's has been since its version 36.
+
 ### Version 114's owner steps
 
 Nothing to do: no new roads, so no consent prompt. What you write yourself is now signed `owner` wherever you write it; before, an action you filed was signed `http` and an approval `user`. Older rows keep their signatures and still count as yours. A client of yours that checks for `http` to know you filed something should accept `owner` as well.
