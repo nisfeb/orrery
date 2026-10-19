@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 118's owner steps
+
+Nothing to do: no new roads, so no consent prompt. An instruction's prompt is now two parts, and the first, what stays the same from one instruction to the next, is marked for the provider's cache, so a dictation a few minutes after another costs less and starts sooner. The nudge round reads the ship once for its three passes, and reading your time zone no longer reads every body.
+
 ### Version 117's owner steps
 
 Nothing to do: no new roads, so no consent prompt. Two things you can keep in lattice now. A page whose path is a person's or a place's id in orrery (`person/sarah`, `place/home`) is your notes on them, and the generator reads them when it thinks about that body. A memory entry you write under `orrery/preferences/` is one of your standing preferences, after the ones in your schema; one an agent wrote is left out. Both are read through the road you granted for pages sent to orrery.
