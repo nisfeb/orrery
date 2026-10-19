@@ -1433,7 +1433,9 @@
 ::  shallow read says whether it holds. A reader that finds it stale
 ::  loads every body, prunes, and writes it afresh: stamped with the
 ::  revision read before the load, so a write that lands meanwhile
-::  only makes the next reader build it again
+::  only makes the next reader build it again. Nothing these readers
+::  fold is struck at read time: a correction is applied by the writer,
+::  as a write below /bodies
 ::
 ++  load-current
   |=  [up=@ud multi=(set @t)]
