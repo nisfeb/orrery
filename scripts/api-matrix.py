@@ -2562,6 +2562,19 @@ for c in cs if isinstance(cs, list) else []:
         curl('DELETE', API + '/corrections/' + dictish(c)['id'])
 curl('DELETE', API + '/body/' + STRUCK)
 
+# one batch (version 120): an instruction's actions go to the writer as one op, and the same task
+# proposed twice in it is filed once, the second named as not filed
+TWICE = 'Gate twice ' + XRUN
+INSTRUCT_CANNED = completion({'reply': 'Twice over.', 'actions': [
+    {'kind': 'task', 'title': TWICE, 'about': [], 'payload': {}}, {'kind': 'task', 'title': TWICE, 'about': [], 'payload': {}}]})
+code, d = curl('POST', API + '/instruct', {'text': 'remind me twice'}, timeout=180)
+d = dictish(d)
+twice = [dictish(x) for x in listish(d.get('actions')) if dictish(x).get('title') == TWICE]
+check('the same task proposed twice in one instruction is filed once, the second said not to be',
+      code == 200 and len(twice) == 1 and ('extra %s was not filed' % TWICE) in (d.get('note') or ''), (code, d))
+for x in twice:
+    curl('POST', API + '/actions/' + x.get('id', ''), {'status': 'dismissed', 'note': 'matrix'})
+
 # a situation resolved (version 64): an approved resolve closes it with how it ended, the rows the
 # owner's; what was only proposed about it is dismissed by the ship, what the owner approved stays
 print('== a situation resolved')

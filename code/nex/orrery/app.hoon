@@ -988,6 +988,11 @@
     (refuse 'poke' 'a foreign ship may not write here')
   =/  jon=json  (fall (mole |.(!<(json q.sage))) ~)
   =/  op=@t  (gs:orr jon 'op')
+  ::  sync changes nothing (version 120): the writer takes one poke at a
+  ::  time and finishes it first, so a fiber that hands over its ops and
+  ::  then a sync knows, once the sync is taken, that every op before it
+  ::  has landed (+writer-sync)
+  ?:  =('sync' op)  (pure:m |)
   ?:  =('ensure-me' op)  ensure-me
   ?:  =('observe' op)  (do-observe jon)
   ?:  =('upsert-body' op)  (do-upsert-body jon)
@@ -995,6 +1000,7 @@
   ?:  =('merge' op)  (do-merge jon)
   ?:  =('retract' op)  (do-retract jon)
   ?:  =('act' op)  (do-act jon)
+  ?:  =('acts' op)  (do-acts jon)
   ?:  =('set-action' op)  (do-set-action jon)
   ?:  =('revise-action' op)  (do-revise-action jon)
   ?:  =('mark-action' op)  (do-mark-action jon)
@@ -2117,25 +2123,65 @@
 ::
 ++  do-act
   |=  jon=json
+  (file-acts ~[(gj:orr jon 'action')])
+::  +do-acts: several proposals as one op (version 120), so a request
+::  that files a handful reads what they share once and moves the
+::  beacon once
+::
+++  do-acts
+  |=  jon=json
+  (file-acts (ga:orr jon 'actions'))
+::  +file-acts: proposals in turn, with one read of the policy, the
+::  actions and the other ship's open ones between them, and one write
+::  of the audit trail. Each must name bodies that exist, and an open
+::  action with its kind and title, here, on the other ship or filed
+::  earlier in the batch, refuses it. Answers whether any was filed
+::
+++  file-acts
+  |=  items=(list json)
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
+  ?~  items  (pure:m |)
   ;<  now=@da  bind:m  get-time:io
-  =/  got  (de-action:orr (gj:orr jon 'action') now 'writer')
-  ?:  ?=(%| -.got)  (refuse 'act' p.got)
-  ;<  missing=(unit bid:orr)  bind:m  (first-missing 0 ~(tap in about.p.got))
-  ?^  missing  (refuse 'act' (cat 3 'about: no such body ' u.missing))
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  ?^  (open-twin all kind.p.got title.p.got)  (note-then-no 'act' 'an open action with this kind and title exists')
+  ;<  peer=(map @t json)  bind:m  (read-map (rf 0 / %'peer-actions.json'))
+  =/  todo=(list json)  items
+  =|  said=(list json)
+  =|  any=?
+  |-
+  ?~  todo
+    ;<  ~  bind:m  (write-trail (flop said))
+    (pure:m any)
+  ;<  one=[filed=(unit [id=@ta a=action:orr]) said=(list json)]  bind:m
+    (file-one i.todo now policy all peer)
+  %=  $
+    todo   t.todo
+    all    ?~(filed.one all [u.filed.one all])
+    any    |(any ?=(^ filed.one))
+    said   (weld (flop said.one) said)
+  ==
+::  +file-one: one proposal, and what the trail says of it, in order
+::
+++  file-one
+  |=  [item=json now=@da policy=json all=(list [id=@ta a=action:orr]) peer=(map @t json)]
+  =/  m  (fiber:fiber:nexus ,[filed=(unit [id=@ta a=action:orr]) said=(list json)])
+  ^-  form:m
+  =/  say  |=([op=@t ok=? why=@t by=@t] (trail-entry op ok why by now))
+  =/  got  (de-action:orr item now 'writer')
+  ?:  ?=(%| -.got)  (pure:m [~ ~[(say 'act' | p.got '')]])
+  ;<  missing=(unit bid:orr)  bind:m  (first-missing 0 ~(tap in about.p.got))
+  ?^  missing  (pure:m [~ ~[(say 'act' | (cat 3 'about: no such body ' u.missing) '')]])
+  ?^  (open-twin all kind.p.got title.p.got)
+    (pure:m [~ ~[(say 'act' & 'an open action with this kind and title exists' '')]])
   ::  the other ship's open ones count too, but not for the action that is
   ::  one of them crossing (version 92)
   =/  crossing=?  ?=(^ (act-twin:orr p.got))
-  ;<  peer=(map @t json)  bind:m  (read-map (rf 0 / %'peer-actions.json'))
   ?:  ?&  !crossing
           %+  lien  ~(val by peer)
           |=(v=json &(=(`@t`kind.p.got (gs:orr v 'kind')) =(title.p.got (gs:orr v 'title'))))
       ==
-    (note-then-no 'act' 'an open action with this kind and title exists on the other ship')
+    (pure:m [~ ~[(say 'act' & 'an open action with this kind and title exists on the other ship' '')]])
   ::  a todo the owner typed is approved as it is filed (+own-todo); one
   ::  another ship sent waits for the owner here, whatever the policy
   =/  own=?  (own-todo:orr p.got)
@@ -2146,26 +2192,39 @@
     (transition:orr p.got %approved 'policy' '' now)
   ;<  routed=[a=action:orr note=@t]  bind:m  (route-to 0 a)
   =.  a  a.routed
-  ;<  ~  bind:m  ?:(=('' note.routed) (pure:(fiber:fiber:nexus ,~) ~) (note 'act' & note.routed))
+  =/  pre=(list json)  ?:(=('' note.routed) ~ ~[(say 'act' & note.routed '')])
   =/  id=@ta  (act-id:orr a)
   ;<  ex=?  bind:m  (peek-exists:io (rf 0 /actions id))
-  ?:  ex  (note-then-no 'act' 'an action with this id exists')
+  ?:  ex  (pure:m [~ (snoc pre (say 'act' & 'an action with this id exists' ''))])
   ;<  *  bind:m
     (make-gained-soft:io (rf 0 /actions id) |+[[[/orrery %action] `stored-action:orr`[%2 a]] ~])
   ::  a task adopted from a todo the owner typed is the owner's own
   ::  words; telling them of it reads as a proposal they just made
-  ;<  ~  bind:m
-    ?:  =('calendar' by.a)  (pure:(fiber:fiber:nexus ,~) ~)
-    ?.  (should-push:orr (push-mode-of:orr policy) status.a)  (pure:(fiber:fiber:nexus ,~) ~)
-    (push-soft a id)
-  ;<  ~  bind:m  (note-by 'act' & '' by.a)
-  (pure:m &)
-::  +push-soft: a notification through /sys/push. Soft, so a refused
-::  road never fails the writer, and the audit note says which it was.
+  ;<  pushed=(list json)  bind:m
+    ?:  =('calendar' by.a)  (pure:(fiber:fiber:nexus ,(list json)) ~)
+    ?.  (should-push:orr (push-mode-of:orr policy) status.a)  (pure:(fiber:fiber:nexus ,(list json)) ~)
+    ;<  sent=?  bind:(fiber:fiber:nexus ,(list json))  (push-quiet a id)
+    (pure:(fiber:fiber:nexus ,(list json)) ~[(say 'push' sent ?:(sent title.a 'push refused') by.a)])
+  (pure:m [`[id a] :(weld pre pushed ~[(say 'act' & '' by.a)])])
+::  +write-trail: trail entries as +note-by writes one, all at once: the
+::  last at /tr/last, every one onto the ring
 ::
-++  push-soft
-  |=  [a=action:orr id=@ta]
+++  write-trail
+  |=  entries=(list json)
   =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  entries  (pure:m ~)
+  ;<  ~  bind:m  (over:io (rf 0 /tr %last) [[/ %json] (rear entries)])
+  ;<  log=json  bind:m  (read-json (rf 0 /tr %log))
+  %+  over:io  (rf 0 /tr %log)
+  [[/ %json] (roll `(list json)`entries |=([e=json l=_log] (ring:orr l e 500)))]
+::  +push-quiet: a notification through /sys/push, answering whether it
+::  went. Soft, so a refused road never fails the writer; the caller's
+::  trail entry says which it was
+::
+++  push-quiet
+  |=  [a=action:orr id=@ta]
+  =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  title=@t  ?:(=(%approved status.a) 'Orrery filed' 'Orrery proposes')
@@ -2174,9 +2233,7 @@
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title title.a ~ `'/apps/orrery' `tag]] eny]]
   ;<  ~  bind:m  (trunk-notice tag title title.a)
-  =/  sent=?  ?=(~ err)
-  ;<  ~  bind:m  (note-by 'push' sent ?:(sent title.a 'push refused') by.a)
-  (pure:m ~)
+  (pure:m ?=(~ err))
 ::  +do-set-action: move one action to a new status, refusing a
 ::  transition the model does not allow
 ::
@@ -2717,8 +2774,8 @@
 ::  answer is held to the reader's checks by +refine-check, then filed
 ::  as at most an observe, the revision and one act per extra. A poke
 ::  to the writer resolves when the writer takes it, not when the write
-::  lands, so the fiber keeps the beacon and settles before it reads
-::  the revision back; and the writer may refuse what it took, so the
+::  lands, so the fiber syncs with the writer (+writer-sync) before it
+::  reads the revision back; and the writer may refuse what it took, so the
 ::  extras are filed only once the action's last step says the
 ::  revision landed. A key sees the bodies its kinds allow and no
 ::  other, in the prompt's action as in its context, files no extra
@@ -2797,9 +2854,8 @@
   =/  ops=(list json)  (refine-ops:orr held id who now)
   =/  is-act  |=(o=json =('act' (gs:orr o 'op')))
   =/  acts=(list json)  (skim ops is-act)
-  ;<  *  bind:m  (keep:io /refine (rf 1 /beacon %rev) ~)
   ;<  ~  bind:m  (poke-each 1 (skip ops is-act))
-  ;<  ~  bind:m  (settle /refine)
+  ;<  ~  bind:m  (writer-sync 1)
   ;<  found=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 1 id)
   =/  revised=(unit action:orr)  ?:(?=(%& -.found) `p.found ~)
   ?~  revised  (pure:m (fail 500 'the revised action cannot be read back'))
@@ -2811,9 +2867,9 @@
     &(=(%revised status.last) (gte at.last now))
   ?.  took
     (pure:m [200 (pairs:enjs:format ~[['ok' b+|] ['note' s+'the action moved while the note was applied']])])
-  ;<  ~  bind:m  (poke-each 1 acts)
-  ;<  ~  bind:m  ?~(acts (pure:(fiber:fiber:nexus ,~) ~) (settle /refine))
-  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed acts now who act)
+  =/  items=(list json)  (turn acts |=(o=json (gj:orr o 'action')))
+  ;<  ~  bind:m  (file-batch 1 items)
+  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed items now who act)
   %-  pure:m
   :-  200
   %-  pairs:enjs:format
@@ -2834,29 +2890,52 @@
   ?~  ops  (pure:m ~)
   ;<  ~  bind:m  (poke-writer up i.ops)
   (poke-each up t.ops)
-::  +extras-filed: the view of each extra the writer filed, found under
-::  the id the writer computed. The channel rule runs on an extra as on
-::  any act, so the same rule runs here before the id is taken. An
-::  extra not found was refused as a twin, and becomes a note.
+::  +file-batch: the proposals to the writer as one acts op, then a sync,
+::  so the writer has filed or refused each by the time it answers
+::  (version 120)
+::
+++  file-batch
+  |=  [up=@ud items=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?~  items  (pure:m ~)
+  ;<  ~  bind:m  (poke-writer up (pairs:enjs:format ~[['op' s+'acts'] ['actions' a+items]]))
+  (writer-sync up)
+::  +extras-filed: the view of each proposal the writer filed, out of one
+::  read of the actions once it has (+file-batch): the one of its kind
+::  and title proposed since the second the request began. None means
+::  the writer refused it, a twin most often, and becomes a note
 ::
 ++  extras-filed
-  |=  [ops=(list json) now=@da who=@t act=actor]
+  |=  [items=(list json) now=@da who=@t act=actor]
   =/  m  (fiber:fiber:nexus ,[views=(list json) notes=(list @t)])
   ^-  form:m
-  =|  acc=[views=(list json) notes=(list @t)]
+  ?~  items  (pure:m [~ ~])
+  ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ::  an action keeps its proposed time to the second
+  =/  since=@da  (sub now (mod now ~s1))
+  =/  todo=(list json)  items
+  =|  acc=[views=(list json) notes=(list @t) used=(set @ta)]
   |-
-  ?~  ops  (pure:m [(flop views.acc) (flop notes.acc)])
-  ?.  =('act' (gs:orr i.ops 'op'))  $(ops t.ops)
-  =/  got  (de-action:orr (gj:orr i.ops 'action') now who)
-  ?:  ?=(%| -.got)  $(ops t.ops)
-  ;<  r=[a=action:orr note=@t]  bind:m  (route-to 1 p.got)
-  =/  eid=@ta  (act-id:orr a.r)
-  ;<  found=(each action:orr ?(%absent %unreadable))  bind:m  (load-action 1 eid)
-  =/  e=(unit action:orr)  ?:(?=(%& -.found) `p.found ~)
-  ?~  e
+  ?~  todo  (pure:m [(flop views.acc) (flop notes.acc)])
+  =/  got  (de-action:orr i.todo now who)
+  ?:  ?=(%| -.got)  $(todo t.todo)
+  =/  hit=(list [id=@ta a=action:orr])
+    %+  skim  all
+    |=  [id=@ta a=action:orr]
+    ?&  !(~(has in used.acc) id)
+        =(kind.a kind.p.got)
+        =(title.a title.p.got)
+        (gte proposed.a since)
+    ==
+  ?~  hit
     =/  why=@t  (rap 3 'extra ' title.p.got ' was not filed, the trail says why' ~)
-    $(ops t.ops, notes.acc [why notes.acc])
-  $(ops t.ops, views.acc [(en-action:orr eid (seen-by act u.e)) views.acc])
+    $(todo t.todo, notes.acc [why notes.acc])
+  %=  $
+    todo       t.todo
+    views.acc  [(en-action:orr id.i.hit (seen-by act a.i.hit)) views.acc]
+    used.acc   (~(put in used.acc) id.i.hit)
+  ==
 ::  +serve-doc: schema.json or policy.json, as stored
 ::
 ++  serve-doc
@@ -4957,6 +5036,16 @@
   ;<  ~  bind:m  (observe-fresh up fresh)
   ;<  ~  bind:m  (retract-each up src dead)
   (pure:m [(add ?~(fresh 0 1) (lent dead)) (flop bad.split)])
+::  +writer-sync: wait until the writer has carried out every op handed
+::  to it before (version 120): a sync poke, taken only once the writer
+::  has finished the ops ahead of it. It replaces a two-second wait for
+::  the beacon to go still on the routes a person waits on
+::
+++  writer-sync
+  |=  up=@ud
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  (poke-writer up (pairs:enjs:format ~[['op' s+'sync']]))
 ::  +poke-writer: one op to our writer, soft (a refusal is noted there)
 ::
 ++  poke-writer
@@ -6154,11 +6243,9 @@
     (skim acts.out |=(j=json (action-in-scope:orr u.scope.act `@tas`(gs:orr j 'kind'))))
   ::  each says why: the words it was made from
   =/  said=@t  (quoted:orr ?:(owner.act 'You said' (cat 3 by.act ' said')) text)
-  =/  ops=(list json)  (turn kept |=(j=json (pairs:enjs:format ~[['op' s+'act'] ['action' (with-why:orr j said)]])))
-  ;<  *  bind:m  (keep:io /instruct (rf 1 /beacon %rev) ~)
-  ;<  ~  bind:m  (poke-each 1 ops)
-  ;<  ~  bind:m  ?~(ops (pure:(fiber:fiber:nexus ,~) ~) (settle /instruct))
-  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed ops now who act)
+  =/  items=(list json)  (turn kept |=(j=json (with-why:orr j said)))
+  ;<  ~  bind:m  (file-batch 1 items)
+  ;<  filed=[views=(list json) notes=(list @t)]  bind:m  (extras-filed items now who act)
   ::  apply: the owner's own words, so the actions are approved at once
   ;<  ~  bind:m
     ?.  ?=([~ %b %.y] (~(get by p.jon) 'apply'))  (pure:(fiber:fiber:nexus ,~) ~)
@@ -7730,16 +7817,19 @@
   =/  dir=path  (weld u.base /know/vault/orrery/preferences)
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %| dir] ~)
   ?.  ?=([~ %ball *] vw)  (pure:m ~)
-  =/  names=(list @ta)  (sort (turn ~(tap by dir.ball.u.vw) head) aor)
-  =|  out=(list @t)
-  |-
-  ?~  names  (pure:m (flop out))
-  ;<  ev=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld dir /[i.names]) %entry] ~)
-  =/  body=(unit @t)
-    ?.  ?=([~ %file *] ev)  ~
-    (mole |.(-:;;([@t @da (set @t) *] (sang-noun:tarball sang.u.ev))))
-  =/  rule=(unit @t)  ?~(body ~ (rule-of-entry:orr u.body))
-  $(names t.names, out ?~(rule out [u.rule out]))
+  ::  the directory read is deep, so each entry is read out of it
+  ::  rather than once more on its own (version 120)
+  %-  pure:m
+  %+  murn  (sort (turn ~(tap by dir.ball.u.vw) head) aor)
+  |=  name=@ta
+  ^-  (unit @t)
+  =/  sub=(unit ball:tarball)  (~(get by dir.ball.u.vw) name)
+  ?~  sub  ~
+  ?~  fil.u.sub  ~
+  =/  got  (~(get by contents.u.fil.u.sub) %entry)
+  ?~  got  ~
+  =/  body=(unit @t)  (mole |.(-:;;([@t @da (set @t) *] (sang-noun:tarball sang.u.got))))
+  ?~(body ~ (rule-of-entry:orr u.body))
 ::  +body-notes: the text of the lattice page whose path is each body's
 ::  id, for the bodies that have one (version 117): a person's page is
 ::  person/sarah, a place's place/home. None without lattice or the road
