@@ -581,9 +581,13 @@
           [~ %'nudge.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery nudge: failed")
         |-
-        ;<  ~  bind:m  nag-pass
-        ;<  ~  bind:m  world-pass
-        ;<  ~  bind:m  nudge-pass
+        ::  one read of the bodies and the actions for the round's three
+        ::  passes (version 118); none of them changes either
+        ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+        ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+        ;<  ~  bind:m  (nag-pass acts)
+        ;<  ~  bind:m  (world-pass all acts)
+        ;<  ~  bind:m  (nudge-pass all)
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
         ;<  ~  bind:m  (idle-until-poke /nudge)
@@ -6089,7 +6093,7 @@
     %:  post-json
       (cat 3 url.cfg '/chat/completions')
       api-key.cfg
-      (chat-body-with:orr cfg instruct-prompt:orr ~[(instruct-user:orr ctx focus multi answering text now tz)])
+      (chat-body-with:orr cfg instruct-prompt:orr (instruct-user:orr ctx focus multi answering text now tz))
       ~m2
       %instruct
     ==
@@ -6849,10 +6853,9 @@
 ++  owner-tz
   =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
-  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  ;<  now=@da  bind:m  get-time:io
-  =/  mine=@t  (attr-text:orr all (multi-of:orr schema) now 'person/me' 'timezone')
+  ::  person/me alone, not every body (version 118): the zone is read
+  ::  by every pass that wants the owner's clock
+  ;<  mine=@t  bind:m  (body-attr 0 'person/me' 'timezone')
   ?.  =('' mine)  (pure:m mine)
   ;<  gen-j=json  bind:m  (read-json (rf 0 / %'generator.json'))
   (pure:m timezone:(de-config:orr gen-j))
@@ -9002,10 +9005,12 @@
 ::  the policy marks sensitive, and why the owner is away only when it
 ::  may see situations. up is the level the ship's state is read at: 0
 ::  from a fiber, 1 from a request, so the zone and the away state are
-::  read here at that level rather than through +local-tz and +away-state
+::  read here at that level rather than through +local-tz and +away-state.
+::  The bodies and the actions come in loaded (version 118), so the nudge
+::  round shares its one read
 ::
 ++  world-now
-  |=  [up=@ud act=actor]
+  |=  [up=@ud act=actor all0=(list loaded:orr) acts0=(list [id=@ta a=action:orr])]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -9014,8 +9019,6 @@
   ;<  gen-j=json  bind:m  (read-json (rf up / %'generator.json'))
   ;<  pos=json  bind:m  (read-json (rf up / %'position.json'))
   ;<  gc=json  bind:m  (read-json (rf up / %'geocache.json'))
-  ;<  all0=(list loaded:orr)  bind:m  (load-bodies up)
-  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions up)
   =/  multi=(set @t)  (multi-of:orr schema)
   ::  the zone the owner is in: the phone's, else home's (+local-tz)
   =/  tz=@t
@@ -9037,15 +9040,18 @@
   |=  [eyre-id=@ta act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  w=json  bind:m  (world-now 1 act)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  w=json  bind:m  (world-now 1 act all acts)
   (send-json eyre-id 200 w)
 ::  +world-pass: the owner's digest kept in world.json for lattice to read
 ::  (version 116), written only when something but the clock moved
 ::
 ++  world-pass
+  |=  [all=(list loaded:orr) acts=(list [id=@ta a=action:orr])]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  w=json  bind:m  (world-now 0 ^-(actor [& 'owner' ~]))
+  ;<  w=json  bind:m  (world-now 0 ^-(actor [& 'owner' ~]) all acts)
   ;<  cur=json  bind:m  (read-json (rf 0 / %'world.json'))
   =/  bare  |=(j=json (del-key:orr (del-key:orr j 'at') 'time'))
   ?:  =((bare w) (bare cur))  (pure:m ~)
@@ -9059,13 +9065,13 @@
 ::  ones if that shows
 ::
 ++  nag-pass
+  |=  acts=(list [id=@ta a=action:orr])
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
   ;<  tz=@t  bind:m  local-tz
   ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
   ?:  (quiet-hour:orr now tz (de-rhythm:orr rhythm-j))  (pure:m ~)
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  late=(list [id=@ta a=action:orr late=@dr])  (late-high:orr acts now)
   ;<  last=json  bind:m  (read-json (rf 0 / %'nag-last.json'))
   ::  only the late ones are kept, so a snoozed or finished one starts
@@ -9091,6 +9097,7 @@
 ::  day, the desk once a stretch. The times are the owner's rhythm.json
 ::
 ++  nudge-pass
+  |=  all=(list loaded:orr)
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  now=@da  bind:m  get-time:io
@@ -9109,7 +9116,6 @@
   =/  lb=(unit @da)  (de-iso:orr (gs:orr (gj:orr ll 'next') 'leave_by'))
   ?:  &(?=(^ lb) (gth u.lb now) (lth u.lb (add now ~m30)))  (pure:m ~)
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  multi=(set @t)  (multi-of:orr schema)
   ::  away, no nudges: they are for the owner's days at home (version 83)
   ;<  away=away-view  bind:m  (away-state all multi now)

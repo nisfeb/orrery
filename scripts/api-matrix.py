@@ -2544,6 +2544,12 @@ check('an instruction answers the reply, files the two kinds the ship knows and 
 asked = [b for p, h, b in seen[n_instruct:] if p.endswith('/chat/completions') and system_of(b).startswith('You carry out')]
 user_text = json.dumps(asked[0].get('messages', [])[-1]) if asked else ''
 check('the model was asked once, with the owner\'s words and the body in focus', len(asked) == 1 and TOLD in user_text and STRUCK in user_text, len(asked))
+# the prompt in two parts (version 118): the bodies and kinds first, cache marked, with nothing that
+# changes between instructions; the clock, the focus and the words after
+parts = [p.get('text', '') for p in asked[0].get('messages', [])[-1].get('content', [])] if asked else []
+check('the instruction\'s prompt is a stable part, cached, then the clock and the words',
+      len(parts) == 2 and 'Bodies the ship knows' in parts[0] and asked[0]['messages'][-1]['content'][0].get('cache_control')
+      and TOLD not in parts[0] and 'clock reads' not in parts[0] and 'clock reads' in parts[1] and parts[1].endswith(TOLD), [p[:80] for p in parts])
 check('an instructed fact says why: the owner\'s words', any(dictish(dictish(action(i)).get('payload')).get('why') == 'You said: "%s"' % TOLD for i in IDS if dictish(action(i)).get('kind') == 'fact'), [dictish(action(i)).get('payload') for i in IDS])
 curl('POST', API + '/exec/wake', {})
 check('with apply, the executor carries both out: Rome is struck and the job stands',

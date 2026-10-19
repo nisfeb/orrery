@@ -6161,28 +6161,34 @@
   %+  scag  8
   %+  weld  (skim all |=(l=loaded (~(has in about) id.l)))
   (skim all |=(l=loaded &(!(~(has in about) id.l) (named l))))
-::  +instruct-user: the user prompt: the clock, the owner's words, the
-::  kinds and shapes, the bodies, the focus, the action answered, and
-::  the instruction last
+::  +instruct-user: the user prompt as two parts (version 118). The
+::  first holds what stays the same from one instruction to the next:
+::  the owner's words, the kinds and shapes, the bodies. It is cached by
+::  the provider, so an instruction a few minutes after another reads it
+::  from the cache. The second holds what changes: the clock, the focus,
+::  the action answered, and the instruction last
 ::
 ++  instruct-user
   |=  $:  ctx=reader-ctx  focus=(list loaded)  multi=(set @t)
           answering=(unit [id=@ta a=action])  text=@t  now=@da  tz=@t
       ==
-  ^-  @t
-  %+  join-cords  nl
-  ;:  weld
-    `(list @t)`~[(rap 3 'The owner\'s clock reads ' (local-iso (en-iso now) tz) '.' ~)]
-    owner.ctx
-    (ctx-lines ctx 'Action kinds you may propose: ' 'Bodies the ship knows (id | name | aliases):')
-    ^-  (list @t)
-    ?~  focus  ~
-    :-  'What the ship holds of the bodies the instruction is most likely about:'
-    (turn focus |=(l=loaded (cat 3 '  ' (line l multi now))))
-    ^-  (list @t)
-    ?~  answering  ~
-    ~[(cat 3 'The action the owner is answering: ' (en:json:html (en-action id.u.answering a.u.answering)))]
-    `(list @t)`~[(cat 3 'The instruction: ' text)]
+  ^-  (list @t)
+  :~  %+  join-cords  nl
+      %+  weld  owner.ctx
+      (ctx-lines ctx 'Action kinds you may propose: ' 'Bodies the ship knows (id | name | aliases):')
+    ::
+      %+  join-cords  nl
+      ;:  weld
+        `(list @t)`~[(rap 3 'The owner\'s clock reads ' (local-iso (en-iso now) tz) '.' ~)]
+        ^-  (list @t)
+        ?~  focus  ~
+        :-  'What the ship holds of the bodies the instruction is most likely about:'
+        (turn focus |=(l=loaded (cat 3 '  ' (line l multi now))))
+        ^-  (list @t)
+        ?~  answering  ~
+        ~[(cat 3 'The action the owner is answering: ' (en:json:html (en-action id.u.answering a.u.answering)))]
+        `(list @t)`~[(cat 3 'The instruction: ' text)]
+      ==
   ==
 ::  +instruct-ctx: the reader's context with the instruction's kinds and
 ::  their shapes: the ones the ship carries out itself, and the reader's
