@@ -167,12 +167,13 @@ curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'ret
 
 if os.environ.get('ONLY'):
     want = os.environ['ONLY'].split(',')
-    src = open(__file__).read()
-    for chunk in re.split(r'(?m)^(?=# ---- )', src)[1:]:
+    #  named so it does not hide the src() a section calls
+    gate_src = open(__file__).read()
+    for chunk in re.split(r'(?m)^(?=# ---- )', gate_src)[1:]:
         head = chunk.split('\n', 1)[0]
         if head.startswith('# ---- the stub:') or any(w in head for w in want):
             #  padded so a traceback's line numbers are the file's
-            exec(compile('\n' * src[:src.index(chunk)].count('\n') + chunk, __file__, 'exec'))
+            exec(compile('\n' * gate_src[:gate_src.index(chunk)].count('\n') + chunk, __file__, 'exec'))
             #  a section that leaves the stub up for the one after it, run alone
             if 'srv' in globals() and srv.socket.fileno() != -1:
                 srv.shutdown(); srv.server_close()
@@ -1340,7 +1341,9 @@ curl('DELETE', API + '/body/' + BR_SIT)
 # ---- a lattice page followed (version 66): a page sent from lattice is read as the owner's own, its
 # situation made, read again when edited, and the follow ends when the situation is over. Needs lattice
 # on the ship (its link name) and orrery's road into it; without lattice the section is skipped
-LAT = (lambda d: d[0] if isinstance(d, list) and d else '')(curl('GET', HOST + '/grubbery/ball/sys/link/lattice/dest.lanes?raw=1')[1])
+#  through the file API: a ?raw=1 read answers a redirect, which came back
+#  as nothing and skipped this section on every ship until version 117
+LAT = (lambda d: d[0] if isinstance(d, list) and d else '')(curl('GET', HOST + '/grubbery/api/file/sys/link/lattice/dest.lanes')[1])
 if not LAT:
     print('== a lattice page followed: skipped, lattice is not installed here')
 else:
@@ -2777,6 +2780,35 @@ wf = gate.wait('world.json is kept for lattice', lambda: (lambda d: d if any(dic
     (lambda c, d: d if c == 200 and isinstance(d, dict) else {})(*gate.curl('GET', HOST + '/grubbery/api/file/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/world.json', jar=JAR))), 60) or {}
 check('and holds the same text as the route', wf.get('text') == dictish(curl('GET', API + '/world')[1]).get('text'), (wf.get('text'), dictish(curl('GET', API + '/world')[1]).get('text')))
 curl('DELETE', API + '/body/' + WSIT)
+
+# ---- body notes (version 117): the lattice page named for a body is the owner's notes on it, read into the generator's prompt ----
+NOTESRUN = time.strftime('%H%M%S')
+NB = 'person/gate-notes-' + NOTESRUN
+NOTE = 'Prefers a text to a call ' + NOTESRUN + '.'
+if gate.curl('GET', HOST + '/apps/lattice/beacon-rev', jar=JAR)[0] != 200:
+    print('   lattice is not installed here: the body notes section is skipped')
+else:
+    code, d = gate.curl('POST', HOST + '/apps/lattice/page-save?name=' + NB + '&type=md', jar=JAR, raw='# Gate notes\n\n' + NOTE, headers=['content-type: text/plain'])
+    check('a lattice page is saved at the body\'s id', code == 200 and dictish(d).get('ok') is True, (code, d))
+    curl('POST', API + '/observe', {'bodies': [{'id': NB, 'name': 'Gate Notes ' + NOTESRUN}], 'observations': [{'subject': NB, 'attr': 'status', 'value': 'around'}]})
+    srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'stub/model', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'cooldown_minutes': 0, 'max_daily': 1000})
+    def notes_seen():
+        for _, _, b in list(seen):
+            text = ''.join(str(dictish(c).get('text', '')) for m in listish(dictish(b).get('messages')) if dictish(m).get('role') == 'user' for c in listish(dictish(m).get('content')))
+            if NOTE in text:
+                return text
+        return None
+    seen.clear()
+    curl('POST', API + '/generate')
+    asked = gate.wait('the generator asks the model', notes_seen, 90) or ''
+    check('the prompt carries the owner\'s notes under the body\'s id', "The owner's own notes" in asked and (NB + ': # Gate notes ' + NOTE) in asked, asked[-600:])
+    curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
+    srv.shutdown()
+    srv.server_close()
+    curl('DELETE', API + '/body/' + NB)
+    gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + NB, jar=JAR)
 
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'

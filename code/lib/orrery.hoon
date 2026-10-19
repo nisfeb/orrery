@@ -3001,6 +3001,40 @@
   =/  head=@t  (rap 3 id.l ' | ' name.body.l ~)
   =?  head  =(%situation kind.body.l)  (rap 3 head ' | ' (phase winners now) ~)
   ?~(bits head (rap 3 head ' | ' (join-cords '; ' bits) ~))
+::  +prompt-shown: the bodies a generator pass shows: closed, cancelled
+::  and finished situations left out, then the cap keeps the ones most
+::  recently told of, person/me always (a hash-order cut dropped open
+::  ones). +build-parts lays them out; the notes are read for the same
+::
+++  prompt-shown
+  |=  [all=(list loaded) multi=(set @t) now=@da]
+  ^-  (list loaded)
+  =/  hidden=(set @t)
+    %-  sy
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit @t)
+    ?.  =(%situation kind.body.l)  ~
+    =/  ph=@t  (phase (fold rows.l multi now) now)
+    ?:(|(=('closed' ph) =('cancelled' ph) =('over' ph)) `id.l ~)
+  (newest-bodies (skip all |=(l=loaded (~(has in hidden) id.l))) prompt-bodies)
+::  +with-notes: the owner's own notes on the bodies shown, the text of
+::  the lattice page whose path is a body's id (version 117), put before
+::  the clock as the peer's lines are: notes change seldom, so the pieces
+::  before them stay the same from one pass to the next. Each is cut to
+::  600 bytes, the whole to 4000
+::
+++  with-notes
+  |=  [parts=(list @t) notes=(list [id=@t text=@t])]
+  ^-  (list @t)
+  ?~  notes  parts
+  =/  lines=(list @t)
+    :-  'The owner\'s own notes, from the page in their wiki named for each body:'
+    (turn notes |=([id=@t text=@t] (rap 3 '  ' id ': ' (end [3 600] (squeeze text)) ~)))
+  =/  block=@t  (end [3 4.000] (join-cords nl lines))
+  =/  n=@ud  (lent parts)
+  ?:  =(0 n)  ~[block]
+  (weld (scag (dec n) parts) [block (slag (dec n) parts)])
 ::  +build-parts: the five pieces, the least changing first and the
 ::  clock last, so the first four are the same text from one pass to the
 ::  next while nothing changed. decided are the done, dismissed and
@@ -3018,17 +3052,7 @@
       ==
   ^-  (list @t)
   =/  multi=(set @t)  (multi-of schema)
-  =/  hidden=(set @t)
-    %-  sy
-    %+  murn  all
-    |=  l=loaded
-    ^-  (unit @t)
-    ?.  =(%situation kind.body.l)  ~
-    =/  ph=@t  (phase (fold rows.l multi now) now)
-    ?:(|(=('closed' ph) =('cancelled' ph) =('over' ph)) `id.l ~)
-  ::  the cap keeps the bodies most recently told of, person/me always,
-  ::  after the hidden are gone: a hash-order cut dropped open ones
-  =/  shown=(list loaded)  (newest-bodies (skip all |=(l=loaded (~(has in hidden) id.l))) prompt-bodies)
+  =/  shown=(list loaded)  (prompt-shown all multi now)
   =/  section
     |=  kinds=(list @tas)
     ^-  (list @t)
@@ -3037,7 +3061,7 @@
     |=  k=@tas
     ^-  (list @t)
     =/  rows=(list loaded)
-      (skim shown |=(l=loaded &(=(k kind.body.l) !(~(has in hidden) id.l))))
+      (skim shown |=(l=loaded =(k kind.body.l)))
     ?~  rows  ~
     :-  (cat 3 ?:(=(%activity k) 'activities' (cat 3 k 's')) ':')
     (turn rows |=(l=loaded (cat 3 '  ' (line l multi now))))

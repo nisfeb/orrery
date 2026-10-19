@@ -1335,6 +1335,25 @@
           ==
     !>((gs:orr w 'text'))
   ==
+::  the owner's notes on the bodies shown go in before the clock, the
+::  last piece, each cut to 600 bytes; none, and the pieces are as they
+::  were (version 117)
+++  test-with-notes
+  =/  parts=(list @t)  ~['schema' 'bodies' 'actions' 'clock']
+  =/  long=@t  (crip (reap 700 'x'))
+  =/  got=(list @t)  (with-notes:orr parts ~[['person/wren' 'Hates surprises.'] ['place/home' long]])
+  =/  block=@t  (snag 3 got)
+  ;:  weld
+    (expect-eq !>(parts) !>((with-notes:orr parts ~)))
+    (expect-eq !>(5) !>((lent got)))
+    (expect-eq !>('clock') !>((rear got)))
+    (expect-eq !>(~['schema' 'bodies' 'actions']) !>((scag 3 got)))
+    (expect !>(=(0 (fall (find "The owner's own notes" (trip block)) 1))))
+    (expect !>(?=(^ (find "  person/wren: Hates surprises." (trip block)))))
+    ::  a 700-byte note is cut to 600
+    (expect !>(?=(^ (find (weld "  place/home: " (reap 600 'x')) (trip block)))))
+    (expect !>(?=(~ (find (weld "  place/home: " (reap 601 'x')) (trip block)))))
+  ==
 ::  the calendars the owner named go on the poke: a task's todo to one,
 ::  a calendar event to the other; none named, no cal, the default
 ++  test-exec-cals

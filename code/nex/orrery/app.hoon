@@ -5444,7 +5444,9 @@
   ::  the other ship's open actions on shared bodies, so a pass does not
   ::  propose what the other owner has in hand (version 92)
   ;<  peer-j=json  bind:m  (read-json (rf 0 / %'peer-actions.json'))
-  =/  parts=(list @t)  (with-peer:orr (build-parts:orr all acts decided schema now tz max-actions.cfg cs) peer-j)
+  ::  the owner's notes on the bodies shown, from lattice (version 117)
+  ;<  notes=(list [id=@t text=@t])  bind:m  (body-notes (prompt-shown:orr all (multi-of:orr schema) now))
+  =/  parts=(list @t)  (with-notes:orr (with-peer:orr (build-parts:orr all acts decided schema now tz max-actions.cfg cs) peer-j) notes)
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
   =/  last=json  last0
@@ -7666,6 +7668,23 @@
   ;<  vw=(unit view:nexus)  bind:m  (page-view base page)
   ?.  ?=([~ %file *] vw)  (pure:m '')
   (pure:m (scot %uv (sham cass.u.vw)))
+::  +body-notes: the text of the lattice page whose path is each body's
+::  id, for the bodies that have one (version 117): a person's page is
+::  person/sarah, a place's place/home. None without lattice or the road
+::  into it, which the owner grants for pages sent to orrery
+::
+++  body-notes
+  |=  ls=(list loaded:orr)
+  =/  m  (fiber:fiber:nexus ,(list [id=@t text=@t]))
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  (find-base %lattice)
+  ?~  base  (pure:m ~)
+  =|  out=(list [id=@t text=@t])
+  |-
+  ?~  ls  (pure:m (flop out))
+  ;<  t=(unit @t)  bind:m  (page-text base id.i.ls)
+  =/  txt=@t  ?~(t '' (trim-cord:orr u.t))
+  $(ls t.ls, out ?:(=('' txt) out [[id.i.ls txt] out]))
 ::  +page-text: a page's text where lattice keeps it: its data grub is
 ::  the text as written for a content page; a computed page (show
 ::  %noun) and a page that cannot be read give ~
