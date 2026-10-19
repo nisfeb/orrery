@@ -318,6 +318,8 @@ Since version 66 a page in lattice, on the same ship, can be sent to orrery: lat
 
 Since version 117 a lattice page whose path is a body's id is your notes on that body: `person/sarah` for Sarah, `place/home` for home. When the generator thinks, it reads the notes of each body it is shown, 600 bytes of each and 4000 in all, under the line "The owner's own notes". So what you keep in your wiki (she hates surprises, the gate code is on the post) shapes what it proposes. It reads through the same road as a page sent to orrery, and nothing is read without lattice or the road.
 
+Your rules for orrery can live in lattice too (version 117): a memory entry you write under `orrery/preferences/` (for example `orrery/preferences/no-calls`, "Never propose calls.") is read as one of your standing preferences, after the ones in your schema, by the generator, every reader, instructions and refines. Only your own words count: an entry an agent wrote (`source: agent`) or one superseded is left out, so an agent with memory access cannot steer what orrery proposes.
+
 Orrery reads the page through one road into lattice's instance (`/apps/shell.shell/desks/lattice.desk/`, peek), which the owner grants on the permits page. Refused, a sent page is read once, as sent, and the follow says so.
 
 ### Time to leave

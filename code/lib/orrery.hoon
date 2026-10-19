@@ -2950,6 +2950,46 @@
   ?~  prefs  ~
   :-  'The owner\'s standing preferences:'
   (turn prefs |=(p=@t (cat 3 '  - ' p)))
+::  ==  rules from lattice (version 117): the owner's own memory entries
+::  under orrery/preferences, standing preferences beside the schema's
+::
+::  +rule-of-entry: a lattice memory entry's body as one standing
+::  preference, the text after its front matter, squeezed, 300 bytes at
+::  most; ~ for an entry an agent wrote (source: agent), one superseded,
+::  or one with no text. Only the owner's own words steer the proposals
+::
+++  rule-of-entry
+  |=  body=@t
+  ^-  (unit @t)
+  =/  t=tape  (trip body)
+  =/  split=[meta=(map @t @t) rest=tape]
+    ?.  =("---\0a" (scag 4 t))  [~ t]
+    =/  after=tape  (slag 4 t)
+    =/  stop=(unit @ud)  (find "\0a---" after)
+    ?~  stop  [~ t]
+    :_  (slag (add u.stop 4) after)
+    %-  ~(gas by *(map @t @t))
+    %+  murn  (to-wain:format (crip (scag u.stop after)))
+    |=  l=@t
+    ^-  (unit [@t @t])
+    =/  c=(unit @ud)  (find ":" (trip l))
+    ?~  c  ~
+    `[(lower (trim-cord (end [3 u.c] l))) (trim-cord (rsh [3 +(u.c)] l))]
+  ?:  =('agent' (~(gut by meta.split) 'source' ''))  ~
+  ?.  =('' (~(gut by meta.split) 'superseded-by' ''))  ~
+  =/  txt=@t  (end [3 300] (trim-cord (squeeze (crip rest.split))))
+  ?:(=('' txt) ~ `txt)
+::  +with-rules: the schema as the prompts read it, the owner's lattice
+::  rules after their own standing preferences, those already there
+::  left out (+owner-lines keeps the first 30)
+::
+++  with-rules
+  |=  [schema=json rules=(list @t)]
+  ^-  json
+  =/  own=(list @t)  (strings (ga schema 'preferences'))
+  =/  new=(list @t)  (skip rules |=(r=@t (lien own |=(o=@t =(o r)))))
+  ?~  new  schema
+  (set-key schema 'preferences' a+(turn (weld own new) |=(t=@t `json`s+t)))
 ::  +ref-or-text: a value as one token: a ref's id, a string, or its JSON
 ::
 ++  ref-or-text

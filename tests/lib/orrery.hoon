@@ -1285,6 +1285,29 @@
     (expect !>(!(owner-by:orr 'talon')))
     (expect !>(!(owner-by:orr 'generator')))
   ==
+::  a lattice memory entry is one standing preference, the text after
+::  its front matter; one an agent wrote, or one superseded, is not, so
+::  only the owner's own words steer the proposals (version 117)
+++  test-rule-of-entry
+  =/  nl=@t  `@t`10
+  =/  fm  |=([meta=@t text=@t] (rap 3 '---' nl meta nl '---' nl text ~))
+  ;:  weld
+    (expect-eq !>(`(unit @t)``'Never propose calls.') !>((rule-of-entry:orr 'Never propose calls.')))
+    (expect-eq !>(`(unit @t)``'Never propose calls.') !>((rule-of-entry:orr (fm 'source: user' 'Never propose calls.'))))
+    (expect-eq !>(`(unit @t)`~) !>((rule-of-entry:orr (fm 'source: agent' 'Always propose calls.'))))
+    (expect-eq !>(`(unit @t)`~) !>((rule-of-entry:orr (fm 'superseded-by: /orrery/preferences/b' 'Old rule.'))))
+    (expect-eq !>(`(unit @t)`~) !>((rule-of-entry:orr (fm 'source: user' ''))))
+    (expect-eq !>(300) !>((met 3 (need (rule-of-entry:orr (crip (reap 400 'x')))))))
+  ==
+::  the rules go after the owner's own standing preferences, those there
+::  already left out; none, and the schema is as it was
+++  test-with-rules
+  =/  schema=json  (jo '{"preferences": ["Never propose calls."]}')
+  ;:  weld
+    (expect-eq !>(schema) !>((with-rules:orr schema ~)))
+    (expect-eq !>(schema) !>((with-rules:orr schema ~['Never propose calls.'])))
+    (expect-eq !>(`(list @t)`~['Never propose calls.' 'Texts, not calls.']) !>((strings:orr (ga:orr (with-rules:orr schema ~['Texts, not calls.']) 'preferences'))))
+  ==
 ++  test-has-phrase
   ;:  weld
     (expect !>((has-phrase:orr 'ETIAS is now REQUIRED for travel' 'now required')))

@@ -2694,7 +2694,8 @@
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
   =/  all=(list loaded:orr)  all:(view-of act all0 ~ (hidden-for act policy))
-  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  ;<  rules=(list @t)  bind:m  lattice-rules
+  =/  ctx=reader-ctx:orr  (reader-context:orr all (with-rules:orr schema rules) now)
   ::  The kinds a refinement may touch are the reader's: a merge or a
   ::  home action has no shape the prompt could hold a rewrite to.
   ?.  (lien kinds.ctx |=(k=@t =(k `@t`kind.a)))
@@ -5444,8 +5445,11 @@
   ::  the other ship's open actions on shared bodies, so a pass does not
   ::  propose what the other owner has in hand (version 92)
   ;<  peer-j=json  bind:m  (read-json (rf 0 / %'peer-actions.json'))
-  ::  the owner's notes on the bodies shown, from lattice (version 117)
+  ::  the owner's notes on the bodies shown and their rules, from lattice
+  ::  (version 117)
   ;<  notes=(list [id=@t text=@t])  bind:m  (body-notes (prompt-shown:orr all (multi-of:orr schema) now))
+  ;<  rules=(list @t)  bind:m  lattice-rules
+  =.  schema  (with-rules:orr schema rules)
   =/  parts=(list @t)  (with-notes:orr (with-peer:orr (build-parts:orr all acts decided schema now tz max-actions.cfg cs) peer-j) notes)
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
@@ -6077,7 +6081,8 @@
     %+  weld  (strings:orr (ga:orr jon 'about'))
     ?~(answering ~ ~(tap in about.a.u.answering))
   =/  multi=(set @t)  (multi-of:orr schema)
-  =/  ctx=reader-ctx:orr  (instruct-ctx:orr (reader-context:orr all.seen schema now) schema)
+  ;<  rules=(list @t)  bind:m  lattice-rules
+  =/  ctx=reader-ctx:orr  (instruct-ctx:orr (reader-context:orr all.seen (with-rules:orr schema rules) now) schema)
   =/  focus=(list loaded:orr)  (instruct-focus:orr all.seen about text)
   =/  tz=@t  (owner-zone:orr all0 multi now timezone.cfg)
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
@@ -7668,6 +7673,30 @@
   ;<  vw=(unit view:nexus)  bind:m  (page-view base page)
   ?.  ?=([~ %file *] vw)  (pure:m '')
   (pure:m (scot %uv (sham cass.u.vw)))
+::  +lattice-rules: the owner's own memory entries in lattice under
+::  orrery/preferences, each one standing preference (version 117), read
+::  through the road orrery has into lattice. An entry is a directory of
+::  its key holding the grub entry, whose head is the body. None without
+::  lattice or the road
+::
+++  lattice-rules
+  =/  m  (fiber:fiber:nexus ,(list @t))
+  ^-  form:m
+  ;<  base=(unit path)  bind:m  (find-base %lattice)
+  ?~  base  (pure:m ~)
+  =/  dir=path  (weld u.base /know/vault/orrery/preferences)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %| dir] ~)
+  ?.  ?=([~ %ball *] vw)  (pure:m ~)
+  =/  names=(list @ta)  (sort (turn ~(tap by dir.ball.u.vw) head) aor)
+  =|  out=(list @t)
+  |-
+  ?~  names  (pure:m (flop out))
+  ;<  ev=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld dir /[i.names]) %entry] ~)
+  =/  body=(unit @t)
+    ?.  ?=([~ %file *] ev)  ~
+    (mole |.(-:;;([@t @da (set @t) *] (sang-noun:tarball sang.u.ev))))
+  =/  rule=(unit @t)  ?~(body ~ (rule-of-entry:orr u.body))
+  $(names t.names, out ?~(rule out [u.rule out]))
 ::  +body-notes: the text of the lattice page whose path is each body's
 ::  id, for the bodies that have one (version 117): a person's page is
 ::  person/sarah, a place's place/home. None without lattice or the road
@@ -9547,7 +9576,8 @@
   ?:  =('' api-key.gen)
     (pure:m [(flop handled) (flop ['no api_key set on the generator: the reply waits' notes])])
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  ;<  rules=(list @t)  bind:m  lattice-rules
+  =/  ctx=reader-ctx:orr  (reader-context:orr all (with-rules:orr schema rules) now)
   =/  rows=(list window-row:orr)  ~[[(cat 3 'mail/' id.r) (en-iso:orr sent.r) 'person/me' words |]]
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
     %:  post-json
@@ -9930,7 +9960,8 @@
   ;<  recent=json  bind:m  (read-json (rf 0 / recent.kind))
   ;<  cs-j=json  bind:m  (read-json (rf 0 / %'corrections.json'))
   ;<  own-acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  ;<  rules=(list @t)  bind:m  lattice-rules
+  =/  ctx=reader-ctx:orr  (reader-context:orr all (with-rules:orr schema rules) now)
   ::  what the owner struck, and this reader's proposals they dismissed
   =.  lessons.ctx  (lesson-lines:orr (de-corrections:orr cs-j) own-acts by.kind)
   ::  the open actions the conversation may close ("done", "fixed",

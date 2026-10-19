@@ -2810,6 +2810,38 @@ else:
     curl('DELETE', API + '/body/' + NB)
     gate.curl('POST', HOST + '/apps/lattice/page-del?name=' + NB, jar=JAR)
 
+# ---- lattice rules (version 117): the owner's memory entries under orrery/preferences are standing preferences; an agent's are not ----
+RULESRUN = time.strftime('%H%M%S')
+OWN_RULE, AGENT_RULE = 'Never propose a gate call ' + RULESRUN + '.', 'Always propose a gate call ' + RULESRUN + '.'
+if gate.curl('GET', HOST + '/apps/lattice/beacon-rev', jar=JAR)[0] != 200:
+    print('   lattice is not installed here: the lattice rules section is skipped')
+else:
+    LK = HOST + '/apps/lattice/know-save?key=' + urllib.parse.quote('/orrery/preferences/gate-own-' + RULESRUN)
+    code, d = gate.curl('POST', LK, jar=JAR, raw=OWN_RULE, headers=['content-type: text/plain'])
+    check('the owner keeps a rule in lattice under orrery/preferences', code == 200, (code, d))
+    LA = HOST + '/apps/lattice/know-save?force_new=1&source=agent&author=gate-agent&key=' + urllib.parse.quote('/orrery/preferences/gate-agent-' + RULESRUN)
+    code, d = gate.curl('POST', LA, jar=JAR, raw=AGENT_RULE, headers=['content-type: text/plain'])
+    check('and an agent writes one there too', code == 200, (code, d))
+    srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    curl('PUT', API + '/generator', {'enabled': True, 'url': 'http://127.0.0.1:%d' % STUB_PORT, 'model': 'stub/model', 'api_key': 'sk-stub', 'reasoning': {'enabled': False}, 'cooldown_minutes': 0, 'max_daily': 1000})
+    def rules_seen():
+        for _, _, b in list(seen):
+            text = ''.join(str(dictish(c).get('text', '')) for m in listish(dictish(b).get('messages')) if dictish(m).get('role') == 'user' for c in listish(dictish(m).get('content')))
+            if "standing preferences" in text and RULESRUN in text:
+                return text
+        return None
+    seen.clear()
+    curl('POST', API + '/generate')
+    asked = gate.wait('the generator asks the model', rules_seen, 90) or ''
+    check('the owner\'s rule stands among the standing preferences', ('  - ' + OWN_RULE) in asked, asked[:800])
+    check('the agent\'s rule does not steer the proposals', AGENT_RULE not in asked, asked[:800])
+    curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
+    srv.shutdown()
+    srv.server_close()
+    for k in ('gate-own-', 'gate-agent-'):
+        gate.curl('POST', HOST + '/apps/lattice/know-delete?key=' + urllib.parse.quote('/orrery/preferences/' + k + RULESRUN), jar=JAR)
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect
@@ -2893,7 +2925,8 @@ check('the rhythm is put back', nag_raw('rhythm.json') == rhythm_was, nag_raw('r
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
 RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json', 'world.json']
+#  world.json is not here: the nudge loop rewrites it whenever the day moves
+RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json']
 #  through the file API: a ?raw=1 read answers a redirect, which came
 #  back as nothing and skipped every check below until version 110
 def reload_raw(name):
