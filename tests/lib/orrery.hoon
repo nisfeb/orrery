@@ -329,6 +329,46 @@
     (expect-eq !>('b') !>(?~(st '' id.i.st)))
     (expect-eq !>(`json`~) !>(?~(st `json`~ value.obs.i.st)))
   ==
+::  the current view (version 119): pruned rows fold as every row does,
+::  at the time they were pruned and after, and +timed reads the same
+::  past a cleared winner
+++  test-current-rows
+  =/  multi=(set @t)  (sy ~['participants'])
+  =/  until  |=([o=obs:orr u=@da] o(until `u))
+  =/  gone   |=(o=obs:orr o(retracted &))
+  =/  rows=(list row:orr)
+    :~  (r 'a' (mk 'location' s+'Route 9' t0))
+        (r 'b' (mk 'location' s+'shop' (add t0 ~h4)))
+        (r 'c' (until (mk 'location' s+'tow truck' (add t0 ~h2)) (add t0 ~h30)))
+        (r 'd' (until (mk 'status' s+'stranded' (add t0 ~h5)) (add t0 ~d3)))
+        (r 'e' (mk 'status' s+'ok' t0))
+        (r 'f' (gone (mk 'mood' s+'fine' (add t0 ~h1))))
+        (r 'g' (mk 'mood' s+'tired' (add t0 ~d2)))
+        (r 'h' (until (mk 'note' s+'gone soon' t0) (add t0 ~h10)))
+        (r 'i' (mk 'participants' (jo '{"ref":"person/me"}') t0))
+        (r 'j' (mk 'participants' (jo '{"ref":"person/me"}') (add t0 ~h3)))
+        (r 'k' (mk 'participants' (jo '{"ref":"person/sarah"}') (add t0 ~h1)))
+        (r 'l' (mk 'participants' ~ (add t0 ~h2)))
+        (r 'm' (mk 'ends' s+'2026-09-20T10:00:00Z' t0))
+        (r 'n' (mk 'ends' ~ (add t0 ~h6)))
+    ==
+  =/  built=@da  (add t0 ~d1)
+  =/  cur=(list row:orr)  (current-rows:orr rows multi built)
+  =/  body=body:orr  [%thing 'Subaru' ~ t0 ~]
+  =/  same
+    |=  when=@da
+    =/  wa  (fold:orr rows multi when)
+    =/  wc  (fold:orr cur multi when)
+    ;:  weld
+      (expect-eq !>(wa) !>(wc))
+      (expect-eq !>((timed:orr ['thing/subaru' body rows] wa 'ends')) !>((timed:orr ['thing/subaru' body cur] wc 'ends')))
+    ==
+  ;:  weld
+    (expect-eq !>(`(list @ta)`~['b' 'd' 'e' 'g' 'j' 'k' 'm' 'n']) !>((turn cur |=(x=row:orr id.x))))
+    (same built)
+    (same (add built ~d3))
+    (same (add built ~d30))
+  ==
 ++  test-fold-multi
   =/  multi=(set @t)  (sy ~['participants'])
   =/  a  (r 'a' (mk 'participants' (jo '{"ref":"person/me"}') t0))

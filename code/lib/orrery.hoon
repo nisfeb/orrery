@@ -59,6 +59,13 @@
 +$  stored-obs       [%1 =obs]
 +$  stored-action    [%2 =action]
 +$  stored-action-1  [%1 =action-1]
+::  the current view (version 119), kept in current.noun: the bodies
+::  with only the rows that can still matter (+current-rows), under the
+::  fold revision of /bodies they were read at, which moves on every
+::  write below it and on nothing else, and the multi set they were
+::  pruned with
+::
++$  stored-current  [%1 fold=[@ud @da] multi=(set @t) all=(list loaded)]
 ::  an observation with the grub name it lives under
 ::
 +$  row  [id=@ta =obs]
@@ -794,6 +801,46 @@
   =/  n=@ud  (fall (~(get by count) k) 0)
   =?  out  =(1 n)  (~(put in out) id.r)
   $(live t.live, count (~(put by count) k +(n)))
+::  +current-rows: the rows that can still matter at when or later, until
+::  the next write to the body (version 119): none retracted, none
+::  expired, no null on a multi attribute, and none outranked by a
+::  later row that is already true and never ends (on a multi
+::  attribute, a later row of the same value). The attributes +timed
+::  falls back on keep every row not retracted, since it reads past the
+::  fold when there is no winner. The rows keep their order, so the
+::  fold lists a multi attribute's values as it would from every row
+::
+++  timed-attrs  `(set @t)`(sy `(list @t)`~['started' 'ended' 'starts' 'ends'])
+++  current-rows
+  |=  [rows=(list row) multi=(set @t) when=@da]
+  ^-  (list row)
+  =/  key  |=(o=obs ^-([@t json] [attr.o ?:((~(has in multi) attr.o) value.o ~)]))
+  ::  for each attribute (each value, on a multi one) the latest row
+  ::  that is true now and never ends
+  =/  top=(map [@t json] row)
+    %+  roll  rows
+    |=  [r=row acc=(map [@t json] row)]
+    ?.  &(!retracted.obs.r (lte at.obs.r when) ?=(~ until.obs.r))  acc
+    =/  k  (key obs.r)
+    =/  t=(unit row)  (~(get by acc) k)
+    ?:  &(?=(^ t) !(later r u.t))  acc
+    (~(put by acc) k r)
+  %+  skim  rows
+  |=  r=row
+  ?:  retracted.obs.r  |
+  ?:  (~(has in timed-attrs) attr.obs.r)  &
+  ?:  ?&(?=(^ until.obs.r) (lte u.until.obs.r when))  |
+  ?:  &((~(has in multi) attr.obs.r) ?=(~ value.obs.r))  |
+  =/  t=(unit row)  (~(get by top) (key obs.r))
+  ?~  t  &
+  ?|(=(id.u.t id.r) !(later u.t r))
+::  +read-current: current.noun, or ~ when it is not one this build reads
+::
+++  read-current
+  |=  n=*
+  ^-  (unit stored-current)
+  =/  r  (mule |.(;;(stored-current n)))
+  ?.(?=(%& -.r) ~ `p.r)
 ::  +status-of: what a row is, seen from when, given the winners
 ::
 ++  status-of

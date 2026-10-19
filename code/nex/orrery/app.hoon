@@ -37,6 +37,7 @@
 ::    /model-down.json                  since when the model has not answered, so the owner is told once (version 111)
 ::    /briefs/<day>  /reviews/<day>     each day's brief and each Sunday's review, kept for a journal (version 116)
 ::    /world.json                       the world digest an agent reads as a session starts (version 116)
+::    /current.noun                     the bodies with only their current rows, for the readers of the present (version 119)
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
 ::    /sphere-shares.json  /sphere-offers.json  /sphere-follows.json   spheres shared out, offered in, and followed (version 90)
@@ -155,6 +156,7 @@
           [%fall %| /briefs empty-dir:loader]
           [%fall %| /reviews empty-dir:loader]
           [%fall %& [/ %'world.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'current.noun'] [[/orrery %current] [%0 ~]]]
           [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'chat.sig'] [[/ %sig] ~]]
@@ -1423,6 +1425,38 @@
   ;<  vw=view:nexus  bind:m  (peek:io (rv up /bodies) ~)
   ?.  ?=([%ball *] vw)  (pure:m ~)
   (pure:m (bodies-in:om ball.vw))
+::  +load-current: every body with only the rows that can still matter
+::  (version 119), for a reader that folds at the present and reads
+::  nothing else of the history: instruct, GET /state and the world
+::  digest. current.noun keeps them under the fold revision of /bodies,
+::  which moves on every write below it and on nothing else, so a
+::  shallow read says whether it holds. A reader that finds it stale
+::  loads every body, prunes, and writes it afresh: stamped with the
+::  revision read before the load, so a write that lands meanwhile
+::  only makes the next reader build it again
+::
+++  load-current
+  |=  [up=@ud multi=(set @t)]
+  =/  m  (fiber:fiber:nexus ,(list loaded:orr))
+  ^-  form:m
+  ;<  fv=view:nexus  bind:m  (peek-shallow:io (rv up /bodies) ~)
+  ?.  ?=([%ball *] fv)  (load-bodies up)
+  ?~  fil.wave.fv  (load-bodies up)
+  =/  key=[@ud @da]  fold.u.fil.wave.fv
+  =/  road=road:tarball  (rf up / %'current.noun')
+  ;<  cv=view:nexus  bind:m  (peek:io road ~)
+  =/  got=(unit stored-current:orr)
+    ?.  ?=([%file *] cv)  ~
+    (read-current:orr (sang-noun:tarball sang.cv))
+  ?:  &(?=(^ got) =(key fold.u.got) =(multi multi.u.got))  (pure:m all.u.got)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies up)
+  ;<  now=@da  bind:m  get-time:io
+  =/  cur=(list loaded:orr)
+    (turn all |=(l=loaded:orr l(rows (current-rows:orr rows.l multi now))))
+  ;<  ~  bind:m
+    ?.  ?=([%file *] cv)  (pure:(fiber:fiber:nexus ,~) ~)
+    (over:io road [[/orrery %current] `stored-current:orr`[%1 key multi cur]])
+  (pure:m cur)
 ::  ==  HTTP
 ::
 ++  send-json
@@ -1666,7 +1700,11 @@
     (send-json eyre-id 200 (pairs:enjs:format ~[['rev' rev] ['same' b+&]]))
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
-  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ::  the current view for the present; a state as of another time
+  ::  folds every row
+  ;<  all0=(list loaded:orr)  bind:m
+    ?^  (get-key:kv:html-utils 'at' args)  (load-bodies 1)
+    (load-current 1 (multi-of:orr schema))
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
   =/  all=(list loaded:orr)  all.seen
@@ -6073,7 +6111,7 @@
   ?:  (gte (day-count:orr gl 'calls_today' now) max-daily.cfg)  (send-err eyre-id 429 'the day\'s model calls are spent')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
-  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  all0=(list loaded:orr)  bind:m  (load-current 1 (multi-of:orr schema))
   ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
   =/  aid=@t  (gs:orr jon 'action')
@@ -9040,7 +9078,8 @@
   |=  [eyre-id=@ta act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  all=(list loaded:orr)  bind:m  (load-current 1 (multi-of:orr schema))
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   ;<  w=json  bind:m  (world-now 1 act all acts)
   (send-json eyre-id 200 w)

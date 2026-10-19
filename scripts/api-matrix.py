@@ -2848,6 +2848,36 @@ else:
     for k in ('gate-own-', 'gate-agent-'):
         gate.curl('POST', HOST + '/apps/lattice/know-delete?key=' + urllib.parse.quote('/orrery/preferences/' + k + RULESRUN), jar=JAR)
 
+# ---- the current view (version 119): the readers of the present fold only the rows that can still matter, kept until the next write below /bodies ----
+CVRUN = time.strftime('%H%M%S')
+def state_pair():
+    #  the state from the current view, then the one folded from every row at the same time
+    c1, s1 = curl('GET', API + '/state')
+    s1 = dictish(s1)
+    c2, s2 = curl('GET', API + '/state?at=' + urllib.parse.quote(str(s1.get('at'))))
+    return c1, c2, listish(s1.get('bodies')), listish(dictish(s2).get('bodies'))
+c1, c2, cv_cur, cv_full = state_pair()
+check('the state from the current view is the state folded from every row', c1 == 200 and c2 == 200 and cv_cur == cv_full and len(cv_cur) > 0,
+      (c1, c2, len(cv_cur), len(cv_full), [dictish(b).get('id') for b in cv_cur if b not in cv_full][:3]))
+CVT = 'thing/gate-current-' + CVRUN
+cvt0 = datetime.now(timezone.utc).replace(microsecond=0)
+code, d = observe([{'id': CVT, 'name': 'Gate current ' + CVRUN}], [
+    obs(CVT, 'status', 'old', cvt0 - timedelta(hours=3), src('cv-a')),
+    obs(CVT, 'status', 'newer', cvt0 - timedelta(hours=2), src('cv-b')),
+    obs(CVT, 'location', 'the yard', cvt0 - timedelta(hours=3), src('cv-c')),
+    obs(CVT, 'location', 'the road', cvt0 - timedelta(hours=1), src('cv-d'), until=cvt0 + timedelta(hours=5))])
+cv_ids = [dictish(o).get('id') for o in listish(dictish(d).get('observations'))]
+def cv_attrs():
+    b = next((x for x in listish(dictish(curl('GET', API + '/state')[1]).get('bodies')) if dictish(x).get('id') == CVT), {})
+    return {k: dictish(v).get('value') for k, v in dictish(dictish(b).get('attrs')).items()}
+check('a write is seen at once: the newer status, and the road while it lasts', cv_attrs() == {'status': 'newer', 'location': 'the road'}, cv_attrs())
+curl('POST', API + '/retract', {'id': cv_ids[1] if len(cv_ids) > 1 else '', 'note': 'gate current view'})
+check('a retraction is seen at once: the status falls back to the row the view had left out', cv_attrs().get('status') == 'old', cv_attrs())
+c1, c2, cv_cur, cv_full = state_pair()
+check('and the state still folds as every row does', c1 == 200 and c2 == 200 and cv_cur == cv_full, (len(cv_cur), len(cv_full)))
+curl('DELETE', API + '/body/' + CVT)
+check('a body deleted is gone from the state at once', not any(dictish(x).get('id') == CVT for x in listish(dictish(curl('GET', API + '/state')[1]).get('bodies'))), None)
+
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
 NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 #  through the file API: a ?raw=1 read answers a redirect
