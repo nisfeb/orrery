@@ -56,6 +56,25 @@
     (expect-eq !>(`(unit @da)`[~ ~2026.2.28]) !>((de-iso:orr '2026-02-28T00:00:00Z')))
     (expect-eq !>('1970-01-01T00:00:00Z') !>((en-iso:orr ~1970.1.1)))
   ==
+::  the day arithmetic writes what +yore wrote: leap days, the century
+::  rules, the ends of months and of days, four years of days and a
+::  day of times; and the times either side of it go through +yore
+++  test-en-iso-fast
+  =/  cases=(list @da)
+    :~  ~1970.1.1  ~1970.1.1..00.00.01  ~1999.12.31..23.59.59  ~2000.1.1
+        ~2000.2.29..12.00.00  ~2000.3.1  ~2001.2.28..23.59.59  ~2004.2.29
+        ~2024.12.31..23.59.59  ~2025.1.1  ~2026.9.16..22.05.00  ~2100.2.28
+        ~2100.3.1  ~2400.2.29  ~9999.12.31..23.59.59  ~1969.12.31..23.59.59
+        ~1600.1.1  ~10000.1.1
+    ==
+  =/  days=(list @da)  (turn (gulf 0 1.500) |=(n=@ud (add ~2023.1.1 (mul n ~d1))))
+  =/  times=(list @da)  (turn (gulf 0 200) |=(n=@ud (add ~2026.3.8 (mul n (add ~m7 ~s13)))))
+  ;:  weld
+    (expect-eq !>((turn cases en-iso-yore:orr)) !>((turn cases en-iso:orr)))
+    (expect-eq !>((turn days en-iso-yore:orr)) !>((turn days en-iso:orr)))
+    (expect-eq !>((turn times en-iso-yore:orr)) !>((turn times en-iso:orr)))
+    (expect-eq !>('2026-09-16T22:05:00Z') !>((en-iso:orr (add t0 (div ~s1 3)))))
+  ==
 ++  test-unix-secs
   ;:  weld
     (expect-eq !>(`@ud`1.789.596.300) !>((unix-secs:orr t0)))

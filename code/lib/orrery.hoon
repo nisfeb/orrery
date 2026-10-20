@@ -164,9 +164,33 @@
   =/  when=@da  (year [[& y] mo d h mi s ~])
   ?.  =((end [3 10] (en-iso when)) (end [3 10] t))  ~
   `when
-::  +en-iso: a @da to "2026-09-16T22:05:00Z", whole seconds
+::  +en-iso: a @da to "2026-09-16T22:05:00Z", whole seconds. From 1970
+::  to the year 9999 by day arithmetic (version 121): a state view writes
+::  a thousand of these, and +yore took a tenth of a millisecond each.
+::  The civil date is Howard Hinnant's civil_from_days. Any other time
+::  goes through +yore as it always did
 ::
 ++  en-iso
+  |=  when=@da
+  ^-  @t
+  ?.  &((gte when ~1970.1.1) (lth when ~10000.1.1))  (en-iso-yore when)
+  =/  secs=@ud  (div (sub when ~1970.1.1) ~s1)
+  =/  sod=@ud  (mod secs 86.400)
+  =/  z=@ud  (add (div secs 86.400) 719.468)
+  =/  era=@ud  (div z 146.097)
+  =/  doe=@ud  (sub z (mul era 146.097))
+  =/  yoe=@ud  (div (sub (add (sub doe (div doe 1.460)) (div doe 36.524)) (div doe 146.096)) 365)
+  =/  doy=@ud  (sub doe (sub (add (mul 365 yoe) (div yoe 4)) (div yoe 100)))
+  =/  mp=@ud  (div (add (mul 5 doy) 2) 153)
+  =/  d=@ud  +((sub doy (div (add (mul 153 mp) 2) 5)))
+  =/  mo=@ud  ?:((lth mp 10) (add mp 3) (sub mp 9))
+  =/  y=@ud  :(add yoe (mul era 400) ?:((lte mo 2) 1 0))
+  =/  two  |=(n=@ud ^-(@t (cat 3 (add '0' (div n 10)) (add '0' (mod n 10)))))
+  %+  rap  3
+  :~  (two (div y 100))  (two (mod y 100))  '-'  (two mo)  '-'  (two d)  'T'
+      (two (div sod 3.600))  ':'  (two (mod (div sod 60) 60))  ':'  (two (mod sod 60))  'Z'
+  ==
+++  en-iso-yore
   |=  when=@da
   ^-  @t
   =/  [[* y=@ud] mo=@ud [d=@ud h=@ud mi=@ud s=@ud *]]  (yore when)
