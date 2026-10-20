@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 120's owner steps
+
+Nothing to do: no new roads, so no consent prompt. An instruction that files actions answers about as soon as the ship has filed them: they go to the writer together, and the ship no longer waits two seconds for its writes to go still before it reads them back. Refining an action with a note answers sooner the same way. The same action proposed twice in one instruction is filed once.
+
 ### Version 119's owner steps
 
 Nothing to do: no new roads, so no consent prompt. Instructions, the state view and the world digest now read your bodies from a current view the ship keeps in `current.noun`: each body with only the facts that can still matter, kept until the next write to any body, when the first read builds it again. A state as of another time (`GET /api/state?at=`) and everything that reads the history still read every fact.
