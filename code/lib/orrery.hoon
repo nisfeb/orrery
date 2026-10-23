@@ -2732,7 +2732,7 @@
     |=  [id=@ta a=action]
     ^-  @t
     =/  base=@t  (rap 3 '  ' status.a ' | ' kind.a ' | ' title.a ~)
-    ?:(=('' note.a) base (rap 3 base ' | ' (end [3 200] (squeeze note.a)) ~))
+    ?:(=('' note.a) base (rap 3 base ' | ' (cut-utf8 (squeeze note.a) 200) ~))
   =/  older=(list [id=@ta a=action])
     (skim (scag cut decided) |=([* a=action] &(?=(%dismissed status.a) !=('' note.a))))
   =/  kept=(list @t)
@@ -2909,14 +2909,14 @@
   =/  struck=(list @t)
     %+  turn  (scag 30 cs)
     |=  c=correction
-    (rap 3 '  ' subject.c ' ' attr.c ' = ' value.c ?:(=('' why.c) '' (rap 3 ' (' (end [3 200] (squeeze why.c)) ')' ~)) ~)
+    (rap 3 '  ' subject.c ' ' attr.c ' = ' value.c ?:(=('' why.c) '' (rap 3 ' (' (cut-utf8 (squeeze why.c) 200) ')' ~)) ~)
   =/  mine=(list [id=@ta a=action])
     %+  sort
       (skim acts |=([* a=action] &(=(by by.a) ?=(%dismissed status.a) !=('' (trim-cord note.a)) !(moot a))))
     |=([[* x=action] [* y=action]] (gth proposed.x proposed.y))
   =/  said=(list @t)
     %+  turn  (scag 20 mine)
-    |=([* a=action] (rap 3 '  ' kind.a ' | ' title.a ' | ' (end [3 200] (squeeze note.a)) ~))
+    |=([* a=action] (rap 3 '  ' kind.a ' | ' title.a ' | ' (cut-utf8 (squeeze note.a) 200) ~))
   %+  weld
     ^-  (list @t)
     ?~(struck ~ ['The owner struck these facts as wrong; never write them again:' struck])
@@ -2937,7 +2937,7 @@
   %+  turn  (scag 15 `(list [id=@ta a=action])`kept)
   |=  [* a=action]
   =/  notes=@t  (gs payload.a 'notes')
-  (rap 3 '  ' kind.a ' | ' title.a ?:(=('' notes) '' (rap 3 ' | ' (end [3 160] (squeeze notes)) ~)) ~)
+  (rap 3 '  ' kind.a ' | ' title.a ?:(=('' notes) '' (rap 3 ' | ' (cut-utf8 (squeeze notes) 160) ~)) ~)
 ::  +fared-lines: how each proposer's kinds fared, where enough were
 ::  decided to tell, so the generator proposes less of what is dismissed
 ::
@@ -3009,10 +3009,10 @@
 ++  owner-lines
   |=  [schema=json style=?]
   ^-  (list @t)
-  =/  said=@t  (end [3 1.000] (trim-cord (squeeze (gs schema 'style'))))
+  =/  said=@t  (cut-utf8 (trim-cord (squeeze (gs schema 'style'))) 1.000)
   =/  prefs=(list @t)
     %+  scag  30
-    %+  skip  (turn (strings (ga schema 'preferences')) |=(p=@t (end [3 300] (trim-cord (squeeze p)))))
+    %+  skip  (turn (strings (ga schema 'preferences')) |=(p=@t (cut-utf8 (trim-cord (squeeze p)) 300)))
     |=(p=@t =('' p))
   %+  weld
     ^-  (list @t)
@@ -3048,7 +3048,7 @@
     `[(lower (trim-cord (end [3 u.c] l))) (trim-cord (rsh [3 +(u.c)] l))]
   ?:  =('agent' (~(gut by meta.split) 'source' ''))  ~
   ?.  =('' (~(gut by meta.split) 'superseded-by' ''))  ~
-  =/  txt=@t  (end [3 300] (trim-cord (squeeze (crip rest.split))))
+  =/  txt=@t  (cut-utf8 (trim-cord (squeeze (crip rest.split))) 300)
   ?:(=('' txt) ~ `txt)
 ::  +with-rules: the schema as the prompts read it, the owner's lattice
 ::  rules after their own standing preferences, those already there
@@ -3108,7 +3108,7 @@
     =/  shown=@t
       ?.  (~(has in multi) k)  (ref-or-text value.obs.first)
       (join-cords ', ' (turn w |=(r=row (ref-or-text value.obs.r))))
-    `(rap 3 k '=' (end [3 120] (squeeze shown)) ~)
+    `(rap 3 k '=' (cut-utf8 (squeeze shown) 120) ~)
   =/  head=@t  (rap 3 id.l ' | ' name.body.l ~)
   =?  head  =(%situation kind.body.l)  (rap 3 head ' | ' (phase winners now) ~)
   ?~(bits head (rap 3 head ' | ' (join-cords '; ' bits) ~))
@@ -3141,8 +3141,8 @@
   ?~  notes  parts
   =/  lines=(list @t)
     :-  'The owner\'s own notes, from the page in their wiki named for each body:'
-    (turn notes |=([id=@t text=@t] (rap 3 '  ' id ': ' (end [3 600] (squeeze text)) ~)))
-  =/  block=@t  (end [3 4.000] (join-cords nl lines))
+    (turn notes |=([id=@t text=@t] (rap 3 '  ' id ': ' (cut-utf8 (squeeze text) 600) ~)))
+  =/  block=@t  (cut-utf8 (join-cords nl lines) 4.000)
   =/  n=@ud  (lent parts)
   ?:  =(0 n)  ~[block]
   (weld (scag (dec n) parts) [block (slag (dec n) parts)])
@@ -3531,7 +3531,7 @@
   =/  todo=(list json)  (scag (mul 2 limit) (ga answer 'actions'))
   =/  said=(list @t)
     %+  turn  (scag 10 (ga answer 'notes'))
-    |=(n=json (cat 3 'model note: ' (end [3 200] (ref-or-text n))))
+    |=(n=json (cat 3 'model note: ' (cut-utf8 (ref-or-text n) 200)))
   =|  acts=(list json)
   =|  notes=(list @t)
   |-
@@ -3540,7 +3540,7 @@
   =/  a=json  i.todo
   ?.  ?=([%o *] a)  $(todo t.todo)
   =/  kind=@t  =/(k (lower (gs a 'kind')) ?:(=('' k) 'task' k))
-  =/  title=@t  (end [3 200] (gs a 'title'))
+  =/  title=@t  (cut-utf8 (gs a 'title') 200)
   ?:  |(!(~(has in kinds) kind) =('' title))
     $(todo t.todo, notes [(rap 3 'dropped: kind ' kind ' or no title (' (end [3 40] title) ')' ~) notes])
   ?:  (lien taken |=(t=@t (same-title title t)))
@@ -4859,7 +4859,7 @@
     :~  ['id' s+id:(tg-source m kind)]
         ['at' s+(en-iso at.m)]
         ['who' s+who]
-        ['text' s+(end [3 2.000] text.m)]
+        ['text' s+(cut-utf8 text.m 2.000)]
     ==
   =/  all=(list json)  (snoc kept row)
   =/  n=@ud  (lent all)
@@ -5226,12 +5226,12 @@
     :~  ?~  earlier  `(list @t)`~['Messages, oldest first:']
         :-  'Earlier messages, context only, oldest first (write no facts from these):'
         %-  zing
-        (turn earlier |=(r=window-row `(list @t)`~[(line r 'context') (end [3 8.000] text.r)]))
+        (turn earlier |=(r=window-row `(list @t)`~[(line r 'context') (cut-utf8 text.r 8.000)]))
       ::
         ?~(earlier `(list @t)`~ `(list @t)`~['New messages, oldest first:'])
       ::
         %-  zing
-        (turn fresh |=(r=window-row `(list @t)`~[(line r 'message') (end [3 8.000] text.r)]))
+        (turn fresh |=(r=window-row `(list @t)`~[(line r 'message') (cut-utf8 text.r 8.000)]))
       ::
         `(list @t)`~['---' 'Answer with the JSON object.']
     ==
@@ -5369,7 +5369,7 @@
   ?-  -.v
       %b  [%& v]
       %n  [%& v]
-      %s  [%& `json`s+(end [3 2.000] (trim-cord p.v))]
+      %s  [%& `json`s+(cut-utf8 (trim-cord p.v) 2.000)]
       %a
     ?:  (lte (met 3 (en:json:html v)) 2.000)  [%& v]
     [%| 'value over 2000 bytes']
@@ -5549,7 +5549,7 @@
     $(raw t.raw, out [row out])
   =/  name=@t
     =/  n=@t  (trim-cord (gs b 'name'))
-    ?.  =('' n)  (end [3 200] n)
+    ?.  =('' n)  (cut-utf8 n 200)
     (crip (turn (trip `@t`slug.u.pk) |=(c=@tD ^-(@tD ?:(=('-' c) ' ' c)))))
   =/  cb=ctx-body  [bid name aliases]
   =/  twin=(unit @t)  (existing-for cb bodies.ctx made)
@@ -5753,7 +5753,7 @@
   =/  kind=@t
     =/  k=@t  (lower (trim-cord (gs a 'kind')))
     ?:(=('' k) 'task' k)
-  =/  title=@t  (end [3 200] (trim-cord (gs a 'title')))
+  =/  title=@t  (cut-utf8 (trim-cord (gs a 'title')) 200)
   =/  msg-raw=@t  (gs a 'message')
   ?:  (~(has in context-ids) msg-raw)  $(raw t.raw)
   ?:  |(!(~(has in kinds) kind) =('' title))
@@ -9485,7 +9485,7 @@
     %+  turn  linked
     |=  [p=@t t=@t]
     (rap 3 nl nl '--- linked page ' p ' ---' nl t ~)
-  (end [3 follow-cap] (rap 3 head nl nl text (rap 3 more) ~))
+  (cut-utf8 (rap 3 head nl nl text (rap 3 more) ~) follow-cap)
 ::  +moved-to: where lattice says a page went: the newest move whose
 ::  from is the page, or whose from/ prefixes it (a folder moved is one
 ::  row); a page moved again is followed on, ten hops at most. ~ when no
@@ -11441,6 +11441,7 @@
   ?:  &(=('GET' meth) ?=([%api %chat %dms ~] suffix))           `[%get-chat-dms %own]
   ?:  &(=('GET' meth) ?=([%api %chat %channels ~] suffix))      `[%get-chat-channels %own]
   ?:  &(=('POST' meth) ?=([%api %read ~] suffix))               `[%post-read %writes]
+  ?:  &(=('DELETE' meth) ?=([%api %read @ ~] suffix))           `[%delete-read %own]
   ?:  &(=('POST' meth) ?=([%api %follow ~] suffix))             `[%post-follow %own]
   ?:  &(=('GET' meth) ?=([%api %follow ~] suffix))              `[%get-follow %own]
   ?:  &(=('GET' meth) ?=([%api %travel ~] suffix))              `[%get-travel %writes]

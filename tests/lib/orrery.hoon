@@ -1388,4 +1388,23 @@
     (expect-eq !>('2026-01-15T17:30:00+05:30') !>((li '2026-01-15T12:00:00Z' 'Asia/Kolkata')))
     (expect-eq !>('2026-07-15T12:00:00+00:00') !>((li '2026-07-15T12:00:00Z' 'UTC')))
   ==
+::  the invariant the reader needs: a message whose byte 8000 falls
+::  inside a multibyte character still yields a chat body that de:json
+::  parses back. The old byte-count cut split the character, en:json
+::  wrote the stray byte raw, and de:json on the ship that received it
+::  bailed. cut-utf8 drops the character whole, so the round-trip holds.
+++  test-reader-prompt-utf8-roundtrip
+  ::  'a' x 7999, then 'e-acute' (C3 A9) straddling bytes 7999 and 8000
+  =/  txt=@t  (rap 3 (crip (reap 7.999 'a')) 'é' (crip (reap 100 'b')) ~)
+  =/  row=window-row:orr  ['m1' '2026-09-16T22:05:00Z' 'someone' txt |]
+  =/  prompt=@t  (reader-prompt-with:orr ~[row] *reader-ctx:orr 'UTC' read-kind:orr ~)
+  =/  wire=@t  (en:json:html (chat-body-with:orr *config:orr 'sys' ~[prompt]))
+  ;:  weld
+    ::  the fixed path: the whole chat body parses back
+    (expect !>(?=(^ (de:json:html wire))))
+    ::  the bug, at the primitive: a raw byte cut mid-character does not
+    (expect !>(?=(~ (de:json:html (en:json:html `json`s+(end [3 8.000] txt))))))
+    ::  cut-utf8 at that byte parses; the stray lead byte is gone
+    (expect !>(?=(^ (de:json:html (en:json:html `json`s+(cut-utf8:orr txt 8.000))))))
+  ==
 --

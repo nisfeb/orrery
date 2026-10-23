@@ -1026,6 +1026,7 @@
   ?:  =('set-watches' op)  (do-set-watches jon)
   ?:  =('add-client' op)  (do-add-client jon)
   ?:  =('drop-client' op)  (do-drop-client jon)
+  ?:  =('drop-read' op)  (do-drop-read jon)
   ?:  =('touch-client' op)  (do-touch-client jon)
   (refuse op 'unknown op')
 ::  +do-set-preferences: the owner's style and standing preferences laid
@@ -1613,6 +1614,7 @@
     %get-chat-dms           (serve-chat-dms eyre-id)
     %get-chat-channels      (serve-chat-channels eyre-id)
     %post-read              (serve-read eyre-id jon act)
+    %delete-read            (serve-read-drop eyre-id s2)
     %post-follow            (serve-follow eyre-id jon act)
     %get-follow             (serve-follow-get eyre-id args)
     %post-follow-wake       (serve-prod eyre-id %'follow.sig' 'follow')
@@ -5599,7 +5601,7 @@
   =/  s=@ud  status.got
   =/  passing=?  (transient-status:orr s)
   ?.  =(200 s)
-    =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (end [3 200] body.got) ~)
+    =/  why=@t  (rap 3 'the model answered ' (scot %ud status.got) ': ' (cut-utf8:orr body.got 200) ~)
     ;<  ~  bind:m  (gen-record ?:(passing ~ `dg) 0 0 ~ ~ `why secs.got | rev)
     ?.  (down-status:orr s)  (pure:m ~)
     (model-health `why)
@@ -6056,6 +6058,20 @@
   ;<  *  bind:m  (make-soft:io (rf 1 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
   ;<  ~  bind:m  (over:io (rf 1 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id]]))
+::  +serve-read-drop: DELETE /api/read/<id>, the owner drops one waiting
+::  (or set-aside) item from the read inbox, so a text the model cannot
+::  read is not retried for ever
+::
+++  serve-read-drop
+  |=  [eyre-id=@ta id=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  =('' id)  (send-err eyre-id 400 'an id is required')
+  ;<  ex=?  bind:m  (peek-exists:io (rf 1 /read-inbox id))
+  ?.  ex  (send-err eyre-id 404 'no such read item')
+  =/  op=json  (pairs:enjs:format ~[['op' s+'drop-read'] ['id' s+id]])
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ++  serve-read-settings
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
@@ -6779,12 +6795,12 @@
       ['conversations' (numb:enjs:format conversations.t)]
       ['unpicked' (numb:enjs:format unpicked.t)]
       ['own' (numb:enjs:format own.t)]
-      ['notes' a+(turn said |=(n=@t `json`s+(end [3 300] n)))]
+      ['notes' a+(turn said |=(n=@t `json`s+(cut-utf8:orr n 300)))]
       ['day' s+day]
       ['read_today' (numb:enjs:format (add today read.t))]
       :-  'down'
       ?~  down  ~
-      (pairs:enjs:format ~[['at' s+(en-iso:orr now)] ['notes' a+(turn (scag 6 u.down) |=(n=@t `json`s+(end [3 300] n)))]])
+      (pairs:enjs:format ~[['at' s+(en-iso:orr now)] ['notes' a+(turn (scag 6 u.down) |=(n=@t `json`s+(cut-utf8:orr n 300)))]])
   ==
 ::  ==  the mail reader (version 52): auspex's mail as facts, the way
 ::  the phone client's mail reader read it. One pass walks auspex's
@@ -7029,6 +7045,33 @@
   ;<  last=json  bind:m  (read-json (rf 0 / %'read-last.json'))
   =/  title=@t  (gs:orr item 'title')
   =/  text=@t  (gs:orr item 'text')
+  ::  an item set aside after repeated crashes is skipped, not read: the
+  ::  owner drops it (DELETE /api/read/<id>). The drain goes on to the
+  ::  next, so one item the model cannot read never stalls the rest
+  ?:  =([%b %.y] (gj:orr item 'held'))  $(todo t.todo)
+  ::  a model call that crashed the ship leaves 'sending' set on the
+  ::  item, because the writer re-rises and reads it afresh with the
+  ::  mark still there. Count those crashes; at two the item is set
+  ::  aside rather than read again, which breaks the crash loop a single
+  ::  unreadable text would otherwise hold the ship in
+  =/  sending=?  =([%b %.y] (gj:orr item 'sending'))
+  =/  crashes=@ud
+    =/  c=json  (gj:orr item 'crashes')
+    =/  base=@ud  ?.(?=([%n *] c) 0 (fall (rush p.c dem) 0))
+    ?:(sending +(base) base)
+  ?:  &(sending (gte crashes 2))
+    =/  aside=json
+      =.  item  (del-key:orr item 'sending')
+      =.  item  (set-key:orr item 'held' b+&)
+      (set-key:orr item 'held_reason' s+'reading this item crashed the ship twice; set aside')
+    ;<  ~  bind:m  (over:io (rf 0 /read-inbox i.todo) [[/ %json] aside])
+    =/  nt=@t
+      %+  rap  3
+      :~  'set aside, reading it crashed the ship twice (drop with DELETE /api/read/'
+          (gs:orr item 'id')  '): '  ?:(=('' title) (cut-utf8:orr text 60) title)
+      ==
+    ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~[nt] ~)
+    $(todo t.todo)
   ::  a key's text is read as the key: its rows signed by it, and only
   ::  what the key could have filed itself kept
   =/  it  (read-item:orr item now)
@@ -7039,11 +7082,19 @@
   ?:  (read-held:orr last now max-daily.cfg)
     ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~['held: today\'s texts are spent'] ~)
     (pure:m &)
+  ::  mark the item being sent and carry the crash count, committed
+  ::  before the model call (the request is the event boundary), so a
+  ::  crash during the call is seen as 'sending' still set on the next rise
+  =/  marked=json  (set-key:orr (set-key:orr item 'crashes' (numb:enjs:format crashes)) 'sending' b+&)
+  ;<  ~  bind:m  (over:io (rf 0 /read-inbox i.todo) [[/ %json] marked])
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
     (tg-read tg ~[[msg (gs:orr item 'who')]] now kind schema all)
   ::  a text not read for want of a model (down, or no key set) waits;
   ::  one the gate judged not worth reading is done with
   ?:  down
+    ::  a model outage, not a crash: clear the send mark so the next
+    ::  pass is not read as a crash survivor, and wait (tried again in 5m)
+    ;<  ~  bind:m  (over:io (rf 0 /read-inbox i.todo) [[/ %json] (del-key:orr marked 'sending')])
     ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~ `notes.facts)
     (pure:m &)
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
@@ -7060,7 +7111,7 @@
   =/  n=@ud  :(add (lent obs.facts) (lent bodies.facts) (lent acts.facts))
   =/  tally=chat-tally
     :*  ?:(read 1 0)  n  0  0  1  1  0  0
-        [(rap 3 (gs:orr item 'id') ': ' ?:(=('' title) (end [3 60] text) title) ~) notes.facts]
+        [(rap 3 (gs:orr item 'id') ': ' ?:(=('' title) (cut-utf8:orr text 60) title) ~) notes.facts]
     ==
   ;<  ~  bind:m  (reader-record %'read-last.json' last now now tally ~ ~)
   ;<  *  bind:m  (cull-soft:io (rf 0 /read-inbox i.todo))
@@ -9034,7 +9085,7 @@
         %brief
       ==
     ?.  =(200 status.got)
-      (pure:n ['Nothing to add.' (rap 3 'model: ' (crip (a-co:co status.got)) ' ' (end [3 200] body.got) ~)])
+      (pure:n ['Nothing to add.' (rap 3 'model: ' (crip (a-co:co status.got)) ' ' (cut-utf8:orr body.got 200) ~)])
     =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
     ?:  ?=(%| -.ans)  (pure:n ['Nothing to add.' p.ans])
     =/  t=@t  (trim-cord:orr text.p.ans)
@@ -9726,7 +9777,7 @@
       %reader
     ==
   ?.  =(200 status.got)
-    (pure:m [(flop handled) (flop [(rap 3 'model: ' (crip (a-co:co status.got)) ' ' (end [3 200] body.got) ~) notes])])
+    (pure:m [(flop handled) (flop [(rap 3 'model: ' (crip (a-co:co status.got)) ' ' (cut-utf8:orr body.got 200) ~) notes])])
   =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
   ?:  ?=(%| -.ans)  (pure:m [(flop handled) (flop [p.ans notes])])
   =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
@@ -10284,7 +10335,7 @@
     %-  pairs:enjs:format
     :~  ['at' s+(en-iso:orr now)]
         ['update_id' (numb:enjs:format uid)]
-        ['notes' a+(turn (scag 6 notes) |=(n=@t `json`s+(end [3 300] n)))]
+        ['notes' a+(turn (scag 6 notes) |=(n=@t `json`s+(cut-utf8:orr n 300)))]
     ==
   (over:io (rf 0 / %'telegram-last.json') [[/ %json] (set-key:orr last 'down' down)])
 ++  tg-record
@@ -10302,7 +10353,7 @@
       ['chat' s+chat]
       ['from' s+from]
       ['outcome' s+outcome]
-      ['notes' a+(turn (scag 20 notes) |=(n=@t `json`s+(end [3 300] n)))]
+      ['notes' a+(turn (scag 20 notes) |=(n=@t `json`s+(cut-utf8:orr n 300)))]
       ['day' s+day]
       ['read_today' (numb:enjs:format (add today read))]
   ==
@@ -10337,6 +10388,22 @@
   ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(del by cm) id)]])
   ;<  ~  bind:m  (note 'drop-client' & id)
   (pure:m |)
+::  +do-drop-read: cull one item from the read inbox and bump its rev,
+::  so the owner's DELETE /api/read/<id> removes a text the model could
+::  not read (set aside, or still waiting)
+::
+++  do-drop-read
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  id=@t  (gs:orr jon 'id')
+  ;<  now=@da  bind:m  get-time:io
+  ;<  ex=?  bind:m  (peek-exists:io (rf 0 /read-inbox `@ta`id))
+  ?.  ex  (refuse 'drop-read' 'no such read item')
+  ;<  *  bind:m  (cull-soft:io (rf 0 /read-inbox `@ta`id))
+  ;<  ~  bind:m  (over:io (rf 0 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+  ;<  ~  bind:m  (note 'drop-read' & id)
+  (pure:m &)
 ::  +do-touch-client: last use, stamped by the writer's clock. No note:
 ::  one an hour per key would only fill the ring.
 ::
