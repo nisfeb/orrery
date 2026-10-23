@@ -8357,7 +8357,7 @@
     |=(a=appointment:orr |(=(%no verdict.a) (lien quiet |=(k=@t =(k (appt-key:orr a))))))
   ::  away: home's appointments are others' to go to (version 83)
   ;<  away=away-view  bind:m  (away-state all multi now)
-  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away))
+  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away phone.away))
   =/  passed=@ud  (lent (skim mine gone))
   =.  mine  (skip mine gone)
   ?~  mine
@@ -9095,7 +9095,7 @@
   ::  the stops with their pins and hours, and the map of them (version 73)
   ::  away, home's trips are not the owner's (version 83)
   ;<  away=away-view  bind:m  (away-state all multi now)
-  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away))
+  =/  gone  |=(a=appointment:orr (away-skips:orr a spans.away far.away home.away all multi now cache.away phone.away))
   ;<  [stops=(list [a=appointment:orr pin=@t hours=@t]) pins=(list [lat=@t lon=@t])]  bind:m
     ?.  &(enabled.travel (gth to now))  (pure:(fiber:fiber:nexus ,[(list [a=appointment:orr pin=@t hours=@t]) (list [lat=@t lon=@t])]) [~ ~])
     (brief-places travel all multi now tz (skip (appointments-ahead:orr all multi now (sub to now)) gone))
@@ -9208,7 +9208,7 @@
     =/  mine=@t  (attr-text:orr all0 multi now 'person/me' 'timezone')
     ?.(=('' mine) mine timezone:(de-config:orr gen-j))
   =/  home  (home-point:orr all0 multi now gc)
-  =/  away=away-view  [(home-again:orr (away-spans:orr all0 multi now home gc) pos home) (far-from-home:orr pos home) home gc]
+  =/  away=away-view  [(home-again:orr (away-spans:orr all0 multi now home gc) pos home) (far-from-home:orr pos home) home gc (fix-away:orr pos home)]
   =/  seen  (view-of act all0 acts0 (hidden-for act policy))
   =/  why=(unit @t)
     ?~  scope.act  (away-now away now)
@@ -9417,7 +9417,7 @@
 ::  away, how far the phone is when it is far, home's point, and the
 ::  geocache they were read with
 ::
-+$  away-view  [spans=(list away-span:orr) far=(unit @ud) home=(unit [lat=@t lon=@t]) cache=json]
++$  away-view  [spans=(list away-span:orr) far=(unit @ud) home=(unit [lat=@t lon=@t]) cache=json phone=(unit [lat=@t lon=@t])]
 ++  away-state
   |=  [all=(list loaded:orr) multi=(set @t) now=@da]
   =/  m  (fiber:fiber:nexus ,away-view)
@@ -9425,7 +9425,7 @@
   ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
   ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
   =/  home  (home-point:orr all multi now gc)
-  (pure:m [(home-again:orr (away-spans:orr all multi now home gc) pos home) (far-from-home:orr pos home) home gc])
+  (pure:m [(home-again:orr (away-spans:orr all multi now home gc) pos home) (far-from-home:orr pos home) home gc (fix-away:orr pos home)])
 ::  +away-now: why the owner is away now, or ~
 ::
 ++  away-now

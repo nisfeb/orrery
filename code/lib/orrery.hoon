@@ -8999,6 +8999,17 @@
   ?~  m  ~
   ?.  (gte u.m 150.000)  ~
   `(div u.m 1.000)
+::  +fix-away: the phone's fix when it is forty kilometres or more from
+::  home (version 122), where the owner is while away. A fix near home,
+::  perhaps from before they left, says nothing of where they went
+::
+++  fix-away
+  |=  [pos=json home=(unit [lat=@t lon=@t])]
+  ^-  (unit [lat=@t lon=@t])
+  =/  m=(unit @ud)  (fix-off pos home)
+  ?~  m  ~
+  ?.  (gte u.m 40.000)  ~
+  `[(gs pos 'lat') (gs pos 'lon')]
 ::  +fix-off: how many metres the phone's fix is from home
 ::
 ++  fix-off
@@ -9027,12 +9038,16 @@
   s(to u.at)
 ::  +away-skips: whether time to leave passes an appointment over because
 ::  the owner is away then: in a stretch away (not the trip itself), or
-::  with the phone far from home, at a point near home or not known;
-::  one at the trip's end of things still has its alert
+::  with the phone far from home: one within 40 km of home or at no known
+::  point, and, with the phone's fix out of town (+fix-away), one 150 km
+::  or more from it, however far from home (version 122: a weekly class
+::  46 km from home was alerted to an owner on a plane 470 km off). One
+::  at the trip's end of things still has its alert
 ::
 ++  away-skips
   |=  $:  a=appointment  spans=(list away-span)  far=(unit @ud)
           home=(unit [lat=@t lon=@t])  all=(list loaded)  multi=(set @t)  now=@da  cache=json
+          phone=(unit [lat=@t lon=@t])
       ==
   ^-  ?
   =/  span=(unit away-span)  (away-at spans starts.a)
@@ -9044,7 +9059,11 @@
   ?~  pt  &
   ?~  home  &
   =/  m  (metres-between u.home u.pt)
-  ?~(m & (lth u.m 40.000))
+  ?~  m  &
+  ?:  (lth u.m 40.000)  &
+  ?~  phone  |
+  =/  off=(unit @ud)  (metres-between u.phone u.pt)
+  ?~(off | (gte u.off 150.000))
 ::  +known-addresses: every address the ship knows that has no point
 ::  yet (version 77): a place's address when it has no geo (a POTA park
 ::  has its point), and each location written as text on an activity or

@@ -1657,13 +1657,21 @@
     (expect-eq !>(`(unit @t)``'situation/trip') !>(=/(s (away-at:orr spans (add now ~d3)) ?~(s ~ `id.u.s))))
     (expect-eq !>(`(unit @t)`~) !>(=/(s (away-at:orr spans (add now ~d8)) ?~(s ~ `id.u.s))))
     ::  away: a home game is passed over, a dinner where the owner is is not
-    (expect !>((away-skips:orr game spans ~ hp all multi now cache)))
-    (expect !>(!(away-skips:orr there spans ~ hp all multi now cache)))
-    (expect !>(!(away-skips:orr later spans ~ hp all multi now cache)))
+    (expect !>((away-skips:orr game spans ~ hp all multi now cache ~)))
+    (expect !>(!(away-skips:orr there spans ~ hp all multi now cache ~)))
+    (expect !>(!(away-skips:orr later spans ~ hp all multi now cache ~)))
     ::  the trip's own start still has its alert
-    (expect !>(!(away-skips:orr itself spans ~ hp all multi now cache)))
+    (expect !>(!(away-skips:orr itself spans ~ hp all multi now cache ~)))
     ::  the phone far from home: home's games are passed over whenever they are
-    (expect !>((away-skips:orr later spans `7.500 hp all multi now cache)))
+    (expect !>((away-skips:orr later spans `7.500 hp all multi now cache ~)))
+    ::  the phone out of town (version 122): the dinner 52 km from home is
+    ::  passed over with the phone 470 km off, and kept with the phone at
+    ::  the dock; home's game is passed over either way; a fix near home
+    ::  says nothing of where the owner went
+    (expect !>((away-skips:orr there spans `470 hp all multi now cache (fix-away:orr (pairs:enjs:format ~[['lat' s+'44.00'] ['lon' s+'-89.65']]) hp))))
+    (expect !>(!(away-skips:orr there spans ~ hp all multi now cache (fix-away:orr (pairs:enjs:format ~[['lat' s+'40.25'] ['lon' s+'-89.65']]) hp))))
+    (expect !>((away-skips:orr game spans ~ hp all multi now cache (fix-away:orr (pairs:enjs:format ~[['lat' s+'40.25'] ['lon' s+'-89.65']]) hp))))
+    (expect-eq !>(`(unit [@t @t])`~) !>((fix-away:orr (pairs:enjs:format ~[['lat' s+'39.80'] ['lon' s+'-89.65']]) hp)))
     (expect-eq !>(`(unit @ud)`~) !>((far-from-home:orr (pairs:enjs:format ~[['lat' n+'39.80'] ['lon' n+'-89.60']]) hp)))
     ::  ponytail: flat over long distances, so far is only far, past 150 km
     (expect !>(=/(k (far-from-home:orr (pairs:enjs:format ~[['lat' s+'41.38'] ['lon' s+'2.17']]) hp) &(?=(^ k) (gth u.k 7.000)))))
