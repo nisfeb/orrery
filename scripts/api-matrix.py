@@ -1583,6 +1583,21 @@ tb = gate.wait('not away, the home game is planned', lambda: (lambda l: l if dic
 check('the owner\'s no puts the home game back', dictish(tb.get('next')).get('id') == TAH, tb)
 curl('DELETE', API + '/body/' + TAW)
 curl('DELETE', API + '/body/' + TAH)
+# away with the phone out of town (version 122): a class 46 km from home, outside home's 40 km,
+# has no plan while the owner is said to be away and the phone is 470 km off
+TAF, TAC, TAP = 'situation/gate-away-far-' + TRUN, 'situation/gate-class-' + TRUN, 'place/gate-class-' + TRUN
+observe([{'id': TAF, 'name': 'Gate far trip ' + TRUN}, {'id': TAC, 'name': 'Gate class ' + TRUN}, {'id': TAP, 'name': 'Gate class place ' + TRUN}],
+        [tobs(TAP, 'geo', '40.1960,-89.6501'),
+         tobs(TAF, 'starts', iso(aw0 - timedelta(hours=1))), tobs(TAF, 'ends', iso(aw0 + timedelta(days=2))), tobs(TAF, 'away', 'yes'),
+         tobs(TAC, 'starts', iso(aw0 + timedelta(minutes=55))), tobs(TAC, 'location', {'ref': TAP}), tobs(TAC, 'attending', 'yes')])
+curl('POST', API + '/position', {'lat': 44.0, 'lon': -89.6501, 'acc': 12})
+curl('POST', API + '/travel/wake', {})
+tf = gate.wait('the far class is left to others', lambda: twn(dictish(curl('GET', API + '/travel/last')[1]), 'away: Gate far trip'), 60) or {}
+check('away with the phone 470 km off: the class 46 km from home has no plan, left to others',
+      not tf.get('next') and any('at home left to others' in n for n in tf.get('notes', [])), tf)
+curl('POST', API + '/position', {'lat': 39.6589, 'lon': -89.7113, 'acc': 12})
+for b in (TAF, TAC, TAP):
+    curl('DELETE', API + '/body/' + b)
 # every known address gets its point (version 77): a place's address becomes its geo, the ship's
 TGP = 'place/gate-geo-' + TRUN
 observe([{'id': TGP, 'name': 'Gate geo ' + TRUN}], [tobs(TGP, 'address', '7 Gate Way ' + TRUN)])
