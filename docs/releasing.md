@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 124's owner steps
+
+Nothing to do: no new roads, so no consent prompt. Running late no longer proposes a message for you to send. Whom it picked was a guess, and since your own calendar names you as the organizer it was nearly always your spouse. Late now means the drive gets you there after the start. The minutes to park still set when to leave but no longer count as late, so getting there by the start no longer pushes "Running about 5 min late". The push still comes when the drive will get you there five minutes or more after the start.
+
 ### Version 123's owner steps
 
 Nothing to do: no new roads, so no consent prompt. While you are away and your phone is out of town, time to leave and the brief's stops now also pass over an appointment 150 km or more from where your phone is, however far it is from home: a class just outside the 40 km around home no longer alerts you on a plane. Within 40 km of home everything is passed over while you are away, as before.
