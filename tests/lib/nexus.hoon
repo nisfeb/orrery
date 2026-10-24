@@ -1966,9 +1966,9 @@
     ::  the usual time only when traffic adds three minutes or more
     (expect-eq !>('31 min with traffic (19 usual) via I 95 South') !>((drive-line:orr 1.860 `1.140 'I 95 South')))
     (expect-eq !>('20 min with traffic') !>((drive-line:orr 1.200 `1.140 '')))
-    ::  late by the drive and the minutes to park past the time to be there
-    (expect-eq !>(5) !>((late-by:orr now 1.800 ~m5 (add now ~m30))))
-    (expect-eq !>(0) !>((late-by:orr now 600 ~m5 (add now ~m30))))
+    ::  late by the drive past the time to be there; there at the start is on time
+    (expect-eq !>(5) !>((late-by:orr now 2.100 (add now ~m30))))
+    (expect-eq !>(0) !>((late-by:orr now 1.800 (add now ~m30))))
     ::  learned: nothing under three arrivals, the lower middle, twenty minutes at most
     (expect-eq !>(`@dr`0) !>((learned-extra:orr ~[300 60])))
     (expect-eq !>(~s120) !>((learned-extra:orr ~[300 60 120])))

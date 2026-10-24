@@ -8433,9 +8433,6 @@
   ::  the leave-by the page and the brief show, lasting until the start
   =/  l=(unit loaded:orr)  (loaded-of:orr all id.a)
   =/  shown=@t  ?~(l '' (winner-text:orr (fold:orr rows.u.l multi now) 'leave-by'))
-  ::  whom to tell when the owner runs late: who organized it, when that
-  ::  is a person other than the owner the ship can reach (version 73)
-  =/  [tell=@t via=@t]  (late-contact all multi now l)
   ;<  *  bind:m
     ?:  =(shown (en-iso:orr leave))  (pure:(fiber:fiber:nexus ,@ud) 0)
     %+  file-ops-on
@@ -8468,7 +8465,7 @@
     ?~  l  ~
     %+  murn  (fall (~(get by (fold:orr rows.u.l multi now)) 'participants') ~)
     |=(r=row:orr =/(k (ref-or-text:orr value.obs.r) ?:((~(has in mine) k) `k ~)))
-  =/  trip=json  (trip-doc a key leave u.dest buffer spot tell via kids now)
+  =/  trip=json  (trip-doc a key leave u.dest spot kids now)
   =/  left=@ud  ?:((gte now leave) 0 (div (sub leave now) ~m1))
   =/  for=@t
     ?-  leg.a
@@ -8479,11 +8476,11 @@
   ::  pinned: an earlier pick-up keeps the owner collecting one child when
   ::  they would have to set off for this one, two places at once. No nag
   ::  to leave, and no phone alarm: a trip toward it begins when they are
-  ::  free of the pick-up, so the running-late text to whoever is there
-  ::  goes out as they set off. The key goes quiet, like a hush
+  ::  free of the pick-up, so a running-late push goes out as they set
+  ::  off. The key goes quiet, like a hush
   =/  pin=(unit @da)  (pinned-until:orr a ahead leave now)
   ?^  pin
-    =/  pinned-trip=json  (trip-doc a key u.pin u.dest buffer spot tell via kids now)
+    =/  pinned-trip=json  (trip-doc a key u.pin u.dest spot kids now)
     ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] pinned-trip])
     =/  note=@t  (rap 3 'no nag ' for ': collecting elsewhere until ' (hhmm:orr u.pin tz) ~)
     ;<  ~  bind:m  (leave-record last now ~[note] ~ alerted [key quiet])
@@ -8559,44 +8556,6 @@
   (pure:m ?:((gth look now) `look `(add starts.a ~m1)))
 ::  ==  on the way (version 73)
 ::
-::  +late-contact: whom to tell when the owner runs late, and how: who
-::  organized it, then whoever drops off or picks up for it, then the
-::  owner's spouse, taking the first that is a person other than the
-::  owner the ship can reach, by chat when they have a ship or by
-::  telegram when they have an id; nobody otherwise. The spouse catches
-::  a child's game the owner attends, where the organizer is the league
-::  and the co-parent is already there (version NN)
-::
-++  late-contact
-  |=  [all=(list loaded:orr) multi=(set @t) now=@da l=(unit loaded:orr)]
-  ^-  [@t @t]
-  ::  the person a single-valued ref attr of a body names, '' for none
-  =/  ref-in
-    |=  [lo=(unit loaded:orr) attr=@t]
-    ^-  @t
-    ?~  lo  ''
-    =/  r=(list row:orr)  (fall (~(get by (fold:orr rows.u.lo multi now)) attr) ~)
-    ?~(r '' (gs:orr value.obs.i.r 'ref'))
-  ::  can the ship reach this person, and how
-  =/  reach
-    |=  ref=@t
-    ^-  [@t @t]
-    ?:  |(=('' ref) =('person/me' ref) !=('person' (kind-of:orr ref)))  ['' '']
-    =/  p=(unit loaded:orr)  (loaded-of:orr all ref)
-    ?~  p  ['' '']
-    =/  w=(map @t (list row:orr))  (fold:orr rows.u.p multi now)
-    ?.  =('' (winner-text:orr w 'ship'))  [ref 'chat']
-    ?.  =('' (winner-text:orr w 'telegram'))  [ref 'telegram']
-    ['' '']
-  =/  tries=(list @t)
-    :~  (ref-in l 'organizer')  (ref-in l 'drop-off')  (ref-in l 'pick-up')
-        (ref-in (loaded-of:orr all 'person/me') 'spouse')
-    ==
-  |-  ^-  [@t @t]
-  ?~  tries  ['' '']
-  =/  got=[@t @t]  (reach i.tries)
-  ?.  =('' -.got)  got
-  $(tries t.tries)
 ::  ==  watches (version NN): orrery checks a flight or a page on a
 ::  schedule and alerts the owner on Talon when what it found changes
 ::
@@ -8772,12 +8731,11 @@
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'watch.sig') [[/ %sig] ~])
   (pure:m |)
 ::  +trip-doc: the trip the owner is on, in trip.json, never served: the
-::  occurrence, the time to be there and to have left, where it is, the
-::  minutes to park as planned, what its learning is kept under, and
-::  whom to tell when late
+::  occurrence, the time to be there and to have left, where it is, and
+::  what its learning is kept under
 ::
 ++  trip-doc
-  |=  [a=appointment:orr key=@t leave=@da dest=[lat=@t lon=@t] buffer=@dr spot=@t tell=@t via=@t kids=(list @t) now=@da]
+  |=  [a=appointment:orr key=@t leave=@da dest=[lat=@t lon=@t] spot=@t kids=(list @t) now=@da]
   ^-  json
   %-  pairs:enjs:format
   :~  ['key' s+key]
@@ -8791,9 +8749,6 @@
       ['spot' s+spot]
       ['lat' s+lat.dest]
       ['lon' s+lon.dest]
-      ['buffer_s' (numb:enjs:format (div buffer ~s1))]
-      ['tell' s+tell]
-      ['via' s+via]
       ['at' s+(en-iso:orr now)]
   ==
 ::  +trip-step: the trip the owner is on, from the alert, or from when
@@ -8877,8 +8832,7 @@
   =/  t2=json
     ?.  &(=('' (gs:orr t1 'eta')) fresh close (gth u.fix began))  t1
     (set-key:orr t1 'eta' s+(en-iso:orr (add u.fix (mul u.secs ~s1))))
-  =/  buffer=@dr  (mul ~s1 (fall (gn:orr t 'buffer_s') 300))
-  =/  late=@ud  (late-by:orr now u.secs buffer starts)
+  =/  late=@ud  (late-by:orr now u.secs starts)
   ?:  |(told (lth late 5))
     ;<  ~  bind:m  (over:io (rf 0 / %'trip.json') [[/ %json] t2])
     (pure:m `again)
@@ -8915,8 +8869,9 @@
   (over:io (rf 0 / %'trips.json') [[/ %json] (set-key:orr trips spot a+kept)])
 ::  +tell-late: the owner will be late: a push saying by how much and
 ::  when they will be there, with the place's phone as Mapbox has it
-::  now, and a message to whoever organized it proposed for the owner
-::  to send. Its tag is not the alert's, so the phone's alarm is left
+::  now. Nothing is proposed for anyone else: whom to tell was a guess,
+::  most often the spouse, and the owner never wanted it. Its tag is not
+::  the alert's, so the phone's alarm is left
 ::
 ++  tell-late
   |=  [t=json now=@da secs=@ud late=@ud cfg=travel-config:orr]
@@ -8937,19 +8892,7 @@
   ;<  *  bind:m
     %+  poke-soft:io  push-road:io
     [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ [title body ~ `'/apps/orrery' `(cat 3 'orrery-late-' (gs:orr t 'key'))]] eny]]
-  ;<  ~  bind:m  (trunk-notice (cat 3 'orrery-late-' (gs:orr t 'key')) title body)
-  =/  tell=@t  (gs:orr t 'tell')
-  ?:  =('' tell)  (pure:m ~)
-  =/  text=@t  (rap 3 'Running about ' (crip (a-co:co late)) ' minutes late, there about ' there '.' ~)
-  =/  act=json
-    %-  pairs:enjs:format
-    :~  ['kind' s+'message']
-        ['title' s+(rap 3 'Say you are running late to ' name ~)]
-        ['about' a+~[s+(gs:orr t 'id') s+tell]]
-        ['payload' (pairs:enjs:format ~[['via' s+(gs:orr t 'via')] ['to' s+tell] ['text' s+text]])]
-    ==
-  ;<  *  bind:m  (file-ops-on ~[(pairs:enjs:format ~[['op' s+'act'] ['action' (fill-act-as:orr act now 'ship')]])] /leave)
-  (pure:m ~)
+  (trunk-notice (cat 3 'orrery-late-' (gs:orr t 'key')) title body)
 ::  +place-now: what Mapbox says of a place now, for one use and never
 ::  kept: its name, phone and that day's hours, when the search finds a
 ::  business within 300 m of the point; ~ otherwise or on any failure

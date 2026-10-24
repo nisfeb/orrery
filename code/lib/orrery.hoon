@@ -7450,12 +7450,14 @@
     (rap 3 ' (' (crip (a-co:co um)) ' usual)' ~)
   (rap 3 (crip (a-co:co mins)) ' min with traffic' usual ?:(=('' via) '' (cat 3 ' via ' via)) ~)
 ::  +late-by: whole minutes the owner will be late, leaving now: the
-::  drive and the minutes to park past the time to be there; 0 on time
+::  drive past the time to be there; 0 on time. The minutes to park
+::  set when to leave, not lateness: with them, getting there at the
+::  start read as five minutes late
 ::
 ++  late-by
-  |=  [now=@da secs=@ud buffer=@dr starts=@da]
+  |=  [now=@da secs=@ud starts=@da]
   ^-  @ud
-  =/  there=@da  :(add now (mul secs ~s1) buffer)
+  =/  there=@da  (add now (mul secs ~s1))
   ?.  (gth there starts)  0
   (div (sub there starts) ~m1)
 ::  +learned-extra: what a place adds to the minutes to park, learned
