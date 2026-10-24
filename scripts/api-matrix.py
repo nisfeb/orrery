@@ -1498,23 +1498,21 @@ check('at the place already: no alert, the occurrence quiet and not alerted, and
       and dictish(tq.get('next')).get('id') != TQ and not any('to leave for Gate there' in x for x in tq.get('notes', [])), tq)
 curl('DELETE', API + '/body/' + TQ)
 # running late (version 73): the alert went and the trip is watched; a fix from the road with the drive as
-# long as before puts the owner five minutes late: one late push, and a message to the organizer proposed
+# long as before puts the owner six minutes late past the start: one late push, and no message to the
+# organizer (the proposed message went, after it reached the spouse for everything)
 TLATE, TORG = 'situation/gate-late-' + TRUN, 'person/gate-late-org-' + TRUN
 curl('POST', API + '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12})
 tl0 = datetime.now(timezone.utc).replace(microsecond=0)
 observe([{'id': TORG, 'name': 'Gate Coach ' + TRUN}, {'id': TLATE, 'name': 'Gate late ' + TRUN}],
-        [tobs(TORG, 'ship', '~zod'), tobs(TLATE, 'starts', iso(tl0 + timedelta(minutes=30))), tobs(TLATE, 'location', TADDR),
+        [tobs(TORG, 'ship', '~zod'), tobs(TLATE, 'starts', iso(tl0 + timedelta(minutes=24))), tobs(TLATE, 'location', TADDR),
          tobs(TLATE, 'attending', 'yes'), tobs(TLATE, 'organizer', {'ref': TORG})])
 curl('POST', API + '/travel/wake', {})
 gate.wait('the late one is alerted', lambda: (lambda l: l if any('to leave for Gate late' in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60)
 time.sleep(2)
 curl('POST', API + '/position', {'lat': 39.6589, 'lon': -89.7113, 'acc': 12})
-late = gate.wait('the late message is proposed', lambda: [a for a in (curl('GET', API + '/actions?status=open')[1] or [])
-                 if isinstance(a, dict) and a.get('kind') == 'message' and dictish(a.get('payload')).get('to') == TORG] or None, 60) or []
-check('late by five minutes or more: a message to the organizer is proposed, by chat, saying so, about the appointment',
-      len(late) == 1 and dictish(late[0].get('payload')).get('via') == 'chat' and 'late' in dictish(late[0].get('payload')).get('text', '')
-      and TLATE in (late[0].get('about') or []) and late[0].get('status') == 'proposed', late)
-ttrip = dictish(curl('GET', INSTANCE + '/trip.json?raw=1')[1])
+ttrip = gate.wait('the trip is told it is late', lambda: (lambda t: t if t.get('told') is True else None)(dictish(curl('GET', HOST + '/grubbery/api/file' + INSTANCE[len(HOST + '/grubbery/ball'):] + '/trip.json')[1])), 60) or {}
+late = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if isinstance(a, dict) and TLATE in (a.get('about') or [])]
+check('late by five minutes or more: nothing is proposed, not even to an organizer the ship can reach', late == [], late)
 check('the trip is told once and holds its first estimate from the road', ttrip.get('key', '').startswith(TLATE + '@') and ttrip.get('told') is True and bool(ttrip.get('eta')), ttrip)
 # the brief's stops (version 73): the late one pinned with that day's hours, and the map of them through the ship
 code, b0 = curl('GET', API + '/brief/last')
@@ -1522,7 +1520,7 @@ curl('POST', API + '/brief/wake', {})
 bl = gate.wait('the brief with its stops lands', lambda: (lambda b: b if b.get('at') and b.get('at') != dictish(b0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 90) or {}
 # the stop is in the brief only when it starts before the day ends; a run near midnight (UTC on a test ship)
 # puts it in tomorrow's
-if bl.get('day') == tl0.strftime('%Y-%m-%d') == (tl0 + timedelta(minutes=31)).strftime('%Y-%m-%d'):
+if bl.get('day') == tl0.strftime('%Y-%m-%d') == (tl0 + timedelta(minutes=25)).strftime('%Y-%m-%d'):
     bline = [x for x in bl.get('text', '').split('\n') if 'Gate late' in x and x[:1] == '[' and x[1:2].isdigit()]
     check('a stop in the brief has its pin and that day\'s hours from the place search', len(bline) == 1 and bline[0].startswith('[1] ') and '9:00 AM - 5:00 PM' in bline[0], bl.get('text'))
     check('the brief keeps the pins for its map, lon before lat', bl.get('map') == 'pin-l-1+d9534f(-89.6501,39.7817)', bl.get('map'))
