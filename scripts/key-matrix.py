@@ -8,7 +8,7 @@ exactly their scope and read nothing sensitive.
 Exits 1 on any failure. Safe to rerun: it revokes what it minted,
 retracts what it observed, deletes the bodies it made and restores the
 starter policy and the schema it found."""
-import json, sys, time
+import json, subprocess, sys, time
 from gate import fails, count, check, dictish, listish, iso, all_ok
 import gate
 from datetime import datetime, timedelta, timezone
@@ -441,12 +441,24 @@ code, d = owner('GET', '/actions')
 check('the owner lists both', hidden_act in [dictish(x).get('id') for x in listish(d)], d)
 for i in (hidden_act, shown_act):
     owner('POST', '/actions/' + i, {'status': 'dismissed', 'note': 'key gate'})
+# the far zone is put back after: a device zone the ship has none of becomes person/me's home zone, and the
+# position keeps its zone, so left behind it would move every later gate onto Tokyo's clock
+POS = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/position.json'
+pos_before = gate.curl('GET', HOST + '/grubbery/api/file' + POS, jar=JAR)[1]
+tz_rows = lambda: {dictish(o).get('id') for o in listish(dictish(owner('GET', '/body/person/me')[1]).get('observations'))
+                   if dictish(o).get('attr') == 'timezone' and not dictish(o).get('retracted')}
+tz_before = tz_rows()
 code, d = owner('POST', '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12, 'zone': 'Asia/Tokyo'})
 check('the phone reports a far zone', code == 200, (code, d))
 code, w_owner = owner('GET', '/world')
 code, w_key = things('GET', '/world')
 check('the owner\'s digest is on the phone\'s zone, a key without situations is not',
       dictish(w_owner).get('zone') == 'Asia/Tokyo' and code == 200 and dictish(w_key).get('zone') != 'Asia/Tokyo', (dictish(w_owner).get('zone'), dictish(w_key).get('zone')))
+for i in tz_rows() - tz_before:
+    owner('POST', '/retract', {'id': i, 'note': 'key-matrix: the far zone put back'})
+if isinstance(pos_before, dict):
+    subprocess.run(['curl', '-s', '-m', '30', '-b', JAR, '-X', 'POST', HOST + '/grubbery/ball' + POS,
+                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content=' + json.dumps(pos_before)], capture_output=True)
 code, d = things('GET', '/chat')
 check('a key without the person kind reads no people in the chat settings', code == 200 and dictish(d).get('people') == {}, (code, dictish(d).get('people')))
 code, d = triage('PUT', '/chat', {'people': {'~nec': 'person/me'}})
