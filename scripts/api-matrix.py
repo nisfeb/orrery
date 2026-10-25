@@ -1910,6 +1910,27 @@ code, d = curl('DELETE', API + '/location/share/~sampel-palnet')
 check('a stop answers, told or not', code == 200 and dictish(d).get('ok') is True, (code, d))
 code, d = curl('DELETE', API + '/location/share/~sampel-palnet')
 check('stopping what is not shared is a 404', code == 404, (code, d))
+# until home (security audit 3.11): a share that ends only at home needs a home the ship can see, or it never
+# ends. Which answer is right depends on the dev ship, so the check reads home first
+home_known = bool(dictish(dictish(curl('GET', API + '/body/place/home')[1]).get('attrs')).get('geo'))
+code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'home': True})
+check('a share only until home is refused while the ship knows no home, kept when it does',
+      (not home_known and code == 400 and str(dictish(d).get('error', '')).startswith('home:')) or (home_known and code == 200), (home_known, code, d))
+if code == 200:
+    curl('DELETE', API + '/location/share/~sampel-palnet')
+
+
+# ---- the owner's cookie from another site (security audit): Fetch Metadata reaches only https and localhost,
+# so on plain http an owner POST that carries an Origin must say application/json, body or not ----
+print('== the owner\'s cookie from another site')
+code, d = gate.curl('POST', API + '/sync', jar=JAR, headers=['Origin: http://evil.example'])
+check('an owner POST with an Origin and no JSON type is refused', code == 415, (code, d))
+code, d = gate.curl('POST', API + '/sync', jar=JAR, headers=['Origin: http://evil.example', 'content-type: application/x-www-form-urlencoded'], raw='')
+check('so is an empty form post from another site', code == 415, (code, d))
+code, d = gate.curl('POST', API + '/sync', {}, jar=JAR, headers=['Origin: ' + HOST])
+check('the page\'s own JSON POST goes through', code == 200, (code, d))
+code, d = gate.curl('POST', API + '/sync', jar=JAR)
+check('a native client\'s POST, with no Origin and no body, needs no type', code == 200, (code, d))
 
 
 # ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
