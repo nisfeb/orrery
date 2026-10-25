@@ -4664,6 +4664,25 @@
     ?~  p  $(people t.people)
     ?^  ship.body.u.p
       ?:  =((scot %p u.ship.body.u.p) (gs:orr was 'ship'))  $(people t.people)
+      ::  an edit share is the owner's to give: a row only a model, a key
+      ::  or a peer wrote asks first, as a fact for the owner to approve,
+      ::  once (security audit)
+      ?.  (lien with |=([w=bid:orr b=@t] &(=(w who.i.people) (owner-by:orr b))))
+        ?:  =([%b &] (gj:orr was 'asked'))  $(people t.people)
+        ;<  ~  bind:n
+          %+  poke-writer  0
+          %-  pairs:enjs:format
+          :~  ['op' s+'act']
+              :-  'action'
+              %-  pairs:enjs:format
+              :~  ['kind' s+'fact']  ['title' s+(rap 3 'Share ' name.body.l ' with ' name.body.u.p ~)]
+                  ['about' a+~[s+id.l s+who.i.people]]  ['by' s+by.i.people]
+                  :-  'payload'
+                  %-  pairs:enjs:format
+                  ~[['subject' s+id.l] ['attr' s+'shared-with'] ['value' (pairs:enjs:format ~[['ref' s+who.i.people]])]]
+              ==
+          ==
+        $(people t.people, had (~(put by had) who.i.people (pairs:enjs:format ~[['asked' b+&] ['note' s+'waiting for your yes to share']])))
       ;<  *  bind:n  (share-out 0 u.base id.l body.l u.ship.body.u.p 'edit' (thin-of:orr l all multi now))
       $(people t.people, had (~(put by had) who.i.people (pairs:enjs:format ~[['ship' s+(scot %p u.ship.body.u.p)]])))
     ?:  =(dig (gs:orr was 'digest'))  $(people t.people)
@@ -5044,6 +5063,8 @@
     |=  j=json
     ^-  (unit json)
     ?:  =('twin' (gs:orr j 'attr'))  ~
+    ::  nor where a person's messages go (security audit 3.2)
+    ?:  (~(has in address-attrs:orr) (gs:orr j 'attr'))  ~
     `(translate-carried:orr j src our twins ships)
   ::  a row held with a ref read before its twin was known goes, and
   ::  comes again as it reads now
@@ -9858,7 +9879,8 @@
   =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
   =/  moves=(list move:orr)  (moves-of:orr u.parsed tags known)
   ;<  moved=(list @t)  bind:m  (apply-moves moves acts now /mail 'brief')
-  =/  facts=tg-facts:orr  (drop-stale:orr (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx) rows now)
+  ::  the owner's reply: an address it states waits for their tap
+  =/  facts=tg-facts:orr  (drop-stale:orr (hold-addresses:orr (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx) &) rows now)
   ;<  ~  bind:m  (tg-file facts now mail-kind:orr)
   %=  $
     sorted  t.sorted
@@ -10268,7 +10290,11 @@
     =/  mv=(list move:orr)  (reader-moves:orr p.answer tags known)
     ?.  =('browsing' channel.kind)  (apply-moves mv own-acts now /tg by.kind)
     (propose-closes mv own-acts now by.kind)
-  =/  facts=tg-facts:orr  (drop-stale:orr (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx) rows now)
+  ::  where a person's messages go is the owner's to set: a third party's
+  ::  claim is dropped, the owner's own text on the read channel proposes
+  ::  it (security audit 3.2)
+  =/  own=?  &(owner.act =('web' channel.kind))
+  =/  facts=tg-facts:orr  (drop-stale:orr (hold-addresses:orr (ground:orr (validate-reader:orr p.answer rows ctx) rows ctx) own) rows now)
   =.  notes.facts  (weld [gate-note moved] notes.facts)
   ;<  facts=tg-facts:orr  bind:m  (tg-status-check gen rows facts)
   ;<  esc=(unit json)  bind:m

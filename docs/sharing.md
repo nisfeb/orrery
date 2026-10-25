@@ -26,6 +26,7 @@ The Sharing page and each body's Sharing card do everything below through these 
 A single situation (a party, a visit, a recital) can be shared with people outside the household for as long as it matters, by a `shared-with` fact on it, a ref per person.
 
 - **To someone whose ship runs orrery** (a person here carrying a ship), the follower shares the situation body itself in edit mode, today's body share.
+  - Only on the owner's word: a `shared-with` row only a model, a key or a peer wrote does not share. It files a `fact` action, "Share <situation> with <person>", for the owner to approve, once, and the share is made when the owner's approved row lands. `situation-shares.json` marks the person `asked` meanwhile.
   - The offer carries the bodies the situation names, thin: each one's name, and a place's address and point. The accept makes them where they are missing, those rows by the host.
   - Nothing else about those bodies crosses.
   - Their rows on the situation come back under their name ("we bring the cake").

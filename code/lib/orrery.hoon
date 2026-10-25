@@ -2205,14 +2205,16 @@
   =/  hit=(unit loaded)  (loaded-of all id)
   ?~  hit  ''
   ?~(ship.body.u.hit '' (scot %p u.ship.body.u.hit))
-::  +address-attrs: where the executor sends a person's messages. A
-::  key writes them only with sensitive: write, since one that could
-::  would redirect the owner's approved messages (version 60).
+::  +address-attrs: where the executor sends a person's messages, mail
+::  to their email when they have no ship (version 113) included. A key
+::  writes them only with sensitive: write, since one that could would
+::  redirect the owner's approved messages (version 60), and a reader
+::  never does (+hold-addresses).
 ::
 ::  +time-attrs: the attributes whose value is an instant
 ::
 ++  time-attrs  `(set @t)`(sy `(list @t)`~['starts' 'ends' 'started' 'ended' 'next' 'last'])
-++  address-attrs  `(set @t)`(sy `(list @t)`~['ship' 'telegram'])
+++  address-attrs  `(set @t)`(sy `(list @t)`~['ship' 'telegram' 'email'])
 ::  +ship-alias: an alias that names a ship (~zod). +people-of-ships
 ::  reads it as who that ship's messages are from, so it is identity,
 ::  the owner's to assign as a body's ship is (security audit 3.3)
@@ -5887,6 +5889,38 @@
     =/  r=(unit window-row)  (~(get by said) (gs a 'message'))
     ?~(r a (with-why a (quoted who.u.r text.u.r)))
   [bodies.vb obs.vo acts :(weld notes.vb notes.vo notes.va) ~]
+::  +hold-addresses: a reader's claims on where a person's messages go
+::  (+address-attrs). From a third party they are dropped, since a
+::  sender must not redirect the owner's messages to themself (security
+::  audit 3.2). From the owner's own words each becomes a proposed fact,
+::  for the owner's tap rather than written at once
+::
+++  hold-addresses
+  |=  [f=tg-facts own=?]
+  ^-  tg-facts
+  =/  addr  |=(o=json (~(has in address-attrs) (gs o 'attr')))
+  =/  claims=(list json)  (skim obs.f addr)
+  ?~  claims  f
+  =.  obs.f  (skip obs.f addr)
+  ?.  own
+    =/  why=(list @t)
+      %+  turn  `(list json)`claims
+      |=  o=json
+      (rap 3 'dropped ' (gs o 'subject') '.' (gs o 'attr') ': where a person\'s messages go is the owner\'s to set' ~)
+    f(notes (weld notes.f why))
+  =/  asks=(list json)
+    %+  turn  `(list json)`claims
+    |=  o=json
+    =/  subject=@t  (gs o 'subject')
+    =/  attr=@t  (gs o 'attr')
+    %-  pairs:enjs:format
+    :~  ['kind' s+'fact']
+        ['title' s+(rap 3 attr ' of ' subject ': ' (ref-or-text (gj o 'value')) ~)]
+        ['about' a+~[s+subject]]
+        ['message' s+(gs o 'message')]
+        ['payload' (pairs:enjs:format ~[['subject' s+subject] ['attr' s+attr] ['value' (gj o 'value')]])]
+    ==
+  f(acts (weld acts.f asks))
 ::  +with-why: an action whose payload says why it was proposed, for the
 ::  card, unless its proposer said already
 ::
@@ -6072,6 +6106,8 @@
           %+  skim  `(list @t)`(strings (ga b 'aliases'))
           |=  a=@t
           ^-  ?
+          ::  a ~ alias names a ship: identity, the owner's (audit 3.3)
+          ?:  (ship-alias a)  |
           =/  w=@t  (words a)
           &(!=('' (trim-cord w)) ?=(^ (find (trip w) (trip said))))
         ?~  als
@@ -6079,7 +6115,12 @@
           [(rap 3 'dropped new names for ' id ': not in the message' ~) body-notes.acc]
         =/  fresh=(list json)  (turn `(list @t)`als |=(a=@t `json`s+a))
         [(snoc bodies-out.acc (set-key b 'aliases' a+fresh)) body-notes.acc]
-      ?:  (~(has in used) id)  [(snoc bodies-out.acc b) body-notes.acc]
+      ?:  (~(has in used) id)
+        =/  als=(list @t)  (strings (ga b 'aliases'))
+        =/  kept=(list @t)  (skip als ship-alias)
+        ?:  =(als kept)  [(snoc bodies-out.acc b) body-notes.acc]
+        :-  (snoc bodies-out.acc (set-key b 'aliases' a+(turn kept |=(a=@t `json`s+a))))
+        [(rap 3 'dropped a ship alias on ' id ': a ship is the owner\'s to name' ~) body-notes.acc]
       :-  bodies-out.acc
       [(rap 3 'dropped body ' id ': no fact is about it' ~) body-notes.acc]
     :*  bodies-out.bout
@@ -11693,15 +11734,16 @@
   |=  [last=json now=@da cap=@ud]
   ^-  ?
   (gte (day-count last 'read_today' now) cap)
-::  +key-hide: what a key may not write: the policy's sensitive names
-::  and the address attributes (where the executor sends a person's
-::  messages), unless its scope says sensitive: write
+::  +key-hide: what a key may not write: the policy's sensitive names,
+::  the address attributes (where the executor sends a person's
+::  messages) and shared-with (who the owner shares a situation with),
+::  unless its scope says sensitive: write
 ::
 ++  key-hide
   |=  [s=scope policy=json]
   ^-  (set @t)
   ?:  sensitive.s  ~
-  (~(uni in (sensitive-of policy)) address-attrs)
+  (~(uni in (sensitive-of policy)) (~(put in address-attrs) 'shared-with'))
 ::  ==  the browsing reader (version 98)
 ::
 ::  The browser extension sends what the owner reads: each visit, and

@@ -514,7 +514,7 @@
 ++  test-key-hide
   =/  policy=json  (jo '{"sensitive": ["health"]}')
   ;:  weld
-    (expect-eq !>((sy `(list @t)`~['health' 'ship' 'telegram'])) !>((key-hide:orr [(sy ~[%person]) ~ & |] policy)))
+    (expect-eq !>((sy `(list @t)`~['health' 'ship' 'telegram' 'email' 'shared-with'])) !>((key-hide:orr [(sy ~[%person]) ~ & |] policy)))
     (expect-eq !>(*(set @t)) !>((key-hide:orr [(sy ~[%person]) ~ & &] policy)))
     (expect-eq !>(*(set @t)) !>((hidden-for:orr owner policy)))
     (expect-eq !>((sy `(list @t)`~['health'])) !>((hidden-for:orr (key ~[%person] ~ & |) policy)))
@@ -682,6 +682,25 @@
     (expect-eq !>(2) !>((lent acts.out)))
     (expect-eq !>(['status' 'person/dana']) !>([(gs:orr (gj:orr (snag 0 acts.out) 'payload') 'attr') (gs:orr (gj:orr (snag 1 acts.out) 'payload') 'to')]))
     (expect-eq !>(~['dropped 3 outside the key\'s scope']) !>(notes.out))
+  ==
+::  where a person's messages go: a third party's claim is dropped, the
+::  owner's own words propose it as a fact (security audit 3.2)
+++  test-hold-addresses
+  =/  in=tg-facts:orr
+    :*  ~
+        :~  (jo '{"subject": "person/alice", "attr": "telegram", "value": "999", "message": "m1"}')
+            (jo '{"subject": "person/alice", "attr": "status", "value": "home", "message": "m1"}')
+        ==
+        ~  ~  ~
+    ==
+  =/  them=tg-facts:orr  (hold-addresses:orr in |)
+  =/  mine=tg-facts:orr  (hold-addresses:orr in &)
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['status']) !>((turn obs.them |=(o=json (gs:orr o 'attr')))))
+    (expect-eq !>(`(list json)`~) !>(acts.them))
+    (expect-eq !>(~['dropped person/alice.telegram: where a person\'s messages go is the owner\'s to set']) !>(notes.them))
+    (expect-eq !>(`(list @t)`~['status']) !>((turn obs.mine |=(o=json (gs:orr o 'attr')))))
+    (expect-eq !>(['fact' 'telegram' 'person/alice']) !>(=/(a (snag 0 acts.mine) [(gs:orr a 'kind') (gs:orr (gj:orr a 'payload') 'attr') (gs:orr (gj:orr a 'payload') 'subject')])))
   ==
 ++  test-day-count
   =/  last=json  (jo '{"day": "2026-09-18", "read_today": 5}')

@@ -715,6 +715,31 @@
     (expect-eq !>(`(list json)`~) !>(obs.lost))
     (expect !>((lien notes.lost |=(n=@t =(n 'dropped situation/2026-09-16-breakdown.needs: not the author and not named in the message')))))
   ==
+::  a ~ alias names a ship: identity, the owner's to assign, so a reader
+::  never files one, on a body the ship holds or a new one (audit 3.3)
+++  test-ground-ship-alias
+  =/  schema=json  (jo '{"kinds": {"person": {"attrs": ["status"]}}, "actions": []}')
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'me' ~ ~ now)
+        (mkb 'person/alice' %person 'Alice' ~ ~ now)
+    ==
+  =/  ctx=reader-ctx:orr  (reader-context:orr all schema now)
+  =/  rows=(list window-row:orr)
+    ~[['telegram/1/8' '2026-09-18T11:00:00Z' 'person/alice' 'call me Ali, and my other ship is ~nec, i am at home' |]]
+  =/  answer=json
+    %-  jo
+    '{"bodies": [{"id": "person/alice", "aliases": ["~nec", "Ali"]}, {"id": "person/bob", "name": "Bob", "aliases": ["~bus", "Bobby"]}], "observations": [{"subject": "person/alice", "attr": "status", "value": "at home", "message": "telegram/1/8"}, {"subject": "person/bob", "attr": "status", "value": "at home", "message": "telegram/1/8"}], "actions": []}'
+  =/  got=tg-facts:orr  (ground:orr (validate-reader:orr answer rows ctx) rows ctx)
+  =/  als
+    |=  i=@t
+    ^-  (list @t)
+    =/  bs=(list json)  (skim `(list json)`bodies.got |=(b=json =(i (gs:orr b 'id'))))
+    ?~  bs  ~
+    (strings:orr (ga:orr i.bs 'aliases'))
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['Ali']) !>((als 'person/alice')))
+    (expect !>(!(lien (als 'person/bob') |=(a=@t =('~bus' a)))))
+  ==
 ++  test-plan-twins
   =/  all=(list loaded:orr)
     :~  (mkb 'activity/ballet' %activity 'Ballet' ~ ~[['schedule' s+'weekly, TU']] (sub now ~d9))
