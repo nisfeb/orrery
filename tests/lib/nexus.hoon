@@ -428,20 +428,29 @@
   =/  bad=(unit [@ud @t])  `[415 'content-type: application/json required']
   =/  far=(unit [@ud @t])  `[403 'a request from another site is refused']
   ;:  weld
-    (expect-eq !>(bad) !>((request-refusal:orr 'POST' body 'text/plain' '' &)))
-    (expect-eq !>(bad) !>((request-refusal:orr 'PUT' body '' '' |)))
-    (expect-eq !>(~) !>((request-refusal:orr 'POST' body 'Application/JSON; charset=utf-8' '' &)))
-    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ 'text/plain' '' |)))
-    (expect-eq !>(~) !>((request-refusal:orr 'POST' `[0 ''] 'text/plain' '' |)))
-    (expect-eq !>(~) !>((request-refusal:orr 'GET' body 'text/plain' '' |)))
-    (expect-eq !>(~) !>((request-refusal:orr 'DELETE' body 'text/plain' '' |)))
-    (expect-eq !>(far) !>((request-refusal:orr 'POST' ~ '' 'cross-site' &)))
-    (expect-eq !>(far) !>((request-refusal:orr 'DELETE' ~ '' 'same-site' &)))
-    (expect-eq !>(~) !>((request-refusal:orr 'GET' ~ '' 'cross-site' &)))
-    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' 'cross-site' |)))
-    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' 'same-origin' &)))
+    (expect-eq !>(bad) !>((request-refusal:orr 'POST' body 'text/plain' '' & '')))
+    (expect-eq !>(bad) !>((request-refusal:orr 'PUT' body '' '' | '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' body 'Application/JSON; charset=utf-8' '' & '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ 'text/plain' '' | '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' `[0 ''] 'text/plain' '' | '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'GET' body 'text/plain' '' | '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'DELETE' body 'text/plain' '' | '')))
+    (expect-eq !>(far) !>((request-refusal:orr 'POST' ~ '' 'cross-site' & '')))
+    (expect-eq !>(far) !>((request-refusal:orr 'DELETE' ~ '' 'same-site' & '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'GET' ~ '' 'cross-site' & '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' 'cross-site' | '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' 'same-origin' & '')))
     ::  a body with the wrong type from another site is the 415
-    (expect-eq !>(bad) !>((request-refusal:orr 'POST' body 'text/plain' 'cross-site' &)))
+    (expect-eq !>(bad) !>((request-refusal:orr 'POST' body 'text/plain' 'cross-site' & '')))
+    ::  no Fetch Metadata (plain http): an owner POST or PUT carrying an
+    ::  Origin must be JSON, body or not; one with none, as Talon's
+    ::  body-less register, is free (security audit)
+    (expect-eq !>(bad) !>((request-refusal:orr 'POST' ~ '' '' & 'http://evil.example')))
+    (expect-eq !>(bad) !>((request-refusal:orr 'PUT' `[0 ''] 'text/plain' '' & 'null')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ 'application/json' '' & 'http://evil.example')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' '' & '')))
+    (expect-eq !>(~) !>((request-refusal:orr 'POST' ~ '' '' | 'http://evil.example')))
+    (expect-eq !>(~) !>((request-refusal:orr 'DELETE' ~ '' '' & 'http://evil.example')))
   ==
 ++  test-act-refusal
   =/  k  (key ~[%person] ~[%task %message] & |)

@@ -1540,6 +1540,7 @@
       (fall (get-header:http 'content-type' header-list.request.req) '')
       (fall (get-header:http 'sec-fetch-site' header-list.request.req) '')
       owner.act
+      (fall (get-header:http 'origin' header-list.request.req) '')
     ==
   ?^  refused  (send-err eyre-id code.u.refused why.u.refused)
   ;<  ~  bind:m  ensure-me-from-request
@@ -4799,6 +4800,8 @@
     =/  over=?
       ?|  !(loc-live:orr g now)
           &(home.g left.g fresh athome)
+          ::  a grant only home ends, with no home to see, ends now
+          &(?=(~ until.g) ?=(~ home))
       ==
     ?:  over
       ;<  *  bind:m  (remote-poke-wait ship.g [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'position-end']]))
@@ -4882,6 +4885,17 @@
     ?^  hours  `(add now (mul ~h1 (max 1 (min 72 u.hours))))
     ?:(home ~ `(add now ~h2))
   ?:  &(?=(^ until) (lte u.until now))  (send-err eyre-id 400 'until: in the past')
+  ::  a grant that ends only at home needs a home the ship can see, or it
+  ::  never ends (security audit 3.11)
+  ;<  hp=(unit [lat=@t lon=@t])  bind:m
+    =/  n  (fiber:fiber:nexus ,(unit [lat=@t lon=@t]))
+    ?^  until  (pure:n ~)
+    ;<  schema=json  bind:n  (read-json (rf 1 / %'schema.json'))
+    ;<  all=(list loaded:orr)  bind:n  (load-bodies 1)
+    ;<  gc=json  bind:n  (read-json (rf 1 / %'geocache.json'))
+    (pure:n (home-point:orr all (multi-of:orr schema) now gc))
+  ?:  &(?=(~ until) ?=(~ hp))
+    (send-err eyre-id 400 'home: this ship does not know where home is; give hours too')
   =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ |]
   ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
   =/  rest=(list loc-grant:orr)  (skip (de-loc-grants:orr doc) |=(x=loc-grant:orr =(ship.x u.shp)))
@@ -11360,11 +11374,14 @@
   =/  got=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.vw))))
   ?~  got  (send-err eyre-id 500 'unreadable file')
   ::  nosniff: each of the three files is served with its own type, and
-  ::  a browser must not guess a different one out of the bytes
-  =/  heads
+  ::  a browser must not guess a different one out of the bytes. The page
+  ::  runs only its own script, which it loads by file and never inline,
+  ::  so an escaping miss elsewhere cannot run one (security audit)
+  =/  heads=(list [@t @t])
     :~  ['content-type' u.ct]
         ['cache-control' 'no-cache']
         ['x-content-type-options' 'nosniff']
     ==
+  =?  heads  =(%'orrery.html' name)  (snoc heads ['content-security-policy' 'script-src \'self\''])
   (send-simple:srv eyre-id [[200 heads] `q.u.got])
 --

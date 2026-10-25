@@ -20,7 +20,7 @@ Ask the ship what was true at 11pm and it still puts the car on Route 9. Ask it 
 
 ## Try it
 
-Everything below talks to the HTTP API with the ship's owner cookie. Log in once and keep the cookie jar.
+Everything below talks to the HTTP API with the ship's owner cookie. Log in once and keep the cookie jar. A body is sent as `application/json`. The owner's cookie on a request another site sent is refused, and since a browser says so only to https and localhost, an owner `POST` or `PUT` that carries an `Origin` header must be `application/json` even with no body. curl and other native clients send no `Origin`.
 
 ```bash
 SHIP=https://your-ship.example      # your ship's web address
@@ -372,7 +372,7 @@ Every setting follows by default. Changing a followed setting's model, address o
 
 ### Location for a while
 
-Since version 88 the owner can share where they are with someone whose ship runs orrery, for a while: for some hours (two unless set, three days at most), until they are home, or both (Settings, Location; `POST /location/share`). Until home ends at the first fix within 150 metres of home once the owner has been seen away, so a share begun at home lasts until they leave and come back. Each new fix the phone sends goes to that ship once, cut to two decimals (about a kilometre) unless the owner chose exact; the latest fix of the last half hour goes the moment a share begins. `DELETE /location/share/<ship>` stops it and tells the other ship, and so does the end of its time. The other ship keeps only the latest fix, and only when a person there carries the sender's ship; it shows how far that is from its own home, and drops the fix when the share ends or its time passes. A position is never a fact on either ship, and the two-ship check is `scripts/location-matrix.py`.
+Since version 88 the owner can share where they are with someone whose ship runs orrery, for a while: for some hours (two unless set, three days at most), until they are home, or both (Settings, Location; `POST /location/share`). Until home ends at the first fix within 150 metres of home once the owner has been seen away, so a share begun at home lasts until they leave and come back. Each new fix the phone sends goes to that ship once, cut to two decimals (about a kilometre) unless the owner chose exact; the latest fix of the last half hour goes the moment a share begins. `DELETE /location/share/<ship>` stops it and tells the other ship, and so does the end of its time. The other ship keeps only the latest fix, and only when a person there carries the sender's ship; it shows how far that is from its own home, and drops the fix when the share ends or its time passes. A position is never a fact on either ship, and the two-ship check is `scripts/location-matrix.py`. A share only until home needs a home the ship knows; without one it is refused, so it cannot run on for ever.
 
 ### Outdoors
 

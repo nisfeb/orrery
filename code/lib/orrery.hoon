@@ -11625,23 +11625,26 @@
     %writes  ?:(&(?=(^ scope.act) write.u.scope.act) ~ `'read only key')
   ==
 ::  +request-refusal: a request refused before its route: a body that
-::  does not say it is JSON (a POST with no body carries none to
-::  mistype), and the owner's cookie on a request another site sent (a
-::  browser says where a request came from; the Host header is no help,
-::  a proxy rewrites it). ponytail: a browser too old to send
-::  Sec-Fetch-Site is not held.
+::  does not say it is JSON, and the owner's cookie on a request another
+::  site sent. A browser says where a request came from in Fetch
+::  Metadata, but only to https and localhost. On plain http it still
+::  sends Origin with every POST, and a form another site submits cannot
+::  say application/json, so an owner POST or PUT that carries an Origin
+::  must be JSON, body or not (security audit). A native client, curl
+::  or Talon, sends no Origin, and its body-less POST stays free of the
+::  rule. The Host header is no help: a proxy rewrites it.
 ::
 ++  request-refusal
-  |=  [meth=@t body=(unit octs) ctype=@t site=@t owner=?]
+  |=  [meth=@t body=(unit octs) ctype=@t site=@t owner=? origin=@t]
   ^-  (unit [code=@ud why=@t])
-  ?:  ?&  |(=('POST' meth) =('PUT' meth))
-          ?=(^ body)
-          !=(0 p.u.body)
-          !=('application/json' (end [3 16] (crip (cass (trip ctype)))))
-      ==
+  =/  json-type=?  =('application/json' (end [3 16] (crip (cass (trip ctype)))))
+  =/  posting=?  |(=('POST' meth) =('PUT' meth))
+  ?:  &(posting ?=(^ body) !=(0 p.u.body) !json-type)
     `[415 'content-type: application/json required']
   ?:  &(owner !=('GET' meth) |(=('cross-site' site) =('same-site' site)))
     `[403 'a request from another site is refused']
+  ?:  &(owner posting !=('' origin) !json-type)
+    `[415 'content-type: application/json required']
   ~
 ::  +act-refusal: why a key may not propose this action, or ~. A kind
 ::  outside its action kinds is 403 (the key sent the kind itself); a
