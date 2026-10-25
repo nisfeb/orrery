@@ -467,6 +467,41 @@ code, d = things('GET', '/browsing')
 check('on the status too', code == 200 and 'notes' not in dictish(dictish(d).get('last')), (code, dictish(d).get('last')))
 owner('DELETE', '/clients/' + str(things_id))
 
+print('== where messages go and whom a situation is shared with are the owner\'s (security audit, batch 3)')
+KG = str(int(time.time()))
+KSIT = 'situation/key-gate-sit-' + KG
+owner('POST', '/bodies', {'id': 'person/key-gate-peer', 'name': 'Key Gate Peer', 'ship': '~nec'})
+owner('POST', '/bodies', {'id': KSIT, 'name': 'Key Gate Sit ' + KG})
+SW = {'ref': 'person/key-gate-peer'}
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs(KSIT, 'shared-with', SW, T0, 'kg-sw')]})
+check('a key may not say whom a situation is shared with', code == 403 and dictish(d).get('error') == 'not in scope: shared-with', (code, d))
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/key-gate-peer', 'email', 'kg@key-gate.example', T0, 'kg-em')]})
+check('nor where a person\'s mail goes', code == 403 and dictish(d).get('error') == 'not in scope: email', (code, d))
+code, d = owner('POST', '/clients', {'name': 'key-gate wide', 'by': 'key-gate-wide',
+                                     'scope': {'kinds': ['person', 'situation'], 'actions': [], 'write': True, 'sensitive': 'write'}})
+wide_id = dictish(d).get('id')
+wide = as_key(str(dictish(d).get('token', '')))
+code, d = wide('POST', '/observe', {'bodies': [], 'observations': [obs(KSIT, 'shared-with', SW, T0, 'kg-sw')]})
+check('a key whose scope says sensitive: write may still write one', code == 200 and all_ok(d, 'observations', 1), (code, d))
+owner('POST', '/sync', {})
+asked = []
+for _ in range(30):
+    asked = [x for x in listish(owner('GET', '/actions')[1]) if isinstance(x, dict) and x.get('title') == 'Share Key Gate Sit ' + KG + ' with Key Gate Peer']
+    if asked:
+        break
+    time.sleep(2)
+check('a share on a row only a key wrote waits for the owner, as a fact to approve',
+      len(asked) == 1 and asked[0].get('kind') == 'fact' and asked[0].get('by') == 'key-gate-wide' and asked[0].get('status') == 'proposed', asked)
+code, d = owner('GET', '/shares')
+sit_with = dictish(dictish(dictish(d).get('situation_shares')).get(KSIT))
+check('and nothing is shared until then', code == 200 and KSIT not in json.dumps(dictish(d).get('shares'))
+      and not dictish(sit_with.get('person/key-gate-peer')).get('ship'), (code, d))
+for a in asked:
+    owner('POST', '/actions/' + a['id'], {'status': 'dismissed', 'note': 'key gate'})
+owner('DELETE', '/body/' + KSIT)
+owner('DELETE', '/body/person/key-gate-peer')
+owner('DELETE', '/clients/' + str(wide_id))
+
 print('== owner only')
 for label, fn in (('clients', lambda: triage('GET', '/clients')),
                   ('policy', lambda: triage('GET', '/policy')),
