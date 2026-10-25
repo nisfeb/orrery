@@ -445,16 +445,37 @@
   ==
 ++  test-act-refusal
   =/  k  (key ~[%person] ~[%task %message] & |)
+  =/  policy=json  (jo '{"sensitive": ["health"]}')
+  =/  w  (key ~[%person] ~[%fact %correct %resolve] & |)
+  =/  fact
+    |=  [subject=@t attr=@t value=json]
+    (act %fact 'f' (pairs:enjs:format ~[['subject' s+subject] ['attr' s+attr] ['value' value]]) ~ %proposed)
   ;:  weld
-    (expect-eq !>(~) !>((act-refusal:orr owner (act %merge 'm' ~ ~['org/acme'] %proposed))))
-    (expect-eq !>(`[403 'not in scope: note']) !>((act-refusal:orr k (act %note 'n' ~ ~ %proposed))))
-    (expect-eq !>(`[400 'about: no such body org/acme']) !>((act-refusal:orr k (act %task 't' ~ ~['person/me' 'org/acme'] %proposed))))
-    (expect-eq !>(~) !>((act-refusal:orr k (act %task 't' ~ ~['person/me' 'not an id'] %proposed))))
-    (expect-eq !>(`[400 'payload: no such body org/acme']) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "org/acme"}') ~ %proposed))))
-    (expect-eq !>(`[400 'payload: no such body place/home']) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "person/dana", "into": "place/home"}') ~ %proposed))))
-    (expect-eq !>(~) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "person/dana"}') ~ %proposed))))
+    (expect-eq !>(~) !>((act-refusal:orr owner (act %merge 'm' ~ ~['org/acme'] %proposed) policy)))
+    (expect-eq !>(`[403 'not in scope: note']) !>((act-refusal:orr k (act %note 'n' ~ ~ %proposed) policy)))
+    (expect-eq !>(`[400 'about: no such body org/acme']) !>((act-refusal:orr k (act %task 't' ~ ~['person/me' 'org/acme'] %proposed) policy)))
+    (expect-eq !>(~) !>((act-refusal:orr k (act %task 't' ~ ~['person/me' 'not an id'] %proposed) policy)))
+    (expect-eq !>(`[400 'payload: no such body org/acme']) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "org/acme"}') ~ %proposed) policy)))
+    (expect-eq !>(`[400 'payload: no such body place/home']) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "person/dana", "into": "place/home"}') ~ %proposed) policy)))
+    (expect-eq !>(~) !>((act-refusal:orr k (act %message 'm' (jo '{"to": "person/dana"}') ~ %proposed) policy)))
     %+  expect-eq  !>(`[403 'a key may not propose a merge'])
-    !>((act-refusal:orr (key ~[%person] ~[%merge] & |) (act %merge 'm' (jo '{"from": "person/a", "into": "person/b"}') ~ %proposed)))
+    !>((act-refusal:orr (key ~[%person] ~[%merge] & |) (act %merge 'm' (jo '{"from": "person/a", "into": "person/b"}') ~ %proposed) policy))
+    ::  a fact, correct or resolve the writer carries out holds the
+    ::  key to what /observe would let it write (security audit 3.1)
+    (expect-eq !>(~) !>((act-refusal:orr w (fact 'person/dana' 'status' s+'ok') policy)))
+    (expect-eq !>(`[403 'not in scope: telegram']) !>((act-refusal:orr w (fact 'person/dana' 'telegram' s+'999') policy)))
+    (expect-eq !>(`[403 'not in scope: ship']) !>((act-refusal:orr w (fact 'person/dana' 'ship' s+'~nec') policy)))
+    (expect-eq !>(`[403 'not in scope: health']) !>((act-refusal:orr w (fact 'person/dana' ' health ' s+'x') policy)))
+    (expect-eq !>(`[400 'payload: no such body org/acme']) !>((act-refusal:orr w (fact 'org/acme' 'website' s+'x') policy)))
+    (expect-eq !>(`[400 'payload: no such body place/home']) !>((act-refusal:orr w (fact 'person/dana' 'home' (pairs:enjs:format ~[['ref' s+'place/home']])) policy)))
+    (expect-eq !>(`[403 'not in scope: twin']) !>((act-refusal:orr w (fact 'person/dana' 'twin' s+'x') policy)))
+    (expect-eq !>(`[403 'not in scope: sphere']) !>((act-refusal:orr w (fact 'person/dana' 'sphere' s+'family') policy)))
+    (expect-eq !>(`[403 'not in scope: health']) !>((act-refusal:orr w (act %correct 'c' (jo '{"subject": "person/dana", "attr": "health", "value": "x"}') ~ %proposed) policy)))
+    (expect-eq !>(`[400 'payload: no such body situation/flood']) !>((act-refusal:orr w (act %resolve 'r' (jo '{"situation": "situation/flood", "outcome": "dry"}') ~ %proposed) policy)))
+    (expect-eq !>(~) !>((act-refusal:orr (key ~[%person %situation] ~[%resolve] & |) (act %resolve 'r' (jo '{"situation": "situation/flood", "outcome": "dry"}') ~ %proposed) policy)))
+    ::  the owner, and a key whose scope says sensitive: write, as before
+    (expect-eq !>(~) !>((act-refusal:orr owner (fact 'person/dana' 'telegram' s+'999') policy)))
+    (expect-eq !>(~) !>((act-refusal:orr (key ~[%person] ~[%fact] & &) (fact 'person/dana' 'telegram' s+'999') policy)))
   ==
 ++  test-de-mint
   =/  sc=json  (jo '{"kinds": ["person"], "actions": [], "write": false}')
@@ -474,6 +495,10 @@
     (expect-eq !>('writes as (by): 64 bytes at most, and the name stands in when it is blank') !>((why (crip (reap 65 'n')) '' sc)))
     (expect-eq !>('writes as (by): 64 bytes at most, and the name stands in when it is blank') !>((why 'n' (crip (reap 65 'b')) sc)))
     (expect-eq !>('ok') !>((why 'n' (crip (reap 64 'b')) sc)))
+    ::  a name the ship signs its own writes with, or a ship's, is refused
+    (expect-eq !>('writes as (by): that name is one the ship signs its own writes with') !>((why 'n' 'owner' sc)))
+    (expect-eq !>('writes as (by): that name is one the ship signs its own writes with') !>((why 'n' '~zod' sc)))
+    (expect-eq !>('writes as (by): that name is one the ship signs its own writes with') !>((why 'calendar' '' sc)))
     (expect-eq !>('scope: expected an object') !>((why 'n' 'b' s+'x')))
     (expect !>(?=(%& -.good)))
     (expect-eq !>(['n' 'b']) !>(?>(?=(%& -.good) [name.p.good by.p.good])))
@@ -620,6 +645,31 @@
     (expect-eq !>(now) !>(at.msg.o))
     (expect-eq !>('web') !>(by.kind.o))
     (expect !>(?=(~ sc.o)))
+  ==
+::  a key's handed-in text files only what the key could file itself:
+::  a proposed fact on an address, or a message to a body outside its
+::  kinds, is dropped like an observation would be (security audit 3.1)
+++  test-scope-facts
+  =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%fact %message]) & |]
+  =/  hide=(set @t)  (sy ~['health' 'ship' 'telegram'])
+  =/  fact
+    |=  [subject=@t attr=@t]
+    (jo (rap 3 '{"kind": "fact", "about": ["person/dana"], "payload": {"subject": "' subject '", "attr": "' attr '", "value": "x"}}' ~))
+  =/  in=tg-facts:orr
+    :*  ~  ~
+        :~  (fact 'person/dana' 'status')
+            (fact 'person/dana' 'telegram')
+            (fact 'org/acme' 'website')
+            (jo '{"kind": "message", "about": ["person/dana"], "payload": {"to": "org/acme"}}')
+            (jo '{"kind": "message", "about": ["person/dana"], "payload": {"to": "person/dana"}}')
+        ==
+        ~  ~
+    ==
+  =/  out=tg-facts:orr  (scope-facts:orr in sc hide)
+  ;:  weld
+    (expect-eq !>(2) !>((lent acts.out)))
+    (expect-eq !>(['status' 'person/dana']) !>([(gs:orr (gj:orr (snag 0 acts.out) 'payload') 'attr') (gs:orr (gj:orr (snag 1 acts.out) 'payload') 'to')]))
+    (expect-eq !>(~['dropped 3 outside the key\'s scope']) !>(notes.out))
   ==
 ++  test-day-count
   =/  last=json  (jo '{"day": "2026-09-18", "read_today": 5}')

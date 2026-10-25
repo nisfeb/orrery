@@ -990,6 +990,16 @@
   =/  wide=scope:orr  [(sy ~[%person %place]) ~ & |]
   =/  ship-body=json
     (pairs:enjs:format ~[['bodies' a+~[(pairs:enjs:format ~[['id' s+'person/sam'] ['ship' s+'~zod']])]]])
+  =/  aliased
+    |=  a=@t
+    ^-  json
+    (pairs:enjs:format ~[['bodies' a+~[(pairs:enjs:format ~[['id' s+'person/me'] ['aliases' a+~[s+a]]])]]])
+  =/  obs
+    |=  [attr=@t value=json]
+    ^-  json
+    (pairs:enjs:format ~[['observations' a+~[(pairs:enjs:format ~[['subject' s+'person/me'] ['attr' s+attr] ['value' value]])]]])
+  =/  spheres=scope:orr  [(sy ~[%person %sphere]) ~ & |]
+  =/  sref=json  (pairs:enjs:format ~[['ref' s+'sphere/family']])
   ;:  weld
     (expect-eq !>(~) !>((out-of-scope:orr ok sc hide)))
     (expect-eq !>(`'place/home') !>((out-of-scope:orr bad-body sc hide)))
@@ -1000,6 +1010,16 @@
     (expect-eq !>(~) !>((out-of-scope:orr (ref-obs 'place/home') wide hide)))
     (expect-eq !>(~) !>((out-of-scope:orr (ref-obs 'nope') sc hide)))
     (expect-eq !>(`'ship') !>((out-of-scope:orr ship-body sc hide)))
+    ::  identity is the owner's: no ~ alias and no twin row from a key
+    (expect-eq !>(`'aliases') !>((out-of-scope:orr (aliased '~nec') sc hide)))
+    (expect-eq !>(`'aliases') !>((out-of-scope:orr (aliased ' ~nec') sc hide)))
+    (expect-eq !>(~) !>((out-of-scope:orr (aliased 'Al') sc hide)))
+    (expect-eq !>(`'twin') !>((out-of-scope:orr (obs 'twin' s+'x') sc hide)))
+    ::  a sphere row names a sphere the key holds, by ref
+    (expect-eq !>(`'sphere') !>((out-of-scope:orr (obs 'sphere' s+'family') sc hide)))
+    (expect-eq !>(`'sphere') !>((out-of-scope:orr (obs 'sphere' sref) sc hide)))
+    (expect-eq !>(`'sphere') !>((out-of-scope:orr (obs 'sphere' s+'family') spheres hide)))
+    (expect-eq !>(~) !>((out-of-scope:orr (obs 'sphere' sref) spheres hide)))
   ==
 ++  test-veil-refs-and-scope-about
   =/  base=obs:orr  o1

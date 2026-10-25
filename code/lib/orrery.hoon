@@ -2213,6 +2213,23 @@
 ::
 ++  time-attrs  `(set @t)`(sy `(list @t)`~['starts' 'ends' 'started' 'ended' 'next' 'last'])
 ++  address-attrs  `(set @t)`(sy `(list @t)`~['ship' 'telegram'])
+::  +ship-alias: an alias that names a ship (~zod). +people-of-ships
+::  reads it as who that ship's messages are from, so it is identity,
+::  the owner's to assign as a body's ship is (security audit 3.3)
+::
+++  ship-alias  |=(a=@t ^-(? =('~' (end [3 1] (trim-cord a)))))
+::  +reserved-by: the names the ship signs its own writes with. The code
+::  reads them as the owner (+owner-by), the calendar (+own-todo), a
+::  share, the generator or one of the readers, so a key may not write
+::  as one, nor as a ship, which a correction's author is read as
+::
+++  reserved-by
+  ^-  (set @t)
+  %-  sy
+  ^-  (list @t)
+  :~  'owner'  'user'  'http'  'calendar'  'ship'  'share'  'generator'
+      'reconcile'  'retire'  'browsing'  'telegram'  'chat'  'mail'  'web'
+  ==
 ++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))
 ::  +de-client, +en-client-row, +en-client-view: a stored row (with the
 ::  salt and the hash) and what the owner sees of it (without them). A
@@ -2411,9 +2428,12 @@
 ::  +out-of-scope: the first body id, subject, attribute or ref in an
 ::  observe batch that a scope may not write, or ~. An id that does not
 ::  parse is left for the decoders to refuse. A key may never send a
-::  body's ship, and may only relate what it can see: a value pointing
-::  at a body outside its kinds is refused, so the key cannot confirm
-::  that body through an existing answer. The caller checks write
+::  body's ship, as the ship field or as a ~ alias, nor a twin row:
+::  identity, here and across ships, is the owner's to assign. It may
+::  only relate what it can see: a value pointing at a body outside its
+::  kinds is refused, so the key cannot confirm that body through an
+::  existing answer, and a sphere row names a sphere it holds, by ref,
+::  never by a name the writer looks up. The caller checks write
 ::  first; this names what a writing key may not touch.
 ::
 ++  out-of-scope
@@ -2426,6 +2446,7 @@
     =/  pk  (parse-bid (gs j 'id'))
     ?~  pk  ~
     ?:  ?=(^ (gj j 'ship'))  `'ship'
+    ?:  (lien (strings (ga j 'aliases')) ship-alias)  `'aliases'
     ?:((kind-in-scope s kind.u.pk) ~ `(gs j 'id'))
   ?^  bad-body  bad-body
   %+  roll  (ga jon 'observations')
@@ -2434,8 +2455,11 @@
   =/  pk  (parse-bid (gs j 'subject'))
   ?~  pk  ~
   ?.  (kind-in-scope s kind.u.pk)  `(gs j 'subject')
-  ?:  (~(has in hide) (gs j 'attr'))  `(gs j 'attr')
+  =/  attr=@t  (gs j 'attr')
+  ?:  =('twin' attr)  `'twin'
+  ?:  (~(has in hide) attr)  `attr
   =/  target=(unit bid)  (ref-of (gj j 'value'))
+  ?:  &(=('sphere' attr) |(?=(~ target) !(kind-in-scope s %sphere)))  `'sphere'
   ?~  target  ~
   =/  tk  (parse-bid u.target)
   ?~  tk  ~
@@ -6569,8 +6593,8 @@
 ::  +scope-facts: what a key's handed-in text may file (version 60): the
 ::  bodies of its kinds, the observations it could have made itself
 ::  (+out-of-scope's rule, hidden attributes held back), the actions
-::  of its action kinds about bodies of its kinds; the rest dropped
-::  with a note
+::  of its action kinds about bodies of its kinds whose payload stays
+::  in its scope (+payload-refusal); the rest dropped with a note
 ::
 ++  scope-facts
   |=  [f=tg-facts s=scope hide=(set @t)]
@@ -6588,7 +6612,9 @@
     %+  skim  acts.f
     |=  a=json
     ?.  (~(has in actions.s) `@tas`(gs a 'kind'))  |
-    (levy (strings (ga a 'about')) in-kinds)
+    ?&  (levy (strings (ga a 'about')) in-kinds)
+        ?=(~ (payload-refusal s `@tas`(gs a 'kind') (gj a 'payload') hide))
+    ==
   =/  dropped=@ud
     :(add (sub (lent bodies.f) (lent bodies)) (sub (lent obs.f) (lent obs)) (sub (lent acts.f) (lent acts)))
   =/  said=(list @t)
@@ -11167,7 +11193,7 @@
     |=  l=loaded
     ^-  (list [@t @t])
     %+  murn  ~(tap in aliases.body.l)
-    |=(a=@t ?.(=('~' (end [3 1] (trim-cord a))) ~ `[(ship-key a) `@t`id.l]))
+    |=(a=@t ?.((ship-alias a) ~ `[(ship-key a) `@t`id.l]))
   =/  own=(list [@t @t])
     %+  murn  people
     |=(l=loaded ?~(ship.body.l ~ `[(ship-key (scot %p u.ship.body.l)) `@t`id.l]))
@@ -11573,10 +11599,13 @@
 ::  body outside its kinds is 400 no such body, in about or in what the
 ::  payload names (a message's to, a merge's pair), so a key never
 ::  learns such a body exists; and a key does not merge at all, which
-::  is the owner's and reconcile's.
+::  is the owner's and reconcile's. A fact, correct or resolve is
+::  carried out by the ship's own writer, so the rows it would write are
+::  held to the key's write scope as /observe holds them (security
+::  audit 3.1).
 ::
 ++  act-refusal
-  |=  [act=actor a=action]
+  |=  [act=actor a=action policy=json]
   ^-  (unit [code=@ud why=@t])
   ?~  scope.act  ~
   =/  s=scope  u.scope.act
@@ -11591,11 +11620,36 @@
   =/  out=(unit @t)  (beyond ~(tap in about.a))
   ?^  out  `[400 (cat 3 'about: no such body ' u.out)]
   ?:  =(%merge kind.a)  `[403 'a key may not propose a merge']
-  =/  named=(list @t)
-    (skip (turn `(list @t)`~['to' 'from' 'into'] |=(k=@t (gs payload.a k))) |=(t=@t =('' t)))
-  =/  far=(unit @t)  (beyond named)
+  (payload-refusal s kind.a payload.a (key-hide s policy))
+::  +payload-refusal: why a key's action payload reaches beyond its
+::  scope, or ~: a body it names (a message's to, a merge's pair)
+::  outside its kinds, or the rows the writer would make for a fact,
+::  correct or resolve, held to +out-of-scope under hide as /observe
+::  holds them. +act-refusal and +scope-facts share it
+::
+++  payload-refusal
+  |=  [s=scope kind=@tas p=json hide=(set @t)]
+  ^-  (unit [code=@ud why=@t])
+  =/  far=(unit @t)
+    %+  roll  `(list @t)`~['to' 'from' 'into']
+    |=  [k=@t acc=(unit @t)]
+    ?^  acc  acc
+    =/  pk  (parse-bid (gs p k))
+    ?:(&(?=(^ pk) !(kind-in-scope s kind.u.pk)) `(gs p k) ~)
   ?^  far  `[400 (cat 3 'payload: no such body ' u.far)]
-  ~
+  =/  row
+    |=  [subject=@t attr=@t value=json]
+    (pairs:enjs:format ~[['subject' s+subject] ['attr' s+attr] ['value' value]])
+  =/  rows=(list json)
+    ?+  kind  ~
+      ?(%fact %correct)  ~[(row (gs p 'subject') (trim-cord (gs p 'attr')) (gj p 'value'))]
+      %resolve           ~[(row (gs p 'situation') 'status' s+'closed') (row (gs p 'situation') 'outcome' s+'')]
+    ==
+  ?~  rows  ~
+  =/  bad=(unit @t)  (out-of-scope (pairs:enjs:format ~[['observations' a+rows]]) s hide)
+  ?~  bad  ~
+  ?^  (parse-bid u.bad)  `[400 (cat 3 'payload: no such body ' u.bad)]
+  `[403 (cat 3 'not in scope: ' u.bad)]
 ::  ==  the read channel (version 60)
 ::
 ::  +read-item: a read-inbox item as the reader's message (the title
@@ -12750,6 +12804,8 @@
   =/  who=@t  (gs jon 'by')
   =?  who  =('' who)  name
   ?:  (gth (met 3 who) max-by)  [%| 'writes as (by): 64 bytes at most, and the name stands in when it is blank']
+  ?:  |((~(has in reserved-by) who) (ship-alias who))
+    [%| 'writes as (by): that name is one the ship signs its own writes with']
   =/  sc  (de-scope (gj jon 'scope'))
   ?:  ?=(%| -.sc)  [%| p.sc]
   [%& name who p.sc]

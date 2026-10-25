@@ -2062,6 +2062,21 @@
     (pure:m [%| 404 'no such action'])
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (pure:m [%| 403 'read only key'])
   (pure:m [%& p.a])
+::  +key-act-refusal: why a key may not file or approve this action, or
+::  ~: +act-refusal's checks, and a close must name an action of the
+::  key's own kinds, one it could move itself (security audit 3.1)
+::
+++  key-act-refusal
+  |=  [act=actor a=action:orr policy=json]
+  =/  m  (fiber:fiber:nexus ,(unit [code=@ud why=@t]))
+  ^-  form:m
+  =/  no=(unit [code=@ud why=@t])  (act-refusal:orr act a policy)
+  ?^  no  (pure:m no)
+  ?:  |(?=(~ scope.act) !=(%close kind.a))  (pure:m ~)
+  =/  t=@t  (trim-cord:orr (gs:orr payload.a 'action'))
+  ?:  |(=('' t) !((sane %ta) t))  (pure:m ~)
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action `@ta`t act)
+  (pure:m ?:(?=(%& -.got) ~ `[400 (cat 3 'payload: no such action ' t)]))
 ::  +first-missing: the first body id in the list that does not exist
 ::
 ++  first-missing
@@ -2571,6 +2586,9 @@
     ==
   ?.  visible  (send-err eyre-id 404 'no such observation')
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (send-err eyre-id 403 'read only key')
+  ::  a twin row is the share's: a key neither files nor retracts one
+  ::  (security audit 3.9)
+  ?:  &(?=(^ scope.act) =('twin' attr.obs.r.u.hit))  (send-err eyre-id 403 'not in scope: twin')
   =/  who=@t  ?:(owner.act ?:(=('' (gs:orr jon 'by')) 'owner' (gs:orr jon 'by')) by.act)
   =/  op=json
     (pairs:enjs:format ~[['op' s+'retract'] ['id' s+id] ['note' s+why] ['by' s+who]])
@@ -2593,6 +2611,9 @@
   ::  identity is the owner's to assign: a key never sends a ship
   ?:  &(?=(^ scope.act) ?=(^ (gj:orr jon 'ship')))
     (send-err eyre-id 403 'not in scope: ship')
+  ::  nor as a ~ alias, which names a ship too (security audit 3.3)
+  ?:  &(?=(^ scope.act) (lien (strings:orr (ga:orr jon 'aliases')) ship-alias:orr))
+    (send-err eyre-id 403 'not in scope: aliases')
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   =/  op=json  (pairs:enjs:format ~[['op' s+'upsert-body'] ['body' jon]])
   %^  write-then  eyre-id  op
@@ -2609,11 +2630,11 @@
   =/  stamped=json  ?:(owner.act (fill-act:orr jon now 'owner') (fill-act-as:orr jon now by.act))
   =/  got  (de-action:orr stamped now by.act)
   ?:  ?=(%| -.got)  (send-err eyre-id 400 p.got)
-  =/  refused=(unit [code=@ud why=@t])  (act-refusal:orr act p.got)
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  ;<  refused=(unit [code=@ud why=@t])  bind:m  (key-act-refusal act p.got policy)
   ?^  refused  (send-err eyre-id code.u.refused why.u.refused)
   ;<  missing=(unit bid:orr)  bind:m  (first-missing 1 ~(tap in about.p.got))
   ?^  missing  (send-err eyre-id 400 (cat 3 'about: no such body ' u.missing))
-  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
   ;<  all=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
   =/  twin=(unit [id=@ta a=action:orr])  (open-twin all kind.p.got title.p.got)
   ?^  twin
@@ -2674,6 +2695,17 @@
   ?:  (gth (met 3 why) max-note:orr)  (send-err eyre-id 400 'note: over 500 bytes')
   ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
   ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
+  ::  a key's approval has the ship carry the action out: held to what
+  ::  the key could have filed itself, and one naming a body it may not
+  ::  see answers as missing (security audit 3.1)
+  ;<  refused=(unit [code=@ud why=@t])  bind:m
+    =/  n  (fiber:fiber:nexus ,(unit [code=@ud why=@t]))
+    ?.  &(?=(^ scope.act) =('approved' want))  (pure:n ~)
+    ;<  policy=json  bind:n  (read-json (rf 1 / %'policy.json'))
+    (key-act-refusal act p.got policy)
+  ?^  refused
+    ?:  =(400 code.u.refused)  (send-err eyre-id 404 'no such action')
+    (send-err eyre-id code.u.refused why.u.refused)
   =/  said=@t  ?:(owner.act (gs:orr jon 'by') by.act)
   =/  who=@t  ?:(=('' said) 'owner' said)
   ::  a move to the status it already has is done (version 111): a second
@@ -6210,6 +6242,10 @@
   =/  text=@t  (trim-cord:orr (gs:orr jon 'text'))
   ?:  =('' text)  (send-err eyre-id 400 'text: required')
   ?:  (gth (met 3 text) 2.000)  (send-err eyre-id 400 'text: over 2000 bytes')
+  ::  apply approves what the model made at once, as the owner's own
+  ::  word: a key's actions wait for the owner (security audit)
+  ?:  &(?=(^ scope.act) ?=([~ %b %.y] (~(get by p.jon) 'apply')))
+    (send-err eyre-id 403 'apply is the owner\'s')
   ;<  now=@da  bind:m  get-time:io
   ;<  cfg-j=json  bind:m  (gen-doc 1)
   =/  cfg=config:orr  (de-config:orr cfg-j)
@@ -6253,10 +6289,23 @@
   ?~  parsed  (send-err eyre-id 502 'the model answered without JSON')
   =/  who=@t  ?:(owner.act 'owner' by.act)
   =/  out  (de-instruct:orr u.parsed (sy (turn all.seen |=(l=loaded:orr id.l))) now who)
-  ::  a key files only the kinds its scope names
-  =/  kept=(list json)
-    ?~  scope.act  acts.out
-    (skim acts.out |=(j=json (action-in-scope:orr u.scope.act `@tas`(gs:orr j 'kind'))))
+  ::  a key files only what it could have filed through /act: the kinds
+  ::  its scope names, about and naming what it can see, writing what it
+  ::  could write (security audit)
+  ;<  kept=(list json)  bind:m
+    =/  n  (fiber:fiber:nexus ,(list json))
+    ?~  scope.act  (pure:n acts.out)
+    =/  todo=(list json)  acts.out
+    =|  ok=(list json)
+    |-  ^-  form:n
+    ?~  todo  (pure:n (flop ok))
+    =/  d  (de-action:orr (fill-act-as:orr i.todo now who) now who)
+    ?:  ?=(%| -.d)  $(todo t.todo)
+    ;<  no=(unit [code=@ud why=@t])  bind:n  (key-act-refusal act p.d policy)
+    $(todo t.todo, ok ?~(no [i.todo ok] ok))
+  =/  left=@ud  (sub (lent acts.out) (lent kept))
+  =?  notes.out  (gth left 0)
+    (snoc notes.out (rap 3 (crip (a-co:co left)) ' action(s) left out: beyond this key\'s scope' ~))
   ::  each says why: the words it was made from
   =/  said=@t  (quoted:orr ?:(owner.act 'You said' (cat 3 by.act ' said')) text)
   =/  items=(list json)  (turn kept |=(j=json (with-why:orr j said)))
@@ -7087,8 +7136,15 @@
   ::  crash during the call is seen as 'sending' still set on the next rise
   =/  marked=json  (set-key:orr (set-key:orr item 'crashes' (numb:enjs:format crashes)) 'sending' b+&)
   ;<  ~  bind:m  (over:io (rf 0 /read-inbox i.todo) [[/ %json] marked])
+  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
+  ::  a key's text is read against the key's view, not every body
+  =/  as=actor  ?~(sc.it [& 'owner' ~] [| by.kind sc.it])
+  =/  hide=(set @t)  (hidden-for as policy)
   ;<  [read=? down=? facts=tg-facts:orr]  bind:m
-    (tg-read tg ~[[msg (gs:orr item 'who')]] now kind schema all)
+    %:  tg-read-as  tg  ~[[msg (gs:orr item 'who')]]  now  kind  schema
+      ?~(sc.it all all:(view-of as all ~ hide))
+      as  hide
+    ==
   ::  a text not read for want of a model (down, or no key set) waits;
   ::  one the gate judged not worth reading is done with
   ?:  down
@@ -7097,7 +7153,6 @@
     ;<  ~  bind:m  (over:io (rf 0 /read-inbox i.todo) [[/ %json] (del-key:orr marked 'sending')])
     ;<  ~  bind:m  (reader-record %'read-last.json' last now now *chat-tally ~ `notes.facts)
     (pure:m &)
-  ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
   =?  facts  ?=(^ sc.it)  (scope-facts:orr facts u.sc.it (key-hide:orr u.sc.it policy))
   ::  facts_only (version 111): a backfill files what the text says and
   ::  proposes nothing
@@ -10062,9 +10117,17 @@
 ::
 ++  tg-read
   |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
+  (tg-read-as cfg run now kind schema all [& 'owner' ~] ~)
+::  +tg-read-as: +tg-read for a reader seeing as act: a key's text is
+::  read against what the key may see, its view of the bodies (the
+::  caller's all) and of the corrections, so nothing beyond its scope
+::  can be copied into what it files (security audit)
+::
+++  tg-read-as
+  |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr) act=actor hide=(set @t)]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
-  ;<  got=[read=? down=? facts=tg-facts:orr]  bind:m  (tg-read-run cfg run now kind schema all)
+  ;<  got=[read=? down=? facts=tg-facts:orr]  bind:m  (tg-read-run cfg run now kind schema all act hide)
   =/  n=@ud  :(add (lent obs.facts.got) (lent bodies.facts.got) (lent acts.facts.got))
   =/  outcome=@t  ?:(down.got 'down' ?.(read.got 'not read' ?:(=(0 n) 'nothing' 'facts')))
   ;<  ~  bind:m  (verdict-add kind now ~[(verdict-entry:orr now kind run outcome notes.facts.got n)])
@@ -10073,7 +10136,7 @@
 ::  in the reader's history
 ::
 ++  tg-read-run
-  |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr)]
+  |=  [cfg=tg-config:orr run=(list [msg=tg-msg:orr who=@t]) now=@da kind=reader-kind:orr schema=json all=(list loaded:orr) act=actor hide=(set @t)]
   =/  m  (fiber:fiber:nexus ,[read=? down=? facts=tg-facts:orr])
   ^-  form:m
   ::  an empty text is left out of the run; a run of nothing else is not
@@ -10094,7 +10157,7 @@
   ;<  rules=(list @t)  bind:m  lattice-rules
   =/  ctx=reader-ctx:orr  (reader-context:orr all (with-rules:orr schema rules) now)
   ::  what the owner struck, and this reader's proposals they dismissed
-  =.  lessons.ctx  (lesson-lines:orr (de-corrections:orr cs-j) own-acts by.kind)
+  =.  lessons.ctx  (lesson-lines:orr (corrections-for:orr act (de-corrections:orr cs-j) hide) own-acts by.kind)
   ::  the open actions the conversation may close ("done", "fixed",
   ::  "never mind"); a handed-in page closes nothing
   =/  tags=(list [tag=@t id=@ta])  ?:(=('web' channel.kind) ~ (open-tags:orr own-acts))
