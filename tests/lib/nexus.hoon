@@ -711,6 +711,27 @@
     (expect-eq !>(`(list @t)`~['status']) !>((turn obs.mine |=(o=json (gs:orr o 'attr')))))
     (expect-eq !>(['fact' 'telegram' 'person/alice']) !>(=/(a (snag 0 acts.mine) [(gs:orr a 'kind') (gs:orr (gj:orr a 'payload') 'attr') (gs:orr (gj:orr a 'payload') 'subject')])))
   ==
+::  a ship's corrections have their own fifty: two hundred of them leave
+::  the owner's own in place, and one on the owner's fact replaces
+::  nothing (security audit 3.6)
+++  test-add-correction-budget
+  =/  own=correction:orr  ['person/me' 'phone' '555' 'wrong' now 'owner']
+  =/  peer
+    |=  n=@ud
+    ^-  correction:orr
+    [(crip "person/p{(a-co:co n)}") 'phone' '1' '' now '~zod']
+  =/  cs=json  (add-correction:orr a+~ own)
+  =/  filled=json
+    =/  n=@ud  0
+    |-  ^-  json
+    ?:  =(n 200)  cs
+    $(n +(n), cs (add-correction:orr cs (peer n)))
+  =/  got=(list correction:orr)  (de-corrections:orr filled)
+  ;:  weld
+    (expect !>((lien got |=(c=correction:orr =(by.c 'owner')))))
+    (expect-eq !>(50) !>((lent (skim got |=(c=correction:orr !=(~ (slaw %p by.c)))))))
+    (expect-eq !>(cs) !>((add-correction:orr cs own(by '~zod', why 'no'))))
+  ==
 ++  test-day-count
   =/  last=json  (jo '{"day": "2026-09-18", "read_today": 5}')
   ;:  weld
@@ -1416,8 +1437,14 @@
     ::  an assigned action is not carried out here
     (expect-eq !>(~) !>((plan-exec:orr ~[['a1' (mk 'x' ~ %approved (for 'person/partner'))]] ~ ~ ~ now '' ['' ''])))
     ::  the feed carries what is about members only, and again only when its status moved
-    (expect-eq !>(`(list @ta)`~['a1' 'a4']) !>((turn (feed-acts:orr acts members ~) |=([i=@ta *] i))))
-    (expect-eq !>(`(list @ta)`~['a4']) !>((turn (feed-acts:orr acts members (malt ~[['a1' 'approved'] ['a4' 'approved']])) |=([i=@ta *] i))))
+    (expect-eq !>(`(list @ta)`~['a1' 'a4']) !>((turn (feed-acts:orr acts members ~ ~) |=([i=@ta *] i))))
+    (expect-eq !>(`(list @ta)`~['a4']) !>((turn (feed-acts:orr acts members (malt ~[['a1' 'approved'] ['a4' 'approved']]) ~) |=([i=@ta *] i))))
+    ::  a fact on a sensitive attribute stays home, padded or not (audit 3.4)
+    =/  facts=(list [id=@ta a=action:orr])
+      :~  ['f1' (act %fact 'f' (jo '{"subject": "thing/boat", "attr": " health", "value": "x"}') ~['thing/boat'] %proposed)]
+          ['f2' (act %fact 'g' (jo '{"subject": "thing/boat", "attr": "color", "value": "red"}') ~['thing/boat'] %proposed)]
+      ==
+    (expect-eq !>(`(list @ta)`~['f2']) !>((turn (feed-acts:orr facts members ~ (silt ~['health'])) |=([i=@ta *] i))))
     ::  the twin a crossed action names
     (expect-eq !>(`(unit [@p @ta])`[~ ~zod 'a9']) !>((act-twin:orr (mk 'x' ~ %proposed (pairs:enjs:format ~[['twin' (pairs:enjs:format ~[['ship' s+'~zod'] ['id' s+'a9']])]])))))
     ::  the other ship's open actions, for the generator, untagged; closed ones left out
@@ -1524,8 +1551,11 @@
     =/  c2=correction:orr  ['thing/boat' 'status' 'sunk' '' now '~zod']
     =/  c3=correction:orr  ['thing/desk' 'location' 'office' '' now 'owner']
     ;:  weld
-      (expect-eq !>(~[c1]) !>((feed-corrections:orr ~[c1 c2 c3] (silt ~['thing/boat']) ~)))
-      (expect-eq !>(~) !>((feed-corrections:orr ~[c1] (silt ~['thing/boat']) (silt ~[(correction-key:orr c1)]))))
+      (expect-eq !>(~[c1]) !>((feed-corrections:orr ~[c1 c2 c3] (silt ~['thing/boat']) ~ ~)))
+      (expect-eq !>(~) !>((feed-corrections:orr ~[c1] (silt ~['thing/boat']) (silt ~[(correction-key:orr c1)]) ~)))
+      ::  nor one on a sensitive attribute or a twin (security audit 3.4)
+      (expect-eq !>(~) !>((feed-corrections:orr ~[['thing/boat' 'health' 'early dementia' 'that was his brother' now 'owner']] (silt ~['thing/boat']) ~ (silt ~['health']))))
+      (expect-eq !>(~) !>((feed-corrections:orr ~[['thing/boat' 'twin' 'x' '' now 'owner']] (silt ~['thing/boat']) ~ ~)))
     ==
     ::  an entry carries the body's twins, its name and the row as carried
     =/  e=json  (en-feed-row:orr 7 boat (snag 2 rows.boat) (body-twins:orr boat now))

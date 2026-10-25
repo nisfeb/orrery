@@ -1705,15 +1705,19 @@
   ?~  was  !retracted.obs.r
   !=(u.was retracted.obs.r)
 ::  +feed-corrections: the owner's corrections on members not fed yet; a
-::  correction a ship made (carried here from it) never goes back out
+::  correction a ship made (carried here from it) never goes back out,
+::  nor one on a sensitive attribute or a twin, which the rows withhold
+::  too (security audit 3.4)
 ::
 ++  feed-corrections
-  |=  [cs=(list correction) members=(set bid) done=(set @t)]
+  |=  [cs=(list correction) members=(set bid) done=(set @t) hide=(set @t)]
   ^-  (list correction)
   %+  skim  cs
   |=  c=correction
   ?&  (~(has in members) subject.c)
       ?=(~ (slaw %p by.c))
+      !(~(has in hide) attr.c)
+      !=('twin' attr.c)
       !(~(has in done) (correction-key c))
   ==
 ::  +body-twins: a body's twins, ship to that ship's id, as an entry
@@ -1883,15 +1887,18 @@
   `[u.s i]
 ::  +feed-acts: the actions a sphere's feed carries: about its members
 ::  only (and about something), each when its status moved since it last
-::  went; fed maps an action to the status it went with
+::  went; fed maps an action to the status it went with. A fact or
+::  correct on a sensitive attribute stays home, its value with it
+::  (security audit 3.4)
 ::
 ++  feed-acts
-  |=  [acts=(list [id=@ta a=action]) members=(set bid) fed=(map @t @t)]
+  |=  [acts=(list [id=@ta a=action]) members=(set bid) fed=(map @t @t) hide=(set @t)]
   ^-  (list [id=@ta a=action])
   %+  skim  acts
   |=  [id=@ta a=action]
   ?&  !=(~ about.a)
       (levy ~(tap in about.a) |=(b=bid (~(has in members) b)))
+      !&(?=(?(%fact %correct) kind.a) (~(has in hide) (trim-cord (gs payload.a 'attr'))))
       !=(`status.a (~(get by fed) id))
   ==
 ++  en-feed-act
@@ -2880,17 +2887,26 @@
   =/  by=@t  (gs jon 'by')
   [%& subject attr value why now ?:(=('' by) 'owner' by)]
 ::  +add-correction: corrections.json with this one first, an earlier
-::  one of the same fact dropped, two hundred at most
+::  one of the same fact dropped. The owner's keep two hundred, and the
+::  ones a ship made (carried in from its feed, by its @p) fifty of
+::  their own: a ship's never replaces nor pushes out one of the owner's,
+::  so a peer cannot bring back a fact the owner struck (security audit
+::  3.6). The owner's come first
 ::
 ++  add-correction
   |=  [cs=json c=correction]
   ^-  json
   =/  key=@t  (correction-key c)
-  :-  %a
-  %+  turn
-    %+  scag  200
-    `(list correction)`[c (skip (de-corrections cs) |=(x=correction =(key (correction-key x))))]
-  en-correction
+  =/  old=(list correction)  (de-corrections cs)
+  =/  peer  |=(x=correction ^-(? !=(~ (slaw %p by.x))))
+  ?:  &((peer c) (lien old |=(x=correction &(!(peer x) =(key (correction-key x))))))  cs
+  =/  rest=(list correction)  (skip old |=(x=correction =(key (correction-key x))))
+  =/  own=(list correction)  (skip rest peer)
+  =/  ships=(list correction)  (skim rest peer)
+  =/  keep=(list correction)
+    ?:  (peer c)  (weld (scag 200 own) (scag 50 `(list correction)`[c ships]))
+    (weld (scag 200 `(list correction)`[c own]) (scag 50 ships))
+  a+(turn keep en-correction)
 ::  +drop-correction: corrections.json without the one of this id
 ::
 ++  drop-correction

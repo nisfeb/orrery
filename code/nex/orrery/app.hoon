@@ -1943,6 +1943,18 @@
   ?~  dst  (refuse 'merge' (cat 3 'no such body ' into))
   =/  fresh=(list row:orr)  (move-rows:orr rows.u.src rows.u.dst into)
   =/  pointing=(list [id=bid:orr r=row:orr])  (ref-rows:orr all from now)
+  ::  a row the owner keeps private stays private under the id the move
+  ::  gives it: the mark is keyed by the row's id (security audit 3.7)
+  ;<  pv=json  bind:m  (read-json (rf 0 / %'private.json'))
+  =/  priv=(set @t)  (silt (strings:orr ?:(?=([%a *] pv) p.pv ~)))
+  =/  carried=(list @t)
+    %+  weld
+      (murn rows.u.src |=(r=row:orr ?.((~(has in priv) id.r) ~ `id:(resubject:orr r into))))
+    (murn pointing |=([* r=row:orr] ?.((~(has in priv) id.r) ~ `id:(repoint:orr r into now))))
+  ;<  ~  bind:m
+    ?~  carried  (pure:(fiber:fiber:nexus ,~) ~)
+    %+  over:io  (rf 0 / %'private.json')
+    [[/ %json] a+(turn ~(tap in (~(gas in priv) carried)) |=(t=@t `json`s+t))]
   ;<  ~  bind:m  (ensure-dirs 0 / `(list @ta)`~[%bodies kind.u.ik slug.u.ik %obs])
   ;<  ~  bind:m  (write-rows 0 (obs-dir kind.u.ik slug.u.ik) fresh)
   ;<  ~  bind:m  (repoint-each pointing into now)
@@ -4122,7 +4134,7 @@
     %+  turn  (skim all |=(l=loaded:orr (~(has in members) id.l)))
     |=  l=loaded:orr
     (turn (feed-due:orr (feed-rows:orr l sphere hide private) fed) |=(r=row:orr [l r]))
-  =/  cuts=(list correction:orr)  (feed-corrections:orr corr members done)
+  =/  cuts=(list correction:orr)  (feed-corrections:orr corr members done hide)
   ::  the roster of members, which a reader matches its own bodies to
   ::  before it reads a row (version 91): there from the first pass
   ;<  rostered=?  bind:m  (peek-exists:io (rf 0 /feeds/[slug.u.pk] %'roster.json'))
@@ -4133,7 +4145,7 @@
     ;<  ~  bind:(fiber:fiber:nexus ,~)  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
     (over:io (rf 0 /feeds/[slug.u.pk] %'roster.json') [[/ %json] roster])
   ::  the actions about the sphere's bodies, whose status moved (version 92)
-  =/  moved=(list [id=@ta a=action:orr])  (feed-acts:orr acts members fed-acts)
+  =/  moved=(list [id=@ta a=action:orr])  (feed-acts:orr acts members fed-acts hide)
   ?:  &(=(~ due) =(~ cuts) =(~ moved))  (pure:m |)
   ::  ponytail: a thousand entries a pass and the fed map rewritten whole;
   ::  a ship whose first fill is tens of thousands wants a lighter state
