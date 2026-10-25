@@ -370,6 +370,58 @@ code, d = owner('GET', '/actions')
 owner_rows = [x for x in listish(d) if isinstance(x, dict) and x.get('id') == about_id]
 check('the owner still sees the about', len(owner_rows) == 1 and owner_rows[0].get('about') == ['thing/subaru'], owner_rows)
 
+print('== a key is held to its write scope everywhere the ship writes for it (security audit)')
+code, d = owner('POST', '/clients', {'name': 'key-gate', 'by': 'owner', 'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
+check('a key may not write as a name the ship signs its own writes with', code == 400 and 'signs its own writes' in str(dictish(d).get('error')), (code, d))
+code, d = owner('POST', '/clients', {'name': 'key-gate', 'by': '~zod', 'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
+check('nor as a ship', code == 400, (code, d))
+code, d = owner('POST', '/clients', {'name': 'key-gate facts', 'by': 'key-gate-facts',
+                                     'scope': {'kinds': ['person'], 'actions': ['fact', 'correct', 'resolve', 'close'], 'write': True}})
+check('mint a key that proposes facts', code == 200 and '.' in str(dictish(d).get('token', '')), d)
+facts_id = dictish(d).get('id')
+facts = as_key(str(dictish(d).get('token', '')))
+def fact(subject, attr, value):
+    return {'kind': 'fact', 'title': 'key gate: %s of %s' % (attr, subject), 'payload': {'subject': subject, 'attr': attr, 'value': value}}
+code, d = facts('POST', '/act', fact('person/me', 'telegram', '999000111'))
+check('a fact action on an address attribute is refused as /observe would refuse it', code == 403 and dictish(d).get('error') == 'not in scope: telegram', (code, d))
+code, d = facts('POST', '/act', fact('person/me', 'health', 'fine'))
+check('so is one on a sensitive attribute', code == 403 and dictish(d).get('error') == 'not in scope: health', (code, d))
+code, d = facts('POST', '/act', fact('thing/subaru', 'color', 'red'))
+check('and one on a body outside its kinds reads as no such body', code == 400 and dictish(d).get('error') == 'payload: no such body thing/subaru', (code, d))
+code, d = facts('POST', '/act', {'kind': 'close', 'title': 'key gate: close a note', 'payload': {'action': note_id}})
+check('a close naming an action of another kind reads as no such action', code == 400 and str(dictish(d).get('error', '')).startswith('payload: no such action'), (code, d))
+code, d = facts('POST', '/act', fact('person/me', 'status', 'key gate testing'))
+check('a fact in its scope is filed', code == 200, (code, d))
+fact_ok = str(dictish(d).get('id', ''))
+code, d = owner('POST', '/act', fact('thing/subaru', 'color', 'blue'))
+out_id = str(dictish(d).get('id', ''))
+code, d = facts('POST', '/actions/' + out_id, {'status': 'approved'})
+check('a key approving a fact on a body outside its kinds reads as no such action', code == 404, (code, d))
+code, d = owner('POST', '/act', fact('person/me', 'telegram', '999000111'))
+addr_id = str(dictish(d).get('id', ''))
+code, d = facts('POST', '/actions/' + addr_id, {'status': 'approved'})
+check('nor approves one on an address attribute', code == 403 and dictish(d).get('error') == 'not in scope: telegram', (code, d))
+code, d = facts('POST', '/instruct', {'text': 'key gate: Dana is one person', 'apply': True})
+check('apply on /instruct is the owner\'s', code == 403 and dictish(d).get('error') == "apply is the owner's", (code, d))
+for i in (fact_ok, out_id, addr_id):
+    if i:
+        owner('POST', '/actions/' + i, {'status': 'dismissed', 'note': 'key gate'})
+code, d = triage('POST', '/bodies', {'id': 'person/key-gate-alias', 'name': 'Key Gate Alias', 'aliases': ['~nec']})
+check('a key may not give a body a ~ship alias', code == 403 and dictish(d).get('error') == 'not in scope: aliases', (code, d))
+code, d = triage('POST', '/bodies', {'id': 'person/key-gate-alias', 'name': 'Key Gate Alias', 'aliases': ['KG']})
+check('an alias that names no ship is still the key\'s to give', code == 200, (code, d))
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/key-gate-alias', 'twin', {'ship': '~nec', 'id': 'person/x'}, T0, 'kg-twin')]})
+check('a key may not file a twin row', code == 403 and dictish(d).get('error') == 'not in scope: twin', (code, d))
+code, d = triage('POST', '/observe', {'bodies': [], 'observations': [obs('person/key-gate-alias', 'sphere', 'family', T0, 'kg-sphere')]})
+check('nor file a body into a sphere by its name', code == 403 and dictish(d).get('error') == 'not in scope: sphere', (code, d))
+code, d = owner('POST', '/observe', {'bodies': [], 'observations': [obs('person/key-gate-alias', 'twin', {'ship': '~nec', 'id': 'person/x'}, T0, 'kg-twin')]})
+check('the owner files a twin row', code == 200 and all_ok(d, 'observations', 1), (code, d))
+twin_ids = [dictish(r).get('id') for r in listish(dictish(d).get('observations'))]
+code, d = triage('POST', '/retract', {'id': twin_ids[0] if twin_ids else '', 'note': 'key gate'})
+check('a key may not retract a twin row', code == 403 and dictish(d).get('error') == 'not in scope: twin', (code, d))
+owner('DELETE', '/body/person/key-gate-alias')
+owner('DELETE', '/clients/' + str(facts_id))
+
 print('== owner only')
 for label, fn in (('clients', lambda: triage('GET', '/clients')),
                   ('policy', lambda: triage('GET', '/policy')),
