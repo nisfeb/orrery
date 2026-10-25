@@ -11290,7 +11290,10 @@
 ::  hidden attributes dropped, and the actions in its action kinds. A
 ::  value that refs a body outside the kinds reads as cleared on a row
 ::  with a synthetic id, and an about naming one is trimmed away: a key
-::  never learns such a body exists. The owner sees everything.
+::  never learns such a body exists. An action whose payload names a
+::  hidden attribute (a fact or correct on health) is left out whole, as
+::  +corrections-for leaves such a correction out (security audit 3.8).
+::  The owner sees everything.
 ::
 ++  view-of
   |=  [act=actor all=(list loaded) acts=(list [id=@ta a=action]) hide=(set @t)]
@@ -11302,7 +11305,12 @@
       ^-  (unit loaded)
       ?.  (kind-in-scope s kind.body.l)  ~
       `l(rows (veil-refs (drop-attrs rows.l hide) kinds.s))
-  %+  turn  (skim acts |=([* a=action] (action-in-scope s kind.a)))
+  %+  turn
+    %+  skim  acts
+    |=  [* a=action]
+    ?&  (action-in-scope s kind.a)
+        !(~(has in hide) (trim-cord (gs payload.a 'attr')))
+    ==
   |=([id=@ta a=action] [id (scope-about a kinds.s)])
 ::  +deny-observe: why a key may not send this batch, or ~. The owner is
 ::  never denied. A batch with one item outside the scope is refused

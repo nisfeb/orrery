@@ -560,6 +560,18 @@
     (expect-eq !>((sy `(list @t)`~['person/me'])) !>(about.a:(snag 0 acts.v)))
     (expect-eq !>((sy `(list @t)`~['person/me'])) !>(about:(seen-by:orr k +:(snag 0 acts))))
     (expect-eq !>(+:(snag 0 acts)) !>((seen-by:orr owner +:(snag 0 acts))))
+    ::  an action on a hidden attribute is left out of a key's view whole,
+    ::  padded or not (security audit 3.8)
+    =/  facts=(list [id=@ta a=action:orr])
+      :~  ['f1' (act %fact 'f' (jo '{"subject": "person/me", "attr": "health", "value": "x"}') ~ %proposed)]
+          ['f2' (act %fact 'g' (jo '{"subject": "person/me", "attr": " health", "value": "x"}') ~ %proposed)]
+          ['f3' (act %fact 'h' (jo '{"subject": "person/me", "attr": "status", "value": "x"}') ~ %proposed)]
+      ==
+    =/  kf  (key ~[%person] ~[%fact] & |)
+    ;:  weld
+      (expect-eq !>(`(list @ta)`~['f3']) !>((turn acts:(view-of:orr kf all facts (sy ~['health'])) |=([id=@ta *] id))))
+      (expect-eq !>(3) !>((lent acts:(view-of:orr owner all facts (sy ~['health'])))))
+    ==
   ==
 ::  ==  the readers
 ::

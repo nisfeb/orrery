@@ -1604,8 +1604,13 @@
     %post-telegram-webhook  (serve-set-webhook eyre-id)
     %get-telegram-webhook   (serve-webhook-info eyre-id)
     %post-telegram-wake     (serve-prod eyre-id %'telegram.sig' 'telegram')
-    %get-chat               (serve-chat eyre-id)
-    %put-chat               (serve-set-doc eyre-id 'set-chat' jon)
+    %get-chat               (serve-chat eyre-id act)
+    ::  which ship is which person is identity, the owner's to assign:
+    ::  a key sets the reader's chats, never its people (security audit)
+      %put-chat
+    ?:  &(?=(^ scope.act) ?=([%o *] jon) (~(has by p.jon) 'people'))
+      (send-err eyre-id 403 'not in scope: people')
+    (serve-set-doc eyre-id 'set-chat' jon)
     %get-chat-last          (serve-doc eyre-id %'chat-last.json')
     %post-chat-wake         (serve-prod eyre-id %'chat.sig' 'chat')
     %get-chat-peek          (serve-chat-peek eyre-id args)
@@ -1630,13 +1635,13 @@
     %get-read-last          (serve-doc eyre-id %'read-last.json')
     %post-read-wake         (serve-prod eyre-id %'read.sig' 'read')
     %post-browsing          (serve-browsing eyre-id jon act)
-    %get-browsing           (serve-browsing-status eyre-id)
+    %get-browsing           (serve-browsing-status eyre-id act)
     %get-browsing-settings  (serve-browsing-settings eyre-id)
     %put-browsing-settings  (serve-set-doc eyre-id 'set-browsing' jon)
     %get-browsing-last      (serve-doc eyre-id %'browsing-last.json')
     %post-browsing-wake     (serve-prod eyre-id %'browse.sig' 'browsing')
-    %get-browsing-page      (serve-browsing-page eyre-id args)
-    %get-browsing-recent    (serve-browsing-recent eyre-id)
+    %get-browsing-page      (serve-browsing-page eyre-id args act)
+    %get-browsing-recent    (serve-browsing-recent eyre-id act)
     %get-verdicts           (serve-verdicts eyre-id args)
     %post-browsing-file     (serve-browsing-file eyre-id jon act)
     %post-browsing-unrelate  (serve-browsing-unrelate eyre-id jon act)
@@ -2060,8 +2065,21 @@
     (pure:m [%| ?:(?=(%absent p.a) [404 'no such action'] [500 'unreadable action'])])
   ?:  &(?=(^ scope.act) !(action-in-scope:orr u.scope.act kind.p.a))
     (pure:m [%| 404 'no such action'])
+  ::  nor one its view leaves out, on a hidden attribute (audit 3.8)
+  ;<  hide=(set @t)  bind:m  (hide-of act)
+  ?:  =(~ acts:(view-of act ~ ~[[id p.a]] hide))  (pure:m [%| 404 'no such action'])
   ?:  &(?=(^ scope.act) !write.u.scope.act)  (pure:m [%| 403 'read only key'])
   (pure:m [%& p.a])
+::  +hide-of: what the actor may not see, read from the policy only for
+::  a key: the owner's routes take no extra read
+::
+++  hide-of
+  |=  act=actor
+  =/  m  (fiber:fiber:nexus ,(set @t))
+  ^-  form:m
+  ?~  scope.act  (pure:m ~)
+  ;<  policy=json  bind:m  (read-json (rf 1 / %'policy.json'))
+  (pure:m (hidden-for act policy))
 ::  +key-act-refusal: why a key may not file or approve this action, or
 ::  ~: +act-refusal's checks, and a close must name an action of the
 ::  key's own kinds, one it could move itself (security audit 3.1)
@@ -2668,7 +2686,8 @@
   ?:  &(?=(^ limit-s) ?=(~ limit))  (send-err eyre-id 400 'limit: a number')
   =/  want=@t  (fall (get-key:kv:html-utils 'status' args) ?~(since 'open' 'all'))
   ;<  all0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
-  =/  all=(list [id=@ta a=action:orr])  acts:(view-of act ~ all0 ~)
+  ;<  hide=(set @t)  bind:m  (hide-of act)
+  =/  all=(list [id=@ta a=action:orr])  acts:(view-of act ~ all0 hide)
   =/  keep
     |=  [id=@ta a=action:orr]
     ^-  ?
@@ -6119,11 +6138,15 @@
 ::  +serve-chat: the chat reader's settings, as stored, normalised
 ::
 ++  serve-chat
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / %'chat.json'))
-  (send-json eyre-id 200 (en-chat-config:orr (de-chat-config:orr doc)))
+  =/  c=chat-config:orr  (de-chat-config:orr doc)
+  ::  the people map names person bodies: a key without the person kind
+  ::  sees none of it, as its view shows no person
+  =?  people.c  &(?=(^ scope.act) !(kind-in-scope:orr u.scope.act %person))  ~
+  (send-json eyre-id 200 (en-chat-config:orr c))
 ::  +serve-chat-dms, +serve-chat-channels: what the groups desk holds,
 ::  for the card to offer, each item its id and a name a person would
 ::  know it by: a DM's ship with the nickname the owner's contact book
@@ -7204,12 +7227,13 @@
 ::  the model, the days held, what waits in the inbox, the last pass
 ::
 ++  serve-browsing-status
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  cfg-j=json  bind:m  (read-json (rf 1 / %'browsing.json'))
   =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
-  ;<  last=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  ;<  last0=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  =/  last=json  (last-for act last0)
   ;<  days=(list @ta)  bind:m  (page-days 1)
   ;<  waiting=@ud  bind:m  (inbox-count 1)
   %^  send-json  eyre-id  200
@@ -7633,6 +7657,24 @@
 ::  a key as its own name
 ::
 ++  hand-by  |=(act=actor ^-(@t ?:(owner.act 'owner' by.act)))
+::  +visible-ids: what a view holds by the ids a browsing tie names: its
+::  bodies, and its actions as action:<id>
+::
+++  visible-ids
+  |=  seen=[all=(list loaded:orr) acts=(list [id=@ta a=action:orr])]
+  ^-  (set @t)
+  %-  silt
+  %+  weld  (turn all.seen |=(l=loaded:orr `@t`id.l))
+  (turn acts.seen |=([i=@ta *] (cat 3 'action:' i)))
+::  +last-for: the last browsing pass as an actor reads it: a key gets it
+::  without its notes, which name bodies of any kind (security audit 3.5)
+::
+++  last-for
+  |=  [act=actor last=json]
+  ^-  json
+  ?:  owner.act  last
+  ?.  ?=([%o *] last)  last
+  [%o (~(del by p.last) 'notes')]
 ::  +find-page: a page's record on the days given, newest first, or ~
 ::
 ++  find-page
@@ -7652,7 +7694,7 @@
 ::  place for
 ::
 ++  serve-browsing-page
-  |=  [eyre-id=@ta args=quay:eyre]
+  |=  [eyre-id=@ta args=quay:eyre act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  q=(map @t @t)  (~(gas by *(map @t @t)) args)
@@ -7663,8 +7705,14 @@
   =/  cfg=browsing-config:orr  (de-browsing-config:orr cfg-j)
   ;<  now=@da  bind:m  get-time:io
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ::  a key sees the page against its own view: the bodies, plans and
+  ::  ties of its kinds only (security audit 3.5)
+  ;<  hide=(set @t)  bind:m  (hide-of act)
+  =/  seen  (view-of act all0 acts0 hide)
+  =/  all=(list loaded:orr)  all.seen
+  =/  acts=(list [id=@ta a=action:orr])  acts.seen
   ;<  nots=(map @t json)  bind:m  (read-map (rf 1 / %'browsing-not.json'))
   ;<  days=(list @ta)  bind:m  (page-days 1)
   ;<  rec=(unit bpage:orr)  bind:m  (find-page (scag 7 (flop (skim days |=(d=@ta =(10 (met 3 d)))))) url)
@@ -7672,9 +7720,12 @@
   =/  idx=bmatch-index:orr  (browse-index:orr all acts multi now)
   =/  p=bpage:orr  (fall rec [url title '' now now 1 ~ ~ |])
   =/  no=(set @t)  (not-about nots url)
+  ::  a hit an earlier pass stored is shown to a key only when it can see
+  ::  it, since the pass that stored it saw every body
+  =/  vis=(set @t)  (visible-ids seen)
   =/  tied=(list @t)
     =/  h=(list @t)  ?:(&(?=(^ rec) ?=(^ read.u.rec)) hits.p hits:(browse-hits:orr p ~ idx))
-    (skip h |=(b=@t (~(has in no) b)))
+    (skip h |=(b=@t |((~(has in no) b) &(?=(^ scope.act) !(~(has in vis) b)))))
   =/  names=(map @t @t)
     (~(gas by *(map @t @t)) (turn (weld words.idx names.idx) |=([i=@t n=@t *] [i n])))
   =/  plans=(list plan:orr)  (browse-plans:orr all multi now)
@@ -7700,6 +7751,8 @@
   =/  body=@t  (gs:orr jon 'body')
   =/  pk  (parse-bid:orr body)
   ?:  |(=('' url) ?=(~ pk))  (send-err eyre-id 400 'url and body: required, body a body id')
+  ::  a body outside a key's kinds reads as missing (security audit 3.5)
+  ?:  &(?=(^ scope.act) !(kind-in-scope:orr u.scope.act kind.u.pk))  (send-err eyre-id 404 'no such body')
   ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir kind.u.pk slug.u.pk) %body))
   ?.  ex  (send-err eyre-id 404 'no such body')
   ;<  now=@da  bind:m  get-time:io
@@ -7716,8 +7769,17 @@
   =/  url=@t  (trim-cord:orr (gs:orr jon 'url'))
   =/  body=@t  (gs:orr jon 'body')
   ?:  |(=('' url) =('' body))  (send-err eyre-id 400 'url and body: required')
-  ;<  ~  bind:m  (poke-writer 1 (pairs:enjs:format ~[['op' s+'browse-not'] ['url' s+url] ['body' s+body]]))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ::  a key unrelates only what its view holds, a body or an action:<id>
+  ::  tie; the owner may send any string (security audit 3.5)
+  ;<  ok=?  bind:m
+    =/  n  (fiber:fiber:nexus ,?)
+    ?~  scope.act  (pure:n &)
+    ;<  acts=(list [id=@ta a=action:orr])  bind:n  (load-actions 1)
+    ;<  hide=(set @t)  bind:n  (hide-of act)
+    (pure:n (~(has in (visible-ids (view-of act all acts hide))) body))
+  ?.  ok  (send-err eyre-id 404 'no such body')
+  ;<  ~  bind:m  (poke-writer 1 (pairs:enjs:format ~[['op' s+'browse-not'] ['url' s+url] ['body' s+body]]))
   =/  l=(unit loaded:orr)  (loaded-of:orr all body)
   =/  ids=(list @ta)  ?~(l ~ (research-rows:orr u.l url))
   =/  todo=(list @ta)  ids
@@ -7739,6 +7801,12 @@
   =/  pk  (parse-bid:orr plan)
   ?:  |(=('' url) ?=(~ pk))  (send-err eyre-id 400 'url and plan: required, plan a body id')
   ?.  ?=(?(%situation %activity) kind.u.pk)  (send-err eyre-id 400 'plan: a situation or an activity')
+  ::  a key sets the place of a plan of its kinds, and only when places
+  ::  are its kind too, since the place is made or found (audit 3.5)
+  ?:  ?&  ?=(^ scope.act)
+          |(!(kind-in-scope:orr u.scope.act kind.u.pk) !(kind-in-scope:orr u.scope.act %place))
+      ==
+    (send-err eyre-id 404 'no such plan')
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
   ?~  (loaded-of:orr all plan)  (send-err eyre-id 404 'no such plan')
@@ -7755,14 +7823,20 @@
 ::  the last fortnight, the forms left waiting, and the last pass
 ::
 ++  serve-browsing-recent
-  |=  eyre-id=@ta
+  |=  [eyre-id=@ta act=actor]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  ij=json  bind:m  (read-json (rf 1 / %'browsing-interests.json'))
-  ;<  last=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  ;<  last0=json  bind:m  (read-json (rf 1 / %'browsing-last.json'))
+  =/  last=json  (last-for act last0)
   ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ;<  all0=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  acts0=(list [id=@ta a=action:orr])  bind:m  (load-actions 1)
+  ::  the research and the forms of the key's own view (audit 3.5)
+  ;<  hide=(set @t)  bind:m  (hide-of act)
+  =/  seen  (view-of act all0 acts0 hide)
+  =/  all=(list loaded:orr)  all.seen
+  =/  acts=(list [id=@ta a=action:orr])  acts.seen
   ;<  now=@da  bind:m  get-time:io
   =/  forms=(list [id=@ta a=action:orr])
     %+  skim  acts
@@ -9199,19 +9273,20 @@
   ;<  pos=json  bind:m  (read-json (rf up / %'position.json'))
   ;<  gc=json  bind:m  (read-json (rf up / %'geocache.json'))
   =/  multi=(set @t)  (multi-of:orr schema)
-  ::  the zone the owner is in: the phone's, else home's (+local-tz)
+  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
+  ::  the phone's zone says where the owner is, as the away line does:
+  ::  only those who may see situations get either (security audit 3.10)
+  =/  sees-away=?  ?~(scope.act & (kind-in-scope:orr u.scope.act %situation))
+  ::  the zone the owner is in: the phone's, else home's (+local-tz), as
+  ::  the actor's view holds it
   =/  tz=@t
     =/  z=@t  (gs:orr pos 'zone')
-    ?:  &(!=('' z) (~(has by zones:orr) z))  z
-    =/  mine=@t  (attr-text:orr all0 multi now 'person/me' 'timezone')
+    ?:  &(sees-away !=('' z) (~(has by zones:orr) z))  z
+    =/  mine=@t  (attr-text:orr all.seen multi now 'person/me' 'timezone')
     ?.(=('' mine) mine timezone:(de-config:orr gen-j))
   =/  home  (home-point:orr all0 multi now gc)
   =/  away=away-view  [(home-again:orr (away-spans:orr all0 multi now home gc) pos home) (far-from-home:orr pos home) home gc (fix-away:orr pos home)]
-  =/  seen  (view-of act all0 acts0 (hidden-for act policy))
-  =/  why=(unit @t)
-    ?~  scope.act  (away-now away now)
-    ?.  (kind-in-scope:orr u.scope.act %situation)  ~
-    (away-now away now)
+  =/  why=(unit @t)  ?.(sees-away ~ (away-now away now))
   (pure:m (world-of:orr all.seen multi acts.seen now tz why))
 ::  +serve-world: GET /world, the digest for an agent's session start
 ::
