@@ -369,6 +369,12 @@ check('retract answers 200', code == 200, (code, d))
 code, me = body('person/me')
 riding = [o for o in dictish(me).get('observations', []) if o['id'] == RIDING]
 check('the timeline labels it retracted', bool(riding) and riding[0]['status'] == 'retracted', riding)
+#  the executor section later checks that the mirror ticks this task's todo, which needs the executor to have
+#  placed it first: a busy ship places it later than the 14 s this section takes, and a task done before it was
+#  ever placed has no todo to tick, so wait for the placement when the calendar is here
+if 'calendar' not in MISSING:
+    gate.wait('the executor places the task as a todo', lambda: [e for e in listish(curl('GET', HOST + '/apps/calendar/events.json')[1])
+                                                              if dictish(dictish(e).get('meta')).get('orrery') == AID] or None, 120)
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'done'})
 check('the task is marked done', code == 200 and d['status'] == 'done', (code, d))
 code, acts = curl('GET', API + '/actions')
@@ -383,7 +389,7 @@ code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
 #  among the newest entries: the executor's mirror files whenever the
 #  calendar moves, which another session's tests can make it do
 check('the audit log holds the set-action among its newest entries', code == 200 and isinstance(log, list) and bool(log)
-      and any(dictish(x).get('op') == 'set-action' and dictish(x).get('by') == 'user' for x in log[-8:]), log[-3:] if isinstance(log, list) else log)
+      and any(dictish(x).get('op') == 'set-action' and dictish(x).get('by') == 'owner' for x in log[-8:]), log[-3:] if isinstance(log, list) else log)
 code, d = curl('POST', API + f'/actions/{AID}', {'status': 'approved'})
 check('done is terminal', code == 409, (code, d))
 curl('PUT', API + '/policy', {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 0})
@@ -2184,11 +2190,11 @@ asked = [(h, b) for p, h, b in seen[n_refine:] if p.endswith('/chat/completions'
 check('the model was asked once under the generator\'s key, with the refine prompt as the system block',
       len(asked) == 1 and asked[0][0].get('authorization') == 'Bearer sk-stub', len(asked))
 a = action(SHIPID)
-check('read back, the action is still proposed under the new title with a last step revised by user',
-      a.get('status') == 'proposed' and a.get('title') == 'Tell Wren and Dana the tow is booked' and steps(a)[-1] == ('revised', 'user') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
+check('read back, the action is still proposed under the new title with a last step revised by the owner',
+      a.get('status') == 'proposed' and a.get('title') == 'Tell Wren and Dana the tow is booked' and steps(a)[-1] == ('revised', 'owner') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
 check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
 code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
-check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'user' for x in log[-30:]), log[-4:] if isinstance(log, list) else log)
+check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'owner' for x in log[-30:]), log[-4:] if isinstance(log, list) else log)
 code, d = refine(SHIPID, 'include karl in this')
 d = dictish(d)
 karl = dictish(curl('GET', API + '/body/person/gate-karl')[1])
@@ -2199,7 +2205,7 @@ check('a person the note names is created and the action names them',
 code, d = refine(SHIPID, 'turn the porch light on')
 a = action(SHIPID)
 check('a refusal changes nothing and says why', code == 200 and dictish(d).get('ok') is False and dictish(d).get('note') == 'a message cannot switch a light; propose a home action instead'
-      and a.get('title') == 'Tell Wren and Karl the tow is booked' and steps(a)[-1] == ('revised', 'user') and len([s for s, _ in steps(a) if s == 'revised']) == 2, (code, d, a.get('title'), steps(a)))
+      and a.get('title') == 'Tell Wren and Karl the tow is booked' and steps(a)[-1] == ('revised', 'owner') and len([s for s, _ in steps(a) if s == 'revised']) == 2, (code, d, a.get('title'), steps(a)))
 code, d = refine(SHIPID, '')
 check('an empty note is refused', code == 400, (code, d))
 code, taskkey = curl('POST', API + '/clients', {'name': 'gate task key', 'by': 'gate-task', 'scope': {'kinds': ['person'], 'actions': ['task'], 'write': True, 'sensitive': 'none'}})

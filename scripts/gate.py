@@ -14,6 +14,10 @@ def curl(method, url, body=None, jar=None, token=None, timeout=60, headers=(), r
     sent: a request carrying both would be the owner's. raw is a body
     sent as it is, with whatever content-type headers names."""
     cmd = ['curl', '-s', '-m', str(timeout), '-X', method, '-w', '\n%{http_code}', url]
+    #  a ball file read with ?raw=1 answers 307 to /grubbery/api/file:
+    #  a read follows it, as a browser does, or it comes back empty
+    if method == 'GET':
+        cmd.insert(1, '-L')
     if token:
         cmd += ['-H', 'Authorization: Bearer ' + token]
     elif jar:
