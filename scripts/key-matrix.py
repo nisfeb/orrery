@@ -422,6 +422,51 @@ check('a key may not retract a twin row', code == 403 and dictish(d).get('error'
 owner('DELETE', '/body/person/key-gate-alias')
 owner('DELETE', '/clients/' + str(facts_id))
 
+print('== a key reads only its own view on every route (security audit, batch 2)')
+code, d = owner('POST', '/clients', {'name': 'key-gate things', 'by': 'key-gate-things',
+                                     'scope': {'kinds': ['thing'], 'actions': ['fact'], 'write': True}})
+check('mint a key for things alone', code == 200 and '.' in str(dictish(d).get('token', '')), d)
+things_id = dictish(d).get('id')
+things = as_key(str(dictish(d).get('token', '')))
+code, d = owner('POST', '/act', {'kind': 'fact', 'title': 'key gate: health of the car', 'payload': {'subject': 'thing/subaru', 'attr': 'health', 'value': 'failing'}})
+hidden_act = str(dictish(d).get('id', ''))
+code, d = owner('POST', '/act', {'kind': 'fact', 'title': 'key gate: color of the car', 'payload': {'subject': 'thing/subaru', 'attr': 'color', 'value': 'green'}})
+shown_act = str(dictish(d).get('id', ''))
+code, d = things('GET', '/actions')
+ids = [dictish(x).get('id') for x in listish(d)]
+check('a key does not list an action on a hidden attribute', code == 200 and hidden_act not in ids and shown_act in ids, (code, ids))
+code, d = things('POST', '/actions/' + hidden_act + '/refine', {'text': 'key gate'})
+check('nor reach it by id', code == 404, (code, d))
+code, d = owner('GET', '/actions')
+check('the owner lists both', hidden_act in [dictish(x).get('id') for x in listish(d)], d)
+for i in (hidden_act, shown_act):
+    owner('POST', '/actions/' + i, {'status': 'dismissed', 'note': 'key gate'})
+code, d = owner('POST', '/position', {'lat': 39.6588, 'lon': -89.7112, 'acc': 12, 'zone': 'Asia/Tokyo'})
+check('the phone reports a far zone', code == 200, (code, d))
+code, w_owner = owner('GET', '/world')
+code, w_key = things('GET', '/world')
+check('the owner\'s digest is on the phone\'s zone, a key without situations is not',
+      dictish(w_owner).get('zone') == 'Asia/Tokyo' and code == 200 and dictish(w_key).get('zone') != 'Asia/Tokyo', (dictish(w_owner).get('zone'), dictish(w_key).get('zone')))
+code, d = things('GET', '/chat')
+check('a key without the person kind reads no people in the chat settings', code == 200 and dictish(d).get('people') == {}, (code, dictish(d).get('people')))
+code, d = triage('PUT', '/chat', {'people': {'~nec': 'person/me'}})
+check('a key may not map a ship to a person in the chat settings', code == 403 and dictish(d).get('error') == 'not in scope: people', (code, d))
+URL = 'https://key-gate.example/page'
+code, d = things('GET', '/browsing/page?url=' + URL)
+named = [dictish(x).get('id', '') for k in ('tied', 'filed', 'plans') for x in listish(dictish(d).get(k))]
+check('the browsing page names only bodies of the key\'s kinds', code == 200 and all(str(i).startswith('thing/') for i in named), (code, named))
+code, d = things('POST', '/browsing/file', {'url': URL, 'body': 'person/me'})
+check('a key may not file a page under a body outside its kinds', code == 404 and dictish(d).get('error') == 'no such body', (code, d))
+code, d = things('POST', '/browsing/unrelate', {'url': URL, 'body': 'person/me'})
+check('nor unrelate one', code == 404, (code, d))
+code, d = things('POST', '/browsing/place', {'url': URL, 'title': 'Key Gate', 'plan': 'situation/key-gate'})
+check('nor set the place of a plan outside its kinds', code == 404 and dictish(d).get('error') == 'no such plan', (code, d))
+code, d = things('GET', '/browsing/recent')
+check('the last browsing pass reaches a key without its notes', code == 200 and 'notes' not in dictish(dictish(d).get('last')), (code, dictish(d).get('last')))
+code, d = things('GET', '/browsing')
+check('on the status too', code == 200 and 'notes' not in dictish(dictish(d).get('last')), (code, dictish(d).get('last')))
+owner('DELETE', '/clients/' + str(things_id))
+
 print('== owner only')
 for label, fn in (('clients', lambda: triage('GET', '/clients')),
                   ('policy', lambda: triage('GET', '/policy')),
