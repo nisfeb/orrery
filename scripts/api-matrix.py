@@ -1873,6 +1873,22 @@ code, d = curl('POST', API + '/private', {'id': PRIV, 'private': False})
 check('and no longer', code == 200 and dictish(d).get('private') is False, (code, d))
 code, d = curl('POST', API + '/private', {'id': ''})
 check('a private mark needs a row id', code == 400, (code, d))
+# a merge keeps a private row private (security audit 3.7): the row moves under a new id, and the mark goes too
+MG = secrets.token_hex(3)
+MFROM, MINTO = 'thing/gate-merge-from-' + MG, 'thing/gate-merge-into-' + MG
+observe([{'id': MFROM, 'name': 'Gate merge from ' + MG}, {'id': MINTO, 'name': 'Gate merge into ' + MG}],
+        [{'subject': MFROM, 'attr': 'location', 'value': 'the gate shed ' + MG, 'at': iso(datetime.now(timezone.utc).replace(microsecond=0)),
+          'conf': 100, 'source': {'kind': 'user', 'id': 'gate-merge-' + MG}, 'by': 'owner'}])
+loc_of = lambda b: [dictish(r).get('id') for r in listish(dictish(curl('GET', API + '/body/' + b)[1]).get('observations')) if dictish(r).get('attr') == 'location' and not dictish(r).get('retracted')]
+old_ids = loc_of(MFROM)
+curl('POST', API + '/private', {'id': old_ids[0] if old_ids else '', 'private': True})
+code, d = curl('POST', API + '/merge', {'from': MFROM, 'into': MINTO})
+new_ids = gate.wait('the merged row lands on into', lambda: loc_of(MINTO) or None, 30) or []
+priv_now = listish(gate.curl('GET', HOST + '/grubbery/api/file' + INSTANCE[len(HOST + '/grubbery/ball'):] + '/private.json', jar=JAR)[1])
+check('a private row merged into another body stays private under its new id', bool(old_ids) and bool(new_ids) and new_ids[0] != old_ids[0] and new_ids[0] in priv_now, (old_ids, new_ids, priv_now))
+for i in old_ids + new_ids:
+    curl('POST', API + '/private', {'id': i, 'private': False})
+curl('DELETE', API + '/body/' + MINTO)
 code, d = curl('GET', API + '/shares')
 check('the shares listing names the spheres shared, offered and followed', code == 200 and all(k in dictish(d) for k in ('sphere_shares', 'sphere_offers', 'sphere_follows')), d)
 
