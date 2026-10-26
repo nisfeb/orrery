@@ -1502,14 +1502,16 @@
         (row 'situation/bday' 'Birthday' ~ ~['0vparty@~zod'] ~)
         (row 'place/the-pool' 'Pool' ~ ~ ~)
         (row 'thing/boat' 'Boat' ~ ~ ~[[~wet 'thing/skiff']])
+        (row 'thing/oar' 'Oar' ~ ~ ~[[~wet 'person/ash-1']])
         (row 'thing/new' 'New' ~ ~ ~)
     ==
   ;:  weld
     ::  our ship is our self; theirs is the body carrying it; the event by
     ::  its uid; the name waits; two of a name match none; the paired and the
-    ::  unknown are left out; a twin they name here is taken only if it exists
+    ::  unknown are left out; a twin they name here is taken only if it
+    ::  exists, and waits for the owner (security audit, D1)
     %+  expect-eq
-      !>(`(list [@t @t @t ?])`~[['person/partner' 'person/me' 'ship' &] ['person/partner-2' 'person/me' 'ship' &] ['person/me' 'person/sam' 'ship' &] ['person/rowan' 'person/kid-r' 'name' |] ['situation/bday' 'situation/party' 'event' &]])
+      !>(`(list [@t @t @t ?])`~[['person/partner' 'person/me' 'ship' &] ['person/partner-2' 'person/me' 'ship' &] ['person/me' 'person/sam' 'ship' &] ['person/rowan' 'person/kid-r' 'name' |] ['situation/bday' 'situation/party' 'event' &] ['thing/oar' 'person/ash-1' 'twin' |]])
     !>((match-roster:orr ros all ~zod ~wet now))
     ::  the roster round trips
     =/  l  (mk 'person/sam' %person 'Sam' `~zod ~[['twin' (twin '~wet' 'person/s') 'share' 'x'] ['starts' s+'x' 'calendar' '0vx']])
@@ -1564,8 +1566,10 @@
     (expect-eq !>(`(list @ta)`~['p0.json' 'p0.json' 'p1.json' 'p0.json']) !>((turn `(list @ud)`~[1 100 101 0] feed-page:orr)))
     ::  landing: what the sender says it is here, else its id read as a ref
     (expect-eq !>(['thing/skiff' 'person/zod' 'thing/kayak']) !>([(land-subject:orr 'thing/boat' (pairs:enjs:format ~[['~wet' s+'thing/skiff']]) ~zod ~wet ~ ~) (land-subject:orr 'person/me' [%o ~] ~zod ~wet ~ ~) (land-subject:orr 'thing/kayak' [%o ~] ~zod ~wet ~ ~)]))
-    ::  a new body lands; a held one only in the sphere here, or filed into it
-    (expect-eq !>([& & | &]) !>([(feed-takes:orr 'thing/x' | ~ 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & (silt ~['thing/x']) 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & ~ 'status' s+'y' 'sphere/sail') (feed-takes:orr 'thing/x' & ~ 'sphere' (ref 'sphere/sail') 'sphere/sail')]))
+    ::  a new body lands; a held one only in the sphere here (its members
+    ::  count a held body the page files there only when twinned with the
+    ::  sender: security audit, D1)
+    (expect-eq !>([& & |]) !>([(feed-takes:orr 'thing/x' | ~) (feed-takes:orr 'thing/x' & (silt ~['thing/x'])) (feed-takes:orr 'thing/x' & ~)]))
     (expect-eq !>((malt ~[['a' &] ['b' |]])) !>((de-fed:orr (en-fed:orr (malt ~[['a' &] ['b' |]])))))
   ==
 ++  test-twins

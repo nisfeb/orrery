@@ -2484,7 +2484,11 @@
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
 ::  +drop-share: a deleted body is shared with nobody. The record goes
 ::  and the group is rewritten with no ships, so the peek grant that
-::  outlives the body goes with it.
+::  outlives the body goes with it. A share accepted onto it ends, so a
+::  body made again under its id neither takes the host's rows nor sends
+::  it ours. A sphere's share goes too: its record, its feed's group,
+::  pages and state, and every follow landing on it (security audit).
+::  The peers are not told; their reads fail as for a revoke.
 ::
 ++  drop-share
   |=  [kind=@tas slug=@ta id=bid:orr]
@@ -2493,14 +2497,36 @@
   |=  [up=@ud kind=@tas slug=@ta id=bid:orr]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  shares=json  bind:m  (read-json (rf up / %'shares.json'))
-  =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
-  ?.  (~(has by all) id)  (pure:m ~)
-  ;<  ~  bind:m  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by all) id)]])
+  =/  n  (fiber:fiber:nexus ,~)
   ;<  base=(unit path)  bind:m  self-base
-  ?~  base
-    (note-inbox-at up 'delete-body' | 'cannot find where this app is installed' '')
-  (set-share-group u.base kind slug ~)
+  ;<  shares=(map @t json)  bind:m  (read-map (rf up / %'shares.json'))
+  ;<  ~  bind:m
+    ?.  (~(has by shares) id)  (pure:n ~)
+    ;<  ~  bind:n  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by shares) id)]])
+    ?~  base
+      (note-inbox-at up 'delete-body' | 'cannot find where this app is installed' '')
+    (set-share-group u.base kind slug ~)
+  ;<  rm=(map @t json)  bind:m  (read-map (rf up / %'ship-remotes.json'))
+  =/  rm2=(map @t json)  (malt (skip ~(tap by rm) |=([* r=json] =(id (gs:orr r 'target')))))
+  ;<  ~  bind:m
+    ?:  =(~(wyt by rm) ~(wyt by rm2))  (pure:n ~)
+    (over:io (rf up / %'ship-remotes.json') [[/ %json] [%o rm2]])
+  ?.  =(%sphere kind)  (pure:m ~)
+  ;<  sh=(map @t json)  bind:m  (read-map (rf up / %'sphere-shares.json'))
+  ;<  ~  bind:m
+    ?.  (~(has by sh) id)  (pure:n ~)
+    ;<  ~  bind:n  (over:io (rf up / %'sphere-shares.json') [[/ %json] [%o (~(del by sh) id)]])
+    ?~  base  (pure:n ~)
+    (set-feed-group u.base slug ~)
+  ;<  st=json  bind:m  (read-json (rf up / %'feed-state.json'))
+  ;<  ~  bind:m
+    ?.  &(?=([%o *] st) (~(has by p.st) id))  (pure:n ~)
+    (over:io (rf up / %'feed-state.json') [[/ %json] [%o (~(del by p.st) id)]])
+  ;<  *  bind:m  (cull-soft:io (rv up /feeds/[slug]))
+  ;<  fl=(map @t json)  bind:m  (read-map (rf up / %'sphere-follows.json'))
+  =/  fl2=(map @t json)  (malt (skip ~(tap by fl) |=([* r=json] =(id (gs:orr r 'local')))))
+  ?:  =(~(wyt by fl) ~(wyt by fl2))  (pure:m ~)
+  (over:io (rf up / %'sphere-follows.json') [[/ %json] [%o fl2]])
 ::  +drop-share-of, +drop-shares-in: the share of a body reconcile
 ::  deleted or merged away, so the peer's grant does not outlive it and
 ::  reach a body a reader makes again under the same id
@@ -3689,6 +3715,10 @@
   ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
   =/  key=@t  (rap 3 (scot %p src) '|' sphere ~)
   ?:  &(!(~(has by cur) key) (gte ~(wyt by cur) 50))  (note-inbox 'sphere-offer' | 'fifty offers wait already' (scot %p src))
+  ::  five from one ship, so one ship cannot fill the inbox (security audit)
+  =/  pre=@t  (cat 3 (scot %p src) '|')
+  =/  theirs=@ud  (lent (skim ~(tap in ~(key by cur)) |=(k=@t =(pre (end [3 (met 3 pre)] k)))))
+  ?:  &(!(~(has by cur) key) (gte theirs 5))  (note-inbox 'sphere-offer' | 'five offers from this ship wait already' (scot %p src))
   =/  offer=json
     %-  pairs:enjs:format
     :~  ['host' s+(scot %p src)]  ['sphere' s+sphere]  ['name' s+(gs:orr jon 'name')]
@@ -3992,9 +4022,12 @@
     (remote-poke-wait u.shp [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'sphere-revoke'] ['sphere' s+sphere]]))
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
 ::  +serve-sphere-accept: an offered sphere becomes ours to follow: it
-::  lands on our own sphere body for it (its twin, else the same id), the
-::  twin is written, and in edit mode our own rows on it go back through
-::  a feed of ours the host is told of
+::  lands on a new sphere body of ours, never one we hold, so the host
+::  cannot pick which of ours its feed files into or, in edit mode, which
+::  of ours goes back to it (security audit). The twin is written, any
+::  older twin of the host's sphere retracted so the feed files into the
+::  new one, and in edit mode our own rows on it go back through a feed
+::  of ours the host is told of
 ::
 ++  serve-sphere-accept
   |=  [eyre-id=@ta jon=json]
@@ -4008,14 +4041,32 @@
   =/  offer=(unit json)  (~(get by offers) key)
   ?~  offer  (send-err eyre-id 404 'no such offer')
   ;<  now=@da  bind:m  get-time:io
-  ;<  our=@p  bind:m  get-our:io
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
-  =/  local=bid:orr  (translate-ref:orr sphere u.host our (twin-index:orr all now) (ship-index:orr all))
+  =/  spk  (parse-bid:orr sphere)
+  ?.  &(?=(^ spk) =(%sphere kind.u.spk))  (send-err eyre-id 400 'sphere: bad')
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  local=bid:orr
+    (rap 3 'sphere/' (end [3 (sub max-slug:orr 5)] slug.u.spk) '-' (crip ((x-co:co 4) (end [3 2] eny))) ~)
   =/  lpk  (parse-bid:orr local)
-  ?.  &(?=(^ lpk) =(%sphere kind.u.lpk))  (send-err eyre-id 400 'sphere: bad')
-  ;<  ex=?  bind:m  (peek-exists:io (rf 1 (body-dir %sphere slug.u.lpk) %body))
+  ?.  &(?=(^ lpk) ?=(~ (loaded-of:orr all local)))  (send-err eyre-id 409 'the new sphere id is taken; accept again')
+  =/  stale=(list json)
+    %-  zing
+    %+  turn  all
+    |=  l=loaded:orr
+    %+  murn  rows.l
+    |=  r=row:orr
+    ?.  ?&  =('twin' attr.obs.r)  !retracted.obs.r
+            =((scot %p u.host) (gs:orr value.obs.r 'ship'))  =(sphere (gs:orr value.obs.r 'id'))
+        ==
+      ~
+    `(pairs:enjs:format ~[['op' s+'retract'] ['id' s+id.r] ['note' s+'the sphere was accepted again'] ['by' s+'share']])
   ;<  ~  bind:m
-    ?:  ex  (pure:(fiber:fiber:nexus ,~) ~)
+    =/  n  (fiber:fiber:nexus ,~)
+    |-  ^-  form:n
+    ?~  stale  (pure:n ~)
+    ;<  ~  bind:n  (poke-writer 1 i.stale)
+    $(stale t.stale)
+  ;<  ~  bind:m
     %+  poke-writer  1
     %-  pairs:enjs:format
     :~  ['op' s+'upsert-body']
@@ -4420,17 +4471,34 @@
   =/  twins  (twin-index:orr all now)
   =/  ships  (ship-index:orr all)
   =/  held=(set bid:orr)  (silt (turn all |=(l=loaded:orr id.l)))
+  =/  in-sphere=(set bid:orr)  (sphere-members:orr all sphere now)
   ::  a body this page files under the sphere is in it for the whole page,
-  ::  so its rows after the filing are not refused as the filing's are not
-  =/  joining=(list bid:orr)
+  ::  so its rows after the filing are not refused as the filing's are
+  ::  not: a body new here, or one held here and twinned with the sender.
+  ::  Filing any other body held here asks the owner (security audit, D1)
+  =/  filings=(list [b=bid:orr ok=? r=json])
     %+  murn  es
     |=  e=json
-    ^-  (unit bid:orr)
+    ^-  (unit [bid:orr ? json])
     ?.  =('row' (gs:orr e 'op'))  ~
     =/  r=json  (translate-carried:orr (gj:orr e 'row') src our twins ships)
     ?.  &(=('sphere' (gs:orr r 'attr')) =(sphere (ref-or-text:orr (gj:orr r 'value'))))  ~
-    `(land-subject:orr (gs:orr r 'subject') (gj:orr e 'as') src our twins ships)
-  =/  members=(set bid:orr)  (~(gas in (sphere-members:orr all sphere now)) joining)
+    =/  from=@t  (gs:orr (gj:orr e 'row') 'subject')
+    =/  b=bid:orr  (land-subject:orr from (gj:orr e 'as') src our twins ships)
+    ?:  (~(has in in-sphere) b)  ~
+    `[b |(!(~(has in held) b) =(`b (~(get by twins) [src from]))) (set-key:orr r 'subject' s+b)]
+  =/  joining=(list bid:orr)  (murn filings |=([b=bid:orr ok=? *] ?:(ok `b ~)))
+  =/  asks=(list json)
+    %+  murn  filings
+    |=  [b=bid:orr ok=? r=json]
+    ^-  (unit json)
+    ?:  ok  ~
+    =/  d  (de-obs:orr (receive-obs:orr src r) now (scot %p src))
+    ?.  ?=(%& -.d)  ~
+    =/  ask=json  (sphere-ask:orr p.d)
+    =/  why=@t  (rap 3 (scot %p src) ' filed it under the sphere you share; a body of yours joins it only with your yes' ~)
+    `(pairs:enjs:format ~[['op' s+'act'] ['action' (set-key:orr ask 'payload' (set-key:orr (gj:orr ask 'payload') 'why' s+why))]])
+  =/  members=(set bid:orr)  (~(gas in in-sphere) joining)
   =/  landed=(list [b=bid:orr from=bid:orr e=json])
     %+  murn  es
     |=  e=json
@@ -4439,8 +4507,7 @@
     =/  subj=@t  ?:(row (gs:orr (gj:orr e 'row') 'subject') (gs:orr e 'subject'))
     ?~  (parse-bid:orr subj)  ~
     =/  b=bid:orr  (land-subject:orr subj (gj:orr e 'as') src our twins ships)
-    =/  r=json  ?:(row (translate-carried:orr (gj:orr e 'row') src our twins ships) ~)
-    ?.  (feed-takes:orr b (~(has in held) b) members (gs:orr r 'attr') (gj:orr r 'value') sphere)  ~
+    ?.  (feed-takes:orr b (~(has in held) b) members)  ~
     `[b subj e]
   ::  a body new here is made under the sender's name for it, and every
   ::  body an entry lands on knows its twin
@@ -4471,6 +4538,8 @@
   ;<  made=?  bind:m
     (await-bodies (murn fresh |=([b=bid:orr *] ?:((~(has in held) b) ~ `b))))
   ?.  made  (pure:m |)
+  ::  past the wait, so a page read again does not ask twice
+  ;<  ~  bind:m  (send-ops asks)
   ;<  bodies=(list loaded:orr)  bind:m  (load-bodies 0)
   =/  idx  [our (twin-index:orr bodies now) (ship-index:orr bodies)]
   =/  subjects=(list bid:orr)  ~(tap in (silt (turn landed |=([b=bid:orr *] b))))
@@ -4485,7 +4554,7 @@
       %^  push-text  (peer-name bodies src)
         (rap 3 'changed ' (crip (a-co:co n)) ?:(=(1 n) ' thing' ' things') ' you share' ~)
       (cat 3 'orrery-peer-' (scot %p src))
-    (apply-acts src (skim es |=(e=json =('act' (gs:orr e 'op')))))
+    (apply-acts src sphere (skim es |=(e=json =('act' (gs:orr e 'op')))))
   =/  mine=(list [b=bid:orr from=bid:orr e=json])  (skim landed |=([b=bid:orr *] =(b i.subjects)))
   =/  rows=(list json)
     %+  murn  mine
@@ -4523,10 +4592,12 @@
 ::  it twice. Assigned to this ship's owner and approved there, it is
 ::  filed here as a proposal from that ship; one of ours twinned to it
 ::  takes its end. An end moves an action only where the move is legal,
-::  so nothing echoes (version 92)
+::  so nothing echoes (version 92). Its twin of one of ours ends ours
+::  only when ours went out in this sphere's feed, so a peer cannot end
+::  any action here by naming its id (security audit)
 ::
 ++  apply-acts
-  |=  [src=@p es=(list json)]
+  |=  [src=@p sphere=@t es=(list json)]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   ?~  es  (pure:m &)
@@ -4535,6 +4606,8 @@
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   ;<  peer=(map @t json)  bind:m  (read-map (rf 0 / %'peer-actions.json'))
+  ;<  st=json  bind:m  (read-json (rf 0 / %'feed-state.json'))
+  =/  fed=json  (gj:orr (gj:orr st sphere) 'acts')
   =/  twins  (twin-index:orr all now)
   =/  ships  (ship-index:orr all)
   =/  ended  |=(s=@t (lien `(list @t)`~['done' 'failed' 'dismissed'] |=(x=@t =(x s))))
@@ -4559,6 +4632,7 @@
     =/  hit=(list [id=@ta a=action:orr])  (skim acts |=([i=@ta *] =(i id.u.mine)))
     =/  ok=?
       ?~  hit  |
+      ?.  &(?=([%o *] fed) (~(has by p.fed) id.u.mine))  |
       &((ended status) (is-open:orr a.i.hit) (transition-ok:orr status.a.i.hit `@tas`status))
     $(todo t.todo, ops ?.(ok ops [(set-action-op:orr id.u.mine status (rap 3 'on ' (scot %p src) ~) (scot %p src)) ops]))
   =/  about=(list @t)  (turn (strings:orr (ga:orr e 'about')) |=(b=@t (translate-ref:orr b src our twins ships)))
@@ -5044,11 +5118,14 @@
 ::  the ship retracted since is retracted here. Every received row is
 ::  decoded here first, so a row the writer would refuse is answered
 ::  instead of vanishing. Answers the writer pokes and the refusals.
+::  A body share's peer may write about the body, not widen who sees
+::  it: its sphere and shared-with rows never land (security audit).
 ::
 ++  apply-carried
   |=  [up=@ud src=@p rows=(list json)]
   =/  m  (fiber:fiber:nexus ,[pokes=@ud refused=(list [oid=@t why=@t])])
   ^-  form:m
+  =.  rows  (skip rows |=(j=json |(=('sphere' (gs:orr j 'attr')) =('shared-with' (gs:orr j 'attr')))))
   ?~  rows  (pure:m [0 ~])
   ;<  now=@da  bind:m  get-time:io
   ;<  our=@p  bind:m  get-our:io

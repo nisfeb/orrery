@@ -1763,15 +1763,15 @@
   (translate-ref subject src our twins ships)
 ::  +feed-takes: whether an entry lands: about a body this ship does not
 ::  hold yet, it does (the body is new to the sphere); about one it
-::  holds, when that body is in the sphere here or the row files it
-::  there. A body filed out on one side takes no more from the other.
+::  holds, when that body is in the sphere here, members counting a held
+::  body the page files there only when it is twinned with the sender
+::  (security audit, D1). A body filed out on one side takes no more
+::  from the other.
 ::
 ++  feed-takes
-  |=  [landed=bid held=? members=(set bid) attr=@t value=json sphere=bid]
+  |=  [landed=bid held=? members=(set bid)]
   ^-  ?
-  ?.  held  &
-  ?:  (~(has in members) landed)  &
-  &(=('sphere' attr) =(sphere (ref-or-text value)))
+  |(!held (~(has in members) landed))
 ++  de-fed
   |=  j=json
   ^-  (map @t ?)
@@ -1816,9 +1816,9 @@
       `[u.s p.v]
   ==
 ::  +match-roster: each member of another ship's roster this ship holds
-::  too, and how it knows: the other ship's twin for it here, the same
-::  ship, the same calendar event (sure, so their twins are written at
-::  once), or the same kind and name, which waits for the owner. A
+::  too, and how it knows: the same ship, the same calendar event (sure,
+::  so their twins are written at once), or the other ship's twin for it
+::  here or the same kind and name, which wait for the owner. A
 ::  member already a twin here is left out. A sure match may share its
 ::  body here with another (two bodies there carrying one ship are one
 ::  person); a match by name may not, and a name that matches two
@@ -1842,8 +1842,10 @@
     ?:  |(&(!sure (~(has in used) here)) !(~(has in held) here))  out
     [[id.r here why sure] out]
   ?:  (~(has by twins) [src id.r])  $(ros t.ros)
+  ::  the sender's word for which body it is here waits for the owner:
+  ::  sure, it would let a peer pair itself with any body here
   =/  said=(unit bid)  (~(get by as.r) our)
-  ?^  said  $(ros t.ros, out (take u.said 'twin' &))
+  ?^  said  $(ros t.ros, out (take u.said 'twin' |))
   ?:  =(ship.r `our)  $(ros t.ros, out (take 'person/me' 'ship' &))
   =/  by-ship=(unit bid)  ?~(ship.r ~ (~(get by ships) u.ship.r))
   ?^  by-ship  $(ros t.ros, out (take u.by-ship 'ship' &))

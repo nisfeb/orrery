@@ -1576,7 +1576,7 @@
     if (sOffers.length || bOffers.length) {
       out += '<ul>' + sOffers.map(function (o) {
         var at = 'data-host="' + esc(o.host) + '" data-sphere="' + esc(o.sphere) + '"';
-        return '<li>The sphere <strong>' + esc(o.name || o.sphere) + '</strong> from ' + esc(nameOfShip(o.host, state)) + ' <span class="muted">' + (o.mode === 'edit' ? 'you can edit' : 'read only') + '</span> ' +
+        return '<li>The sphere <strong>' + esc(o.name || o.sphere) + '</strong> from ' + esc(nameOfShip(o.host, state)) + ' <span class="muted">' + (o.mode === 'edit' ? 'you can edit' : 'read only') + ', lands on a new sphere here</span> ' +
           '<button class="small" data-accept-sphere="1" ' + at + '>accept</button> <button class="small danger" data-decline-sphere="1" ' + at + '>decline</button></li>';
       }).join('') + bOffers.map(function (o) {
         var at = 'data-host="' + esc(o.host) + '" data-id="' + esc(o.id) + '"';
@@ -2021,6 +2021,7 @@
       say('sharing your location');
       post('/location/share', lf).then(function () { say('location shared'); fillLocation(); }).catch(oops);
     } else if (b.dataset.acceptSphere) {
+      if (!confirm('Accept this sphere? It lands on a new sphere here. Whatever ' + b.dataset.host + ' files under it comes in, and in edit mode what you file under it goes back to them.')) return;
       post('/sphere-accept', { host: b.dataset.host, sphere: b.dataset.sphere }).then(function () { shared('accepted: the sphere comes in once any matches are paired'); }).catch(oops);
     } else if (b.dataset.declineSphere) {
       post('/sphere-decline', { host: b.dataset.host, sphere: b.dataset.sphere }).then(function () { shared('declined'); }).catch(oops);
