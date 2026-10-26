@@ -470,7 +470,7 @@ What a key sees is bounded by its scope: only the kinds it was given, never the 
 
 ## Tools for an AI analyst
 
-If your analyst runs on the ship's MCP server, orrery ships nine tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions`, `orrery_schema` and `orrery_preferences`. Today they are called by path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`); by name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
+If your analyst runs on the ship's MCP server, orrery ships nine tools with the owner's views and writes, apart from the routes under What stays on HTTP in `docs/mcp.md`: `orrery_state`, `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions`, `orrery_schema` and `orrery_preferences`. Today they are called through `call_tool`, with `tool_name` the file name (`orrery-state`) and `path` the desk (`/apps/shell.shell/desks/orrery.desk/desk`); a newer kernel refuses the older form that named the tool by its path. By name once the kernel discovery patch in `docs/kernel` is released. `docs/mcp.md` has the parameters and what an analyst on the ship can reach.
 
 ## How orrery stores data
 

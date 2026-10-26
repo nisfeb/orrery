@@ -4,7 +4,8 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 
 ## Calling them
 
-- By path, today: `tools/call` with the name `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`, `orrery-preferences`).
+- Through `call_tool`, on every kernel: `tools/call` with the name `call_tool` and the arguments `{"tool_name": "orrery-state", "tool_args": {...}, "path": "/apps/shell.shell/desks/orrery.desk/desk"}` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`, `orrery-preferences`). The answer is the tool's own, errors included.
+- Not by path: a `tools/call` name that is a path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`) worked on older kernels, and a newer kernel refuses it, since such a name ran any source it named.
 - By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 

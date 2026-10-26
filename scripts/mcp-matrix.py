@@ -14,7 +14,9 @@ from datetime import datetime, timedelta, timezone
 HOST, JAR = sys.argv[1:3]
 MCP = HOST + '/grubbery/mcp'
 API = HOST + '/apps/orrery/api'
-TOOLS = '/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/'
+#  tools are called through call_tool with the desk: a newer kernel
+#  refuses a tool name that is a path
+DESK = '/apps/shell.shell/desks/orrery.desk/desk'
 seq = [0]
 
 
@@ -30,7 +32,7 @@ def call(tool, args):
     """(ok, payload): the tool's JSON answer parsed, or its error message"""
     seq[0] += 1
     body = {'jsonrpc': '2.0', 'id': seq[0], 'method': 'tools/call',
-            'params': {'name': TOOLS + tool, 'arguments': args}}
+            'params': {'name': 'call_tool', 'arguments': {'tool_name': tool, 'tool_args': args, 'path': DESK}}}
     code, d = post(MCP, body)
     if code != 200 or not isinstance(d, dict):
         return False, 'http %s: %s' % (code, str(d)[:200])
