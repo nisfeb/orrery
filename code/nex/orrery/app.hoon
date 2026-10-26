@@ -3421,6 +3421,8 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  =/  bad=(unit @t)  (cred-refusal:orr op p.jon)
+  ?^  bad  (send-err eyre-id 400 u.bad)
   =/  name=@ta  (settings-file op)
   ;<  base=(map @t json)  bind:m  (read-map (rf 1 / name))
   ::  the generator and place lookups are stored without the offer's
@@ -3482,6 +3484,29 @@
   |=  name=@ta
   =/  m  (fiber:fiber:nexus ,(unit path))
   ^-  form:m
+  ;<  dirs=(list path)  bind:m  (find-bases name)
+  ::  the earliest claimant on develop's kernel; an arbitrary one on the
+  ::  dist kernel's, where two instances claiming the name leave nothing
+  ::  to tell them apart
+  (pure:m ?~(dirs ~ `i.dirs))
+::  +armillary-base: Armillary where orrery's weir asks to read it, its
+::  own desk, never another app that claims the link name: that one
+::  would give the address every prompt goes to (security audit)
+::
+++  armillary-base
+  =/  m  (fiber:fiber:nexus ,(unit path))
+  ^-  form:m
+  =/  want=path  ~[%apps 'shell.shell' %desks 'armillary.desk']
+  ;<  dirs=(list path)  bind:m  (find-bases %armillary)
+  =/  ok=(list path)  (skim dirs |=(d=path =(want (scag (lent want) d))))
+  (pure:m ?~(ok ~ `i.ok))
+::  +find-bases: every directory claiming a link name, in the order the
+::  registry keeps them
+::
+++  find-bases
+  |=  name=@ta
+  =/  m  (fiber:fiber:nexus ,(list path))
+  ^-  form:m
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /sys/link/[name] %'dest.lanes'] ~)
   ?.  ?=([~ %file *] vw)  (pure:m ~)
   =/  vas=(unit vase)  (mole |.((need-vase:tarball sang.u.vw)))
@@ -3491,13 +3516,7 @@
     ?^  as-list  u.as-list
     =/  as-set=(unit (set lane:tarball))  (mole |.(!<((set lane:tarball) u.vas)))
     ?~(as-set ~ ~(tap in u.as-set))
-  =/  dirs=(list path)
-    (murn lanes |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~)))
-  ?~  dirs  (pure:m ~)
-  ::  the earliest claimant on develop's kernel; an arbitrary one on the
-  ::  dist kernel's, where two instances claiming the name leave nothing
-  ::  to tell them apart
-  (pure:m `i.dirs)
+  (pure:m (murn lanes |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~))))
 ::  +ug-read-weir: a usergroup's how, read whole, the way calendar reads
 ::  its share groups
 ::
@@ -5981,7 +6000,7 @@
 ++  armillary-offer
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
-  ;<  base=(unit path)  bind:m  (find-base %armillary)
+  ;<  base=(unit path)  bind:m  armillary-base
   ?~  base  (pure:m ~)
   ;<  vw=(unit view:nexus)  bind:m
     (peek-soft:io [%& %& u.base %'app-inference.json'] ~)
@@ -6065,7 +6084,7 @@
   =/  names=(list @t)  (turn armillary-files:orr |=([n=@t f=@ta] n))
   ?.  |(=('' one) (lien names |=(n=@t =(n one))))
     (send-err eyre-id 400 'feature: not a setting that follows armillary')
-  ;<  base=(unit path)  bind:m  (find-base %armillary)
+  ;<  base=(unit path)  bind:m  armillary-base
   ?~  base  (send-err eyre-id 409 'armillary: not installed on this ship')
   ;<  offer=(unit json)  bind:m  armillary-offer
   ?~  offer
@@ -8957,6 +8976,8 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (send-err eyre-id 400 'a JSON object is required')
+  ?.  (cred-url-ok:orr (gs:orr (gj:orr jon 'flight_api') 'url'))
+    (send-err eyre-id 400 'flight_api.url: https only, or http to this machine')
   =/  pk=json  (pairs:enjs:format ~[['op' s+'set-watches'] ['doc' jon]])
   %^  write-then  eyre-id  pk
   =/  tries=@ud  6
@@ -8987,10 +9008,14 @@
   ;<  cur=json  bind:m  (read-json (rf 0 / %'watches.json'))
   =/  cur-api=json  (gj:orr cur 'flight_api')
   =/  new-api=json  (gj:orr doc 'flight_api')
+  ::  a blank key keeps the stored one, unless the address it goes to
+  ::  changed: then it goes too (security audit)
+  =/  addr  |=(j=json url:(de-watch-config:orr j))
   =/  api=json
     ?.  ?=([%o *] new-api)  cur-api
-    ?:  =('' (gs:orr new-api 'key'))  (set-key:orr new-api 'key' (gj:orr cur-api 'key'))
-    new-api
+    ?.  =('' (gs:orr new-api 'key'))  new-api
+    ?.  =((addr cur-api) (addr new-api))  new-api
+    (set-key:orr new-api 'key' (gj:orr cur-api 'key'))
   =/  dw=json  (gj:orr doc 'watches')
   =/  cw=json  (gj:orr cur 'watches')
   =/  watches=json  ?:(?=([%a *] dw) dw ?:(?=([%a *] cw) cw [%a ~]))
@@ -10601,7 +10626,11 @@
     (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(put by cm) id.u.c (en-client-row:orr u.c))]])
   ;<  ~  bind:m  (note 'add-client' & name.u.c)
   (pure:m |)
-::  +do-drop-client: a revoked key is gone; nothing else changes
+::  +do-drop-client: a revoked key is gone, and so is what it handed the
+::  read channel and the browsing reader that they have not read yet,
+::  which would be filed under its name and scope (security audit). An
+::  item names the key only by the name it writes as, so when another
+::  key writes under that name nothing is dropped, and the trail says so
 ::
 ++  do-drop-client
   |=  jon=json
@@ -10611,9 +10640,39 @@
   ;<  clients=json  bind:m  (read-json (rf 0 / %'clients.json'))
   =/  cm=(map @t json)  ?:(?=([%o *] clients) p.clients ~)
   ?.  (~(has by cm) id)  (refuse 'drop-client' 'no such client')
-  ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o (~(del by cm) id)]])
-  ;<  ~  bind:m  (note 'drop-client' & id)
+  =/  who=@t  (gs:orr (~(got by cm) id) 'by')
+  =/  left=(map @t json)  (~(del by cm) id)
+  ;<  ~  bind:m  (over:io (rf 0 / %'clients.json') [[/ %json] [%o left]])
+  =/  shared=?  (lien ~(val by left) |=(j=json =(who (gs:orr j 'by'))))
+  ?:  |(=('' who) (~(has in reserved-by:orr) who) shared)
+    ;<  ~  bind:m  (note 'drop-client' & (rap 3 id ?:(shared ': its queued items stay, another key writes as ' ': ') who ~))
+    (pure:m |)
+  ;<  r=@ud  bind:m  (drop-queued /read-inbox who)
+  ;<  b=@ud  bind:m  (drop-queued /browsing-inbox who)
+  ;<  ~  bind:m  (note 'drop-client' & (rap 3 id ', ' (crip (a-co:co (add r b))) ' queued items dropped' ~))
   (pure:m |)
+::  +drop-queued: the items in an inbox one key name handed in, culled,
+::  the rev bumped so the reader looks again. Answers how many
+::
+++  drop-queued
+  |=  [dir=path who=@t]
+  =/  m  (fiber:fiber:nexus ,@ud)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 dir) ~)
+  ?.  ?=([%ball *] vw)  (pure:m 0)
+  ?~  fil.ball.vw  (pure:m 0)
+  =/  names=(list @ta)  (skip ~(tap in ~(key by contents.u.fil.ball.vw)) |=(n=@ta =(%rev n)))
+  =|  n=@ud
+  |-
+  ?~  names
+    ?:  =(0 n)  (pure:m 0)
+    ;<  now=@da  bind:m  get-time:io
+    ;<  ~  bind:m  (over:io (rf 0 dir %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
+    (pure:m n)
+  ;<  item=json  bind:m  (read-json (rf 0 dir i.names))
+  ?.  =(who (gs:orr item 'by'))  $(names t.names)
+  ;<  *  bind:m  (cull-soft:io (rf 0 dir i.names))
+  $(names t.names, n +(n))
 ::  +do-drop-read: cull one item from the read inbox and bump its rev,
 ::  so the owner's DELETE /api/read/<id> removes a text the model could
 ::  not read (set aside, or still waiting)
@@ -11389,6 +11448,7 @@
   ?~  c  (pure:m ~)
   ?.  (client-ok:orr u.c secret.u.tok)  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
+  ?.  (client-live:orr u.c now)  (pure:m ~)
   ;<  ~  bind:m
     ?.  (touch-due:orr used.u.c now)  (pure:(fiber:fiber:nexus ,~) ~)
     (poke-writer 1 (pairs:enjs:format ~[['op' s+'touch-client'] ['id' s+id.u.c]]))
@@ -11418,7 +11478,8 @@
   ?:  (~(has by cm) id)  (send-err eyre-id 409 'id: taken, try again')
   =/  salt=@t  (scot %uv (end [3 10] (rsh [3 5] eny)))
   =/  secret=@t  (secret-of:orr (rsh [3 15] eny))
-  =/  c=client:orr  [id name who sc salt (hash-token:orr salt secret) now ~]
+  =/  expires=(unit @da)  (bind days.p.req |=(d=@ud (add now (mul d ~d1))))
+  =/  c=client:orr  [id name who sc salt (hash-token:orr salt secret) now ~ expires]
   =/  op=json  (pairs:enjs:format ~[['op' s+'add-client'] ['client' (en-client-row:orr c)]])
   %^  write-then  eyre-id  op
   %^  send-json  eyre-id  200
@@ -11429,6 +11490,7 @@
       ['scope' (en-scope:orr sc)]
       ['token' s+(rap 3 id '.' secret ~)]
       ['made' (en-time:orr now)]
+      ['expires' (en-maybe-time:orr expires)]
   ==
 ::  +serve-clients: the keys as the owner sees them: no salt, no hash
 ::

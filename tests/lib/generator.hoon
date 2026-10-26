@@ -2769,6 +2769,27 @@
     (expect-eq !>(~) !>((fol (settings-merge:orr 'set-mail' (~(del by base) 'armillary_rev') (my ~[['model' s+'m2']])))))
     (expect-eq !>(`s+'k') !>((~(get by (settings-merge:orr 'set-generator' base (my ~[['api_key' s+'']]))) 'api_key')))
     (expect-eq !>(`s+'tok') !>((~(get by (settings-merge:orr 'set-telegram' (my ~[['token' s+'tok']]) (my ~[['token' s+'']]))) 'token')))
+    ::  a changed address takes the stored key with it, unless a new key
+    ::  comes too; the same address, blank or written out, keeps it
+    ::  (security audit)
+    (expect-eq !>(`s+'') !>((~(get by (settings-merge:orr 'set-generator' base (my ~[['url' s+'https://evil/v1'] ['api_key' s+'']]))) 'api_key')))
+    (expect-eq !>(`s+'k2') !>((~(get by (settings-merge:orr 'set-generator' base (my ~[['url' s+'https://b/v1'] ['api_key' s+'k2']]))) 'api_key')))
+    (expect-eq !>(`s+'tok') !>((~(get by (settings-merge:orr 'set-telegram' (my ~[['token' s+'tok']]) (my ~[['api_url' s+'https://api.telegram.org'] ['token' s+'']]))) 'token')))
+    (expect-eq !>(`s+'') !>((~(get by (settings-merge:orr 'set-travel' (my ~[['token' s+'tok']]) (my ~[['api_url' s+'https://maps.evil']]))) 'token')))
+  ==
+++  test-cred-url
+  ;:  weld
+    (expect !>((cred-url-ok:orr '')))
+    (expect !>((cred-url-ok:orr 'https://openrouter.ai/api/v1')))
+    (expect !>((cred-url-ok:orr 'HTTPS://Example.com')))
+    (expect !>((cred-url-ok:orr 'http://localhost:11434/v1')))
+    (expect !>((cred-url-ok:orr 'http://127.0.0.1/v1')))
+    (expect !>((cred-url-ok:orr 'http://[::1]:8080/v1')))
+    (expect !>(!(cred-url-ok:orr 'http://example.com/v1')))
+    (expect !>(!(cred-url-ok:orr 'http://localhost.evil.com/v1')))
+    (expect !>(!(cred-url-ok:orr 'ftp://example.com')))
+    (expect-eq !>(`(unit @t)`[~ 'url: https only, or http to this machine']) !>((cred-refusal:orr 'set-generator' (my ~[['url' s+'http://example.com/v1']]))))
+    (expect-eq !>(`(unit @t)`~) !>((cred-refusal:orr 'set-mail' (my ~[['url' s+'http://example.com/v1']]))))
   ==
 ::  ==  the browsing reader (version 98)
 ::

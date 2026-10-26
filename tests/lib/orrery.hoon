@@ -916,8 +916,9 @@
   ==
 ++  test-client-roundtrip
   =/  sc=scope:orr  [(sy ~[%person]) (sy ~[%task]) & |]
-  =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~]
+  =/  c=client:orr  ['abc' 'talon' 'talon' sc 'salt' (hash-token:orr 'salt' 'secret') t0 ~ ~]
   =/  c2=client:orr  c(used `t0)
+  =/  c4=client:orr  c(expires `(add t0 ~d30))
   =/  c3=client:orr  c(scope sc(sensitive &))
   =/  back=(unit client:orr)  (de-client:orr (en-client-row:orr c))
   =/  view=json  (en-client-view:orr c)
@@ -938,6 +939,11 @@
     (expect-eq !>(`json`s+'write') !>((gj:orr (en-scope:orr sc(sensitive &)) 'sensitive')))
     (expect !>((client-ok:orr c 'secret')))
     (expect !>(!(client-ok:orr c 'wrong')))
+    ::  a key may expire (security audit): kept, and dead from then on
+    (expect-eq !>(`c4) !>((de-client:orr (en-client-row:orr c4))))
+    (expect !>((client-live:orr c (add t0 ~d999))))
+    (expect !>((client-live:orr c4 (add t0 ~d29))))
+    (expect !>(!(client-live:orr c4 (add t0 ~d30))))
     (expect-eq !>(~) !>((gj:orr view 'hash')))
     (expect-eq !>(~) !>((gj:orr view 'salt')))
     (expect-eq !>(`json`s+'abc') !>((gj:orr view 'id')))

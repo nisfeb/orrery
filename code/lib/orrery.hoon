@@ -2142,7 +2142,8 @@
 ::
 +$  scope  [kinds=(set @tas) actions=(set @tas) write=? sensitive=?]
 ::  a client: one minted key. The secret is never stored, only a salted
-::  sha-256 of it; used is the last use, at most hourly.
+::  sha-256 of it; used is the last use, at most hourly; expires, when
+::  the key stops working, if the owner set one (security audit).
 ::
 +$  client
   $:  id=@t
@@ -2153,6 +2154,7 @@
       hash=@t
       made=@da
       used=(unit @da)
+      expires=(unit @da)
   ==
 ::  caps
 ::
@@ -2240,7 +2242,7 @@
   ^-  (set @t)
   %-  sy
   ^-  (list @t)
-  :~  'owner'  'user'  'http'  'calendar'  'ship'  'share'  'generator'
+  :~  'owner'  'user'  'http'  'calendar'  'shared-calendar'  'ship'  'share'  'generator'
       'reconcile'  'retire'  'browsing'  'telegram'  'chat'  'mail'  'web'
   ==
 ++  action-in-scope  |=([s=scope k=@tas] ^-(? (~(has in actions.s) k)))
@@ -2267,6 +2269,7 @@
       (gs j 'hash')
       u.made
       (de-iso (gs j 'used'))
+      (de-iso (gs j 'expires'))
   ==
 ++  en-client-view
   |=  c=client
@@ -2278,6 +2281,7 @@
       ['scope' (en-scope scope.c)]
       ['made' (en-time made.c)]
       ['used' (en-maybe-time used.c)]
+      ['expires' (en-maybe-time expires.c)]
   ==
 ++  en-client-row
   |=  c=client
@@ -2336,6 +2340,12 @@
   |=  [c=client secret=@t]
   ^-  ?
   =(hash.c (hash-token salt.c secret))
+::  +client-live: a key not past its expiry
+::
+++  client-live
+  |=  [c=client now=@da]
+  ^-  ?
+  ?~(expires.c & (lth now u.expires.c))
 ::  +sensitive-of: policy.sensitive as a set of attribute names
 ::
 ++  sensitive-of
@@ -11073,10 +11083,14 @@
   |=  [name=@t offer=(unit json)]
   ^-  (unit [url=@t key=@t])
   ?~  offer  ~
-  ?.  =('search' name)  (gen-offered u.offer)
-  =/  url=@t  (gs (gj u.offer 'search') 'url')
-  =/  key=@t  (gs (gj u.offer 'search') 'key')
-  ?:(|(=('' url) =('' key)) ~ `[url key])
+  ::  an offer that would send its key over plain http is no offer
+  =/  got=(unit [url=@t key=@t])
+    ?.  =('search' name)  (gen-offered u.offer)
+    =/  url=@t  (gs (gj u.offer 'search') 'url')
+    =/  key=@t  (gs (gj u.offer 'search') 'key')
+    ?:(|(=('' url) =('' key)) ~ `[url key])
+  ?:  &(?=(^ got) !(cred-url-ok url.u.got))  ~
+  got
 ::  +creds-own: whether the file's address and key are the owner's
 ::
 ++  creds-own
@@ -11171,6 +11185,57 @@
 ++  gen-live   |=([doc=json offer=(unit json)] ^-(json (creds-live 'generator' doc offer)))
 ++  gen-strip  |=(doc=(map @t json) ^-((map @t json) (creds-strip 'generator' doc)))
 ++  gen-save   |=([doc=json offer=(unit json) new=(map @t json)] ^-(json (creds-save 'generator' doc offer new)))
+::  +cred-url-ok: an address a stored secret may be sent to: https, or
+::  plain http only to this machine (security audit). Blank is the
+::  setting's default, which is https
+::
+++  cred-url-ok
+  |=  u=@t
+  ^-  ?
+  =/  l=tape  (cass (trip u))
+  ?:  |(=(~ l) =("https://" (scag 8 l)))  &
+  ?.  =("http://" (scag 7 l))  |
+  =/  rest=tape  (slag 7 l)
+  =/  stop  |=(c=tape (fall (find c rest) (lent rest)))
+  =/  host=tape  (scag (min (stop "/") (stop ":")) rest)
+  ?|(=("localhost" host) =("127.0.0.1" host) =("[::1]" (scag 5 rest)))
+::  +cred-pairs: per settings op, each address a stored secret is sent
+::  to, its default, and the secrets that go there
+::
+++  cred-pairs
+  |=  op=@t
+  ^-  (list [url=@t default=@t secrets=(list @t)])
+  ?+  op  ~
+    %'set-generator'  ~[['url' 'https://openrouter.ai/api/v1' ~['api_key']]]
+    %'set-search'     ~[['api_url' 'https://api.search.brave.com' ~['api_key']]]
+    %'set-telegram'   ~[['api_url' 'https://api.telegram.org' ~['token' 'secret']]]
+    %'set-travel'     ~[['api_url' 'https://api.mapbox.com' ~['token']]]
+  ==
+::  +cred-refusal: why a settings document is refused: an address a
+::  secret would go to over plain http to another machine
+::
+++  cred-refusal
+  |=  [op=@t doc=(map @t json)]
+  ^-  (unit @t)
+  =/  bad  (skip (cred-pairs op) |=([u=@t *] (cred-url-ok (gs [%o doc] u))))
+  ?~  bad  ~
+  `(rap 3 url.i.bad ': https only, or http to this machine' ~)
+::  +cred-clear: a stored secret goes when the address it is sent to
+::  changes and no new secret comes with it, so a changed address can
+::  never carry off the stored key (security audit)
+::
+++  cred-clear
+  |=  [op=@t base=(map @t json) doc=(map @t json) merged=(map @t json)]
+  ^-  (map @t json)
+  =/  at  |=([m=(map @t json) u=@t d=@t] =/(v (gs [%o m] u) ?:(=('' v) d v)))
+  %+  roll  (cred-pairs op)
+  |=  [[url=@t default=@t secrets=(list @t)] acc=_merged]
+  ?.  (~(has by doc) url)  acc
+  ?:  =((at base url default) (at doc url default))  acc
+  %+  roll  secrets
+  |=  [k=@t a=_acc]
+  ?.  =('' (gs [%o doc] k))  a
+  (~(put by a) k s+'')
 ::  +settings-merge: an owner's settings document over the stored one,
 ::  for every settings op. A blank secret keeps the stored one. When the
 ::  file holds Armillary's values, a followed field that really changes
@@ -11181,6 +11246,8 @@
   |=  [op=@t base=(map @t json) doc=(map @t json)]
   ^-  (map @t json)
   =/  merged=(map @t json)
+    %^  cred-clear  op  base
+    :-  doc
     ?+  op  (merge-settings base doc ~)
       %'set-generator'  (merge-settings base doc (sy ~['api_key']))
       %'set-telegram'   (merge-settings base doc (sy ~['token' 'secret']))
@@ -12901,7 +12968,7 @@
 ::
 ++  de-mint
   |=  jon=json
-  ^-  (each [name=@t by=@t sc=scope] @t)
+  ^-  (each [name=@t by=@t sc=scope days=(unit @ud)] @t)
   ?.  ?=([%o *] jon)  [%| 'a JSON object is required']
   =/  name=@t  (gs jon 'name')
   ?:  |(=('' name) (gth (met 3 name) max-name))  [%| 'name: 1 to 200 bytes']
@@ -12912,7 +12979,11 @@
     [%| 'writes as (by): that name is one the ship signs its own writes with']
   =/  sc  (de-scope (gj jon 'scope'))
   ?:  ?=(%| -.sc)  [%| p.sc]
-  [%& name who p.sc]
+  ::  how many days the key works, if the owner says (security audit)
+  =/  days=(unit @ud)  (gn jon 'expires_days')
+  ?:  &(?=(^ (gj jon 'expires_days')) |(?=(~ days) =(0 u.days) (gth u.days 3.650)))
+    [%| 'expires_days: a whole number of days, 1 to 3650']
+  [%& name who p.sc days]
 ::  +touch-due: whether a key's last use is stamped again: at most hourly
 ::
 ++  touch-due

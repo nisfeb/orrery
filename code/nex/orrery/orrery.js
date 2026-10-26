@@ -955,7 +955,7 @@
       rows.forEach(function (c) {
         out += '<tr>' + cell('name', esc(c.name || '') + '<span class="id">' + esc(c.id || '') + '</span>') + cell('writes as', esc(c.by || '')) +
           cell('scope', esc(scopeText(c.scope))) + cell('made', fmtTime(c.made)) +
-          cell('last used', c.used ? fmtTime(c.used) : '<span class="muted">never</span>') +
+          cell('last used', (c.used ? fmtTime(c.used) : '<span class="muted">never</span>') + (c.expires ? '<span class="id">expires ' + fmtTime(c.expires) + '</span>' : '')) +
           cell('', '<button class="danger" data-revoke="' + esc(c.id || '') + '" data-name="' + esc(c.name || c.id || '') + '">revoke</button>') + '</tr>';
       });
       out += '</tbody></table><p class="muted">Use is recorded to the hour. A revoked key is refused within a second.</p>';
@@ -970,7 +970,8 @@
     }
     out += '<div class="card"><h2>Mint a key</h2><div id="mint">' +
       '<p><label class="field">name <input name="name" maxlength="200" placeholder="Talon on the phone"></label> ' +
-      '<label class="field">writes as <input name="by" maxlength="64" placeholder="the name, if blank"></label></p>' +
+      '<label class="field">writes as <input name="by" maxlength="64" placeholder="the name, if blank"></label> ' +
+      '<label class="field">expires after <input name="expires_days" type="number" min="1" max="3650" placeholder="never"> days</label></p>' +
       '<p><span class="muted">sees</span> ' + boxes('kinds', kinds, true) + '</p>' +
       '<p><span class="muted">may propose</span> ' + boxes('actions', actions, false) + '</p>' +
       '<p><label class="box"><input type="checkbox" name="write"> may write</label> ' +
@@ -2249,8 +2250,10 @@
       return Array.prototype.map.call(view.querySelectorAll('#mint input[name="' + name + '"]:checked'), function (el) { return el.value; });
     }
     var write = picked('write').length > 0;
-    return { name: val('name'), by: val('by'),
+    var out = { name: val('name'), by: val('by'),
       scope: { kinds: picked('kinds'), actions: picked('actions'), write: write, sensitive: write && picked('sensitive').length ? 'write' : 'none' } };
+    if (val('expires_days')) out.expires_days = Number(val('expires_days'));
+    return out;
   }
   view.addEventListener('input', function (e) {
     var el = e.target;

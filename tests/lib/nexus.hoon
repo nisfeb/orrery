@@ -510,6 +510,15 @@
     (expect-eq !>('writes as (by): that name is one the ship signs its own writes with') !>((why 'calendar' '' sc)))
     (expect-eq !>('scope: expected an object') !>((why 'n' 'b' s+'x')))
     (expect !>(?=(%& -.good)))
+    ::  how many days the key works, if the owner says (security audit)
+    (expect-eq !>(`(unit @ud)`~) !>(?>(?=(%& -.good) days.p.good)))
+    =/  days  |=(d=json (de-mint:orr (pairs:enjs:format ~[['name' s+'n'] ['scope' sc] ['expires_days' d]])))
+    ;:  weld
+      (expect-eq !>(`(unit @ud)`[~ 30]) !>(=/(g (days (numb:enjs:format 30)) ?>(?=(%& -.g) days.p.g))))
+      (expect-eq !>([%| 'expires_days: a whole number of days, 1 to 3650']) !>((days (numb:enjs:format 0))))
+      (expect-eq !>([%| 'expires_days: a whole number of days, 1 to 3650']) !>((days (numb:enjs:format 3.651))))
+      (expect-eq !>([%| 'expires_days: a whole number of days, 1 to 3650']) !>((days s+'soon')))
+    ==
     (expect-eq !>(['n' 'b']) !>(?>(?=(%& -.good) [name.p.good by.p.good])))
   ==
 ++  test-touch-due
