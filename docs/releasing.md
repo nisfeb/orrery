@@ -224,6 +224,15 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 126's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- When a ship refuses a sphere or a body you offer it, the Spheres page and the body's page say so, and why. A ship still on 125 or older never answers, so its offers show nothing either way.
+- Deleting or merging away a sphere or a body you share tells each ship you shared it with, and deleting one that a share you accepted lands on tells the host. Their follows end instead of failing on every pass.
+- In edit mode, you and the people with a ship that the other ship filed under the sphere no longer send your rows about them back. To share them, file them under the sphere yourself.
+- If an analyst calls orrery's MCP tools by path (a tool name starting `/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/`), move it to `call_tool` (`docs/mcp.md`) before the ship takes the next grubbery kernel, which refuses a tool name that is a path. `call_tool` works on the kernel you have now too.
+
 ### Version 125's owner steps
 
 Nothing to do: no new roads, so no consent prompt. This release closes what a security review of orrery found. What you may notice:
