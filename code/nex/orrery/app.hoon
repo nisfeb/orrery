@@ -6008,6 +6008,8 @@
   =/  jon=(unit json)  (mole |.(!<(json (need-vase:tarball sang.u.vw))))
   ?~  jon  (pure:m ~)
   ?.  ?=([%o *] u.jon)  (pure:m ~)
+  ::  a fresh Armillary's file is {}: it offers nothing yet
+  ?~  p.u.jon  (pure:m ~)
   (pure:m jon)
 ::  +gen-doc: generator.json as a model call reads it, the offer's address
 ::  and key laid in while it follows (+gen-live), so a rotated key is

@@ -91,9 +91,11 @@ def instruct():
     return code, chat[-1] if chat else None
 
 
-code, arm = api('GET', '/armillary')
-if not dictish(arm).get('offered'):
-    sys.exit('armillary-key-matrix: orrery reads no Armillary here; install it '
+#  a fresh Armillary's file is {}, which orrery reads as no offer (125):
+#  the file being there is what says Armillary is, and the first call
+#  on the offer's key is what says orrery may read it
+if read(ARM) is None:
+    sys.exit('armillary-key-matrix: no Armillary here; install it '
              '(armillary\'s scripts/dev-deploy.py --add) and approve orrery\'s road')
 was_arm, was_gen, was_read, was_search = read(ARM), read(GEN), read(READ), read(SEARCH)
 try:
