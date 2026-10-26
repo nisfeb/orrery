@@ -2235,7 +2235,11 @@
   ::  does a todo from a calendar others write (security audit, D2)
   =/  own=?  (own-todo:orr p.got)
   =/  foreign=?  =(foreign-todo-by:orr by.p.got)
-  =/  auto=?  &(!crossing !foreign |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))))
+  ::  nor does any other action a ship signs: a peer's filing of a body
+  ::  into a shared sphere, or a share it asks for, is the owner's to
+  ::  approve even when the policy approves its kind (security audit)
+  =/  shipped=?  ?=(^ (slaw %p by.p.got))
+  =/  auto=?  &(!crossing !foreign !shipped |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))))
   =/  a=action:orr
     ?.  auto  p.got
     ?:  own  (transition:orr p.got %approved 'calendar' 'typed in the calendar' now)
