@@ -1534,6 +1534,29 @@
       !>(`(list roster-row:orr)`~[['person/sam' %person 'Sam' `~zod ~['sam'] ~['0vx'] (malt ~[[~wet 'person/s']])]])
     !>((de-roster:orr a+~[(en-roster-row:orr l now)]))
   ==
+::  what an edit-mode feed sends back (version 126): an identity only
+::  another ship filed under the sphere stays home; filed by the owner
+::  too, or no identity, or a member by being unfiled, it goes
+++  test-feed-sent
+  =/  mk
+    |=  [id=@t ship=(unit @p) filed=(list [kind=@t by=@t])]
+    ^-  loaded:orr
+    :+  id  [?:(=('person/me' id) %person %person) id ~ now ship]
+    %+  turn  filed
+    |=  [kind=@t by=@t]
+    ^-  row:orr
+    [(rap 3 id '/sphere/' kind ~) [id 'sphere' (pairs:enjs:format ~[['ref' s+'sphere/fam']]) now ~ 100 [kind 'x'] by now | '']]
+  =/  me    (mk 'person/me' ~ ~[['ship' '~zod']])
+  =/  pal   (mk 'person/pal' `~nec ~[['ship' '~zod']])
+  =/  pal2  (mk 'person/pal2' `~bud ~[['ship' '~zod'] ['owner' 'owner']])
+  =/  kid   (mk 'person/kid' ~ ~[['ship' '~zod']])
+  =/  all=(list loaded:orr)  ~[me pal pal2 kid]
+  =/  members=(set @t)  (silt ~['person/me' 'person/pal' 'person/pal2' 'person/kid'])
+  ;:  weld
+    (expect-eq !>((silt `(list @t)`~['person/pal2' 'person/kid'])) !>((feed-sent:orr all 'sphere/fam' members)))
+    ::  the owner's self in a home share, a member by being filed nowhere
+    (expect-eq !>((silt `(list @t)`~['person/me'])) !>((feed-sent:orr ~[(mk 'person/me' ~ ~)] 'sphere/home' (silt ~['person/me']))))
+  ==
 ++  test-sphere-feed
   =/  mk
     |=  [id=@t kind=@tas attrs=(list [a=@t v=json by=@t src=@t])]

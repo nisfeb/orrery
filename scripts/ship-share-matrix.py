@@ -109,6 +109,8 @@ def clean():
                 retract(side, row)
     host('DELETE', '/body/person/john')
     peer('DELETE', '/body/person/john')
+    host('DELETE', '/body/thing/gate-del')
+    peer('DELETE', '/body/thing/gate-del')
     #  a run with the ships the other way round leaves the peer a
     #  person/sarah that carries the host's ship, and an accept of the
     #  host's own self would land there instead of on person/<host>
@@ -210,7 +212,8 @@ check('the attribute it may push is still there', dictish(attr(host, 'person/sar
 print('== the peer writes about the body, it does not widen who sees it')
 def by_peer(name):
     v = attr(host, 'person/sarah', name)
-    return [r for r in (v if isinstance(v, list) else [v] if v else []) if dictish(r).get('by') == PEERNAME]
+    #  this run's rows only: a sphere feed may have carried others here
+    return [r for r in (v if isinstance(v, list) else [v] if v else []) if dictish(r).get('by') == PEERNAME and dictish(r).get('at') == iso(T0)]
 for name, value, sid in (('sphere', {'ref': 'sphere/home'}, 'share-5'), ('shared-with', {'ref': 'person/me'}, 'share-6')):
     code, d = peer('POST', '/observe', {'bodies': [], 'observations': [
         {'subject': 'person/me', 'attr': name, 'value': value, 'at': iso(T0), 'source': {'kind': 'matrix', 'id': sid}, 'by': 'owner'}]})
@@ -321,6 +324,24 @@ code, d = host('DELETE', '/body/person/john')
 check('the host john goes', code == 200, d)
 code, d = peer('DELETE', '/body/person/john')
 check('the peer john goes', code == 200, d)
+
+print('== a deleted body tells the ship it was shared with (version 126)')
+DELKEY = HOSTNAME + '/thing/gate-del'
+code, d = host('POST', '/bodies', {'id': 'thing/gate-del', 'name': 'Gate delete'})
+check('host makes a body to share', code == 200, d)
+code, d = host('POST', '/share', {'id': 'thing/gate-del', 'ship': PEERNAME, 'mode': 'read'})
+check('share it', code == 200, d)
+wait('the delete offer reaches the peer', lambda: dictish(dictish(shares(peer)).get('offers')).get(DELKEY), 30)
+ans = dictish(wait('the answer reaches the host', lambda: dictish(dictish(shares(host)).get('offer_answers')).get('thing/gate-del|' + PEERNAME), 90))
+check('the host hears the offer was taken', ans.get('taken') is True, ans)
+code, d = peer('POST', '/accept', {'host': HOSTNAME, 'id': 'thing/gate-del'})
+check('the peer accepts', code == 200, d)
+wait('the accepted row', lambda: dictish(dictish(shares(peer)).get('accepted')).get(DELKEY), 30)
+code, d = host('DELETE', '/body/thing/gate-del')
+check('the host deletes the shared body', code == 200, d)
+check('the peer is told, and its accepted row goes', bool(wait('the revoke reaches the peer', lambda: gone_from(peer, 'accepted', DELKEY) or None, 120)),
+      dictish(shares(peer)).get('accepted'))
+peer('DELETE', '/body/thing/gate-del')
 
 print('== refusals')
 code, d = host('POST', '/share', {'id': 'nope', 'ship': PEERNAME})

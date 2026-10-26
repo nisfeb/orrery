@@ -17,6 +17,7 @@
 ::    /share-offers.json               what was offered to us
 ::    /ship-remotes.json               what we accepted, a row per share
 ::    /sync.sig                        the follower: pull, then push
+::    /outbox/<id>  /tell.sig          what is to be told another ship, and the fiber that tells it (version 126)
 ::    /clients.json                    the minted keys, salted hashes only
 ::    /telegram.sig                    the telegram reader: drains the inbox
 ::    /telegram-inbox/<update_id>      an update the webhook took, until read
@@ -113,6 +114,14 @@
           [%fall %& [/ %'share-offers.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'ship-remotes.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'sync.sig'] [[/ %sig] ~]]
+          ::  outbox: one grub per message for another ship, which the tell
+          ::  fiber sends and culls, so no request or inbox waits on a
+          ::  remote poke (version 126)
+          [%fall %| /outbox empty-dir:loader]
+          [%fall %& [/ %'tell.sig'] [[/ %sig] ~]]
+          ::  offer-answers.json: what each ship we offered a sphere or a
+          ::  body did with it, <id>|<ship> to taken, why and when
+          [%fall %& [/ %'offer-answers.json'] [[/ %json] [%o ~]]]
           ::  clients.json: the minted keys, each a salted hash of its
           ::  secret with a name, an identity and a scope (spec section 11,
           ::  phase 3)
@@ -477,6 +486,17 @@
           ::  time to leave (version 69): an hour's look at what is
           ::  ahead, and a timer at each point a plan needs looking at
           ::  again before its alert; a new position pokes it
+          [~ %'tell.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery tell: failed")
+        |-
+        ;<  ~  bind:m  tell-pass
+        ;<  now=@da  bind:m  get-time:io
+        ;<  ~  bind:m  (set-timer:io /tell (add now ~h1))
+        ;<  ~  bind:m  (idle-until-poke /tell)
+        ;<  ~  bind:m  (cancel-timer:io /tell)
+        $
+          ::  the tell fiber (version 126): each message in the outbox, sent
+          ::  once; a poke wakes it, and an hour's timer in case none came
           [~ %'leave.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery leave: failed")
         |-
@@ -2494,7 +2514,9 @@
 ::  body made again under its id neither takes the host's rows nor sends
 ::  it ours. A sphere's share goes too: its record, its feed's group,
 ::  pages and state, and every follow landing on it (security audit).
-::  The peers are not told; their reads fail as for a revoke.
+::  Each ship on those records is told through the outbox, as an unshare
+::  or a leave tells it, so its own follow ends rather than failing on
+::  every pass (version 126)
 ::
 ++  drop-share
   |=  [kind=@tas slug=@ta id=bid:orr]
@@ -2506,19 +2528,51 @@
   =/  n  (fiber:fiber:nexus ,~)
   ;<  base=(unit path)  bind:m  self-base
   ;<  shares=(map @t json)  bind:m  (read-map (rf up / %'shares.json'))
+  ;<  rm=(map @t json)  bind:m  (read-map (rf up / %'ship-remotes.json'))
+  ;<  sh=(map @t json)  bind:m  (read-map (rf up / %'sphere-shares.json'))
+  ;<  fl=(map @t json)  bind:m  (read-map (rf up / %'sphere-follows.json'))
+  ::  who is told what: each ship it was shared with, that it ends; each
+  ::  host whose share or sphere landed on it, that we leave
+  =/  ships-of
+    |=  j=(unit json)
+    ^-  (list @p)
+    ?.  ?=([~ %o *] j)  ~
+    (murn ~(tap in ~(key by p.u.j)) |=(k=@t (slaw %p k)))
+  =/  tells=(list [@p json])
+    ;:  weld
+      (turn (ships-of (~(get by shares) id)) |=(s=@p [s (pairs:enjs:format ~[['action' s+'revoke'] ['id' s+id]])]))
+      %+  murn  ~(val by rm)
+      |=  r=json
+      ^-  (unit [@p json])
+      =/  h=(unit @p)  (slaw %p (gs:orr r 'host'))
+      ?.  &(?=(^ h) =(id (gs:orr r 'target')))  ~
+      `[u.h (pairs:enjs:format ~[['action' s+'leave'] ['id' s+(gs:orr r 'id')]])]
+      ?.  =(%sphere kind)  ~
+      (turn (ships-of (~(get by sh) id)) |=(s=@p [s (pairs:enjs:format ~[['action' s+'sphere-revoke'] ['sphere' s+id]])]))
+      ?.  =(%sphere kind)  ~
+      %+  murn  ~(val by fl)
+      |=  r=json
+      ^-  (unit [@p json])
+      =/  h=(unit @p)  (slaw %p (gs:orr r 'host'))
+      ?.  &(?=(^ h) =(id (gs:orr r 'local')) =('peer' (gs:orr r 'role')))  ~
+      `[u.h (pairs:enjs:format ~[['action' s+'sphere-leave'] ['sphere' s+(gs:orr r 'sphere')]])]
+    ==
+  ;<  ~  bind:m
+    |-  ^-  form:n
+    ?~  tells  (pure:n ~)
+    ;<  ~  bind:n  (tell-later up -.i.tells orrery-instance +.i.tells)
+    $(tells t.tells)
   ;<  ~  bind:m
     ?.  (~(has by shares) id)  (pure:n ~)
     ;<  ~  bind:n  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by shares) id)]])
     ?~  base
       (note-inbox-at up 'delete-body' | 'cannot find where this app is installed' '')
     (set-share-group u.base kind slug ~)
-  ;<  rm=(map @t json)  bind:m  (read-map (rf up / %'ship-remotes.json'))
   =/  rm2=(map @t json)  (malt (skip ~(tap by rm) |=([* r=json] =(id (gs:orr r 'target')))))
   ;<  ~  bind:m
     ?:  =(~(wyt by rm) ~(wyt by rm2))  (pure:n ~)
     (over:io (rf up / %'ship-remotes.json') [[/ %json] [%o rm2]])
   ?.  =(%sphere kind)  (pure:m ~)
-  ;<  sh=(map @t json)  bind:m  (read-map (rf up / %'sphere-shares.json'))
   ;<  ~  bind:m
     ?.  (~(has by sh) id)  (pure:n ~)
     ;<  ~  bind:n  (over:io (rf up / %'sphere-shares.json') [[/ %json] [%o (~(del by sh) id)]])
@@ -2529,7 +2583,6 @@
     ?.  &(?=([%o *] st) (~(has by p.st) id))  (pure:n ~)
     (over:io (rf up / %'feed-state.json') [[/ %json] [%o (~(del by p.st) id)]])
   ;<  *  bind:m  (cull-soft:io (rv up /feeds/[slug]))
-  ;<  fl=(map @t json)  bind:m  (read-map (rf up / %'sphere-follows.json'))
   =/  fl2=(map @t json)  (malt (skip ~(tap by fl) |=([* r=json] =(id (gs:orr r 'local')))))
   ?:  =(~(wyt by fl) ~(wyt by fl2))  (pure:m ~)
   (over:io (rf up / %'sphere-follows.json') [[/ %json] [%o fl2]])
@@ -3588,6 +3641,50 @@
   ?:  (~(has in poke.old) `road:tarball`[%& %& u.base %'shares.sig'])  (pure:m ~)
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'shares.sig') [[/ %sig] ~])
   (pure:m ~)
+::  +tell-later: a message for another ship, left in the outbox for the
+::  tell fiber, so the caller never waits the thirty seconds a remote
+::  poke takes (version 126). base is where the ship keeps its inbox:
+::  orrery's own instance for a ship we share with, the record's base
+::  for a host we follow
+::
+++  tell-later
+  |=  [up=@ud ship=@p base=path body=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  ::  the ship is in the name, so +offer-said can count what waits for it
+  =/  id=@ta  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (rsh [3 1] (scot %p ship)) '-' (scot %ux (end [3 4] eny)) ~)
+  =/  item=json
+    %-  pairs:enjs:format
+    :~  ['ship' s+(scot %p ship)]  ['base' s+(spat base)]  ['at' s+(en-iso:orr now)]  ['body' body]  ==
+  ;<  *  bind:m  (make-soft:io (rf up /outbox id) |+[[[/ %json] item] ~])
+  ;<  *  bind:m  (poke-soft:io (rf up / %'tell.sig') [[/ %sig] ~])
+  (pure:m ~)
+::  +tell-pass: each message in the outbox, oldest first, culled and then
+::  sent once: telling is best effort, and a message a day old is dropped
+::  unsent. The trail says what went to whom
+::
+++  tell-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /outbox) ~)
+  ?.  ?=([%ball *] vw)  (pure:m ~)
+  ?~  fil.ball.vw  (pure:m ~)
+  =/  names=(list @ta)  (sort ~(tap in ~(key by contents.u.fil.ball.vw)) aor)
+  ;<  now=@da  bind:m  get-time:io
+  |-
+  ?~  names  (pure:m ~)
+  ;<  item=json  bind:m  (read-json (rf 0 /outbox i.names))
+  ;<  *  bind:m  (cull-soft:io (rf 0 /outbox i.names))
+  =/  shp=(unit @p)  (slaw %p (gs:orr item 'ship'))
+  =/  at=(unit @da)  (de-iso:orr (gs:orr item 'at'))
+  ?:  |(?=(~ shp) ?=(~ at) (gth now (add u.at ~d1)))  $(names t.names)
+  =/  base=path  (fall (mole |.((stab (gs:orr item 'base')))) orrery-instance)
+  =/  body=json  (gj:orr item 'body')
+  ;<  told=?  bind:m  (remote-poke-wait u.shp [%& base %'shares.sig'] body)
+  ;<  ~  bind:m  (note-by 'tell' told (gs:orr body 'action') (scot %p u.shp))
+  $(names t.names)
 ::  +remote-poke-wait: a poke to another ship's grubbery, answered or
 ::  timed out (a peer that is down must not park the fiber). A timer
 ::  wake answers yes: grubbery's remote acks are unobservable and the
@@ -3683,6 +3780,7 @@
   ?:  =('sphere-leave' act)  (take-sphere-leave src jon)
   ?:  =('leave' act)  (take-leave src jon)
   ?:  =('feed-moved' act)  (take-feed-moved src)
+  ?:  =('offer-answer' act)  (take-offer-answer src jon)
   ?:  =(~ (parse-bid:orr id))
     (note-inbox 'inbox' | 'id: expected <kind>/<slug>' (scot %p src))
   =/  key=@t  (share-key:orr src id)
@@ -3690,6 +3788,41 @@
   ?:  =('revoke' act)  (take-revoke src key)
   ?:  =('observe' act)  (take-edit src id jon)
   (note-inbox 'inbox' | 'unknown action' (scot %p src))
+::  +take-offer-answer: what a ship we offered a sphere or a body did
+::  with it (version 126), kept only while our own record still offers
+::  it to that ship: the latest answer per ship and offer
+::
+++  take-offer-answer
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  kind=@t  (gs:orr jon 'kind')
+  =/  ref=@t  (gs:orr jon 'ref')
+  ?.  &(|(=('sphere' kind) =('body' kind)) ?=(^ (parse-bid:orr ref)))
+    (note-inbox 'offer-answer' | 'kind, ref: a sphere or a body, and its id' (scot %p src))
+  ;<  rec=(map @t json)  bind:m  (read-map (rf 0 / ?:(=('sphere' kind) %'sphere-shares.json' %'shares.json')))
+  =/  mine=(unit json)  (~(get by rec) ref)
+  ?.  &(?=([~ %o *] mine) (~(has by p.u.mine) (scot %p src)))
+    (note-inbox 'offer-answer' | 'not offered to that ship' (scot %p src))
+  ;<  now=@da  bind:m  get-time:io
+  =/  taken=?  ?=([%b %.y] (gj:orr jon 'taken'))
+  =/  row=json
+    (pairs:enjs:format ~[['taken' b+taken] ['why' s+(cut-utf8:orr (gs:orr jon 'why') 200)] ['at' (en-time:orr now)]])
+  ;<  ans=(map @t json)  bind:m  (read-map (rf 0 / %'offer-answers.json'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'offer-answers.json') [[/ %json] [%o (~(put by ans) (answer-key ref src) row)]])
+  (note-inbox 'offer-answer' & ref (scot %p src))
+::  +answer-key, +forget-answer: an offer's answer, and its dropping when
+::  the offer is made again or taken back, so the page shows no answer
+::  until the ship gives its new one
+::
+++  answer-key  |=([ref=@t s=@p] ^-(@t (rap 3 ref '|' (scot %p s) ~)))
+++  forget-answer
+  |=  [up=@ud ref=@t s=@p]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ans=(map @t json)  bind:m  (read-map (rf up / %'offer-answers.json'))
+  ?.  (~(has by ans) (answer-key ref s))  (pure:m ~)
+  (over:io (rf up / %'offer-answers.json') [[/ %json] [%o (~(del by ans) (answer-key ref s))]])
 ::  +take-position: a ship's owner shares where they are (version 88):
 ::  kept, the latest only, when a person here carries that ship; any
 ::  other ship's is refused and noted
@@ -3733,24 +3866,24 @@
   ^-  form:m
   =/  sphere=@t  (gs:orr jon 'sphere')
   =/  pk  (parse-bid:orr sphere)
-  ?.  &(?=(^ pk) =(%sphere kind.u.pk))  (note-inbox 'sphere-offer' | 'sphere: expected sphere/<slug>' (scot %p src))
-  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-inbox 'sphere-offer' | 'name: over 200 bytes' (scot %p src))
-  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-inbox 'sphere-offer' | 'base: over 200 bytes' (scot %p src))
+  ?.  &(?=(^ pk) =(%sphere kind.u.pk))  (offer-said src 'sphere' sphere | 'sphere: expected sphere/<slug>')
+  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (offer-said src 'sphere' sphere | 'name: over 200 bytes')
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (offer-said src 'sphere' sphere | 'base: over 200 bytes')
   ;<  now=@da  bind:m  get-time:io
   ;<  cur=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
   =/  key=@t  (rap 3 (scot %p src) '|' sphere ~)
-  ?:  &(!(~(has by cur) key) (gte ~(wyt by cur) 50))  (note-inbox 'sphere-offer' | 'fifty offers wait already' (scot %p src))
+  ?:  &(!(~(has by cur) key) (gte ~(wyt by cur) 50))  (offer-said src 'sphere' sphere | 'fifty offers wait already')
   ::  five from one ship, so one ship cannot fill the inbox (security audit)
   =/  pre=@t  (cat 3 (scot %p src) '|')
   =/  theirs=@ud  (lent (skim ~(tap in ~(key by cur)) |=(k=@t =(pre (end [3 (met 3 pre)] k)))))
-  ?:  &(!(~(has by cur) key) (gte theirs 5))  (note-inbox 'sphere-offer' | 'five offers from this ship wait already' (scot %p src))
+  ?:  &(!(~(has by cur) key) (gte theirs 5))  (offer-said src 'sphere' sphere | 'five offers from this ship wait already')
   =/  offer=json
     %-  pairs:enjs:format
     :~  ['host' s+(scot %p src)]  ['sphere' s+sphere]  ['name' s+(gs:orr jon 'name')]
         ['mode' s+?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')]  ['base' s+(gs:orr jon 'base')]  ['at' (en-time:orr now)]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'sphere-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
-  (note-inbox 'sphere-offer' & key (scot %p src))
+  (offer-said src 'sphere' sphere & key)
 ::  +take-sphere-accept: a ship we shared a sphere with in edit mode
 ::  accepted it and says where its own feed of the sphere is: we read
 ::  it, while we still share the sphere with it in edit mode
@@ -4010,6 +4143,7 @@
   ::  the feed's directory exists before any group is granted it
   ;<  ~  bind:m  (ensure-dirs 1 / `(list @ta)`~[%feeds slug.u.pk])
   ;<  ~  bind:m  (set-feed-group u.base slug.u.pk mine)
+  ;<  ~  bind:m  (forget-answer 1 sphere u.shp)
   ;<  told=?  bind:m
     %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
     %-  pairs:enjs:format
@@ -4043,6 +4177,7 @@
     %+  skip  ~(tap by fl)
     |=([k=@t r=json] &(=(ship (gs:orr r 'host')) =(sphere (gs:orr r 'local'))))
   ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o kept]])
+  ;<  ~  bind:m  (forget-answer 1 sphere u.shp)
   ;<  told=?  bind:m
     (remote-poke-wait u.shp [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'sphere-revoke'] ['sphere' s+sphere]]))
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
@@ -4205,12 +4340,14 @@
   =/  done=(set @t)  (silt (strings:orr (ga:orr mine 'corrected')))
   =/  fed-acts=(map @t @t)  =/(j (gj:orr mine 'acts') ?.(?=([%o *] j) ~ (~(run by p.j) |=(v=json ?:(?=([%s *] v) p.v '')))))
   =/  members=(set bid:orr)  (sphere-members:orr all sphere now)
+  ::  rows and corrections go out only for the members +feed-sent keeps
+  =/  sent=(set bid:orr)  (feed-sent:orr all sphere members)
   =/  due=(list [l=loaded:orr r=row:orr])
     %-  zing
-    %+  turn  (skim all |=(l=loaded:orr (~(has in members) id.l)))
+    %+  turn  (skim all |=(l=loaded:orr (~(has in sent) id.l)))
     |=  l=loaded:orr
     (turn (feed-due:orr (feed-rows:orr l sphere hide private) fed) |=(r=row:orr [l r]))
-  =/  cuts=(list correction:orr)  (feed-corrections:orr corr members done hide)
+  =/  cuts=(list correction:orr)  (feed-corrections:orr corr sent done hide)
   ::  the roster of members, which a reader matches its own bodies to
   ::  before it reads a row (version 91): there from the first pass
   ;<  rostered=?  bind:m  (peek-exists:io (rf 0 /feeds/[slug.u.pk] %'roster.json'))
@@ -4221,7 +4358,13 @@
     ;<  ~  bind:(fiber:fiber:nexus ,~)  (ensure-dirs 0 / `(list @ta)`~[%feeds slug.u.pk])
     (over:io (rf 0 /feeds/[slug.u.pk] %'roster.json') [[/ %json] roster])
   ::  the actions about the sphere's bodies, whose status moved (version 92)
-  =/  moved=(list [id=@ta a=action:orr])  (feed-acts:orr acts members fed-acts hide)
+  ::  an action crossed from another ship still goes back about every
+  ::  member, so its end reaches the ship that sent it
+  =/  moved=(list [id=@ta a=action:orr])
+    %+  weld  (feed-acts:orr acts sent fed-acts hide)
+    %+  skim  (feed-acts:orr acts members fed-acts hide)
+    |=  [id=@ta a=action:orr]
+    &(?=(^ (act-twin:orr a)) !(levy ~(tap in about.a) |=(b=bid:orr (~(has in sent) b))))
   ?:  &(=(~ due) =(~ cuts) =(~ moved))  (pure:m |)
   ::  ponytail: a thousand entries a pass and the fed map rewritten whole;
   ::  a ship whose first fill is tens of thousands wants a lighter state
@@ -5044,6 +5187,31 @@
 ::  +take-offer: a host offers a body. An offer for a share already
 ::  accepted narrows its mode in place; a wider one waits for an accept.
 ::
+::  +offer-said: what an offer came to, in the trail and told to the ship
+::  that made it (version 126): taken (it waits for the owner here, or
+::  it changed a share already accepted), or refused and why. A decline
+::  stays silent: that is the owner's to keep. Ten answers to one ship
+::  waiting in the outbox at most, so a ship that floods the inbox with
+::  offers cannot fill the outbox
+::
+++  offer-said
+  |=  [src=@p kind=@t ref=@t ok=? note=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ~  bind:m  (note-inbox ?:(=('sphere' kind) 'sphere-offer' 'offer') ok note (scot %p src))
+  ;<  vw=view:nexus  bind:m  (peek:io (rv 0 /outbox) ~)
+  =/  tag=tape  (trip (rap 3 '-' (rsh [3 1] (scot %p src)) '-' ~))
+  =/  queued=@ud
+    ?.  ?=([%ball *] vw)  0
+    ?~  fil.ball.vw  0
+    (lent (skim ~(tap in ~(key by contents.u.fil.ball.vw)) |=(n=@ta ?=(^ (find tag (trip n))))))
+  ?:  (gte queued 10)  (pure:m ~)
+  %^  tell-later  0  src
+  :-  orrery-instance
+  %-  pairs:enjs:format
+  :~  ['action' s+'offer-answer']  ['kind' s+kind]  ['ref' s+ref]
+      ['taken' b+ok]  ['why' s+?:(ok '' note)]
+  ==
 ++  take-offer
   |=  [src=@p key=@t id=bid:orr jon=json]
   =/  m  (fiber:fiber:nexus ,~)
@@ -5051,13 +5219,13 @@
   ;<  now=@da  bind:m  get-time:io
   =/  mode=@t  ?:(=('edit' (gs:orr jon 'mode')) 'edit' 'read')
   =/  oship=@t  (gs:orr jon 'ship')
-  ?:  &(!=('' oship) ?=(~ (slaw %p oship)))  (note-inbox 'offer' | 'ship: expected an @p' (scot %p src))
-  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (note-inbox 'offer' | 'name: over 200 bytes' (scot %p src))
-  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (note-inbox 'offer' | 'base: over 200 bytes' (scot %p src))
+  ?:  &(!=('' oship) ?=(~ (slaw %p oship)))  (offer-said src 'body' id | 'ship: expected an @p')
+  ?:  (gth (met 3 (gs:orr jon 'name')) max-name:orr)  (offer-said src 'body' id | 'name: over 200 bytes')
+  ?:  (gth (met 3 (gs:orr jon 'base')) 200)  (offer-said src 'body' id | 'base: over 200 bytes')
   ;<  rm=(map @t json)  bind:m  (read-map (rf 0 / %'ship-remotes.json'))
   ?:  (~(has by rm) key)
     =/  row=json  (fall (~(get by rm) key) ~)
-    ?.  ?=([%o *] row)  (note-inbox 'offer' | 'accepted row unreadable' (scot %p src))
+    ?.  ?=([%o *] row)  (offer-said src 'body' id | 'accepted row unreadable')
     ::  a share we accepted: a narrower mode applies at once, a wider
     ::  one is a new offer, since it would change what we send the host
     ?:  &(=('edit' mode) !=('edit' (gs:orr row 'mode')))
@@ -5070,7 +5238,7 @@
     ;<  ~  bind:m
       ?.  (~(has by cur) key)  (pure:(fiber:fiber:nexus ,~) ~)
       (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(del by cur) key)]])
-    (note-inbox 'offer' & 'mode updated' (scot %p src))
+    (offer-said src 'body' id & 'mode updated')
   (file-offer src key id mode now jon)
 ::  +file-offer: the offer waits in share-offers.json for an accept
 ::
@@ -5081,7 +5249,7 @@
   ;<  offers=json  bind:m  (read-json (rf 0 / %'share-offers.json'))
   =/  cur=(map @t json)  ?:(?=([%o *] offers) p.offers ~)
   =/  full=(unit @t)  (offer-refusal:orr cur key src)
-  ?^  full  (note-inbox 'offer' | u.full (scot %p src))
+  ?^  full  (offer-said src 'body' id | u.full)
   =/  offer=json
     %-  pairs:enjs:format
     :~  ['host' s+(scot %p src)]
@@ -5104,7 +5272,7 @@
         ['at' (en-time:orr now)]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'share-offers.json') [[/ %json] [%o (~(put by cur) key offer)]])
-  (note-inbox 'offer' & key (scot %p src))
+  (offer-said src 'body' id & key)
 ::  +take-revoke: the offer and the accepted row go; the mirrored
 ::  observations stay, with the host still named as their source
 ::
@@ -5344,6 +5512,7 @@
   ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
   ;<  bv=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
   =/  uids=(list @t)  ?.(?=([%ball *] bv) ~ (cal-uids:orr (rows-in:om ball.bv)))
+  ;<  ~  bind:m  (forget-answer up id shp)
   %^  remote-poke-wait  shp  [%& orrery-instance %'shares.sig']
   %-  pairs:enjs:format
   :~  ['action' s+'offer']
@@ -5390,6 +5559,7 @@
   ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
   ;<  ~  bind:m
     (over:io (rf up / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
+  ;<  ~  bind:m  (forget-answer up id shp)
   ;<  *  bind:m
     %^  remote-poke-wait  shp  [%& orrery-instance %'shares.sig']
     (pairs:enjs:format ~[['action' s+'revoke'] ['id' s+id]])
@@ -5407,11 +5577,12 @@
   ;<  so=json  bind:m  (read-json (rf 1 / %'sphere-offers.json'))
   ;<  sf=json  bind:m  (read-json (rf 1 / %'sphere-follows.json'))
   ;<  sit=json  bind:m  (read-json (rf 1 / %'situation-shares.json'))
+  ;<  ans=json  bind:m  (read-json (rf 1 / %'offer-answers.json'))
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['shares' shares]  ['offers' offers]  ['accepted' rows]
       ['sphere_shares' ss]  ['sphere_offers' so]  ['sphere_follows' sf]
-      ['situation_shares' sit]
+      ['situation_shares' sit]  ['offer_answers' ans]
   ==
 ::  +serve-accept: an offered body becomes ours to follow. The target is
 ::  a local body that already carries the offered ship, else where

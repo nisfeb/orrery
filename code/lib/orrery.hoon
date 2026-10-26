@@ -1676,6 +1676,30 @@
     |=(r=row (ref-or-text value.obs.r))
   ?:  (lien in |=(s=@t =(s sphere)))  `id.l
   ?:(&(=(~ in) =('sphere/home' sphere)) `id.l ~)
+::  +feed-sent: the members whose rows and corrections a sphere's feed
+::  carries: every member but an identity (the owner's self, or a body
+::  carrying a ship) that only another ship filed under the sphere.
+::  Pairing files those here when the host's feed names them, which is
+::  as it should be on the way in; the owner's own rows about themselves,
+::  or about someone with a ship, go back to that host only once the
+::  owner, or a model the owner trusts there, files the body under the
+::  sphere too (version 126)
+::
+++  feed-sent
+  |=  [all=(list loaded) sphere=bid members=(set bid)]
+  ^-  (set bid)
+  %-  silt
+  %+  murn  all
+  |=  l=loaded
+  ^-  (unit bid)
+  ?.  (~(has in members) id.l)  ~
+  ?.  |(=('person/me' id.l) ?=(^ ship.body.l))  `id.l
+  =/  naming=(list row)
+    %+  skim  rows.l
+    |=(r=row &(=('sphere' attr.obs.r) !retracted.obs.r =(sphere (ref-or-text value.obs.r))))
+  ?:  (lien naming |=(r=row (is-local obs.r)))  `id.l
+  ?:  =(~ naming)  `id.l
+  ~
 ::  +feed-rows: a member's rows the feed may carry: this ship's own (a
 ::  row from a ship never goes back out), no twin, no attribute the
 ::  policy keeps back, no row the owner keeps private, and of its sphere

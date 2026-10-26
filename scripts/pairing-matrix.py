@@ -101,10 +101,32 @@ check('the body said to be different comes as its own', bool(wait('the other com
       and not values(peer, ASH2, 'likes', HOSTNAME), (values(peer, ASH, 'likes'), values(peer, ASH2, 'likes')))
 check('a body the peer lacked is made', bool(wait('the boat comes', lambda: values(peer, BOAT, 'likes', HOSTNAME) or None, 60)), BOAT)
 check("the partner's rows land on the peer's own self", 'gate ' + RUN in values(peer, 'person/me', 'likes', HOSTNAME), values(peer, 'person/me', 'likes'))
+
+# what goes back in edit mode (version 126): the peer's own rows about
+# itself stay home while only the host filed it under the sphere; a row on
+# a body the host brought goes back at once; once the peer's owner files
+# themself there too, their rows about themself go
+MOOD = 'gate mood ' + RUN
+observe(peer, 'person/me', 'mood', MOOD)
+observe(peer, BOAT, 'colour', 'gate ' + RUN)
+peer('POST', '/sync')
+check("a row on a body the host brought goes back", bool(wait("the boat's colour reaches the host", lambda: values(host, BOAT, 'colour', PEERNAME) or None, 120)), values(host, BOAT, 'colour'))
+#  the host may keep more than one body carrying the peer's ship (an
+#  earlier body share's), and an entry lands on the one the peer names
+def self_moods():
+    selves = [b.get('id') for b in listish(dictish(host('GET', '/state')[1]).get('bodies')) if dictish(b).get('ship') == PEERNAME]
+    return sorted(v for b in selves for v in values(host, b, 'mood', PEERNAME))
+check("the peer's row about itself stays home while only the host filed it", MOOD not in self_moods(), self_moods())
+observe(peer, 'person/me', 'sphere', ref(LOCAL))
+peer('POST', '/sync')
+check('filed there by its own owner, it goes', bool(wait('the mood reaches the host', lambda: (MOOD in self_moods()) or None, 180)), self_moods())
 check('the host has nothing to ask: what the peer holds came with its twins', not [p for p in listish(host('GET', '/pairing')[1]) if SPH in str(dictish(p).get('sphere'))], host('GET', '/pairing')[1])
 
 # put back what this run made
 host('DELETE', '/sphere-share/' + SPH + '/' + PEERNAME)
+for r in rows(peer, 'person/me', 'mood') + rows(peer, 'person/me', 'sphere'):
+    if dictish(r.get('source')).get('id') == 'pairing-' + RUN:
+        peer('POST', '/retract', {'id': r.get('obs', ''), 'note': 'pairing gate'})
 for r in rows(peer, 'person/me', 'likes') + rows(peer, 'person/me', 'twin'):
     if r.get('by') == HOSTNAME or dictish(r.get('value')).get('id') == PARTNER or r.get('by') == 'share' and PARTNER in str(r.get('value')):
         peer('POST', '/retract', {'id': r.get('obs', ''), 'note': 'pairing gate'})

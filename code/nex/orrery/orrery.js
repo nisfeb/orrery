@@ -1597,7 +1597,7 @@
       return '<li>' + bodyLink(s, state) + ' with ' + ships.map(function (ship) {
         var reading = Object.keys(follows).map(function (k) { return obj(follows[k]); }).filter(function (f) { return f.role === 'host' && f.local === s && f.host === ship; })[0];
         return esc(nameOfShip(ship, state)) + ' <span class="muted">' + (sphereShares[s][ship] === 'edit' ? 'can edit' : 'read only') +
-          (reading ? ' &middot; their edits: ' + lastLine(reading) : '') + '</span> <button class="small danger" data-unshare-sphere="' + esc(s) + '" data-ship="' + esc(ship) + '">stop</button>';
+          (reading ? ' &middot; their edits: ' + lastLine(reading) : '') + refusedText(shares, s, ship) + '</span> <button class="small danger" data-unshare-sphere="' + esc(s) + '" data-ship="' + esc(ship) + '">stop</button>';
       }).join('; ') + '</li>';
     }).join('') + '</ul>';
     if (!people.length) out += '<p class="muted">To share, add a person with their ship: a person body with a ship.</p>';
@@ -1626,7 +1626,7 @@
     var viaSit = function (id, ship) { return Object.keys(obj(obj(shares.situation_shares)[id])).some(function (p) { return obj(shares.situation_shares[id][p]).ship === ship; }); };
     if (bIds.length) out += '<h3>You share</h3><ul>' + bIds.map(function (id) {
       return '<li>' + bodyLink(id, state) + ' with ' + Object.keys(obj(bShares[id])).map(function (ship) {
-        return esc(nameOfShip(ship, state)) + ' <span class="muted">' + (bShares[id][ship] === 'edit' ? 'can edit' : 'read only') + '</span> ' +
+        return esc(nameOfShip(ship, state)) + ' <span class="muted">' + (bShares[id][ship] === 'edit' ? 'can edit' : 'read only') + refusedText(shares, id, ship) + '</span> ' +
           (viaSit(id, ship) ? '<span class="muted">through the situation\'s shared-with; remove them on its page</span>'
             : '<button class="small danger" data-unshare-body="' + esc(id) + '" data-ship="' + esc(ship) + '">stop</button>');
       }).join('; ') + '</li>';
@@ -1661,6 +1661,12 @@
       ' Each body page lets you keep a row to yourself, or share it again.</p></div>';
     return out;
   }
+  // an offer the other ship refused, and why (version 126); an offer it
+  // took, or an orrery too old to answer, says nothing
+  function refusedText(shares, ref, ship) {
+    var a = obj(obj(obj(shares).offer_answers)[ref + '|' + ship]);
+    return a.taken === false ? ' &middot; their ship refused the offer: ' + esc(a.why || 'no reason given') : '';
+  }
   // the card on a body's page: who it is shared with and the form to
   // share it (a sphere's whole; a situation's alone, by person); the rows
   // the owner may keep to themselves when the body is in a shared sphere
@@ -1672,7 +1678,7 @@
       var with_ = obj(obj(shares.sphere_shares)[v.id]);
       var ships = Object.keys(with_);
       out += ships.length ? '<p>This sphere is shared with ' + ships.map(function (s) {
-        return esc(nameOfShip(s, state)) + ' <span class="muted">' + (with_[s] === 'edit' ? 'can edit' : 'read only') + '</span> <button class="small danger" data-unshare-sphere="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
+        return esc(nameOfShip(s, state)) + ' <span class="muted">' + (with_[s] === 'edit' ? 'can edit' : 'read only') + refusedText(shares, v.id, s) + '</span> <button class="small danger" data-unshare-sphere="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
       }).join('; ') + '</p>' : '<p class="muted">Not shared.</p>';
       if (people.length) out += '<div id="share-sphere-form"><input type="hidden" name="sphere" value="' + esc(v.id) + '"><p><label class="field">share it with ' + personPicker('ship', people, { ships: true }) + '</label> ' +
         '<label class="field">' + modeSelect('mode') + '</label> <button data-share-sphere="1">share the sphere</button></p></div>';
@@ -1683,7 +1689,7 @@
       var sitWith = obj(obj(shares.situation_shares)[v.id]);
       var bs = Object.keys(bw).filter(function (s) { return !Object.keys(sitWith).some(function (p) { return obj(sitWith[p]).ship === s; }); });
       out += bs.length ? '<p>Shared alone with ' + bs.map(function (s) {
-        return esc(nameOfShip(s, state)) + ' <span class="muted">' + (bw[s] === 'edit' ? 'can edit' : 'read only') + '</span> <button class="small danger" data-unshare-body="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
+        return esc(nameOfShip(s, state)) + ' <span class="muted">' + (bw[s] === 'edit' ? 'can edit' : 'read only') + refusedText(shares, v.id, s) + '</span> <button class="small danger" data-unshare-body="' + esc(v.id) + '" data-ship="' + esc(s) + '">stop</button>';
       }).join('; ') + '</p>' : '';
       if (people.length) out += '<div id="share-body-form"><p><label class="field">share this alone with ' + personPicker('ship', people, { ships: true }) + '</label> ' +
         '<label class="field">' + modeSelect('mode') + '</label> <button data-share-body="' + esc(v.id) + '">share</button></p></div>';
@@ -2022,7 +2028,7 @@
       say('sharing your location');
       post('/location/share', lf).then(function () { say('location shared'); fillLocation(); }).catch(oops);
     } else if (b.dataset.acceptSphere) {
-      if (!confirm('Accept this sphere? It lands on a new sphere here. Whatever ' + b.dataset.host + ' files under it comes in, and in edit mode what you file under it goes back to them.')) return;
+      if (!confirm('Accept this sphere? It lands on a new sphere here. Whatever ' + b.dataset.host + ' files under it comes in. In edit mode what you add to it goes back to them; you, and people with a ship, only once you file them under it yourself.')) return;
       post('/sphere-accept', { host: b.dataset.host, sphere: b.dataset.sphere }).then(function () { shared('accepted: the sphere comes in once any matches are paired'); }).catch(oops);
     } else if (b.dataset.declineSphere) {
       post('/sphere-decline', { host: b.dataset.host, sphere: b.dataset.sphere }).then(function () { shared('declined'); }).catch(oops);

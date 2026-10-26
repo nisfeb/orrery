@@ -81,6 +81,10 @@ observe(host, C, 'status', 'elsewhere')
 code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode': 'edit'})
 check('share the sphere in edit mode', code == 200 and dictish(d).get('notified') is True, (code, d))
 wait('the offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
+def answer(ref):
+    return dictish(dictish(dictish(host('GET', '/shares')[1]).get('offer_answers')).get(ref + '|' + PEERNAME))
+got = wait("the peer's answer reaches the host", lambda: answer(SPH) or None, 90) or {}
+check('the host hears the offer was taken (version 126)', got.get('taken') is True, got)
 code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
 LOCAL = str(dictish(d).get('local'))
 check('the peer accepts it onto a new sphere of its own, never the id the host chose (security audit)',
@@ -180,17 +184,33 @@ peer('POST', '/sync')
 got = wait('a new member comes in', lambda: values(peer, F, 'sphere') or None, 120) or []
 check('it is filed under the new sphere, not the old one', got == [LOCAL2], got)
 
-# deleting a shared sphere ends its shares, on both sides (security audit)
+# deleting a shared sphere ends its shares, on both sides (security audit),
+# and the other side is told (version 126)
 code, d = peer('DELETE', '/body/' + LOCAL2)
 check('the peer deletes the sphere it accepted', code == 200, (code, d))
 ps = dictish(peer('GET', '/shares')[1])
 check('its follow goes', not [f for f in dictish(ps.get('sphere_follows')).values() if dictish(f).get('local') == LOCAL2], ps.get('sphere_follows'))
 check('and its own feed back to the host', LOCAL2 not in dictish(ps.get('sphere_shares')), ps.get('sphere_shares'))
+def host_shares_peer():
+    return PEERNAME in dictish(dictish(dictish(host('GET', '/shares')[1]).get('sphere_shares')).get(SPH))
+check('the host is told: the peer leaves its record', bool(wait('the leave reaches the host', lambda: (not host_shares_peer()) or None, 120)),
+      dictish(dictish(host('GET', '/shares')[1]).get('sphere_shares')).get(SPH))
+#  shared once more, then the host deletes it while the peer follows
+code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode': 'edit'})
+wait('the third offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
+code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+LOCAL3 = str(dictish(d).get('local'))
+check('accepted a third time', code == 200 and LOCAL3.startswith(SPH + '-'), (code, d))
 code, d = host('DELETE', '/body/' + SPH)
 check('the host deletes the shared sphere', code == 200, (code, d))
 hs = dictish(host('GET', '/shares')[1])
 check('its share record goes', SPH not in dictish(hs.get('sphere_shares')), hs.get('sphere_shares'))
 check("and the host's follow of the peer's feed", not [f for f in dictish(hs.get('sphere_follows')).values() if dictish(f).get('local') == SPH], hs.get('sphere_follows'))
+def peer_follows():
+    ps = dictish(peer('GET', '/shares')[1])
+    return KEY in dictish(ps.get('sphere_follows')) or LOCAL3 in dictish(ps.get('sphere_shares'))
+check('the peer is told: its follow and its feed back end', bool(wait('the revoke reaches the peer', lambda: (not peer_follows()) or None, 120)),
+      dictish(peer('GET', '/shares')[1]).get('sphere_follows'))
 
 # one ship may have five offers waiting, no more (security audit)
 CAPS = ['sphere/gate-cap-%d-%s' % (i, RUN) for i in range(6)]
@@ -201,6 +221,8 @@ for c in CAPS:
 time.sleep(10)
 waiting = [k for k in dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')) if k.startswith(HOSTNAME + '|')]
 check('five offers from one ship wait, the sixth is refused', len(waiting) == 5, waiting)
+got = wait('the refusal reaches the host', lambda: (lambda a: a if 'taken' in a else None)(answer(CAPS[5])), 120) or {}
+check('the host hears the sixth was refused, and why (version 126)', got.get('taken') is False and 'five offers' in str(got.get('why')), got)
 for k in waiting:
     peer('POST', '/sphere-decline', {'host': HOSTNAME, 'sphere': k.split('|', 1)[1]})
 for c in CAPS:
@@ -208,7 +230,7 @@ for c in CAPS:
 
 for b in (A, B, C, D, E, F, SPH, OTHER):
     host('DELETE', '/body/' + b)
-for b in (A, B, D, E, F, LOCAL, LOCAL2):
+for b in (A, B, D, E, F, LOCAL, LOCAL2, LOCAL3):
     peer('DELETE', '/body/' + b)
 host('PUT', '/policy', pol)
 print()

@@ -259,6 +259,10 @@ ok('bodies shared alone, both ways, situations by how each person is reached, th
 const viaSit = render.sharing(shState, Object.assign({}, shShares, { shares: { 'situation/party': { '~zod': 'edit' } } }), {}, [], {}, {});
 ok("a situation's own share is not stopped from the bodies list: the next pass would share it again",
   viaSit.includes("through the situation's shared-with") && !viaSit.includes('data-unshare-body="situation/party"'));
+const refused = render.sharing(shState, Object.assign({}, shShares, { offer_answers: {
+  'sphere/home|~zod': { taken: false, why: 'five offers from this ship wait already' }, 'thing/boat|~zod': { taken: true, why: '' } } }), {}, [], {}, {});
+ok('an offer the other ship refused says why; one it took says nothing (version 126)',
+  refused.includes('their ship refused the offer: five offers from this ship wait already') && (refused.match(/refused the offer/g) || []).length === 1);
 ok('the sphere form chooses nothing by itself, and says what home shares', shHtml.includes('<option value="">choose a sphere</option>') && shHtml.includes('Home (every body filed under none)'));
 const sphCard = render.bodySharingCard({ id: 'sphere/home', kind: 'sphere', attrs: {} }, shState, shShares, {});
 ok("a sphere's card shares the whole sphere", sphCard.includes('This sphere is shared with Sam') && sphCard.includes('<input type="hidden" name="sphere" value="sphere/home">'));
