@@ -1597,6 +1597,10 @@
       (expect-eq !>(~) !>((feed-corrections:orr ~[['thing/boat' 'health' 'early dementia' 'that was his brother' now 'owner']] (silt ~['thing/boat']) ~ (silt ~['health']))))
       (expect-eq !>(~) !>((feed-corrections:orr ~[['thing/boat' 'twin' 'x' '' now 'owner']] (silt ~['thing/boat']) ~ ~)))
     ==
+    ::  twinned twice to one ship, the entry names the newest twin (126)
+    =/  tw  |=([i=@t at=@da] ^-(row:orr [(cat 3 'tw-' i) ['thing/boat' 'twin' (pairs:enjs:format ~[['ship' s+'~zod'] ['id' s+i]]) at ~ 100 ['share' 'x'] 'share' at | '']]))
+    =/  twice  boat(rows ~[(tw 'thing/new' (sub now ~h1)) (tw 'thing/old' (sub now ~d1))])
+    (expect-eq !>('thing/new') !>((gs:orr (body-twins:orr twice now) '~zod')))
     ::  an entry carries the body's twins, its name and the row as carried
     =/  e=json  (en-feed-row:orr 7 boat (snag 2 rows.boat) (body-twins:orr boat now))
     (expect-eq !>(['row' 'thing/boat' 'location' 'thing/skiff' 7]) !>([(gs:orr e 'op') (gs:orr e 'name') (gs:orr (gj:orr e 'row') 'attr') (gs:orr (gj:orr e 'as') '~zod') (fall (gn:orr e 'seq') 0)]))

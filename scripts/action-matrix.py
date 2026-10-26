@@ -149,6 +149,12 @@ for bid in (SPH, PARTNER, BOAT, LONE):
     host('DELETE', '/body/' + bid)
 for bid in (LOCAL, BOAT):
     peer('DELETE', '/body/' + bid)
+#  the pairing twinned the peer's self to this run's partner, now deleted
+code, me = peer('GET', '/body/person/me')
+tws = dictish(dictish(me).get('attrs')).get('twin')
+for r in (tws if isinstance(tws, list) else [tws] if tws else []):
+    if dictish(dictish(r).get('value')).get('id') == PARTNER:
+        peer('POST', '/retract', {'id': dictish(r).get('obs', ''), 'note': 'action gate'})
 peer('PUT', '/policy', ppol)
 host('PUT', '/policy', hpol)
 print()

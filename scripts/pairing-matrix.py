@@ -114,8 +114,10 @@ check("a row on a body the host brought goes back", bool(wait("the boat's colour
 #  the host may keep more than one body carrying the peer's ship (an
 #  earlier body share's), and an entry lands on the one the peer names
 def self_moods():
-    selves = [b.get('id') for b in listish(dictish(host('GET', '/state')[1]).get('bodies')) if dictish(b).get('ship') == PEERNAME]
-    return sorted(v for b in selves for v in values(host, b, 'mood', PEERNAME))
+    #  the host bodies the peer's self is twinned to: an entry lands on one
+    #  of them (GET /state lists only some bodies, so not from there)
+    selves = {dictish(r.get('value')).get('id') for r in rows(peer, 'person/me', 'twin') if dictish(r.get('value')).get('ship') == HOSTNAME}
+    return sorted(v for b in selves if b for v in values(host, b, 'mood', PEERNAME))
 check("the peer's row about itself stays home while only the host filed it", MOOD not in self_moods(), self_moods())
 observe(peer, 'person/me', 'sphere', ref(LOCAL))
 peer('POST', '/sync')

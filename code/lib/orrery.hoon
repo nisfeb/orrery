@@ -1745,7 +1745,10 @@
       !(~(has in done) (correction-key c))
   ==
 ::  +body-twins: a body's twins, ship to that ship's id, as an entry
-::  carries them so a peer lands it on the body it already knows
+::  carries them so a peer lands it on the body it already knows. A body
+::  twinned to more than one body of a ship names the newest twin: an
+::  older one may be a body that ship has since deleted, which an entry
+::  would make again there (version 126)
 ::
 ++  body-twins
   |=  [l=loaded now=@da]
@@ -1753,7 +1756,9 @@
   ?.  (lien rows.l |=(r=row =('twin' attr.obs.r)))  [%o ~]
   :-  %o
   %-  ~(gas by *(map @t json))
-  %+  murn  (fall (~(get by (fold rows.l (sy ~['twin']) now)) 'twin') ~)
+  %+  murn
+    %+  sort  (fall (~(get by (fold rows.l (sy ~['twin']) now)) 'twin') ~)
+    |=([a=row b=row] (lth at.obs.a at.obs.b))
   |=  r=row
   ^-  (unit [@t json])
   =/  s=@t  (gs value.obs.r 'ship')
