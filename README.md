@@ -232,7 +232,7 @@ A task is placed without a claim and stays `approved` until it is done, and the 
 - Marked done on the page, its todo is ticked, once, with a mark in the todo's meta (`ticked`, the action's id) saying the ship ticked it for that action.
 - Unticked in the calendar after either tick, it stays unticked (version 65; until then the ship ticked it back every pass). Done stays done: the todo is taken up afresh as an approved task filed `by` `calendar`, about what the old one was about, and ticking it again closes that one.
 - Dismissed or failed on the page, its todo is deleted.
-- A todo you type into the calendar by hand becomes an approved task filed `by` `calendar` and gains the mark in the same pass, so it is adopted once.
+- A todo you type into the calendar by hand becomes an approved task filed `by` `calendar` and gains the mark in the same pass, so it is adopted once. A todo someone else wrote is a proposal instead, filed `by` `shared-calendar`, never approved by the policy, never marked in its calendar and never placed back as a todo of yours: one from an ICS feed, one from a calendar that is not local when the calendar says which calendar a todo is in, and, while it does not say (as today), every todo on a ship whose calendar app holds another ship's shared calendar or a followed CalDAV calendar.
 
 The mirror runs on the calendar's own changes, so a tick reaches the ship within seconds. A message via `chat` is the companion client's, whose store the DM lives in, and is never touched.
 
