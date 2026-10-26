@@ -1130,6 +1130,13 @@ check('the DM list answers items and a note', code == 200 and isinstance(dictish
 code, d = curl('PUT', API + '/chat', {'enabled': False})
 check('the reader is switched off again', code == 200, (code, d))
 
+
+def kernel_refused(code, d):
+    """a newer grubbery kernel refuses a write carrying the owner's session
+    from another site before the app sees it (grubbery #4): its own 403
+    page, which counts as the refusal orrery would have made"""
+    return code == 403 and 'Cross-Origin Request Blocked' in str(d)
+
 # ---- version 57: the version route, both chat lists in one pass ----
 code, d = curl('GET', API + '/state?brief=1')
 check('the brief state view answers with values, open situations and the kinds, no provenance',
@@ -1138,7 +1145,7 @@ check('the brief state view answers with values, open situations and the kinds, 
 code, d = curl('GET', API + '/version', jar=None, token=dictish(curl('POST', API + '/clients', {'name': 'gate version', 'by': 'gate-v', 'scope': {'kinds': ['person'], 'actions': [], 'write': False}})[1]).get('token'))
 check('any key reads the version, the desk\'s', code == 200 and dictish(d).get('version') == json.load(open('code/version.json'))['version'], (code, d))
 code, d = gate.curl('POST', API + '/exec/wake', {}, jar=JAR, headers=['Sec-Fetch-Site: cross-site'])
-check('the owner\'s cookie on a request another site sent changes nothing', code == 403 and dictish(d).get('error') == 'a request from another site is refused', (code, d))
+check('the owner\'s cookie on a request another site sent changes nothing', code == 403 and (dictish(d).get('error') == 'a request from another site is refused' or kernel_refused(code, d)), (code, d))
 code, d = curl('GET', API + '/chat/lists')
 check('the chat lists come as one document, each with items and a note', code == 200 and isinstance(dictish(dictish(d).get('dms')).get('items'), list) and 'note' in dictish(dictish(d).get('channels')), (code, d))
 
@@ -1951,9 +1958,9 @@ if code == 200:
 # so on plain http an owner POST that carries an Origin must say application/json, body or not ----
 print('== the owner\'s cookie from another site')
 code, d = gate.curl('POST', API + '/sync', jar=JAR, headers=['Origin: http://evil.example'])
-check('an owner POST with an Origin and no JSON type is refused', code == 415, (code, d))
+check('an owner POST with an Origin and no JSON type is refused', code == 415 or kernel_refused(code, d), (code, d))
 code, d = gate.curl('POST', API + '/sync', jar=JAR, headers=['Origin: http://evil.example', 'content-type: application/x-www-form-urlencoded'], raw='')
-check('so is an empty form post from another site', code == 415, (code, d))
+check('so is an empty form post from another site', code == 415 or kernel_refused(code, d), (code, d))
 code, d = gate.curl('POST', API + '/sync', {}, jar=JAR, headers=['Origin: ' + HOST])
 check('the page\'s own JSON POST goes through', code == 200, (code, d))
 code, d = gate.curl('POST', API + '/sync', jar=JAR)
