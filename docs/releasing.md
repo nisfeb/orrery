@@ -224,6 +224,21 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 125's owner steps
+
+Nothing to do: no new roads, so no consent prompt. This release closes what a security review of orrery found. What you may notice:
+
+- Keys see and write only what their scope says, including what they read back through the chat, browsing and action routes. A key can no longer be minted to write as a name the ship signs its own writes with; a key made before that keeps working, so look over the keys list. A key can now be minted to expire after a number of days, and revoking a key drops whatever it handed the read channel or the browsing reader that has not been read yet.
+- An address for a person (a ship, a Telegram id, an email) that someone else's message claims is dropped. Your own words propose it as a fact for you to approve.
+- A situation shared through a shared-with row that you did not write asks you first.
+- Sharing your location until you get home needs the ship to know where home is.
+- The page runs only its own script, and a request carrying your cookie from another site must be JSON.
+- Accepting a shared sphere puts it in a new sphere of yours, never one you already have, and the card asks before it accepts. When the other ship files one of your bodies into the shared sphere, you are asked. When it says one of its bodies is one of yours, that waits in To pair unless you gave it that body. Deleting or merging away a shared sphere ends its shares, and deleting a body a share you accepted lands on ends that share. At most five sphere offers from one ship wait at a time.
+- A todo from an ICS feed is a proposal for you to approve. If your calendar app holds a calendar shared from another ship, or a CalDAV calendar you follow, every todo waits for your tap, the ones you type included, until the calendar app says which calendar each todo is in.
+- Lattice pages at a body's path reach the generator as notes in your wiki, context rather than your word.
+- An address a stored key is sent to (the generator, place lookups, Telegram, Mapbox, the flight API, an Armillary offer) must be https, or http to this machine. Changing one clears its stored key unless you give a new key with it.
+- Armillary is read only from its own desk.
+
 ### Version 124's owner steps
 
 Nothing to do: no new roads, so no consent prompt. Running late no longer proposes a message for you to send. Whom it picked was a guess, and since your own calendar names you as the organizer it was nearly always your spouse. Late now means the drive gets you there after the start. The minutes to park still set when to leave but no longer count as late, so getting there by the start no longer pushes "Running about 5 min late". The push still comes when the drive will get you there five minutes or more after the start.
