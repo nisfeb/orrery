@@ -59,6 +59,9 @@ ref = lambda b: {'ref': b}
 KEY = HOSTNAME + '|' + SPH
 
 print('== the sphere feed between', HOSTNAME, 'and', PEERNAME)
+#  an offer an aborted run left would count against this run's cap
+for k in [k for k in dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')) if k.startswith(HOSTNAME + '|')]:
+    peer('POST', '/sphere-decline', {'host': HOSTNAME, 'sphere': k.split('|', 1)[1]})
 _, pol = host('GET', '/policy')
 pol = dictish(pol)
 host('PUT', '/policy', dict(pol, sensitive=sorted(set(listish(pol.get('sensitive'))) | {'health'})))
@@ -162,6 +165,15 @@ wait('the second offer reaches the peer', lambda: dictish(dictish(peer('GET', '/
 code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
 LOCAL2 = str(dictish(d).get('local'))
 check('accepted again, it lands on another new sphere', code == 200 and LOCAL2.startswith(SPH + '-') and LOCAL2 != LOCAL, (code, d))
+#  the host names D by the peer's own id for it, which the peer gave the
+#  host through a feed it has since closed: that claim waits for the owner
+peer('POST', '/sync')
+KEY2 = HOSTNAME + '|' + SPH
+asked = wait("the host's word for D waits for the peer's owner", lambda: [p for p in listish(peer('GET', '/pairing')[1])
+              if dictish(p).get('key') == KEY2 and dictish(p).get('there') == D] or None, 90) or []
+check("a claim the peer cannot vouch for asks (security audit)", bool(asked) and dictish(asked[0]).get('why') == 'twin', asked)
+for p in asked:
+    peer('POST', '/pairing', {'key': KEY2, 'there': D, 'same': True})
 F = 'thing/gate-sp-f-' + RUN
 observe(host, F, 'sphere', ref(SPH), bodies=[{'id': F, 'name': 'Gate F ' + RUN}])
 peer('POST', '/sync')
@@ -184,6 +196,7 @@ check("and the host's follow of the peer's feed", not [f for f in dictish(hs.get
 CAPS = ['sphere/gate-cap-%d-%s' % (i, RUN) for i in range(6)]
 for c in CAPS:
     observe(host, c, 'summary', 'cap gate', bodies=[{'id': c, 'name': 'Cap ' + c[-8:]}])
+    wait('the cap sphere is made', lambda: has_body(host, c) or None, 30)
     host('POST', '/sphere-share', {'sphere': c, 'ship': PEERNAME, 'mode': 'read'})
 time.sleep(10)
 waiting = [k for k in dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')) if k.startswith(HOSTNAME + '|')]

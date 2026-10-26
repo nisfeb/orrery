@@ -1503,16 +1503,18 @@
         (row 'place/the-pool' 'Pool' ~ ~ ~)
         (row 'thing/boat' 'Boat' ~ ~ ~[[~wet 'thing/skiff']])
         (row 'thing/oar' 'Oar' ~ ~ ~[[~wet 'person/ash-1']])
+        (row 'thing/rope' 'Rope' ~ ~ ~[[~wet 'person/ash-2']])
         (row 'thing/new' 'New' ~ ~ ~)
     ==
   ;:  weld
     ::  our ship is our self; theirs is the body carrying it; the event by
     ::  its uid; the name waits; two of a name match none; the paired and the
     ::  unknown are left out; a twin they name here is taken only if it
-    ::  exists, and waits for the owner (security audit, D1)
+    ::  exists, and waits for the owner unless this ship gave that ship
+    ::  the body (security audit, D1)
     %+  expect-eq
-      !>(`(list [@t @t @t ?])`~[['person/partner' 'person/me' 'ship' &] ['person/partner-2' 'person/me' 'ship' &] ['person/me' 'person/sam' 'ship' &] ['person/rowan' 'person/kid-r' 'name' |] ['situation/bday' 'situation/party' 'event' &] ['thing/oar' 'person/ash-1' 'twin' |]])
-    !>((match-roster:orr ros all ~zod ~wet now))
+      !>(`(list [@t @t @t ?])`~[['person/partner' 'person/me' 'ship' &] ['person/partner-2' 'person/me' 'ship' &] ['person/me' 'person/sam' 'ship' &] ['person/rowan' 'person/kid-r' 'name' |] ['situation/bday' 'situation/party' 'event' &] ['thing/oar' 'person/ash-1' 'twin' |] ['thing/rope' 'person/ash-2' 'twin' &]])
+    !>((match-roster:orr ros all ~zod ~wet now (silt ~['person/ash-2'])))
     ::  the roster round trips
     =/  l  (mk 'person/sam' %person 'Sam' `~zod ~[['twin' (twin '~wet' 'person/s') 'share' 'x'] ['starts' s+'x' 'calendar' '0vx']])
     %+  expect-eq

@@ -4336,7 +4336,20 @@
   ::  the sphere itself was paired by the accept, whose twin may not be
   ::  written yet: it is never a match to ask about
   =/  rr=(list roster-row:orr)  (skip (de-roster:orr ros) |=(r=roster-row:orr =(id.r there.sphere)))
-  =/  found=(list [there=bid:orr here=bid:orr why=@t sure=?])  (match-roster:orr rr all src our now)
+  ::  what this ship gave that ship: the bodies shared with it alone, and
+  ::  the members of each sphere shared with it. Its word for one of
+  ::  these is sure; for any other body it waits for the owner
+  ;<  shares=(map @t json)  bind:m  (read-map (rf 0 / %'shares.json'))
+  ;<  sh=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-shares.json'))
+  =/  names  |=(j=json &(?=([%o *] j) (~(has by p.j) (scot %p src))))
+  =/  vouched=(set bid:orr)
+    %-  ~(gas in (silt (murn ~(tap by shares) |=([i=@t j=json] ?.((names j) ~ `i)))))
+    %-  zing
+    %+  murn  ~(tap by sh)
+    |=  [s=@t j=json]
+    ?.  (names j)  ~
+    `~(tap in (sphere-members:orr all s now))
+  =/  found=(list [there=bid:orr here=bid:orr why=@t sure=?])  (match-roster:orr rr all src our now vouched)
   =/  sure  [[there.sphere here.sphere] (turn (skim found |=([* * * s=?] s)) |=([t=bid:orr h=bid:orr * *] [t h]))]
   =/  ask  (skip found |=([* * * s=?] s))
   =/  have  (twin-index:orr all now)

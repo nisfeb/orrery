@@ -1816,16 +1816,17 @@
       `[u.s p.v]
   ==
 ::  +match-roster: each member of another ship's roster this ship holds
-::  too, and how it knows: the same ship, the same calendar event (sure,
-::  so their twins are written at once), or the other ship's twin for it
-::  here or the same kind and name, which wait for the owner. A
+::  too, and how it knows: the same ship, the same calendar event, or the
+::  other ship's twin for it here when this ship gave it that body (sure,
+::  so their twins are written at once); its twin for a body it was not
+::  given, or the same kind and name, which wait for the owner. A
 ::  member already a twin here is left out. A sure match may share its
 ::  body here with another (two bodies there carrying one ship are one
 ::  person); a match by name may not, and a name that matches two
 ::  bodies here matches none.
 ::
 ++  match-roster
-  |=  [ros=(list roster-row) all=(list loaded) src=@p our=@p now=@da]
+  |=  [ros=(list roster-row) all=(list loaded) src=@p our=@p now=@da vouched=(set bid)]
   ^-  (list [there=bid here=bid why=@t sure=?])
   =/  twins  (twin-index all now)
   =/  ships  (ship-index all)
@@ -1842,10 +1843,11 @@
     ?:  |(&(!sure (~(has in used) here)) !(~(has in held) here))  out
     [[id.r here why sure] out]
   ?:  (~(has by twins) [src id.r])  $(ros t.ros)
-  ::  the sender's word for which body it is here waits for the owner:
-  ::  sure, it would let a peer pair itself with any body here
+  ::  the sender's word for which body it is here is sure only for a body
+  ::  this ship gave it: sure, it would let a peer pair itself with any
+  ::  body here (security audit, D1)
   =/  said=(unit bid)  (~(get by as.r) our)
-  ?^  said  $(ros t.ros, out (take u.said 'twin' |))
+  ?^  said  $(ros t.ros, out (take u.said 'twin' (~(has in vouched) u.said)))
   ?:  =(ship.r `our)  $(ros t.ros, out (take 'person/me' 'ship' &))
   =/  by-ship=(unit bid)  ?~(ship.r ~ (~(get by ships) u.ship.r))
   ?^  by-ship  $(ros t.ros, out (take u.by-ship 'ship' &))
