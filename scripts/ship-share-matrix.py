@@ -215,14 +215,21 @@ for name, value, sid in (('sphere', {'ref': 'sphere/home'}, 'share-5'), ('shared
     code, d = peer('POST', '/observe', {'bodies': [], 'observations': [
         {'subject': 'person/me', 'attr': name, 'value': value, 'at': iso(T0), 'source': {'kind': 'matrix', 'id': sid}, 'by': 'owner'}]})
     check('peer files a ' + name + ' row on the shared body', code == 200, d)
-peer('POST', '/sync')
-time.sleep(15)
+#  a plain row filed after them: once it is on the host, they went too
+code, d = observe(peer, 'person/me', 'errand', 'post office', T0, 'share-7')
+PRODDED[0] = 0
+def errand_on_host():
+    if time.time() - PRODDED[0] > 20:
+        PRODDED[0] = time.time()
+        peer('POST', '/sync')
+    return attr(host, 'person/sarah', 'errand')
+check('a plain row pushed after them reaches the host', bool(wait('the errand reaches the host', errand_on_host, 300)), attr(host, 'person/sarah', 'errand'))
 check("the peer's sphere row never lands on the host (security audit)", not by_peer('sphere'), by_peer('sphere'))
 check("nor its shared-with row", not by_peer('shared-with'), by_peer('shared-with'))
-for name in ('sphere', 'shared-with'):
+for name in ('sphere', 'shared-with', 'errand'):
     v = attr(peer, 'person/me', name)
     for r in (v if isinstance(v, list) else [v] if v else []):
-        if dictish(r).get('by') == 'owner' and source_id(r).startswith('share-'):
+        if source_id(r) in ('share-5', 'share-6', 'share-7'):
             retract(peer, r)
 code, d = retract(peer, dictish(attr(peer, 'person/me', 'health')))
 check('peer retracts the sensitive attribute', code == 200, d)

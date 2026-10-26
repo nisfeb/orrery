@@ -125,12 +125,20 @@ check('the host has an action the feed never carried', code == 200 and status(ho
 code, a = peer('POST', '/act', {'kind': 'note', 'title': FORGE + ' twin', 'about': [BOAT], 'by': 'action-matrix',
                                  'payload': {'text': 'end it', 'twin': {'ship': HOSTNAME, 'id': XID}}})
 FID = dictish(a).get('id', '')
-check('the peer files one naming it as its twin', code == 200 and dictish(dictish(a).get('payload')).get('twin', {}).get('id') == XID, (code, a))
+filed = dictish(next(iter(titled(peer, FORGE + ' twin')), {}))
+check('the peer files one naming it as its twin', code == 200 and dictish(dictish(filed.get('payload')).get('twin')).get('id') == XID, (code, a, filed))
 if status(peer, FID) == 'proposed':
     move(peer, FID, 'approved')
 move(peer, FID, 'dismissed')
+#  a row filed after the dismissal: once it is on the host, the host has
+#  read the page the dismissal went out on
+peer('POST', '/observe', {'bodies': [], 'observations': [{'subject': BOAT, 'attr': 'colour', 'value': 'forge ' + RUN,
+     'at': iso(NOW), 'conf': 100, 'source': {'kind': 'matrix', 'id': 'action-' + RUN}, 'by': 'owner'}]})
 peer('POST', '/sync')
-time.sleep(60)
+def host_colour():
+    v = dictish(dictish(host('GET', '/body/' + BOAT)[1]).get('attrs')).get('colour')
+    return [r for r in (v if isinstance(v, list) else [v] if v else []) if dictish(r).get('value') == 'forge ' + RUN] or None
+check('the host has read past the dismissal', bool(wait("the peer's later row reaches the host", host_colour, 180)), host_colour())
 check("the host's action stays open", status(host, XID) == 'proposed', status(host, XID))
 
 # put back what this run made
