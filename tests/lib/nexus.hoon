@@ -903,6 +903,10 @@
     (expect !>((answer-fits:orr %brief 200 '{"choices": []}')))
     (expect !>(!(answer-fits:orr %refine 200 '{"answers": {}}')))
     (expect !>((answer-fits:orr %other 200 '{}')))
+    ::  the flight API's is JSON; a watched page's late answer is not
+    (expect !>((answer-fits:orr %flight 200 '{"departure": {}}')))
+    (expect !>((answer-fits:orr %flight 200 '[{"number": "BA 1"}]')))
+    (expect !>(!(answer-fits:orr %flight 200 '<html>ETIAS is live</html>')))
   ==
 ::  ==  the writer's choices
 ::
@@ -1244,10 +1248,10 @@
     (expect-eq !>(`(unit path)`~) !>((page-segs:orr '')))
     ::  the text names whose page it is, the situation it is the record
     ::  of, the page, and each linked page under its path
-    (expect !>(?=([~ %0] (find "The owner's own page \"Rome\" (lattice page trips/rome). It is their record of Trip to Rome (situation/rome), which the ship already holds: what it says moves that situation on.\0a\0aFly Friday." (trip text)))))
+    (expect !>(?=([~ %0] (find "A page the owner follows in their wiki, \"Rome\" (lattice page trips/rome). Whoever the wiki lets edit it may have written what is new. It is their record of Trip to Rome (situation/rome), which the ship already holds: what it says moves that situation on.\0a\0aFly Friday." (trip text)))))
     (expect !>(?=(^ (find "\0aFly Friday.\0a\0a--- linked page trips/flights ---\0aTAP 1234" (trip text)))))
     (expect !>(?=(~ (find "record of" (trip (follow-text:orr 'p' '' 'x' ~ ~))))))
-    (expect !>(?=(^ (find "page \"p\" (lattice page p)" (trip (follow-text:orr 'p' '' 'x' ~ ~))))))
+    (expect !>(?=(^ (find "wiki, \"p\" (lattice page p)" (trip (follow-text:orr 'p' '' 'x' ~ ~))))))
     (expect-eq !>(follow-cap:orr) !>((met 3 (follow-text:orr 'p' '' (crip (reap 70.000 'a')) ~ ~))))
     ::  moves: a page moved, moved again, a folder moved over it; one never moved
     (expect-eq !>(`(unit @t)`[~ 'travel/lisbon-3']) !>((moved-to:orr 'notes/lisbon' moves)))

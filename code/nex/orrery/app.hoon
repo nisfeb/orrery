@@ -2231,9 +2231,11 @@
       ==
     (pure:m [~ ~[(say 'act' & 'an open action with this kind and title exists on the other ship' '')]])
   ::  a todo the owner typed is approved as it is filed (+own-todo); one
-  ::  another ship sent waits for the owner here, whatever the policy
+  ::  another ship sent waits for the owner here, whatever the policy, as
+  ::  does a todo from a calendar others write (security audit, D2)
   =/  own=?  (own-todo:orr p.got)
-  =/  auto=?  &(!crossing |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))))
+  =/  foreign=?  =(foreign-todo-by:orr by.p.got)
+  =/  auto=?  &(!crossing !foreign |(own =(%approved (initial-status:orr kind.p.got (auto-of:orr policy)))))
   =/  a=action:orr
     ?.  auto  p.got
     ?:  own  (transition:orr p.got %approved 'calendar' 'typed in the calendar' now)
@@ -8902,7 +8904,8 @@
   =/  req=request:http  [%'GET' url (flight-headers:orr cfg) ~]
   ;<  t=@da  bind:m  get-time:io
   ;<  ~  bind:m  (wait:io (add t ~s2))
-  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json req ~s30 %watch)
+  ::  its own wire, so a page's late answer is not read as the flight's
+  ;<  got=[status=@ud body=@t secs=@ud]  bind:m  (fetch-json req ~s30 %flight)
   ?.  =(200 status.got)
     (pure:m (set-key:orr w 'note' s+(rap 3 'flight API answered ' (crip (a-co:co status.got)) ~)))
   =/  new=(unit flight-view:orr)  (flight-status:orr (fall (de:json:html body.got) ~) (gs:orr w 'date') (gs:orr w 'from'))
@@ -10828,7 +10831,8 @@
     ?~  todos.cal  |
     =/  was=(unit action:orr)  (act-of acts id.p)
     ?~  was  |
-    ?:  =('calendar' by.u.was)  |
+    ::  nor one filed for another's todo, which stays in its own calendar
+    ?:  |(=('calendar' by.u.was) =(foreign-todo-by:orr by.u.was))  |
     !(lien u.todos.cal |=(t=todo:orr =(orrery.t id.p)))
   =/  need-mail=?  (lien plans |=(p=exec-plan:orr &(=(%mail target.p) =('' note.p))))
   ;<  cal-shut=(unit @t)  bind:m
@@ -10879,7 +10883,7 @@
     ==
   ?:  ?=(%| -.desk)  $(plans t.plans, tally p.desk)
   ?:  =(%todo target.p)
-    ?:  =('calendar' by.u.was)  $(plans t.plans)
+    ?:  |(=('calendar' by.u.was) =(foreign-todo-by:orr by.u.was))  $(plans t.plans)
     ?~  todos.cal  $(plans t.plans, tally (note-once tally 'a task waits: the todo list could not be read'))
     ?:  (lien u.todos.cal |=(t=todo:orr =(orrery.t id.p)))  $(plans t.plans)
     ;<  err=(unit tang)  bind:m  (poke-calendar p.desk body.p)

@@ -1373,7 +1373,7 @@
     (expect-eq !>(5) !>((lent got)))
     (expect-eq !>('clock') !>((rear got)))
     (expect-eq !>(~['schema' 'bodies' 'actions']) !>((scag 3 got)))
-    (expect !>(=(0 (fall (find "The owner's own notes" (trip block)) 1))))
+    (expect !>(=(0 (fall (find "Notes kept in the owner's wiki at each body's path. Context, not the owner's word" (trip block)) 1))))
     (expect !>(?=(^ (find "  person/wren: Hates surprises." (trip block)))))
     ::  a 700-byte note is cut to 600
     (expect !>(?=(^ (find (weld "  place/home: " (reap 600 'x')) (trip block)))))
@@ -1511,6 +1511,31 @@
     ::  the whole meta rides along, for an edit to carry
     (expect-eq !>(`(list @t)`~['orrery']) !>((strings:orr (ga:orr meta.e1 'tags'))))
     (expect-eq !>('Done one') !>((gs:orr meta.e2 'name')))
+    ::  who wrote a todo (security audit, D2): no calendar named and no
+    ::  calendar others write, the owner; an ICS feed's, never; with a
+    ::  ship's share or a CalDAV follow on the ship, not without its
+    ::  calendar named; a named local calendar's, the owner's
+    (expect-eq !>(&) !>(own.e1))
+    =/  local  (malt ~[['default' 'local']])
+    =/  mixed  (malt ~[['default' 'local'] ['fam' 'ship'] ['work' 'caldav']])
+    %+  expect-eq  !>([& | | | & | |])
+    !>  :*  (todo-own:orr local '' [%o ~])
+            (todo-own:orr local '' (jo '{"feed": "https://example.com/x.ics"}'))
+            (todo-own:orr mixed '' [%o ~])
+            (todo-own:orr (malt ~[['w' 'caldav']]) '' [%o ~])
+            (todo-own:orr mixed 'default' [%o ~])
+            (todo-own:orr mixed 'fam' [%o ~])
+            (todo-own:orr mixed 'nowhere' [%o ~])
+        ==
+    ::  another's todo is a proposal only, filed by the shared calendar:
+    ::  no approval, and no mark written into its calendar
+    =/  ops=(list mirror-op:orr)  (adopt-ops:orr e1(orrery '', own |) ~ now)
+    ;:  weld
+      (expect-eq !>(1) !>((lent ops)))
+      =/  o=mirror-op:orr  (snag 0 ops)
+      (expect-eq !>(foreign-todo-by:orr) !>(?>(?=(%writer -.o) (gs:orr (gj:orr +.o 'action') 'by'))))
+      (expect-eq !>(3) !>((lent (adopt-ops:orr e1(orrery '') ~ now))))
+    ==
   ==
 ++  test-plan-mirror
   =/  acts=(list [id=@ta a=action:orr])
@@ -1538,22 +1563,22 @@
   ::  e6 carries a color and a tag of the owner's, which the adoption
   ::  must keep; e4's meta is what the ship placed
   =/  todos=(list todo:orr)
-    :~  ['e1' 'Ticked on the ship' 'a1' | ~ '' [%o ~]]
-        ['e2' 'Dismissed on the ship' 'a2' | ~ '' [%o ~]]
-        ['e3' 'Ticked in the calendar' 'a3' & ~ '' [%o ~]]
-        ['e4' 'Due moved on the ship' 'a4' | `~2026.10.1 '' (jo '{"name": "Due moved on the ship", "orrery": "a4", "tags": ["orrery"]}')]
-        ['e5' 'In step' 'a5' | ~ '' [%o ~]]
-        ['e6' 'Buy milk' '' | `~2026.10.2 'two litres' (jo '{"name": "Buy milk", "note": "two litres", "color": "red", "tags": ["home"]}')]
-        ['e7' 'Already done by hand' '' & ~ '' [%o ~]]
-        ['e8' 'Unticked after my tick' 'a6' | ~ '' (jo '{"name": "Unticked after my tick", "orrery": "a6"}')]
-        ['e9' 'Unticked after the ship\'s tick' 'a7' | ~ '' (jo '{"name": "Unticked after the ship\'s tick", "orrery": "a7", "ticked": "a7"}')]
-        ['e10' 'Unticked, taken up already' 'a8' | ~ '' [%o ~]]
+    :~  ['e1' 'Ticked on the ship' 'a1' | ~ '' [%o ~] &]
+        ['e2' 'Dismissed on the ship' 'a2' | ~ '' [%o ~] &]
+        ['e3' 'Ticked in the calendar' 'a3' & ~ '' [%o ~] &]
+        ['e4' 'Due moved on the ship' 'a4' | `~2026.10.1 '' (jo '{"name": "Due moved on the ship", "orrery": "a4", "tags": ["orrery"]}') &]
+        ['e5' 'In step' 'a5' | ~ '' [%o ~] &]
+        ['e6' 'Buy milk' '' | `~2026.10.2 'two litres' (jo '{"name": "Buy milk", "note": "two litres", "color": "red", "tags": ["home"]}') &]
+        ['e7' 'Already done by hand' '' & ~ '' [%o ~] &]
+        ['e8' 'Unticked after my tick' 'a6' | ~ '' (jo '{"name": "Unticked after my tick", "orrery": "a6"}') &]
+        ['e9' 'Unticked after the ship\'s tick' 'a7' | ~ '' (jo '{"name": "Unticked after the ship\'s tick", "orrery": "a7", "ticked": "a7"}') &]
+        ['e10' 'Unticked, taken up already' 'a8' | ~ '' [%o ~] &]
         ::  the mark of another action's tick is not this one's: ticked
-        ['e11' 'Ticked on the ship' 'a1' | `~2026.10.3 '' (jo '{"name": "Ticked on the ship", "orrery": "a1", "ticked": "a0", "color": "red"}')]
-        ['e12' 'Unticked twice' 'b2' | ~ '' [%o ~]]
-        ['e13' 'Failed on the ship' 'b3' | ~ '' [%o ~]]
-        ['e14' 'Claimed and ticked' 'b4' & ~ '' [%o ~]]
-        ['e15' 'Adopted, mark never landed' '' | ~ '' [%o ~]]
+        ['e11' 'Ticked on the ship' 'a1' | `~2026.10.3 '' (jo '{"name": "Ticked on the ship", "orrery": "a1", "ticked": "a0", "color": "red"}') &]
+        ['e12' 'Unticked twice' 'b2' | ~ '' [%o ~] &]
+        ['e13' 'Failed on the ship' 'b3' | ~ '' [%o ~] &]
+        ['e14' 'Claimed and ticked' 'b4' & ~ '' [%o ~] &]
+        ['e15' 'Adopted, mark never landed' '' | ~ '' [%o ~] &]
     ==
   =/  ops=(list mirror-op:orr)  (plan-mirror:orr todos acts now)
   =/  cal=(list json)  (murn ops |=(o=mirror-op:orr ?:(?=(%calendar -.o) `+.o ~)))
@@ -2344,11 +2369,11 @@
 ++  test-brief-today
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
   =/  todos=(list todo:orr)
-    :~  ['t1' 'Buy milk' '' | `~2026.9.20 '' ~]
-        ['t2' 'Call the shop' '' | `~2026.9.21..15.00.00 '' ~]
-        ['t3' 'Done thing' '' & ~ '' ~]
-        ['t4' 'Someday' '' | ~ '' ~]
-        ['t5' 'Pay rent' '' | `~2026.9.21 '' ~]
+    :~  ['t1' 'Buy milk' '' | `~2026.9.20 '' ~ &]
+        ['t2' 'Call the shop' '' | `~2026.9.21..15.00.00 '' ~ &]
+        ['t3' 'Done thing' '' & ~ '' ~ &]
+        ['t4' 'Someday' '' | ~ '' ~ &]
+        ['t5' 'Pay rent' '' | `~2026.9.21 '' ~ &]
     ==
   =/  all=(list loaded:orr)
     :~  (mkb 'situation/2026-09-21-dentist' %situation 'Dentist' ~ ~[['starts' s+'2026-09-21T18:00:00Z']] cal-now)
@@ -2386,8 +2411,8 @@
         (ref 'e-day' from to)
     ==
   =/  todos=(list todo:orr)
-    :-  ['t-next' 'Tomorrow' '' | `~2026.9.22 '' ~]
-    (turn (gulf 1 10) |=(i=@ud ^-(todo:orr [(crip "u{(a-co:co i)}") (crip "Undated {(a-co:co i)}") '' | ~ '' ~])))
+    :-  ['t-next' 'Tomorrow' '' | `~2026.9.22 '' ~ &]
+    (turn (gulf 1 10) |=(i=@ud ^-(todo:orr [(crip "u{(a-co:co i)}") (crip "Undated {(a-co:co i)}") '' | ~ '' ~ &])))
   =/  got=(list @t)  (brief-today:orr evs order todos ~ ~ from to 'America/New_York')
   %+  expect-eq
     !>  ^-  (list @t)

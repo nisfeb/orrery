@@ -2878,7 +2878,7 @@ else:
     seen.clear()
     curl('POST', API + '/generate')
     asked = gate.wait('the generator asks the model', notes_seen, 90) or ''
-    check('the prompt carries the owner\'s notes under the body\'s id', "The owner's own notes" in asked and (NB + ': # Gate notes ' + NOTE) in asked, asked[-600:])
+    check('the prompt carries the owner\'s notes under the body\'s id', "Notes kept in the owner's wiki at each body's path" in asked and (NB + ': # Gate notes ' + NOTE) in asked, asked[-600:])
     curl('PUT', API + '/generator', {'enabled': False, 'api_key': None})
     srv.shutdown()
     srv.server_close()
