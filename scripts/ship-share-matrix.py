@@ -207,6 +207,23 @@ peer('POST', '/sync')
 time.sleep(10)
 check('the sensitive attribute is not pushed', absent(host, 'person/sarah', 'health'), attr(host, 'person/sarah', 'health'))
 check('the attribute it may push is still there', dictish(attr(host, 'person/sarah', 'mood')).get('value') == 'tired', attr(host, 'person/sarah', 'mood'))
+print('== the peer writes about the body, it does not widen who sees it')
+def by_peer(name):
+    v = attr(host, 'person/sarah', name)
+    return [r for r in (v if isinstance(v, list) else [v] if v else []) if dictish(r).get('by') == PEERNAME]
+for name, value, sid in (('sphere', {'ref': 'sphere/home'}, 'share-5'), ('shared-with', {'ref': 'person/me'}, 'share-6')):
+    code, d = peer('POST', '/observe', {'bodies': [], 'observations': [
+        {'subject': 'person/me', 'attr': name, 'value': value, 'at': iso(T0), 'source': {'kind': 'matrix', 'id': sid}, 'by': 'owner'}]})
+    check('peer files a ' + name + ' row on the shared body', code == 200, d)
+peer('POST', '/sync')
+time.sleep(15)
+check("the peer's sphere row never lands on the host (security audit)", not by_peer('sphere'), by_peer('sphere'))
+check("nor its shared-with row", not by_peer('shared-with'), by_peer('shared-with'))
+for name in ('sphere', 'shared-with'):
+    v = attr(peer, 'person/me', name)
+    for r in (v if isinstance(v, list) else [v] if v else []):
+        if dictish(r).get('by') == 'owner' and source_id(r).startswith('share-'):
+            retract(peer, r)
 code, d = retract(peer, dictish(attr(peer, 'person/me', 'health')))
 check('peer retracts the sensitive attribute', code == 200, d)
 code, d = retract(peer, prow)

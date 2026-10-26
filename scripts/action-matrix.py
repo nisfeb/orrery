@@ -67,7 +67,8 @@ observe(host, PARTNER, 'sphere', ref(SPH), bodies=[{'id': PARTNER, 'name': 'Part
 observe(host, BOAT, 'sphere', ref(SPH), bodies=[{'id': BOAT, 'name': 'Boat ' + RUN}])
 code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode': 'edit'})
 wait('the offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
-peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+LOCAL = dictish(d).get('local', SPH)
 peer('POST', '/sync')
 check('the sphere comes in', bool(wait('the boat arrives', lambda: peer('GET', '/body/' + BOAT)[0] == 200 or None, 120)), BOAT)
 
@@ -114,13 +115,31 @@ peer('POST', '/act', {'kind': 'note', 'title': PAINT, 'about': [BOAT], 'by': 'ac
 time.sleep(5)
 check('the peer does not file what the host has open', not titled(peer, PAINT), titled(peer, PAINT))
 
+# a peer's twin of a host action that never went out in the feed ends
+# nothing: a peer cannot close any action by naming its id (security audit)
+LONE, FORGE = 'thing/gate-ac-lone-' + RUN, 'Gate forge ' + RUN
+observe(host, LONE, 'summary', 'in no shared sphere', bodies=[{'id': LONE, 'name': 'Lone ' + RUN}])
+code, a = host('POST', '/act', {'kind': 'note', 'title': FORGE, 'about': [LONE], 'by': 'action-matrix', 'payload': {'text': 'keep me'}})
+XID = dictish(a).get('id', '')
+check('the host has an action the feed never carried', code == 200 and status(host, XID) == 'proposed', (code, a))
+code, a = peer('POST', '/act', {'kind': 'note', 'title': FORGE + ' twin', 'about': [BOAT], 'by': 'action-matrix',
+                                 'payload': {'text': 'end it', 'twin': {'ship': HOSTNAME, 'id': XID}}})
+FID = dictish(a).get('id', '')
+check('the peer files one naming it as its twin', code == 200 and dictish(dictish(a).get('payload')).get('twin', {}).get('id') == XID, (code, a))
+if status(peer, FID) == 'proposed':
+    move(peer, FID, 'approved')
+move(peer, FID, 'dismissed')
+peer('POST', '/sync')
+time.sleep(60)
+check("the host's action stays open", status(host, XID) == 'proposed', status(host, XID))
+
 # put back what this run made
-for aid in (NID,):
+for aid in (NID, XID):
     move(host, aid, 'dismissed')
 host('DELETE', '/sphere-share/' + SPH + '/' + PEERNAME)
-for bid in (SPH, PARTNER, BOAT):
+for bid in (SPH, PARTNER, BOAT, LONE):
     host('DELETE', '/body/' + bid)
-for bid in (SPH, BOAT):
+for bid in (LOCAL, BOAT):
     peer('DELETE', '/body/' + bid)
 peer('PUT', '/policy', ppol)
 host('PUT', '/policy', hpol)

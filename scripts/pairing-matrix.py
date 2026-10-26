@@ -75,6 +75,7 @@ code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode'
 check('share the sphere', code == 200, (code, d))
 wait('the offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
 code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+LOCAL = dictish(d).get('local', SPH)
 check('the peer accepts', code == 200, (code, d))
 peer('POST', '/sync')
 asks = wait('the matches by name wait for the owner',
@@ -109,7 +110,7 @@ for r in rows(peer, 'person/me', 'likes') + rows(peer, 'person/me', 'twin'):
         peer('POST', '/retract', {'id': r.get('obs', ''), 'note': 'pairing gate'})
 for bid in (SPH, PARTNER, ROWAN, ASH, BOAT):
     host('DELETE', '/body/' + bid)
-for bid in (SPH, KID, ASH2, ASH, BOAT):
+for bid in (LOCAL, KID, ASH2, ASH, BOAT):
     peer('DELETE', '/body/' + bid)
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')

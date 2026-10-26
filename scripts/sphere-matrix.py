@@ -79,7 +79,9 @@ code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode'
 check('share the sphere in edit mode', code == 200 and dictish(d).get('notified') is True, (code, d))
 wait('the offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
 code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
-check('the peer accepts it onto its own sphere', code == 200 and dictish(d).get('local') == SPH and dictish(d).get('told') is True, (code, d))
+LOCAL = str(dictish(d).get('local'))
+check('the peer accepts it onto a new sphere of its own, never the id the host chose (security audit)',
+      code == 200 and LOCAL.startswith(SPH + '-') and dictish(d).get('told') is True, (code, d))
 peer('POST', '/sync')
 got = wait('the sphere arrives', lambda: values(peer, A, 'likes', HOSTNAME) or None, 120) or []
 check("a member's row arrives as the host's", got == ['sailing'], got)
@@ -87,7 +89,7 @@ check("a member's row arrives as the host's", got == ['sailing'], got)
 arrived = got == ['sailing']
 check('the sensitive attribute stays home', arrived and not rows(peer, A, 'health'), rows(peer, A, 'health'))
 check('the private row stays home', arrived and 'a secret' not in values(peer, A, 'status'), values(peer, A, 'status'))
-check("a member filed under another sphere too says only this one", values(peer, B, 'sphere') == [SPH] and values(peer, B, 'address') == ['1 Gate Street'], (values(peer, B, 'sphere'), values(peer, B, 'address')))
+check("a member filed under another sphere too says only this one", values(peer, B, 'sphere') == [LOCAL] and values(peer, B, 'address') == ['1 Gate Street'], (values(peer, B, 'sphere'), values(peer, B, 'address')))
 check('a body in no shared sphere stays home', arrived and not has_body(peer, C), C)
 check('nor does the other sphere', arrived and not has_body(peer, OTHER), OTHER)
 tw = [dictish(r.get('value')) for r in rows(peer, A, 'twin')]
@@ -109,7 +111,7 @@ check("the peer's correction names the host", any(dictish(c).get('by') == HOSTNA
 
 # the peer's edits, and a body it files under the sphere, come back
 observe(peer, A, 'mood', 'cheerful')
-observe(peer, D, 'sphere', ref(SPH), bodies=[{'id': D, 'name': 'Gate D ' + RUN}])
+observe(peer, D, 'sphere', ref(LOCAL), bodies=[{'id': D, 'name': 'Gate D ' + RUN}])
 got = wait("the peer's edit comes back", lambda: values(host, A, 'mood', PEERNAME) or None, 120) or []
 check("the peer's edit lands as the peer's", got == ['cheerful'], got)
 got = wait('the new body comes back', lambda: values(host, D, 'sphere', PEERNAME) or None, 120) or []
@@ -117,6 +119,22 @@ check('a body the peer files under the sphere comes to the host, in it', got == 
 tw = [dictish(r.get('value')) for r in rows(host, D, 'twin')]
 check('and knows its twin there', {'ship': PEERNAME, 'id': D} in tw, tw)
 check("the peer's twin facts never crossed", not [r for r in rows(host, A, 'twin') if r.get('by') == PEERNAME], rows(host, A, 'twin'))
+
+# D1: the host files a body the peer holds outside the sphere: the peer's
+# owner is asked, and nothing about it lands meanwhile (security audit)
+E = 'thing/gate-sp-e-' + RUN
+observe(peer, E, 'colour', 'green', bodies=[{'id': E, 'name': 'Peer E ' + RUN}])
+observe(host, E, 'sphere', ref(SPH), bodies=[{'id': E, 'name': 'Host E ' + RUN}])
+observe(host, E, 'colour', 'red')
+def filing_ask():
+    return [a for a in listish(peer('GET', '/actions?status=all')[1]) if dictish(dictish(a).get('payload')).get('subject') == E
+            and dictish(dictish(a).get('payload')).get('attr') == 'sphere']
+ask = wait("the host's filing waits for the peer's owner", lambda: filing_ask() or None, 120) or [{}]
+check("a peer's filing of a body held outside the sphere is a proposal", dictish(ask[0]).get('status') == 'proposed' and dictish(ask[0]).get('by') == HOSTNAME, ask)
+check('the body is not filed meanwhile', not values(peer, E, 'sphere'), values(peer, E, 'sphere'))
+check('nor do its rows land', not values(peer, E, 'colour', HOSTNAME), values(peer, E, 'colour'))
+for a in filing_ask():
+    peer('POST', '/actions/' + dictish(a).get('id', ''), {'status': 'dismissed', 'note': 'sphere gate'})
 
 # filed out on the host: nothing more about it either way
 for r in rows(host, A, 'sphere'):
@@ -136,9 +154,48 @@ check('the other sphere was never told', not has_body(peer, OTHER), OTHER)
 code, d = host('DELETE', '/sphere-share/' + SPH + '/' + PEERNAME)
 check('the sphere is unshared, and the peer told', code == 200 and dictish(d).get('told') is True, (code, d))
 check('the peer follows it no more', bool(wait('the follow goes', lambda: KEY not in dictish(dictish(peer('GET', '/shares')[1]).get('sphere_follows')) or None, 60)), KEY)
-for b in (A, B, C, D, SPH, OTHER):
+
+# accepted again after the share ended: a new sphere, the old twin retracted,
+# so the feed files into the new one
+code, d = host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode': 'edit'})
+wait('the second offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
+code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+LOCAL2 = str(dictish(d).get('local'))
+check('accepted again, it lands on another new sphere', code == 200 and LOCAL2.startswith(SPH + '-') and LOCAL2 != LOCAL, (code, d))
+F = 'thing/gate-sp-f-' + RUN
+observe(host, F, 'sphere', ref(SPH), bodies=[{'id': F, 'name': 'Gate F ' + RUN}])
+peer('POST', '/sync')
+got = wait('a new member comes in', lambda: values(peer, F, 'sphere') or None, 120) or []
+check('it is filed under the new sphere, not the old one', got == [LOCAL2], got)
+
+# deleting a shared sphere ends its shares, on both sides (security audit)
+code, d = peer('DELETE', '/body/' + LOCAL2)
+check('the peer deletes the sphere it accepted', code == 200, (code, d))
+ps = dictish(peer('GET', '/shares')[1])
+check('its follow goes', not [f for f in dictish(ps.get('sphere_follows')).values() if dictish(f).get('local') == LOCAL2], ps.get('sphere_follows'))
+check('and its own feed back to the host', LOCAL2 not in dictish(ps.get('sphere_shares')), ps.get('sphere_shares'))
+code, d = host('DELETE', '/body/' + SPH)
+check('the host deletes the shared sphere', code == 200, (code, d))
+hs = dictish(host('GET', '/shares')[1])
+check('its share record goes', SPH not in dictish(hs.get('sphere_shares')), hs.get('sphere_shares'))
+check("and the host's follow of the peer's feed", not [f for f in dictish(hs.get('sphere_follows')).values() if dictish(f).get('local') == SPH], hs.get('sphere_follows'))
+
+# one ship may have five offers waiting, no more (security audit)
+CAPS = ['sphere/gate-cap-%d-%s' % (i, RUN) for i in range(6)]
+for c in CAPS:
+    observe(host, c, 'summary', 'cap gate', bodies=[{'id': c, 'name': 'Cap ' + c[-8:]}])
+    host('POST', '/sphere-share', {'sphere': c, 'ship': PEERNAME, 'mode': 'read'})
+time.sleep(10)
+waiting = [k for k in dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')) if k.startswith(HOSTNAME + '|')]
+check('five offers from one ship wait, the sixth is refused', len(waiting) == 5, waiting)
+for k in waiting:
+    peer('POST', '/sphere-decline', {'host': HOSTNAME, 'sphere': k.split('|', 1)[1]})
+for c in CAPS:
+    host('DELETE', '/body/' + c)
+
+for b in (A, B, C, D, E, F, SPH, OTHER):
     host('DELETE', '/body/' + b)
-for b in (A, B, D, SPH):
+for b in (A, B, D, E, F, LOCAL, LOCAL2):
     peer('DELETE', '/body/' + b)
 host('PUT', '/policy', pol)
 print()

@@ -55,7 +55,8 @@ check('declining it again is a 404', code == 404, (code, d))
 host('POST', '/sphere-share', {'sphere': S2, 'ship': PEERNAME, 'mode': 'edit'})
 K2 = HOSTNAME + '|' + S2
 wait('the second offer reaches the peer', lambda: dictish(pshares().get('sphere_offers')).get(K2), 60)
-peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': S2})
+code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': S2})
+L2 = dictish(d).get('local', S2)
 peer('POST', '/sync')
 check('the sphere comes in', bool(wait('the boat arrives', lambda: peer('GET', '/body/' + BOAT)[0] == 200 or None, 120)), BOAT)
 check('the host reads its edits', bool(wait('the host follows back', lambda: any(dictish(f).get('role') == 'host' and dictish(f).get('local') == S2
@@ -87,7 +88,7 @@ check("the host's record drops the peer", bool(wait('the host drops the body sha
 host('DELETE', '/sphere-share/' + S1 + '/' + PEERNAME)
 for bid in (S1, S2, BOAT):
     host('DELETE', '/body/' + bid)
-for bid in (S2, BOAT):
+for bid in (L2, BOAT):
     peer('DELETE', '/body/' + bid)
 print()
 print('FAILED: ' + ', '.join(fails) if fails else 'ALL OK')

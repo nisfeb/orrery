@@ -61,7 +61,8 @@ observe(host, PARTNER, 'sphere', ref(SPH), bodies=[{'id': PARTNER, 'name': 'Part
 observe(host, KID, 'sphere', ref(SPH), bodies=[{'id': KID, 'name': KIDNAME}])
 host('POST', '/sphere-share', {'sphere': SPH, 'ship': PEERNAME, 'mode': 'edit'})
 wait('the offer reaches the peer', lambda: dictish(dictish(peer('GET', '/shares')[1]).get('sphere_offers')).get(KEY), 60)
-peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+code, d = peer('POST', '/sphere-accept', {'host': HOSTNAME, 'sphere': SPH})
+LOCAL = dictish(d).get('local', SPH)
 peer('POST', '/sync')
 check('the sphere comes in', bool(wait('the kid arrives', lambda: peer('GET', '/body/' + KID)[0] == 200 or None, 120)), KID)
 
@@ -89,7 +90,7 @@ peer('PUT', '/policy', ppol)
 host('DELETE', '/sphere-share/' + SPH + '/' + PEERNAME)
 for bid in (SPH, PARTNER, KID):
     host('DELETE', '/body/' + bid)
-for bid in (SPH, KID):
+for bid in (LOCAL, KID):
     peer('DELETE', '/body/' + bid)
 for r in listish(dictish(dictish(peer('GET', '/body/person/me')[1]).get('attrs')).get('twin')):
     if PARTNER in str(dictish(r).get('value')):
