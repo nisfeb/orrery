@@ -1844,10 +1844,11 @@
     ::  not at the desk (version 128): a fresh fix a kilometre or more from
     ::  home; a fix at home, an old one, none, or no home's point says nothing
     =/  fixed  |=([la=@t at=@da] (pairs:enjs:format ~[['lat' s+la] ['lon' s+'-89.65'] ['at' s+(en-iso:orr at)]]))
-    %+  expect-eq  !>([& | | | |])
+    %+  expect-eq  !>([& & | | | |])
     !>  :*  (phone-out:orr (fixed '39.89' (sub now ~m10)) hp now)
+            (phone-out:orr (fixed '39.89' (sub now ~h5)) hp now)
             (phone-out:orr (fixed '39.78' (sub now ~m10)) hp now)
-            (phone-out:orr (fixed '39.89' (sub now ~h2)) hp now)
+            (phone-out:orr (fixed '39.89' (sub now ~h13)) hp now)
             (phone-out:orr [%o ~] hp now)
             (phone-out:orr (fixed '39.89' (sub now ~m10)) ~ now)
         ==
