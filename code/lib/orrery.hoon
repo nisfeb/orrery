@@ -9140,6 +9140,20 @@
   ?~  m  ~
   ?.  (gte u.m 40.000)  ~
   `[(gs pos 'lat') (gs pos 'lon')]
+::  +phone-out: whether the phone's fix, an hour old at most, puts the
+::  owner a kilometre or more from home: then they are not at the desk,
+::  whatever the computer reports (version 128). No fix, an old one, or
+::  no home's point: the computer's word stands
+::
+++  phone-out
+  |=  [pos=json home=(unit [lat=@t lon=@t]) now=@da]
+  ^-  ?
+  =/  at=(unit @da)  (de-iso (gs pos 'at'))
+  ?~  at  |
+  ?:  (gth now (add u.at ~h1))  |
+  =/  off=(unit @ud)  (fix-off pos home)
+  ?~  off  |
+  (gte u.off 1.000)
 ::  +fix-off: how many metres the phone's fix is from home
 ::
 ++  fix-off

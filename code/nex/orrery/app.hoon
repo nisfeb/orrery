@@ -9720,7 +9720,13 @@
   ;<  work-j=json  bind:m  (read-json (rf 0 / %'work.json'))
   ;<  health-j=json  bind:m  (read-json (rf 0 / %'health.json'))
   =/  mins=@ud  (clock-minutes:orr now tz)
-  =/  blocks  (spans:orr (ga:orr (gj:orr work-j day) 'blocks'))
+  ::  the phone a kilometre or more from home: the owner is not at the
+  ::  desk, whatever the computer reports, so neither the desk nor the
+  ::  family-time nudge is theirs (version 128)
+  ;<  pos=json  bind:m  (read-json (rf 0 / %'position.json'))
+  =/  blocks
+    ?:  (phone-out:orr pos home.away now)  ~
+    (spans:orr (ga:orr (gj:orr work-j day) 'blocks'))
   =/  busy=(list [@da @da])  (weld (day-busy:orr all multi now (at-clock:orr day 0 tz) (at-clock:orr day 1.440 tz)) (family-busy:orr day tz r))
   ::  a habit whose slot begins now, in whichever of the owner's windows
   ::  holds it

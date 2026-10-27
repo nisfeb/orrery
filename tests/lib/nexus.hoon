@@ -1841,6 +1841,16 @@
     (expect !>((away-skips:orr game spans ~ hp all multi now cache (fix-away:orr (pairs:enjs:format ~[['lat' s+'40.25'] ['lon' s+'-89.65']]) hp))))
     (expect-eq !>(`(unit [@t @t])`~) !>((fix-away:orr (pairs:enjs:format ~[['lat' s+'39.80'] ['lon' s+'-89.65']]) hp)))
     (expect-eq !>(`(unit @ud)`~) !>((far-from-home:orr (pairs:enjs:format ~[['lat' n+'39.80'] ['lon' n+'-89.60']]) hp)))
+    ::  not at the desk (version 128): a fresh fix a kilometre or more from
+    ::  home; a fix at home, an old one, none, or no home's point says nothing
+    =/  fixed  |=([la=@t at=@da] (pairs:enjs:format ~[['lat' s+la] ['lon' s+'-89.65'] ['at' s+(en-iso:orr at)]]))
+    %+  expect-eq  !>([& | | | |])
+    !>  :*  (phone-out:orr (fixed '39.89' (sub now ~m10)) hp now)
+            (phone-out:orr (fixed '39.78' (sub now ~m10)) hp now)
+            (phone-out:orr (fixed '39.89' (sub now ~h2)) hp now)
+            (phone-out:orr [%o ~] hp now)
+            (phone-out:orr (fixed '39.89' (sub now ~m10)) ~ now)
+        ==
     ::  ponytail: flat over long distances, so far is only far, past 150 km
     (expect !>(=/(k (far-from-home:orr (pairs:enjs:format ~[['lat' s+'41.38'] ['lon' s+'2.17']]) hp) &(?=(^ k) (gth u.k 7.000)))))
     (expect-eq !>(`(unit @ud)`~) !>((far-from-home:orr (pairs:enjs:format ~[['lat' s+'41.38'] ['lon' s+'2.17']]) ~)))

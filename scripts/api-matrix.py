@@ -1694,6 +1694,16 @@ if 7 <= wnow.hour < 21:
     subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/nudge-last.json',
                     '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
     code, d = curl('POST', API + '/work', {'day': wnow.date().isoformat(), 'blocks': [{'start': iso(wnow - timedelta(minutes=100)), 'end': iso(wnow)}]})
+    #  the phone ten kilometres from home: not at the desk, so no nudge,
+    #  whatever the computer says (version 128); back home, the nudge
+    curl('POST', API + '/observe', {'bodies': [{'id': 'place/home', 'name': 'Home'}], 'observations': [
+        {'subject': 'place/home', 'attr': 'geo', 'value': '39.7817,-89.6501', 'at': iso(wnow), 'conf': 100, 'source': {'kind': 'gate', 'id': 'nudge-home'}, 'by': 'owner'}]})
+    curl('POST', API + '/position', {'lat': 39.8717, 'lon': -89.6501, 'acc': 10})
+    curl('POST', API + '/nudge/wake', {})
+    time.sleep(8)
+    check('ten kilometres from home, a stretch at the computer is no desk nudge',
+          not [x for x in dictish(curl('GET', API + '/nudge/last')[1]).get('sent') or [] if dictish(x).get('kind') == 'desk'], curl('GET', API + '/nudge/last')[1])
+    curl('POST', API + '/position', {'lat': 39.7817, 'lon': -89.6501, 'acc': 10})
     code, n0 = curl('GET', API + '/nudge/last')
     curl('POST', API + '/nudge/wake', {})
     nl = gate.wait('the nudge lands', lambda: (lambda n: n if any(dictish(x).get('kind') == 'desk' and dictish(x).get('key') == 'desk/%d' % int((wnow - timedelta(minutes=100)).timestamp() * 1000) for x in n.get('sent') or []) else None)(dictish(curl('GET', API + '/nudge/last')[1])), 60) or {}
