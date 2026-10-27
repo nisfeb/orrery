@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 129's owner steps
+
+Nothing to do: no new roads, so no consent prompt. The phone sends a fix only when it moves, so in 128 the desk and family nudges came back an hour into a stay away from home. Now a fix up to twelve hours old counts. If the phone stops sending while you are out, the two nudges stay quiet for at most twelve hours.
+
 ### Version 128's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The desk nudge and the family-time nudge stay quiet while the phone reports you a kilometre or more from home, in a fix no more than an hour old. The computer can look busy while you are out, for example when a session is typed into from away. With no recent fix, or no home's point set, the nudges go by the computer as before.
