@@ -11584,14 +11584,28 @@
 ::  +inline-page: the page with its stylesheet and its script inside it,
 ::  so opening orrery is one request, not three (each request costs the
 ::  owner's ship about two seconds). A page without the two tags is
-::  served as it is.
+::  served as it is. The page carries its own script policy: scripts
+::  from the app's own files, and the one inline script by its sha-256,
+::  so no other script ever runs, however an escaping miss elsewhere
+::  lets one in (security audit). A header saying 'self' alone, as 125
+::  sent, refuses the inline script and the page never loads (127)
 ::
 ++  inline-page
   |=  [html=@t css=@t js=@t]
   ^-  @t
   =.  html
     (swap-once html '<link rel="stylesheet" href="/apps/orrery/orrery.css">' (rap 3 '<style>' css '</style>' ~))
-  (swap-once html '<script src="/apps/orrery/orrery.js"></script>' (rap 3 '<script>' js '</script>' ~))
+  =.  html
+    (swap-once html '<script src="/apps/orrery/orrery.js"></script>' (rap 3 '<script>' js '</script>' ~))
+  (swap-once html '<head>' (rap 3 '<head>' (script-policy js) ~))
+::  +script-policy: the meta tag that lets the page's own scripts run and
+::  nothing else: its files, and the inline script whose text is js
+::
+++  script-policy
+  |=  js=@t
+  ^-  @t
+  =/  sum=@t  (en:base64:mimes:html [32 (shay (met 3 js) js)])
+  (rap 3 '<meta http-equiv="Content-Security-Policy" content="script-src \'self\' \'sha256-' sum '\'">' ~)
 ::  +swap-once: the first pin in hay replaced by new, hay when there is
 ::  none
 ::

@@ -11719,14 +11719,13 @@
   =/  got=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.vw))))
   ?~  got  (send-err eyre-id 500 'unreadable file')
   ::  nosniff: each of the three files is served with its own type, and
-  ::  a browser must not guess a different one out of the bytes. The page
-  ::  runs only its own script, which it loads by file and never inline,
-  ::  so an escaping miss elsewhere cannot run one (security audit)
+  ::  a browser must not guess a different one out of the bytes. The
+  ::  page's script policy is in the page itself (+script-policy), since
+  ::  its script is inlined at load: a header could not name its hash
   =/  heads=(list [@t @t])
     :~  ['content-type' u.ct]
         ['cache-control' 'no-cache']
         ['x-content-type-options' 'nosniff']
     ==
-  =?  heads  =(%'orrery.html' name)  (snoc heads ['content-security-policy' 'script-src \'self\''])
   (send-simple:srv eyre-id [[200 heads] `q.u.got])
 --

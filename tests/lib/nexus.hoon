@@ -405,8 +405,10 @@
         '<body><script src="/apps/orrery/orrery.js"></script></body>'
     ==
   ;:  weld
+    ::  the page names its inline script by its sha-256 (127), the hash a
+    ::  browser computes: base64 of sha-256 of go(), as Python has it
     %+  expect-eq
-      !>('<head><style>b{}</style></head><body><script>go()</script></body>')
+      !>('<head><meta http-equiv="Content-Security-Policy" content="script-src \'self\' \'sha256-5KYv+PUboo5h+0+YAtGRPbwv5d/QxzHslP4YGnUaxRw=\'"><style>b{}</style></head><body><script>go()</script></body>')
     !>((inline-page:orr html 'b{}' 'go()'))
     (expect-eq !>('<p>x</p>') !>((inline-page:orr '<p>x</p>' 'b{}' 'go()')))
     (expect-eq !>('abXd') !>((swap-once:orr 'abcd' 'c' 'X')))

@@ -33,6 +33,16 @@ check('the page is not cached', 'no-cache' in h.get('cache-control', ''), h)
 #  it); the two routes still answer for anything that loads them apart
 check('the page carries its script and style', '<style>' in b and '/apps/orrery/api' in b and 'src="/apps/orrery/orrery.js"' not in b
       and 'href="/apps/orrery/orrery.css"' not in b and 'id="view"' in b, b[:200])
+#  a browser runs the inline script only when the page's script policy
+#  names its sha-256: a policy of 'self' alone, as 125 sent in a header,
+#  left the page on "loading" for good (127). A curl never enforces it,
+#  so the hash is checked here
+import base64, hashlib, re
+inline = re.search(r'<script>(.*?)</script>', b, re.S)
+want = "'sha256-%s'" % base64.b64encode(hashlib.sha256(inline.group(1).encode()).digest()).decode() if inline else None
+meta = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', b)
+check("the page's script policy names its inline script by hash", bool(inline and meta and want in meta.group(1)), (meta and meta.group(1), want))
+check('and no header refuses it', 'content-security-policy' not in {k.lower() for k in h}, h)
 code, h, js = get('/apps/orrery/orrery.js')
 check('the script answers as javascript', code == 200 and 'javascript' in h.get('content-type', '') and '/apps/orrery/api' in js, (code, h))
 code, h, b = get('/apps/orrery/orrery.css')
