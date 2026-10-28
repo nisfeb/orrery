@@ -224,6 +224,16 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 130's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- The daily brief is no longer mailed. Your phone's assistant reads it to you, and each day's brief is kept for your journal, which lattice mirrors as a private page. A reply to an old brief mail is not read: move or close a tagged action on the phone or the page instead.
+- The Sunday review is neither mailed nor pushed. It is kept for your journal the same way.
+- A due you move in the calendar now sticks, for a todo orrery placed as well as one you typed, and orrery's task takes the new date. Until now orrery put its own date back on a todo it had placed, and a task you typed never learned the date you moved.
+- A due moved on the ship (`POST /api/actions/<id>/due`, which your phone uses) moves the todo, and the task keeps its id.
+- Each evening the ship can remind you to do your evening review: at 20:00 on your clock unless you set another time under Your day on the settings page (blank for none), once family time is over and before your quiet hours, a push through your phone says how many open tasks are overdue, due today and have no date. A day with none sends nothing.
+
 ### Version 129's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The phone sends a fix only when it moves, so in 128 the desk and family nudges came back an hour into a stay away from home. Now a fix up to twelve hours old counts. If the phone stops sending while you are out, the two nudges stay quiet for at most twelve hours.
