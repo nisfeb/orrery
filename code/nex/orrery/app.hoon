@@ -34,6 +34,7 @@
 ::    /health.json  /work.json  /drives.json  /review-last.json  /review.sig   the week (version 74): health and work a day each, the drives, the Sunday review
 ::    /nudge-last.json  /nudge.sig  /rhythm.json   the day's nudges (version 75): habits in the gaps, a break, family time; the owner's day as they set it
 ::    /nag-last.json                    when each late high-priority action was last pushed (version 110)
+::    /evening-last.json                the day the evening review's push last went, and its counts (version 130)
 ::    /chat-lists-seen.json             how many DMs and channels the chat reader last held, so emptied lists are flagged (version 111)
 ::    /model-down.json                  since when the model has not answered, so the owner is told once (version 111)
 ::    /briefs/<day>  /reviews/<day>     each day's brief and each Sunday's review, kept for a journal (version 116)
@@ -229,6 +230,7 @@
           [%fall %& [/ %'review.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'nudge-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'nag-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'evening-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'rhythm.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'outdoors.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'weather.json'] [[/ %json] [%o ~]]]
@@ -610,6 +612,7 @@
         ;<  ~  bind:m  (nag-pass acts)
         ;<  ~  bind:m  (world-pass all acts)
         ;<  ~  bind:m  (nudge-pass all)
+        ;<  ~  bind:m  (evening-pass acts)
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
         ;<  ~  bind:m  (idle-until-poke /nudge)
@@ -1685,6 +1688,7 @@
     %get-review-last        (serve-doc eyre-id %'review-last.json')
     %post-review-wake       (serve-prod eyre-id %'review.sig' 'review')
     %get-nudge-last         (serve-doc eyre-id %'nudge-last.json')
+    %get-evening-last       (serve-doc eyre-id %'evening-last.json')
     %get-rhythm             (serve-rhythm eyre-id)
     %put-rhythm             (serve-set-doc eyre-id 'set-rhythm' jon)
     %get-outdoors           (serve-outdoors eyre-id)
@@ -1704,6 +1708,7 @@
     %post-actions-assign    (serve-assign eyre-id s2 jon act)
     %post-actions-priority  (serve-mark eyre-id s2 jon act |)
     %post-actions-snooze    (serve-mark eyre-id s2 jon act &)
+    %post-actions-due       (serve-due eyre-id s2 jon act)
     %post-pairing           (serve-pair eyre-id jon)
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
@@ -2335,8 +2340,10 @@
 ::  +do-mark-action: an open action's priority or snooze, kept in its
 ::  payload (version 110): {"id", "priority": "high"} marks it and
 ::  {"priority": ""} unmarks it; {"id", "snooze_until": "<iso>"} holds
-::  its nags until then and {"snooze_until": ""} ends that. No history
-::  step, since neither changes what the action is
+::  its nags until then and {"snooze_until": ""} ends that. Since 130,
+::  {"due_ms"} moves its due in place (null for none) and
+::  {"todo_due_ms"} keeps the due last seen on its todo (+due-ops). No
+::  history step
 ::
 ++  do-mark-action
   |=  jon=json
@@ -2349,7 +2356,7 @@
   ?:  ?=(%| -.got)
     (refuse 'mark-action' ?:(?=(%absent p.got) (cat 3 'no action ' id) 'unreadable action'))
   =/  a=action:orr  p.got
-  ?.  ?=(?(%proposed %approved) status.a)  (refuse 'mark-action' 'only an open action is marked')
+  ?.  ?=(?(%proposed %approved %claimed) status.a)  (refuse 'mark-action' 'only an open action is marked')
   =/  pri=@t  (gs:orr jon 'priority')
   ?.  |(=('' pri) =('high' pri))  (refuse 'mark-action' 'priority: high, or empty')
   =/  sn=@t  (gs:orr jon 'snooze_until')
@@ -2360,7 +2367,15 @@
     ?:(=('' pri) (del-key:orr pay 'priority') (set-key:orr pay 'priority' s+'high'))
   =?  pay  (has-key:orr jon 'snooze_until')
     ?~(until (del-key:orr pay 'snooze_until') (set-key:orr pay 'snooze_until' s+(en-iso:orr u.until)))
-  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 a(payload pay)]])
+  ::  the due moved in place, and the due last seen on its todo (version
+  ::  130, +due-ops), in milliseconds, null for none
+  =/  seen=(unit @ud)  (gn:orr jon 'todo_due_ms')
+  =?  pay  (has-key:orr jon 'todo_due_ms')
+    (set-key:orr pay 'todo_due_ms' ?~(seen ~ (numb:enjs:format u.seen)))
+  =/  due=(unit @da)
+    ?.  (has-key:orr jon 'due_ms')  due.a
+    (bind (gn:orr jon 'due_ms') da-of-ms:orr)
+  ;<  ~  bind:m  (over:io road [[/orrery %action] `stored-action:orr`[%2 a(payload pay, due due)]])
   ;<  ~  bind:m  (note-by 'mark-action' & '' who)
   (pure:m &)
 ::  +do-revise-action: the owner's rewrite of a proposed action's title,
@@ -4093,6 +4108,41 @@
     (pairs:enjs:format ~[['op' s+'mark-action'] ['id' s+id] field ['by' s+?:(owner.act 'owner' by.act)]])
   %^  write-then  eyre-id  op
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id] field]))
+::  +serve-due: an open action's due moved in place (version 130):
+::  {"due": "<iso>"}, {"due": "2026-10-30"} for a day with no time, or
+::  {"due": null} for none. A task's todo follows at the mirror's next
+::  pass (+due-ops). Unlike a move from a conversation, the action keeps
+::  its id. The owner, or a key that writes and whose scope holds the
+::  kind
+::
+++  serve-due
+  |=  [eyre-id=@ta id=@ta jon=json act=actor]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  got=(each action:orr [code=@ud msg=@t])  bind:m  (scoped-action id act)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got msg.p.got)
+  ?.  ?=(?(%proposed %approved %claimed) status.p.got)  (send-err eyre-id 409 'only an open action is moved')
+  ?.  (has-key:orr jon 'due')  (send-err eyre-id 400 'due: required, null for none')
+  =/  due=(each (unit @da) @t)  (due-input:orr (gj:orr jon 'due'))
+  ?:  ?=(%| -.due)  (send-err eyre-id 400 p.due)
+  =/  ms  |=(d=(unit @da) ^-(json ?~(d ~ (numb:enjs:format (ms-of:orr u.d)))))
+  ::  a task the mirror has not marked yet (filed before 130) is marked
+  ::  with the due its todo has, the old one, so the move is the ship's
+  ::  and the todo follows it, not the other way round
+  =/  mark=(list [@t json])
+    ?:  |(!=(%task kind.p.got) (has-key:orr payload.p.got 'todo_due_ms'))  ~
+    ~[['todo_due_ms' (ms due.p.got)]]
+  =/  op=json
+    %-  pairs:enjs:format
+    %+  weld  mark
+    ^-  (list [@t json])
+    :~  ['op' s+'mark-action']
+        ['id' s+id]
+        ['due_ms' (ms p.due)]
+        ['by' s+?:(owner.act 'owner' by.act)]
+    ==
+  %^  write-then  eyre-id  op
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id] ['due' ?~(p.due ~ s+(en-iso:orr u.p.due))]]))
 ::  +take-feed-moved: a ship we follow wrote to its feed: read it now.
 ::  Only a ship we follow wakes the follower, and nothing is taken from
 ::  what it sent
@@ -7256,29 +7306,11 @@
   ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
   ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
   ;<  tz=@t  bind:m  owner-tz
-  ::  the owner's replies to the brief first: moves on the actions and
-  ::  facts in the owner's words; then everyone else's mail
-  ::  a reply is the owner's answer to the ship's own brief: the
-  ::  message it answers is the brief the ship recorded, word for
-  ::  word (a client's brief for the same day carries other tags)
-  ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
-  =/  replies=(list [r=mail-msg:orr root=@t])  (brief-replies-of:orr fresh msgs our seen (brief-texts bl))
-  ;<  [handled=(list @t) reply-notes=(list @t)]  bind:m  (brief-replies replies all schema now tz)
-  ::  the owner's replies to the Sunday review: their own words, handed
-  ::  to the read channel (version 75)
-  ;<  rl=json  bind:m  (read-json (rf 0 / %'review-last.json'))
-  =/  review-replies=(list [r=mail-msg:orr root=@t])  (review-replies-of:orr fresh msgs our seen (gs:orr rl 'text'))
-  ;<  ~  bind:m  (review-hand review-replies (gs:orr rl 'day') now)
-  =.  handled  (weld handled (turn review-replies |=([r=mail-msg:orr *] (cat 3 'mail:' id.r))))
-  ;<  ~  bind:m  (reader-remember %'mail-seen.json' seen-j handled)
-  ::  read again: the write above is what the later writes build on
-  ;<  seen-j=json  bind:m  (read-json (rf 0 / %'mail-seen.json'))
   =/  people=(map @t @t)  (people-of-ships all)
   =?  people  !(~(has by people) me)  (~(put by people) me 'person/me')
   =/  tg=tg-config:orr  (mail-as-tg:orr cfg)
   =/  today=@ud  (day-count:orr last 'read_today' now)
   =|  tally=chat-tally
-  =.  notes.tally  reply-notes
   =/  rows=(list tg-msg:orr)  (mail-rows:orr fresh our)
   ::  a ship in the owner's contact book that writes mail and has no
   ::  person body is made one, named by its ship (as the phone client's
@@ -9420,12 +9452,13 @@
   [[200 ~[['content-type' 'image/png'] ['cache-control' 'private, max-age=3600']]] `(as-octs:mimes:html body.got)]
 ::  ==  the daily brief (version 52)
 ::
-::  +brief-send: today's brief, unless one went today already (forced
-::  by the owner's wake, another goes). The calendar's day from its
-::  store and order, the proposed actions under tags, the analyst's
+::  +brief-send: today's brief, unless one was made today already
+::  (forced by the owner's wake, another is). The calendar's day from
+::  its store and order, the proposed actions under tags, the analyst's
 ::  few lines through the generator's model (Nothing to add without a
-::  key), the mail from the owner to the owner through auspex, and the
-::  record: the day, the tags, the text, what was said.
+::  key), and the record: the day, the tags, the text, what was said.
+::  It is read where the owner reads it, the phone's assistant or the
+::  journal, and never mailed (version 130)
 ::
 ++  brief-send
   |=  [day=@t forced=?]
@@ -9528,18 +9561,13 @@
     ?:  |(=('' overlay) =('' public))  ~
     ~[(rap 3 'Map of the stops: ' public ?:(=('/' (cut 3 [(dec (max 1 (met 3 public))) 1] public)) '' '/') 'apps/orrery/api/brief/map' ~)]
   =/  text=@t  (brief-render:orr day today leaving lines.waiting suggestions)
-  ;<  aus=(unit path)  bind:m  (find-base %auspex)
-  ;<  sent=(unit @t)  bind:m
-    =/  n  (fiber:fiber:nexus ,(unit @t))
-    ?~  aus  (pure:n `'auspex desk not installed')
-    ;<  err=(unit tang)  bind:n  (poke-auspex u.aus our (brief-subject:orr day) text)
-    (pure:n ?~(err ~ `(tang-head u.err)))
   =/  tags-j=json  [%o (~(gas by *(map @t json)) (turn tags.waiting |=([tag=@t id=@ta] [tag `json`s+id])))]
   =/  rec=json
     %-  pairs:enjs:format
     :~  ['day' s+day]
         ['at' s+(en-iso:orr now)]
-        ['sent' b+?=(~ sent)]
+        ::  never mailed since version 130; kept for the readers
+        ['sent' b+|]
         ['tags' tags-j]
         ['text' s+text]
         :-  'today'
@@ -9548,7 +9576,7 @@
         (pairs:enjs:format ~[['text' s+text] ['tags' tags-j]])
         ['said' s+suggestions]
         ['map' s+overlay]
-        ['notes' a+(turn (skip `(list @t)`~[said-note (fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
+        ['notes' a+(turn (skip `(list @t)`~[said-note] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
     ==
   ::  each day's brief is kept as well, for a journal (version 116)
   ::  ponytail: a couple of KB a day kept for good; prune by age if it shows
@@ -9683,6 +9711,37 @@
   =/  say  (nag-text:orr a.i.due late.i.due tz)
   ;<  ~  bind:m  (notify-owner (cat 3 'orrery-overdue-' id.i.due) title.say body.say)
   $(due t.due, kept (set-key:orr kept id.i.due s+(en-iso:orr now)))
+::  +evening-pass: the evening review's push (version 130), once a day
+::  at the owner's review_at (rhythm.json), over trunk alone: how many
+::  open tasks are overdue, due today and with no date, under the tag
+::  orrery-evening, which the phone opens on its review. A day with
+::  none of them sends nothing. Not one of the day's three nudges, and
+::  sent away from home too: the review is done on the phone
+::
+++  evening-pass
+  |=  acts=(list [id=@ta a=action:orr])
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  local-tz
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  ;<  last=json  bind:m  (read-json (rf 0 / %'evening-last.json'))
+  ?.  (evening-due:orr (de-rhythm:orr rhythm-j) now tz last)  (pure:m ~)
+  =/  n  (evening-counts:orr acts now tz)
+  =/  line=@t  (evening-line:orr n)
+  ;<  ~  bind:m
+    ?:  =('' line)  (pure:(fiber:fiber:nexus ,~) ~)
+    (trunk-notice 'orrery-evening' 'Evening review' line)
+  %+  over:io  (rf 0 / %'evening-last.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['day' s+(local-day:orr now tz)]
+      ['at' s+(en-iso:orr now)]
+      ['overdue' (numb:enjs:format late.n)]
+      ['today' (numb:enjs:format today.n)]
+      ['undated' (numb:enjs:format none.n)]
+      ['line' s+line]
+  ==
 ::  +nudge-pass: one nudge, when one is due (version 75). Never in the
 ::  owner's quiet hours, never past three a day on their clock, never in
 ::  the half hour before a leave alert. In order: a habit whose slot in
@@ -9965,41 +10024,13 @@
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 1 / %'rhythm.json'))
   (send-json eyre-id 200 (en-rhythm:orr (de-rhythm:orr doc)))
-::  +review-hand: each of the owner's replies to the Sunday review, the
-::  quoted review stripped, handed to the read channel as their own words
-::  with the review it answers named (version 75)
-::
-++  review-hand
-  |=  [replies=(list [r=mail-msg:orr root=@t]) day=@t now=@da]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  |-
-  ?~  replies  (pure:m ~)
-  =/  words=@t  (own-words:orr body.r.i.replies root.i.replies)
-  ?:  =('' words)  $(replies t.replies)
-  =/  text=@t  (rap 3 'The owner\'s reply to their Sunday review of the week to ' day ':' nl:orr nl:orr words ~)
-  =/  id=@t  (rap 3 (crip ((d-co:co 13) (ms-of:orr now))) '-' (scot %ux (end [3 4] (sham text id.r.i.replies))) ~)
-  =/  item=json
-    %-  pairs:enjs:format
-    :~  ['id' s+id]
-        ['text' s+text]
-        ['title' s+(cat 3 'Reply to the review of ' day)]
-        ['source' (pairs:enjs:format ~[['kind' s+'mail'] ['id' s+(cat 3 'review/' day)]])]
-        ['who' s+'person/me']
-        ['at' s+(en-iso:orr now)]
-        ['by' s+'owner']
-        ['scope' ~]
-    ==
-  ;<  *  bind:m  (make-soft:io (rf 0 /read-inbox `@ta`id) |+[[[/ %json] item] ~])
-  ;<  ~  bind:m  (over:io (rf 0 /read-inbox %rev) [[/ %json] (numb:enjs:format (ms-of:orr now))])
-  $(replies t.replies)
 ::  +review-send: the week's review (version 74), unless one went today
 ::  already (the owner's wake sends another): the last seven days' work
 ::  and health as the computer and the phone reported them, how many of
 ::  the last fourteen days the phone has reported (the baseline), the
-::  time with each child, the owner's trips in the week ahead; mailed
-::  from the owner to the owner through auspex, pushed in a line, and
-::  kept in review-last.json
+::  time with each child, the owner's trips in the week ahead, kept in
+::  review-last.json and by day for the journal. It is read there, and
+::  neither mailed nor pushed (version 130)
 ::
 ++  review-send
   |=  [day=@t forced=?]
@@ -10103,13 +10134,7 @@
         ~['Your baseline is in: three targets a notch above it wait on you, on the page or in tomorrow\'s brief.']
     ==
   =/  text=@t  (review-render:orr day tz work health seen tally behind ahead extra)
-  ;<  aus=(unit path)  bind:m  (find-base %auspex)
-  ;<  sent=(unit @t)  bind:m
-    =/  n  (fiber:fiber:nexus ,(unit @t))
-    ?~  aus  (pure:n `'auspex desk not installed')
-    ;<  err=(unit tang)  bind:n  (poke-auspex u.aus our (cat 3 'Your week, ' day) text)
-    (pure:n ?~(err ~ `(tang-head u.err)))
-  ::  the push: the week in a line
+  ::  the week in a line, kept with the text
   =/  total=@ud  (roll work |=([w=[day=@t mins=@ud last=(unit @da)] n=@ud] (add n mins.w)))
   =/  outs=@ud  (roll health |=([h=[day=@t steps=(unit @ud) active=(unit @ud) workouts=@ud night=(unit [start=@da end=@da])] n=@ud] (add n workouts.h)))
   =/  line=@t
@@ -10121,19 +10146,15 @@
           ?~(behind '' (cat 3 u.behind ' is most behind'))
       ==
     |=(t=@t =('' t))
-  ;<  eny=@uvJ  bind:m  get-entropy:io
-  ;<  *  bind:m
-    %+  poke-soft:io  push-road:io
-    [[/ %push-action] `push-action:nexus`[%send [~ ~ ~ ['Your week' line ~ `'/apps/orrery' `'orrery-review']] eny]]
-  ;<  ~  bind:m  (trunk-notice 'orrery-review' 'Your week' line)
   =/  rec=json
     %-  pairs:enjs:format
     :~  ['day' s+day]
         ['at' s+(en-iso:orr now)]
-        ['sent' b+?=(~ sent)]
+        ::  never mailed or pushed since version 130; kept for the readers
+        ['sent' b+|]
         ['text' s+text]
         ['line' s+line]
-        ['notes' a+(turn (skip `(list @t)`~[(fall sent '')] |=(t=@t =('' t))) |=(t=@t `json`s+t))]
+        ['notes' a+~]
     ==
   ::  each Sunday's review is kept as well, for a journal (version 116)
   ;<  ~  bind:m  (put-json (rf 0 /reviews `@ta`day) rec)
@@ -10149,73 +10170,6 @@
   ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& u.base %'order.calendar-cache'] ~)
   ?.  ?=([~ %file *] vw)  (pure:m ~)
   (pure:m (mole |.(;;(cal-cache:orr (sang-noun:tarball sang.u.vw)))))
-::  +brief-replies: the owner's replies to the brief, oldest first,
-::  each read once: what the owner typed (the quoted brief stripped),
-::  put to the analyst with the brief's tagged actions, the moves
-::  applied through the writer (a status walks +brief-steps; a new due
-::  or subject dismisses the action and proposes it again as changed,
-::  then moves the new one), the facts filed as the mail reader's. A
-::  reply to another day's brief than the last sent is left, noted.
-::  Answers the ids handled and the notes.
-::
-++  brief-replies
-  |=  [replies=(list [r=mail-msg:orr root=@t]) all=(list loaded:orr) schema=json now=@da tz=@t]
-  =/  m  (fiber:fiber:nexus ,[(list @t) (list @t)])
-  ^-  form:m
-  ?~  replies  (pure:m [~ ~])
-  =/  sorted=(list [r=mail-msg:orr root=@t])
-    (sort replies |=([a=[r=mail-msg:orr *] b=[r=mail-msg:orr *]] (lth sent.r.a sent.r.b)))
-  ;<  bl=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
-  ;<  gen-j=json  bind:m  (gen-doc 0)
-  =/  gen=config:orr  (de-config:orr gen-j)
-  =|  handled=(list @t)
-  =|  notes=(list @t)
-  |-
-  ?~  sorted  (pure:m [(flop handled) (flop notes)])
-  =/  r=mail-msg:orr  r.i.sorted
-  =/  key=@t  (cat 3 'mail:' id.r)
-  =/  day=@t  (brief-day-of:orr subj.r)
-  ?.  =(day (gs:orr bl 'day'))
-    $(sorted t.sorted, handled [key handled], notes [(rap 3 'a reply to the brief of ' day ' left: the last brief is ' (gs:orr bl 'day') ~) notes])
-  ::  the tags of the brief this reply answers: a wake sends a second
-  ::  brief the same day under other tags
-  =/  tags=(list [tag=@t id=@ta])  (brief-tags bl root.i.sorted)
-  =/  words=@t  (own-words:orr body.r root.i.sorted)
-  ?:  =('' words)  $(sorted t.sorted, handled [key handled])
-  ?:  =('' api-key.gen)
-    (pure:m [(flop handled) (flop ['no api_key set on the generator: the reply waits' notes])])
-  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
-  ;<  rules=(list @t)  bind:m  lattice-rules
-  =/  ctx=reader-ctx:orr  (reader-context:orr all (with-rules:orr schema rules) now)
-  =/  rows=(list window-row:orr)  ~[[(cat 3 'mail/' id.r) (en-iso:orr sent.r) 'person/me' words |]]
-  ;<  got=[status=@ud body=@t secs=@ud]  bind:m
-    %:  post-json
-      (cat 3 url.gen '/chat/completions')
-      api-key.gen
-      %^  chat-body-with:orr  gen  (rap 3 analyst-prompt:orr nl:orr nl:orr reply-rules:orr ~)
-      ~[(reader-prompt-with:orr rows ctx tz mail-kind:orr (tag-lines:orr tags acts 'Actions in the brief, by tag (tag | kind | title | about | due | status):'))]
-      ~m5
-      %reader
-    ==
-  ?.  =(200 status.got)
-    (pure:m [(flop handled) (flop [(rap 3 'model: ' (crip (a-co:co status.got)) ' ' (cut-utf8:orr body.got 200) ~) notes])])
-  =/  ans  (answer-of:orr (fall (de:json:html body.got) [%o ~]))
-  ?:  ?=(%| -.ans)  (pure:m [(flop handled) (flop [p.ans notes])])
-  =/  parsed=(unit json)  (parse-answer:orr text.p.ans)
-  ?~  parsed  (pure:m [(flop handled) (flop ['model: the reply\'s answer is not JSON' notes])])
-  =/  known=(set @t)  (sy (turn all |=(l=loaded:orr id.l)))
-  =/  moves=(list move:orr)  (moves-of:orr u.parsed tags known)
-  ;<  moved=(list @t)  bind:m  (apply-moves moves acts now /mail 'brief')
-  ::  the owner's reply: an address it states waits for their tap
-  =/  facts=tg-facts:orr  (drop-stale:orr (hold-addresses:orr (ground:orr (validate-reader:orr u.parsed rows ctx) rows ctx) &) rows now)
-  ;<  ~  bind:m  (tg-file facts now mail-kind:orr)
-  %=  $
-    sorted  t.sorted
-    handled  [key handled]
-    notes  (weld (flop (weld moved notes.facts)) notes)
-  ==
-++  brief-texts  brief-texts:orr
-++  brief-tags  brief-tags:orr
 ::  +apply-moves: each move on its action, through the writer: the
 ::  status steps; a new due or subject on an action still open
 ::  dismisses it and proposes it again as changed, then moves the new
@@ -11544,6 +11498,8 @@
     ;<  *  bind:m  (file-ops-on ~[+.i.ops] /exec)
     ?.  =('act' (gs:orr +.i.ops 'op'))
       ?.  =(0 adopting)  $(ops t.ops, adopting rest)
+      ::  a status the calendar set closes; a due taken from it does not
+      ?.  =('set-action' (gs:orr +.i.ops 'op'))  $(ops t.ops)
       $(ops t.ops, closed.tally +(closed.tally))
     =/  want=@t
       ?~  t.ops  ''

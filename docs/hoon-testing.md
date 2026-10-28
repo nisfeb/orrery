@@ -114,8 +114,7 @@ a one-line alias per moved arm, so no call site changed.
   - `run-fresh`, `run-rows`, `gate-verdict`, `reader-answer`: the readers'
     verdicts.
   - `read-item`, `read-held`, `key-hide`: the read channel.
-  - `mail-since`, `mail-fresh`, `brief-replies-of`, `mail-rows`: the mail
-    reader's choices.
+  - `mail-since`, `mail-fresh`, `mail-rows`: the mail reader's choices.
   - `chat-since`, `chat-next`, `sift-rows`: the chat and mail readers'
     sift, which was written out twice.
   - `day-count`, `month-spend`, `counted-call`, `counted-pass`,

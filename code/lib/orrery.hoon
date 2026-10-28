@@ -8058,6 +8058,7 @@
       weekend=(unit [from=@ud to=@ud])
       per-window=@ud
       young=(unit [age=@ud share=@ud])
+      review=(unit @ud)
   ==
 ::  +clock-of: "HH:MM" as minutes past midnight
 ::
@@ -8093,6 +8094,9 @@
       ?:(&(=('' (gs j 'weekend_from')) =('' (gs j 'weekend_to'))) `[540 720] (span 'weekend_from' 'weekend_to'))
       (max 1 (min 4 (fall (gn j 'per_window') 2)))
       ?.(&(?=(^ age) (gth u.age 0) (lth share 100)) ~ `[(min 18 u.age) share])
+      ::  the evening review's push (version 130): 20:00 unless set, off
+      ::  when set blank
+      ?.((has-key j 'review_at') `1.200 (clock-of (gs j 'review_at')))
   ==
 ++  en-rhythm
   |=  r=rhythm
@@ -8109,6 +8113,7 @@
       ['per_window' (numb:enjs:format per-window.r)]
       ['young_age' ?~(young.r (numb:enjs:format 0) (numb:enjs:format age.u.young.r))]
       ['young_share' ?~(young.r (numb:enjs:format 100) (numb:enjs:format share.u.young.r))]
+      ['review_at' s+?~(review.r '' (en-clock u.review.r))]
   ==
 ::  +in-span: minutes inside a span, one that crosses midnight included
 ::
@@ -8130,6 +8135,57 @@
   |=  [now=@da tz=@t r=rhythm]
   ^-  ?
   (in-span (clock-minutes now tz) from.quiet.r to.quiet.r)
+::  ==  the evening review (version 130): once a day, at the owner's
+::  review_at, a push saying what there is to organize: the open tasks
+::  overdue, due today and with no due. The review itself is the
+::  phone's to show
+::
+::  +evening-counts: the open tasks (approved or claimed) by their due
+::  on the owner's clock: overdue (a date before today, or a time past),
+::  due by the day's end, and with none
+::
+++  evening-counts
+  |=  [acts=(list [id=@ta a=action]) now=@da tz=@t]
+  ^-  [late=@ud today=@ud none=@ud]
+  =/  to=@da  to:(day-bounds (local-day now tz) tz)
+  ::  a due at midnight UTC is a date, compared as the owner's date
+  =/  d0=@da  =/(w (wall-of now tz) (sub w (mod w ~d1)))
+  =/  on-date  |=(d=@da =(0 (mod d ~d1)))
+  %+  roll  acts
+  |=  [[id=@ta a=action] n=[late=@ud today=@ud none=@ud]]
+  ^-  [late=@ud today=@ud none=@ud]
+  ?.  &(=(%task kind.a) ?=(?(%approved %claimed) status.a))  n
+  ?~  due.a  n(none +(none.n))
+  ?:  ?:((on-date u.due.a) (lth u.due.a d0) (lth u.due.a now))  n(late +(late.n))
+  ?:  ?:((on-date u.due.a) =(u.due.a d0) (lth u.due.a to))  n(today +(today.n))
+  n
+::  +evening-line: the push's text, '' when there is nothing to organize
+::
+++  evening-line
+  |=  [late=@ud today=@ud none=@ud]
+  ^-  @t
+  %+  join-cords  ', '
+  %+  skip
+    ^-  (list @t)
+    :~  ?:(=(0 late) '' (cat 3 (crip (a-co:co late)) ' overdue'))
+        ?:(=(0 today) '' (cat 3 (crip (a-co:co today)) ' due today'))
+        ?:(=(0 none) '' (cat 3 (crip (a-co:co none)) ' with no date'))
+    ==
+  |=(t=@t =('' t))
+::  +evening-due: whether the review's push goes now: at or after the
+::  owner's time that day, once the quiet hours and family time are
+::  over, and once a day. A time the quiet hours hold till midnight
+::  sends nothing that day
+::
+++  evening-due
+  |=  [r=rhythm now=@da tz=@t last=json]
+  ^-  ?
+  ?~  review.r  |
+  =/  mins=@ud  (clock-minutes now tz)
+  ?:  (lth mins u.review.r)  |
+  ?:  (quiet-hour now tz r)  |
+  ?:  ?~(family.r | (in-span mins from.u.family.r to.u.family.r))  |
+  !=((local-day now tz) (gs last 'day'))
 ::  ==  nags (version 110): a high-priority action that is late
 ::
 ::  +late-high: the open actions marked high (payload priority) whose due
@@ -8500,25 +8556,6 @@
   ^-  (list json)
   ?.  =(day (gs last 'day'))  ~
   (ga last 'sent')
-::  +review-prefix, +review-replies-of: the owner's replies to the last
-::  Sunday review: from us, answering a message from us whose body is
-::  the review word for word, under its subject, and not read before
-::
-++  review-prefix  'Your week, '
-++  review-replies-of
-  |=  [fresh=(list mail-msg) msgs=(list mail-msg) our=@p seen=(set @t) sent=@t]
-  ^-  (list [r=mail-msg root=@t])
-  ?:  =('' sent)  ~
-  =/  by-id=(map @t mail-msg)  (~(gas by *(map @t mail-msg)) (turn msgs |=(x=mail-msg [id.x x])))
-  %+  murn  fresh
-  |=  x=mail-msg
-  ^-  (unit [r=mail-msg root=@t])
-  ?.  &(=(our from.x) ?=(^ prev.x) !(~(has in seen) (cat 3 'mail:' id.x)))  ~
-  ?~  (find (trip review-prefix) (trip subj.x))  ~
-  =/  root=(unit mail-msg)  (~(get by by-id) (scot %uv u.prev.x))
-  ?~  root  ~
-  ?.  &(=(our from.u.root) =(sent body.u.root))  ~
-  `[x body.u.root]
 ::  ==  outdoors (version 76): the weather and nearby parks
 ::
 ::  +outdoors: outdoors.json. The weather is read unless the owner turns
@@ -9888,9 +9925,9 @@
   ==
 ::  +plan-mirror: the todo list against the actions. A todo carrying an
 ::  action id follows its action: done on the ship ticks it, dismissed
-::  or failed deletes it, a due that differs is moved to the action's
-::  (the ship is the source of truth for what it made); ticked in the
-::  calendar, it moves an approved or claimed action to done. A todo
+::  or failed deletes it, and a due that differs goes the way of the
+::  side that moved (+due-ops); ticked in the calendar, it moves an
+::  approved or claimed action to done. A todo
 ::  with no action id and not done is the owner's own and is adopted.
 ::  A done todo nobody claims, and a todo whose action is not in the
 ::  list, are left alone.
@@ -9937,11 +9974,63 @@
   ?:  |(=(%dismissed status.a) =(%failed status.a))
     [%calendar (pairs:enjs:format ~[['action' s+'del-event'] ['id' s+id.t]])]~
   ?.  live  ~
-  ?:  =(due.t due.a)  ~
-  ::  a todo the owner typed is theirs to reschedule: only a todo the
-  ::  ship made follows its action's due
-  ?:  =('calendar' by.a)  ~
-  [%calendar (edit-todo-op t orrery.t due.a)]~
+  (due-ops t a)
+::  +due-ops: a live action's due against its todo's (version 130). The
+::  action keeps the due it last saw on the todo (payload todo_due_ms,
+::  null for none), so the side that moved since wins: a due the owner
+::  moves in the calendar is the action's, for a todo the ship made as
+::  for one they typed, and a due moved on the ship (POST
+::  /api/actions/<id>/due) moves the todo. When both moved, or the
+::  action has no mark yet (made before 130), the calendar wins.
+::
+++  due-ops
+  |=  [t=todo a=action]
+  ^-  (list mirror-op)
+  =/  seen=(unit (unit @da))  (todo-due-of payload.a)
+  ?:  =(due.t due.a)
+    ?:  =(seen `due.t)  ~
+    [%writer (mark-due-op orrery.t ~ due.t)]~
+  ?:  =(seen `due.t)
+    :~  [%calendar (edit-todo-op t orrery.t due.a)]
+        [%writer (mark-due-op orrery.t ~ due.a)]
+    ==
+  [%writer (mark-due-op orrery.t `due.t due.t)]~
+::  +todo-due-of: the due an action last saw on its todo: ~ when it has
+::  no mark, [~ ~] when the todo had no due
+::
+++  todo-due-of
+  |=  pay=json
+  ^-  (unit (unit @da))
+  ?.  (has-key pay 'todo_due_ms')  ~
+  `(bind (gn pay 'todo_due_ms') da-of-ms)
+::  +mark-due-op: the writer op that gives an action the due its todo
+::  has, when due is given, and marks the todo's due as seen. In
+::  milliseconds both, as the calendar keeps them, so a due the calendar
+::  holds to the millisecond compares equal once taken
+::
+++  mark-due-op
+  |=  [id=@t due=(unit (unit @da)) seen=(unit @da)]
+  ^-  json
+  =/  ms  |=(d=(unit @da) ^-(json ?~(d ~ (numb:enjs:format (ms-of u.d)))))
+  %-  pairs:enjs:format
+  %+  weld
+    ^-  (list [@t json])
+    ~[['op' s+'mark-action'] ['id' s+id] ['by' s+'calendar'] ['todo_due_ms' (ms seen)]]
+  ^-  (list [@t json])
+  ?~(due ~ ~[['due_ms' (ms u.due)]])
+::  +due-input: a due as a client gives it (version 130): an ISO 8601
+::  UTC time, a date alone (midnight UTC, the calendar's mark of a day
+::  with no time), or null or "" for none
+::
+++  due-input
+  |=  v=json
+  ^-  (each (unit @da) @t)
+  ?~  v  [%& ~]
+  ?.  ?=([%s *] v)  [%| 'due: an ISO 8601 UTC time, a YYYY-MM-DD date, or null']
+  ?:  =('' p.v)  [%& ~]
+  =/  d=(unit @da)  (de-iso ?:(=(10 (met 3 p.v)) (cat 3 p.v 'T00:00:00Z') p.v))
+  ?~  d  [%| 'due: an ISO 8601 UTC time, a YYYY-MM-DD date, or null']
+  [%& d]
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
@@ -10534,27 +10623,13 @@
   ?.  (lien (fall (~(get by w) 'participants') ~) |=(r=row !=('person/me' (ref-or-text value.obs.r))))  ~
   ?:  (lien (people-named name.body.l known ~) |=(b=bid =('person/me' b)))  ~
   (turn `(list row)`mine |=(r=row (retract-op id.r 'calendar: the event does not name the owner' 'calendar')))
-::  ==  the daily brief (version 52): one mail each morning from the
-::  owner to the owner, the way the phone client's brief was, and the
-::  owner's reply read back once. Pure: +brief-render writes the mail,
-::  +brief-user the analyst's prompt for its suggestions, +own-words
-::  strips a reply to what the owner typed, +moves-of reads the
-::  model's moves on the tagged actions, +brief-steps the statuses a
-::  move walks. The fiber in the nexus sends, reads and files.
+::  ==  the daily brief (version 52): one record each morning, read on
+::  the phone and kept by day (mailed until version 130). Pure:
+::  +brief-render writes the text, +brief-user the analyst's prompt for
+::  its suggestions, +moves-of reads a model's moves on tagged actions,
+::  +brief-steps the statuses a move walks. The fiber in the nexus
+::  makes and files it.
 ::
-++  brief-prefix  'Daily brief '
-++  brief-subject  |=(day=@t ^-(@t (cat 3 brief-prefix day)))
-::  +brief-day-of: the day a brief's subject names, through any "Re:",
-::  '' when it is not a brief
-::
-++  brief-day-of
-  |=  subject=@t
-  ^-  @t
-  =/  t=tape  (trip subject)
-  =/  at=(unit @ud)  (find (trip brief-prefix) t)
-  ?~  at  ''
-  =/  day=@t  (crip (scag 10 (slag (add u.at (lent (trip brief-prefix))) t)))
-  ?:  ?=(^ (de-iso (cat 3 day 'T00:00:00Z')))  day  ''
 ::  +utc-of: a wall-clock moment of a zone as the UTC instant it names,
 ::  the inverse of +wall-of; +local-day: the owner's date of a moment;
 ::  +day-bounds: a local day as UTC instants, midnight to midnight
@@ -10726,7 +10801,7 @@
         ?:(=('' why) ~ ~[(cat 3 '     Why: ' why)])
       [(rap 3 '     ' (join-cords ', ' parts) ~) (rap 3 '[' tag '] ' title.a ~) lines]
   ==
-::  +brief-render: the mail's text
+::  +brief-render: the brief's text
 ::
 ++  brief-render
   |=  [day=@t today=(list @t) leaving=(list @t) waiting=(list @t) suggestions=@t]
@@ -10738,8 +10813,7 @@
       ?~(leaving ~ (weld `(list @t)`~['' 'When to leave'] leaving))
       ~['' 'Waiting on you']
       ?~(waiting ~['Nothing.'] waiting)
-      ?~(waiting ~ ~['' 'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday".'])
-      ~['' 'Suggestions' (trim-cord suggestions) '' 'Anything else you write back is recorded as a fact, in your words.']
+      ~['' 'Suggestions' (trim-cord suggestions)]
   ==
 ::  +brief-prompt: orrery-utils/common/brief-prompt.md, word for word;
 ::  scripts/prompt-drift.py holds it there. Edit the file, not this.
@@ -10755,7 +10829,7 @@
 
   Point out what the owner would want to know and might not see: two things today that need one person in two places at once, a fact that looks stale or wrong, something open with nothing being done about it, a decision waiting on them that matters today.
 
-  Do not list the schedule or the waiting actions again; the mail already does. Do not propose actions; another pass does that. Do not repeat a line yesterday's brief already said unless what it said has changed.
+  Do not list the schedule or the waiting actions again; the brief already does. Do not propose actions; another pass does that. Do not repeat a line yesterday's brief already said unless what it said has changed.
 
   Respect what the facts say about time: an occurrence in the past is over, and a situation that is upcoming has not happened.
 
@@ -10843,39 +10917,7 @@
 ::  +join-cords drops)
 ::
 ++  join-lines  |=(ls=(list @t) ^-(@t (rap 3 (join nl ls))))
-::  +own-words: what the owner typed in a reply: the quoted brief
-::  ("On ... wrote:", "-----Original Message", "> " lines) and any
-::  line the brief itself said are dropped
-::
-++  own-words
-  |=  [reply=@t brief=@t]
-  ^-  @t
-  =/  said=(set @t)  (sy (skip (turn (split-lines brief) trim-cord) |=(t=@t =('' t))))
-  =|  out=(list @t)
-  =/  ls=(list @t)  (split-lines reply)
-  |-
-  ?~  ls  (trim-cord (join-cords nl (flop out)))
-  =/  t=@t  (trim-cord i.ls)
-  =/  n=@ud  (met 3 t)
-  ?:  ?|  &((gte n 10) =('On ' (end [3 3] t)) =('wrote:' (rsh [3 (sub n 6)] t)))
-          =('-----Original Message' (end [3 21] t))
-      ==
-    $(ls ~)
-  ?:  |(=('>' (end [3 1] t)) (~(has in said) t))  $(ls t.ls)
-  $(ls t.ls, out [i.ls out])
-::  +reply-rules: what a reply to the brief adds to the analyst's
-::  prompt (Talon's REPLY_RULES, word for word)
-::
-++  reply-rules
-  ^-  @t
-  '''
-  This message is the owner's reply to their daily brief. It is the owner speaking about their own world, so a plain statement in it is conf 100.
-  The brief listed actions waiting for the owner's answer, each under a tag such as A1; they are given below with what each one is. A sentence about a tagged action is a move on it, not a fact: answer it under "moves", one per action, with only what the owner changed: {"tag": "A1", "status": "dismissed", "due": "...", "about": ["kind/slug"], "reason": "..."}. The status is "approved" (approve, yes, go ahead), "dismissed" (dismiss, no, skip) or "done" (done, did it). A new due is ISO 8601 UTC, read in the owner's timezone from the time now. A new subject names existing bodies by id. When the owner says why ("dismiss A3, it's just the event"), put their own words under "reason"; when they give no reason, give none, and never make one up. Write no fact from a sentence that only moves an action.
-  Everything else in the reply is facts, by the rules above. Something the owner asks to have done is an action.
-  Answer with one JSON object and nothing else:
-  {"moves": [...], "bodies": [...], "observations": [...], "actions": [...]}
-  '''
-::  +tag-lines: the brief's actions by tag, for the reply's prompt
+::  +tag-lines: the open actions by tag, for a reader's prompt
 ::
 ++  tag-lines
   |=  [tags=(list [tag=@t id=@ta]) acts=(list [id=@ta a=action]) head=@t]
@@ -11413,21 +11455,6 @@
   ?~  js  ~
   ?:  (~(has in seen) i.js)  $(js t.js)
   [i.js $(js t.js, seen (~(put in seen) i.js))]
-::  +brief-texts, +brief-tags: every brief sent today (its text), and
-::  the tags of the one whose text is given
-::
-++  brief-texts
-  |=  bl=json
-  ^-  (list @t)
-  =/  today=(list @t)  (turn (ga bl 'today') |=(e=json (gs e 'text')))
-  ?:(=('' (gs bl 'text')) today [(gs bl 'text') today])
-++  brief-tags
-  |=  [bl=json text=@t]
-  ^-  (list [tag=@t id=@ta])
-  =/  hits=(list json)  (skim (ga bl 'today') |=(e=json =(text (gs e 'text'))))
-  =/  t=json  ?^(hits (gj i.hits 'tags') ?:(=(text (gs bl 'text')) (gj bl 'tags') ~))
-  ?.  ?=([%o *] t)  ~
-  (murn ~(tap by p.t) |=([k=@t v=json] ?:(?=([%s *] v) `[k `@ta`p.v] ~)))
 ::  +essay-of: a Tlon essay of one text: a story of one inline verse
 ::  per line, the author, the moment, the /chat kind, no meta or blob
 ::
@@ -11761,6 +11788,7 @@
   ?:  &(=('GET' meth) ?=([%api %review %last ~] suffix))        `[%get-review-last %own]
   ?:  &(=('POST' meth) ?=([%api %review %wake ~] suffix))       `[%post-review-wake %own]
   ?:  &(=('GET' meth) ?=([%api %nudge %last ~] suffix))         `[%get-nudge-last %own]
+  ?:  &(=('GET' meth) ?=([%api %evening %last ~] suffix))       `[%get-evening-last %own]
   ?:  &(=('GET' meth) ?=([%api %rhythm ~] suffix))              `[%get-rhythm %own]
   ?:  &(=('GET' meth) ?=([%api %outdoors ~] suffix))            `[%get-outdoors %own]
   ?:  &(=('PUT' meth) ?=([%api %outdoors ~] suffix))            `[%put-outdoors %own]
@@ -11780,6 +11808,7 @@
   ?:  &(=('POST' meth) ?=([%api %actions @ %assign ~] suffix))  `[%post-actions-assign %own]
   ?:  &(=('POST' meth) ?=([%api %actions @ %priority ~] suffix))  `[%post-actions-priority %writes]
   ?:  &(=('POST' meth) ?=([%api %actions @ %snooze ~] suffix))  `[%post-actions-snooze %writes]
+  ?:  &(=('POST' meth) ?=([%api %actions @ %due ~] suffix))     `[%post-actions-due %writes]
   ?:  &(=('POST' meth) ?=([%api %pairing ~] suffix))            `[%post-pairing %own]
   ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
   ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]
@@ -12715,24 +12744,6 @@
     %+  skim  msgs
     |=(x=mail-msg &(trusted.x (gte sent.x since) (lte sent.x now)))
   |=([a=mail-msg b=mail-msg] (lth sent.a sent.b))
-::  +brief-replies-of: the owner's replies to a brief sent today, each
-::  with the brief's text: from us, answering a message from us whose
-::  body is one of today's briefs word for word (a client's brief for
-::  the same day carries other tags), under a brief's subject, and not
-::  read before
-::
-++  brief-replies-of
-  |=  [fresh=(list mail-msg) msgs=(list mail-msg) our=@p seen=(set @t) sent-today=(list @t)]
-  ^-  (list [r=mail-msg root=@t])
-  =/  by-id=(map @t mail-msg)  (~(gas by *(map @t mail-msg)) (turn msgs |=(x=mail-msg [id.x x])))
-  %+  murn  fresh
-  |=  x=mail-msg
-  ^-  (unit [r=mail-msg root=@t])
-  ?.  &(=(our from.x) ?=(^ prev.x) !=('' (brief-day-of subj.x)) !(~(has in seen) (cat 3 'mail:' id.x)))  ~
-  =/  root=(unit mail-msg)  (~(get by by-id) (scot %uv u.prev.x))
-  ?~  root  ~
-  ?.  &(=(our from.u.root) (lien sent-today |=(t=@t =(t body.u.root))))  ~
-  `[x body.u.root]
 ::  +mail-rows: everyone else's mail as the reader's rows; the owner's
 ::  own and a blank body say nothing
 ::

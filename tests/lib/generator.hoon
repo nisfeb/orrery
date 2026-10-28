@@ -1537,12 +1537,58 @@
       (expect-eq !>(3) !>((lent (adopt-ops:orr e1(orrery '') ~ now))))
     ==
   ==
+::  +test-due-ops: the side that moved since the last look wins, for a
+::  todo the ship made as for one the owner typed (version 130)
+::
+++  test-due-ops
+  =/  oct1=@da  ~2026.10.1
+  =/  oct5=@da  ~2026.10.5
+  =/  mark  |=(ms=(unit @ud) ^-(json (pairs:enjs:format ~[['todo_due_ms' ?~(ms ~ (numb:enjs:format u.ms))]])))
+  =/  act  |=([pay=json due=(unit @da) by=@t] ^-(action:orr [%task 'Fix the gate' pay ~ due by now %approved '' ~]))
+  =/  tod  |=(due=(unit @da) ^-(todo:orr ['e1' 'Fix the gate' 'a1' | due '' (jo '{"name": "Fix the gate", "orrery": "a1"}') &]))
+  =/  ops  |=([t=todo:orr a=action:orr] (due-ops:orr t a))
+  =/  wr  |=(o=(list mirror-op:orr) (murn o |=(x=mirror-op:orr ?:(?=(%writer -.x) `+.x ~))))
+  =/  cal  |=(o=(list mirror-op:orr) (murn o |=(x=mirror-op:orr ?:(?=(%calendar -.x) `+.x ~))))
+  =/  in-step  (ops (tod `oct1) (act (mark `1.790.812.800.000) `oct1 'generator'))
+  =/  unmarked  (ops (tod `oct1) (act ~ `oct1 'generator'))
+  =/  owner-moved  (ops (tod `oct5) (act (mark `1.790.812.800.000) `oct1 'generator'))
+  =/  ship-moved  (ops (tod `oct1) (act (mark `1.790.812.800.000) `oct5 'calendar'))
+  =/  cleared  (ops (tod ~) (act (mark `1.790.812.800.000) `oct1 'calendar'))
+  =/  both  (ops (tod `oct5) (act (mark ~) `oct1 'generator'))
+  =/  old  (ops (tod `oct5) (act ~ `oct1 'generator'))
+  ;:  weld
+    ::  in step and marked: nothing; in step, no mark yet: the mark alone
+    (expect-eq !>(~) !>(in-step))
+    (expect-eq !>(~) !>((cal unmarked)))
+    (expect-eq !>([`(unit @ud)`[~ 1.790.812.800.000] |]) !>(=/(j (snag 0 (wr unmarked)) [(gn:orr j 'todo_due_ms') (has-key:orr j 'due_ms')])))
+    ::  the owner moved it in the calendar: the action takes it
+    (expect-eq !>(~) !>((cal owner-moved)))
+    (expect-eq !>([`(unit @ud)`[~ 1.791.158.400.000] `(unit @ud)`[~ 1.791.158.400.000] 'mark-action' 'a1']) !>(=/(j (snag 0 (wr owner-moved)) [(gn:orr j 'due_ms') (gn:orr j 'todo_due_ms') (gs:orr j 'op') (gs:orr j 'id')])))
+    ::  moved on the ship: the todo follows, a todo the owner typed too,
+    ::  and the mark with it
+    (expect-eq !>([%calendar 'edit-event' `(unit @ud)`[~ 1.791.158.400.000]]) !>(=/(o (snag 0 ship-moved) ?>(?=(%calendar -.o) [%calendar (gs:orr +.o 'action') (gn:orr +.o 'due_ms')]))))
+    (expect-eq !>(`(unit @ud)`[~ 1.791.158.400.000]) !>((gn:orr (snag 0 (wr ship-moved)) 'todo_due_ms')))
+    ::  the owner cleared the due: the action has none
+    (expect-eq !>([& ~ & ~]) !>(=/(j (snag 0 (wr cleared)) [(has-key:orr j 'due_ms') (gj:orr j 'due_ms') (has-key:orr j 'todo_due_ms') (gj:orr j 'todo_due_ms')])))
+    ::  both moved, or no mark from before 130: the calendar wins
+    (expect-eq !>(`(unit @ud)`[~ 1.791.158.400.000]) !>((gn:orr (snag 0 (wr both)) 'due_ms')))
+    (expect-eq !>(`(unit @ud)`[~ 1.791.158.400.000]) !>((gn:orr (snag 0 (wr old)) 'due_ms')))
+    (expect-eq !>(~) !>((cal old)))
+    ::  a due as a client gives it
+    (expect-eq !>(`(each (unit @da) @t)`[%& ~]) !>((due-input:orr ~)))
+    (expect-eq !>(`(each (unit @da) @t)`[%& ~]) !>((due-input:orr s+'')))
+    (expect-eq !>(`(each (unit @da) @t)`[%& `~2026.10.30]) !>((due-input:orr s+'2026-10-30')))
+    (expect-eq !>(`(each (unit @da) @t)`[%& `~2026.10.30..14.00.00]) !>((due-input:orr s+'2026-10-30T14:00:00Z')))
+    (expect !>(?=([%| *] (due-input:orr s+'friday'))))
+    (expect !>(?=([%| *] (due-input:orr n+'5'))))
+  ==
 ++  test-plan-mirror
   =/  acts=(list [id=@ta a=action:orr])
     :~  ['a1' [%task 'Ticked on the ship' ~ ~ ~ 'generator' now %done '' ~]]
         ['a2' [%task 'Dismissed on the ship' ~ ~ ~ 'generator' now %dismissed '' ~]]
         ['a3' [%task 'Ticked in the calendar' ~ ~ ~ 'generator' now %approved '' ~]]
-        ['a4' [%task 'Due moved on the ship' ~ ~ `~2026.10.5 'generator' now %approved '' ~]]
+        ::  a4 saw 1 October on its todo last (version 130), so the ship moved it
+        ['a4' [%task 'Due moved on the ship' (jo '{"todo_due_ms": 1790812800000}') ~ `~2026.10.5 'generator' now %approved '' ~]]
         ['a5' [%task 'In step' ~ ~ ~ 'generator' now %approved '' ~]]
         ::  unticked by the owner: a6 was ticked in the calendar, a7 by
         ::  the ship (its mark is on e9); a8 too, but the task filed for
@@ -2335,9 +2381,6 @@
     (expect-eq !>('~sampel-palnet') !>(from.row))
     (expect-eq !>('Lunch?\0a\0aFriday at noon') !>(text.row))
     (expect-eq !>('0v2.mid') !>(mid.row))
-    (expect-eq !>('2026-09-23') !>((brief-day-of:orr 'Re: Daily brief 2026-09-23')))
-    (expect-eq !>('') !>((brief-day-of:orr 'Daily brief 2026-13-40')))
-    (expect-eq !>('') !>((brief-day-of:orr 'Lunch?')))
   ==
 ++  test-brief-render
   =/  acts=(list [id=@ta a=action:orr])
@@ -2360,11 +2403,11 @@
           :~  'Today, Wednesday 23 September'  ''  '09:30  Standup'  ''  'Waiting on you'
               '[A1] Tell Mira the tow is booked'  '     message, about Mira Quill, due Thu 24 Sep 18:00'  '     Why: she asked twice'
               '[A2] Book the tow'  '     task'  ''
-              'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday".'  ''
-              'Suggestions'  'Nothing to add.'  ''  'Anything else you write back is recorded as a fact, in your words.'
+              'Suggestions'  'Nothing to add.'
           ==
       !>  text
-    (expect-eq !>('Daily brief 2026-09-23') !>((brief-subject:orr '2026-09-23')))
+    ::  no reply lines: the brief is not mailed (version 130)
+    (expect !>(?=(~ (find "Reply" (trip text)))))
   ==
 ++  test-brief-today
   =/  evs=(list cal-event:orr)  (events-of:orr cal-store)
@@ -2454,15 +2497,12 @@
     (expect !>(!(has-sub (gs:orr (gj:orr (gj:orr (gj:orr bare 'questions') 'worth_reading') 'criteria') 'true') 'open actions')))
     (expect !>((has-sub reader-move-rules:orr '"moves"')))
   ==
-++  test-own-words-and-moves
-  =/  brief=@t  'Today, Wednesday\0a\0a[A1] Tell Mira\0a     message\0a\0aSuggestions\0aNothing to add.'
-  =/  reply=@t  'approve A1, and we got the car back\0a\0aSuggestions\0a> Today, Wednesday\0aOn Wed, Sep 23, orrery wrote:\0a> [A1] Tell Mira'
+++  test-moves
   =/  tags=(list [tag=@t id=@ta])  ~[['A1' 'a1'] ['A2' 'a2']]
   =/  answer=json
     (jo '{"moves": [{"tag": "[a1]", "status": "approved", "reason": "yes"}, {"tag": "A2", "due": "2026-09-26T13:00:00Z", "about": ["person/me", "org/nope"]}, {"tag": "A2", "status": "done"}, {"tag": "A9", "status": "done"}, {"tag": "A2", "reason": "later"}]}')
   =/  moves=(list move:orr)  (moves-of:orr answer tags (sy ~['person/me']))
   ;:  weld
-    (expect-eq !>('approve A1, and we got the car back') !>((own-words:orr reply brief)))
     (expect-eq !>(2) !>((lent moves)))
     (expect-eq !>(`move:orr`['A1' 'a1' 'approved' ~ ~ 'yes']) !>((snag 0 moves)))
     (expect-eq !>(`move:orr`['A2' 'a2' 'done' `~2026.9.26..13.00.00 ~ '']) !>((snag 1 moves)))

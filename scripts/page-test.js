@@ -197,12 +197,12 @@ ok('the brief card shows the stops on a map when the brief had any', mapSettings
 const weekSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
   { review: { at: '2026-10-11T22:00:00Z', sent: true, text: 'Your week, Sunday 2026-10-11\n\nWork\nMon 9 h' }, healthDays: 9, health: { day: '2026-10-10', steps: 4210, workouts: [{}] }, work: { day: '2026-10-11', active_minutes: 545 },
     nudge: { day: '2026-10-11', sent: [{ at: '2026-10-11T19:05:00Z', kind: 'desk', title: '1 h 35 min at the desk' }] },
-    rhythm: { quiet_from: '22:00', quiet_to: '07:00', family_from: '', family_to: '', evening_from: '18:00', evening_to: '21:00', weekend_from: '09:00', weekend_to: '12:00', per_window: 2, young_age: 0, young_share: 100 } });
+    rhythm: { quiet_from: '22:00', quiet_to: '07:00', family_from: '', family_to: '', evening_from: '18:00', evening_to: '21:00', weekend_from: '09:00', weekend_to: '12:00', per_window: 2, young_age: 0, young_share: 100, review_at: '20:00' } });
 ok('the week card says what came in, how far the baseline is, and shows the last review (version 74)',
   weekSettings.includes('<h2>The week</h2>') && weekSettings.includes('Health: 9 days kept; the baseline needs 14.') && weekSettings.includes('4210 steps, 1 workout')
   && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11')
   && weekSettings.includes('Nudges on 2026-10-11: 1 of 3. Last: 1 h 35 min at the desk')
-  && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"'));
+  && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"') && weekSettings.includes('name="review_at" value="20:00"'));
 const outSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
   { outdoors: { weather: true, pota: true, pota_location: 'US-GT', pota_radius_km: 30 }, weather: { forecast_at: '2026-10-06T18:00:00Z', alerts: 1, note: '' }, parks: { at: '2026-10-06T18:01:00Z', near: 4, added: 2, note: '' } });
 ok('the outdoors form shows the settings, the forecast and the parks (version 76)',
@@ -350,9 +350,9 @@ ok('the executor card says what the calendar events reader did',
 const mailSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, execLast, {}, {}, {}, {}, calLast, { enabled: true, poll_minutes: 10, model: 'x/y' },
   { at: '2026-09-23T14:10:35Z', since: '2026-09-23T13:10:35Z', conversations: 2, changed: 3, read: 2, filed: 4, strangers: 1, held: 0, read_today: 2, notes: ['A1: approved'] },
   { day: '2026-09-23', at: '2026-09-23T11:00:05Z', sent: true, tags: { A1: 'x', A2: 'y' }, notes: [] });
-ok('the mail card carries the reader\'s settings and its last pass, and the brief card the last brief sent',
+ok('the mail card carries the reader\'s settings and its last pass, and the brief card the last brief made, never mailed (version 130)',
   mailSettings.includes('<h2>Mail</h2>') && mailSettings.includes('name="enabled" checked') && mailSettings.includes('value="x/y"') && mailSettings.includes('2 threads, 3 messages; read 2, filed 4, strangers 1, held 0. Read today: 2.')
-  && mailSettings.includes('A1: approved') && mailSettings.includes('data-mail-wake="1"') && mailSettings.includes('<h2>Daily brief</h2>') && mailSettings.includes('Last brief for 2026-09-23 at 2026-09-23 11:00:05, sent; 2 actions tagged.') && mailSettings.includes('data-brief-wake="1"'));
+  && mailSettings.includes('A1: approved') && mailSettings.includes('data-mail-wake="1"') && mailSettings.includes('<h2>Daily brief</h2>') && mailSettings.includes('Last brief for 2026-09-23 at 2026-09-23 11:00:05; 2 actions tagged.') && mailSettings.includes('data-brief-wake="1"') && !mailSettings.includes('Reply with') && !mailSettings.includes('mails you'));
 const readSettings = render.settings({ kinds: {} }, {}, gen, genLast, {}, tg, tgLast, execLast, {}, {}, {}, {}, calLast, {}, {}, {}, { enabled: true, model: 'x/y' }, { at: '2026-09-24T20:00:00Z', read: 1, filed: 4, read_today: 3, notes: ['1790000000000-0xab: The tow'] });
 ok('the read card carries its settings and last read, between mail and the brief', readSettings.includes('<h2>Read</h2>') && readSettings.indexOf('<h2>Mail</h2>') < readSettings.indexOf('<h2>Read</h2>') && readSettings.indexOf('<h2>Read</h2>') < readSettings.indexOf('<h2>Daily brief</h2>')
   && readSettings.includes('data-save-read="1"') && readSettings.includes('Last read at 2026-09-24 20:00:00: read 1, filed 4. Read today: 3.') && readSettings.includes('1790000000000-0xab: The tow'));

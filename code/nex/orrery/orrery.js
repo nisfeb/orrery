@@ -721,11 +721,11 @@
     return out + '</div>';
   }
   // the mail card: the reader's settings and its last pass; the brief
-  // card: the last one sent and a button that sends one now
+  // card: the last one made and a button that makes one now
   function mailCard(c, last) {
     c = c || {}; last = last || {};
     var out = '<div class="card"><h2>Mail</h2><div id="mail">' +
-      '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the mail auspex holds every few minutes, and your replies to the daily brief</label></p>' +
+      '<p><label class="box"><input type="checkbox" name="enabled"' + (c.enabled ? ' checked' : '') + '> on: the ship reads the mail auspex holds every few minutes</label></p>' +
       '<p><label class="field">every (minutes) <input name="poll_minutes" value="' + esc(c.poll_minutes != null ? c.poll_minutes : '') + '"></label> ' +
       '<label class="field">first look back (hours) <input name="backfill_hours" value="' + esc(c.backfill_hours != null ? c.backfill_hours : '') + '"></label> ' +
       '<label class="field">gate (hundredths) <input name="gate" value="' + esc(c.gate != null ? c.gate : '') + '"></label> ' +
@@ -787,11 +787,11 @@
   }
   function briefCard(last) {
     last = last || {};
-    var out = '<div class="card"><h2>Daily brief</h2><p class="muted">At seven on your clock the ship mails you the day: the calendar, the actions waiting on you under tags, and the analyst\'s few lines. ' +
-      'Reply with "approve A1", "dismiss A2", "A3 done" or "A1 due friday", and anything else you write is a fact in your words; the mail reader reads the reply.</p>' +
-      '<p><button data-brief-wake="1">send one now</button></p>';
+    var out = '<div class="card"><h2>Daily brief</h2><p class="muted">At seven on your clock the ship writes the day: the calendar, the actions waiting on you under tags, and the analyst\'s few lines. ' +
+      'Your phone\'s assistant reads it to you, and each day\'s brief is kept for your journal.</p>' +
+      '<p><button data-brief-wake="1">make one now</button></p>';
     if (last.at) {
-      out += '<p class="muted">Last brief for ' + esc(last.day || '') + ' at ' + fmtTime(last.at) + (last.sent ? ', sent' : ', not sent') + '; ' + Object.keys(last.tags || {}).length + ' actions tagged.</p>';
+      out += '<p class="muted">Last brief for ' + esc(last.day || '') + ' at ' + fmtTime(last.at) + '; ' + Object.keys(last.tags || {}).length + ' actions tagged.</p>';
       (last.notes || []).forEach(function (n) { out += '<p class="muted">' + esc(n) + '</p>'; });
       // the stops on a map, fetched by the ship from Mapbox as it is shown (version 73)
       if (last.map) out += '<p><img class="brief-map" alt="Today\'s stops on a map" src="' + API + '/brief/map?at=' + encodeURIComponent(last.at) + '"></p>';
@@ -874,7 +874,7 @@
     w = w || {};
     var h = w.health || {}, k = w.work || {}, r = w.review || {};
     var out = '<div class="card"><h2>The week</h2><p class="muted">Your phone sends a day of health (steps, workouts, sleep) and your computer a day of work; ' +
-      'the ship keeps sixty days, never as facts, and on Sunday at six it mails you the week: work, health, time with each child, and the week ahead.</p>';
+      'the ship keeps sixty days, never as facts, and on Sunday at six it writes up the week for your journal: work, health, time with each child, and the week ahead.</p>';
     var days = w.healthDays || 0;
     out += '<p class="muted">' + (days ? 'Health: ' + days + ' day' + (days === 1 ? '' : 's') + ' kept' + (days < 14 ? '; the baseline needs 14' : '') + '.' : 'Health: nothing from your phone yet.') +
       (h.day ? ' Last, ' + esc(h.day) + ': ' + (h.steps != null ? esc(String(h.steps)) + ' steps' : 'no steps') + ', ' + (h.workouts || []).length + ' workout' + ((h.workouts || []).length === 1 ? '' : 's') + '.' : '') + '</p>';
@@ -892,6 +892,7 @@
       '<p>' + fld('evening_from', 'habits in the evening from', '18:00') + fld('evening_to', 'to', '21:00') + '</p>' +
       '<p>' + fld('weekend_from', 'and weekend mornings from', '09:00') + fld('weekend_to', 'to', '12:00') + '</p>' +
       '<p>' + fld('per_window', 'habits a window', '2') + fld('young_age', 'children under', '0') + fld('young_share', 'get this share of your time, %', '100') + '</p>' +
+      '<p>' + fld('review_at', 'evening review reminder at', 'blank for none') + '</p>' +
       '<p><button data-save-rhythm="1">save your day</button></p></div>';
     // outdoors (version 76): the weather from the National Weather Service, and Parks on the Air parks near you
     var od = w.outdoors || {}, wl = w.weather || {}, pl = w.parks || {};
@@ -912,8 +913,8 @@
       '<label class="field">a month at most <input name="monthly_cap" value="' + esc(sc.monthly_cap != null ? String(sc.monthly_cap) : '') + '" placeholder="500"></label></p>' +
       '<p><button data-save-search="1">save place lookups</button></p></div>';
     out += '<div class="card"><h2>Location</h2><p class="muted">Sharing where you are is on the <a href="#sharing">Sharing</a> page now.</p></div>';
-    out += '<p><button data-review-wake="1">send the review now</button></p>';
-    if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + (r.sent ? ', sent' : ', not sent') + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
+    out += '<p><button data-review-wake="1">make the review now</button></p>';
+    if (r.at) out += '<p class="muted">Last review ' + fmtTime(r.at) + '.</p><pre class="review">' + esc(r.text || '') + '</pre>';
     return out + '</div>';
   }
   function settings(schema, policy, generator, last, reconcile, telegram, telegramLast, execLast, chat, chatLast, dms, channels, calLast, mail, mailLast, briefLast, read, readLast, reasons, tally, corrections, travel, travelLast, week) {
@@ -2016,7 +2017,7 @@
     } else if (b.dataset.saveRhythm) {
       var rv = function (name) { return field('#rhythm', name); };
       var rf = {};
-      ['quiet_from', 'quiet_to', 'family_from', 'family_to', 'evening_from', 'evening_to', 'weekend_from', 'weekend_to'].forEach(function (k) { rf[k] = rv(k); });
+      ['quiet_from', 'quiet_to', 'family_from', 'family_to', 'evening_from', 'evening_to', 'weekend_from', 'weekend_to', 'review_at'].forEach(function (k) { rf[k] = rv(k); });
       ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
       say('saving your day');
       post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
@@ -2166,9 +2167,9 @@
     } else if (b.dataset.mailWake) {
       post('/mail/wake', {}).then(function () { say('mail reader woken; the card updates when the pass ends'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.reviewWake) {
-      post('/review/wake', {}).then(function () { say('review on its way; the card updates when it is sent'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
+      post('/review/wake', {}).then(function () { say('review on its way; the card updates when it is made'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.briefWake) {
-      post('/brief/wake', {}).then(function () { say('brief on its way; the card updates when it is sent'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
+      post('/brief/wake', {}).then(function () { say('brief on its way; the card updates when it is made'); setTimeout(function () { refresh(true); }, 15000); }).catch(oops);
     } else if (b.dataset.webhook) {
       say('asking Telegram to send updates here');
       post('/telegram/webhook', {}).then(function (d) { say(d && d.ok ? 'webhook registered' : 'telegram said: ' + (d && d.description), !(d && d.ok)); }).catch(oops);

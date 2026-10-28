@@ -776,23 +776,6 @@
     ==
   %+  expect-eq  !>(`(list @t)`~['edge' 'early' 'late' 'now'])
   !>((turn (mail-fresh:orr msgs (sub now ~d1) now) |=(x=mail-msg:orr id.x)))
-++  test-brief-replies-of
-  =/  root  (mm (scot %uv 0v1) ~zod 'Daily brief 2026-09-18' 'BRIEF' now ~ &)
-  =/  reply  (mm 'r1' ~zod 'Re: Daily brief 2026-09-18' 'approve A1' now `0v1 &)
-  =/  other  (mm 'r2' ~nec 'Re: Daily brief 2026-09-18' 'x' now `0v1 &)
-  =/  lost  (mm 'r3' ~zod 'Re: Daily brief 2026-09-18' 'x' now `0v2 &)
-  =/  plain  (mm 'r4' ~zod 'Re: lunch' 'x' now `0v1 &)
-  ::  a reply to a message someone else sent is not a reply to the brief,
-  ::  whatever it says
-  =/  theirs  (mm (scot %uv 0v5) ~nec 'Daily brief 2026-09-18' 'BRIEF' now ~ &)
-  =/  back  (mm 'r5' ~zod 'Re: Daily brief 2026-09-18' 'approve A1' now `0v5 &)
-  =/  all  ~[root reply other lost plain theirs back]
-  =/  got  |=([seen=(set @t) sent=(list @t)] (turn (brief-replies-of:orr all all ~zod seen sent) |=([x=mail-msg:orr t=@t] [id.x t])))
-  ;:  weld
-    (expect-eq !>(`(list [@t @t])`~[['r1' 'BRIEF']]) !>((got ~ ~['BRIEF'])))
-    (expect-eq !>(`(list [@t @t])`~) !>((got (sy ~['mail:r1']) ~['BRIEF'])))
-    (expect-eq !>(`(list [@t @t])`~) !>((got ~ ~['ANOTHER'])))
-  ==
 ++  test-mail-rows
   =/  rows  (mail-rows:orr ~[(mm 'a' ~zod 's' 'mine' now ~ &) (mm 'b' ~nec 's' '  ' now ~ &) (mm 'c' ~nec 'Hi' 'hello' now ~ &)] ~zod)
   ;:  weld
@@ -1032,19 +1015,10 @@
         ['person/lee' [%person 'Lee' ~ now `~wet] ~]
         ['org/acme' [%org 'Acme' (sy ~['~dev']) now `~nec] ~]
     ==
-  =/  bl=json
-    (jo '{"text": "second", "tags": {"A1": "a2"}, "today": [{"text": "first", "tags": {"A1": "a1"}}]}')
-  ;:  weld
-    ::  an alias keys its person, a body's own ship wins over an alias,
-    ::  and the owner over anyone
-    %+  expect-eq  !>((my ~[['~zod' 'person/me'] ['~bus' 'person/me'] ['~wet' 'person/lee']]))
-    !>((people-of-ships:orr all))
-    (expect-eq !>(`(list @t)`~['second' 'first']) !>((brief-texts:orr bl)))
-    (expect-eq !>(`(list [@t @ta])`~[['A1' 'a1']]) !>((brief-tags:orr bl 'first')))
-    (expect-eq !>(`(list [@t @ta])`~[['A1' 'a2']]) !>((brief-tags:orr bl 'second')))
-    (expect-eq !>(`(list [@t @ta])`~) !>((brief-tags:orr bl 'third')))
-    (expect-eq !>(`(list @t)`~['first']) !>((brief-texts:orr (jo '{"today": [{"text": "first"}]}'))))
-  ==
+  ::  an alias keys its person, a body's own ship wins over an alias,
+  ::  and the owner over anyone
+  %+  expect-eq  !>((my ~[['~zod' 'person/me'] ['~bus' 'person/me'] ['~wet' 'person/lee']]))
+  !>((people-of-ships:orr all))
 ++  test-tg-final-row
   =/  o=json  (jo '{"subject": "person/me", "attr": "status", "value": "x", "message": "telegram/1/2"}')
   =/  f=json  (tg-final-row:orr o 'reader' 'web')
@@ -1864,6 +1838,46 @@
     (expect-eq !>(`(list [@da @da])`~[[~2026.10.6..22.00.00 ~2026.10.7]]) !>((family-busy:orr '2026-10-06' 'UTC' late)))
     (expect-eq !>(`(list [@da @da])`~) !>((family-busy:orr '2026-10-06' 'UTC' (de-rhythm:orr ~))))
   ==
+::  +test-evening: what the evening review's push counts, says, and when
+::  it goes (version 130)
+::
+++  test-evening
+  =/  at=@da  ~2026.10.28..12.00.00
+  =/  t  |=([k=?(%task %message) due=(unit @da) st=?(%proposed %approved %claimed %done)] ^-(action:orr [k 'x' ~ ~ due 'owner' at st '' ~]))
+  =/  acts=(list [id=@ta a=action:orr])
+    :~  ['a1' (t %task `~2026.10.28..11.00.00 %approved)]
+        ['a2' (t %task `~2026.10.27 %approved)]
+        ['a3' (t %task `~2026.10.28 %approved)]
+        ['a4' (t %task `~2026.10.28..18.00.00 %claimed)]
+        ['a5' (t %task `~2026.10.29..09.00.00 %approved)]
+        ['a6' (t %task ~ %approved)]
+        ['a7' (t %task ~ %claimed)]
+        ['a8' (t %task ~ %proposed)]
+        ['a9' (t %task ~ %done)]
+        ['b1' (t %message ~ %approved)]
+    ==
+  =/  r=rhythm:orr  (de-rhythm:orr (jo '{"family_from": "17:30", "family_to": "20:30"}'))
+  =/  off=rhythm:orr  (de-rhythm:orr (jo '{"review_at": ""}'))
+  =/  last=json  (jo '{"day": "2026-10-28"}')
+  ;:  weld
+    ::  a time past and a day before are overdue, a date and a time today
+    ::  are due today; the open tasks alone count
+    (expect-eq !>([2 2 2]) !>((evening-counts:orr acts at 'UTC')))
+    (expect-eq !>('2 overdue, 5 with no date') !>((evening-line:orr [2 0 5])))
+    (expect-eq !>('') !>((evening-line:orr [0 0 0])))
+    ::  20:00 unless set, after family time, before the quiet hours, once
+    (expect-eq !>(`(unit @ud)`[~ 1.200]) !>(review.r))
+    (expect-eq !>(`(unit @ud)`~) !>(review.off))
+    (expect-eq !>(`(unit @ud)`[~ 450]) !>(review:(de-rhythm:orr (jo '{"review_at": "07:30"}'))))
+    (expect-eq !>('20:00') !>((gs:orr (en-rhythm:orr r) 'review_at')))
+    (expect-eq !>('') !>((gs:orr (en-rhythm:orr off) 'review_at')))
+    (expect-eq !>(|) !>((evening-due:orr r ~2026.10.28..19.00.00 'UTC' ~)))
+    (expect-eq !>(|) !>((evening-due:orr r ~2026.10.28..20.15.00 'UTC' ~)))
+    (expect-eq !>(&) !>((evening-due:orr r ~2026.10.28..20.35.00 'UTC' ~)))
+    (expect-eq !>(|) !>((evening-due:orr r ~2026.10.28..20.35.00 'UTC' last)))
+    (expect-eq !>(|) !>((evening-due:orr r ~2026.10.28..21.30.00 'UTC' ~)))
+    (expect-eq !>(|) !>((evening-due:orr off ~2026.10.28..20.35.00 'UTC' ~)))
+  ==
 ++  test-outdoors
   =/  fc=json  (jo '{"properties": {"periods": [{"startTime": "2026-09-18T06:00:00-05:00", "endTime": "2026-09-18T18:00:00-05:00", "isDaytime": true, "temperature": 78, "windSpeed": "10 to 15 mph", "probabilityOfPrecipitation": {"value": 20}, "shortForecast": "Mostly Sunny"}, {"startTime": "2026-09-18T18:00:00-05:00", "endTime": "2026-09-19T06:00:00-05:00", "isDaytime": false, "temperature": 60, "windSpeed": "5 mph", "probabilityOfPrecipitation": {"value": null}, "shortForecast": "Clear"}, {"startTime": "2026-09-19T06:00:00-05:00", "endTime": "2026-09-19T18:00:00-05:00", "isDaytime": true, "temperature": 84, "windSpeed": "20 to 25 mph", "probabilityOfPrecipitation": {"value": 60}, "shortForecast": "Chance Showers And Thunderstorms"}]}}')
   =/  ps  (nws-periods:orr fc)
@@ -2023,19 +2037,6 @@
     ::  the day's nudges
     (expect-eq !>(1) !>((lent (sent-today:orr (jo '{"day": "2026-09-18", "sent": [{"kind": "desk"}]}') '2026-09-18'))))
     (expect-eq !>(0) !>((lent (sent-today:orr (jo '{"day": "2026-09-17", "sent": [{"kind": "desk"}]}') '2026-09-18'))))
-  ==
-++  test-review-replies
-  =/  our=@p  ~zod
-  =/  root=mail-msg:orr  ['t1' '0v1' our 'Your week, 2026-09-20' 'Your week, Sunday\0a...' now ~ &]
-  =/  reply=mail-msg:orr  ['t1' '0v2' our 'Re: Your week, 2026-09-20' 'make reading 4 times a week' now `0v1 &]
-  =/  other=mail-msg:orr  ['t2' '0v3' our 'Re: Daily brief 2026-09-20' 'approve A1' now `0v1 &]
-  =/  msgs=(list mail-msg:orr)  ~[root reply other]
-  ;:  weld
-    (expect-eq !>(`(list @t)`~['0v2']) !>((turn (review-replies-of:orr msgs msgs our ~ 'Your week, Sunday\0a...') |=([r=mail-msg:orr *] id.r))))
-    ::  read once; not a reply to an older review; not with no review sent
-    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our (sy ~['mail:0v2']) 'Your week, Sunday\0a...') |=([r=mail-msg:orr *] id.r))))
-    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our ~ 'another week') |=([r=mail-msg:orr *] id.r))))
-    (expect-eq !>(`(list @t)`~) !>((turn (review-replies-of:orr msgs msgs our ~ '') |=([r=mail-msg:orr *] id.r))))
   ==
 ++  test-review
   =/  has  |=([t=@t n=tape] ^-(? ?=(^ (find n (trip t)))))

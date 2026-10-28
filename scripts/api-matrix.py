@@ -1634,7 +1634,7 @@ curl('DELETE', API + '/body/' + TNO)
 
 
 # ---- the week (version 74): a day of health from the phone and of work from the computer, kept owner-only;
-# the children and their shares; the Sunday review, mailed and kept ----
+# the children and their shares; the Sunday review, kept, never mailed or pushed since version 130 ----
 print('== the week')
 WRUN = secrets.token_hex(3)
 wtoday = datetime.now(timezone.utc).date()
@@ -1685,7 +1685,7 @@ check('the review has the week\'s work, its late night and the baseline\'s progr
       rt.startswith('Your week, ') and '11 h 10 until 01:40' in rt and re.search(r'\b\d+ late nights?\b', rt) and 'Learning your baseline: ' in rt, rt)
 check('the review counts each child: the one-on-one for the older, half a share for the toddler, who is most behind',
       ('Gate Kid %s: 0 drives, 1 one-on-one' % WRUN) in rt and ('Gate Tot %s: 0 drives, 0 one-on-ones (50%% share)' % WRUN) in rt and ('Most behind: Gate Tot %s.' % WRUN) in rt, rt)
-check('the review was mailed through auspex and pushed in a line', rv.get('sent') is True and 'workout' in rv.get('line', ''), (rv.get('sent'), rv.get('line'), rv.get('notes')))
+check('the review keeps its line, and is neither mailed nor pushed (version 130)', rv.get('sent') is False and 'workout' in rv.get('line', '') and rv.get('notes') == [], (rv.get('sent'), rv.get('line'), rv.get('notes')))
 # nudges and habits (version 75): a long stretch at the desk is one nudge, once; a habit shows its week
 wnow = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 if 7 <= wnow.hour < 21:
@@ -1716,6 +1716,37 @@ if 7 <= wnow.hour < 21:
 else:
     print('  (the nudge checks are skipped: the quiet hours, nine at night to seven, UTC on a test ship)')
 owner_only('the nudges are the owner\'s', 'GET', '/nudge/last')
+# the evening review's push (version 130): once a day at review_at, with
+# the open tasks overdue, due today and with no date; a blank time is none.
+# A one-minute quiet span and a time already past let it go at any hour
+import subprocess
+code, rh0 = curl('GET', API + '/rhythm')
+rh0 = dictish(rh0)
+def evening_reset():
+    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/evening-last.json',
+                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+code, d = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate evening late %s' % WRUN, 'by': 'api-matrix', 'due': iso(datetime.now(timezone.utc) - timedelta(days=2))})
+ELATE = dictish(d).get('id', '')
+curl('POST', API + f'/actions/{ELATE}', {'status': 'approved'})
+curl('PUT', API + '/rhythm', {'review_at': '00:00', 'quiet_from': '23:59', 'quiet_to': '00:00', 'family_from': '', 'family_to': ''})
+evening_reset()
+curl('POST', API + '/nudge/wake', {})
+ev = gate.wait('the evening push lands', lambda: (lambda e: e if e.get('day') else None)(dictish(curl('GET', API + '/evening/last')[1])), 60) or {}
+check('the evening review\'s push counts what there is to organize, in its line',
+      (ev.get('overdue') or 0) >= 1 and 'overdue' in (ev.get('line') or '') and all(isinstance(ev.get(k), int) for k in ('overdue', 'today', 'undated')), ev)
+curl('POST', API + '/nudge/wake', {})
+time.sleep(8)
+check('it goes once a day', dictish(curl('GET', API + '/evening/last')[1]).get('at') == ev.get('at'), (ev.get('at'), curl('GET', API + '/evening/last')[1]))
+curl('PUT', API + '/rhythm', {'review_at': ''})
+code, d = curl('GET', API + '/rhythm')
+check('a blank time reads back blank', dictish(d).get('review_at') == '', d)
+evening_reset()
+curl('POST', API + '/nudge/wake', {})
+time.sleep(8)
+check('and sends nothing', not dictish(curl('GET', API + '/evening/last')[1]).get('day'), curl('GET', API + '/evening/last')[1])
+owner_only('the evening record is the owner\'s', 'GET', '/evening/last')
+curl('POST', API + f'/actions/{ELATE}', {'status': 'dismissed', 'note': 'gate'})
+curl('PUT', API + '/rhythm', {k: rh0.get(k, '') for k in ('review_at', 'quiet_from', 'quiet_to', 'family_from', 'family_to')})
 WHAB = 'activity/gate-habit-' + WRUN
 observe([{'id': WHAB, 'name': 'Gate habit ' + WRUN}], [wobs(WHAB, 'per-week', 3), wobs(WHAB, 'minutes', '20'), wobs(WHAB, 'last', wtoday.isoformat())])
 code, r1 = curl('GET', API + '/review/last')
@@ -1977,7 +2008,7 @@ code, d = gate.curl('POST', API + '/sync', jar=JAR)
 check('a native client\'s POST, with no Origin and no body, needs no type', code == 200, (code, d))
 
 
-# ---- the mail reader and the daily brief (version 52): settings, a brief sent through auspex, the record ----
+# ---- the mail reader and the daily brief (version 52): settings, the brief's record, never mailed since version 130 ----
 code, d = curl('PUT', API + '/mail', {'enabled': True, 'poll_minutes': 0, 'backfill_hours': 9999, 'model': 'stub/mail'})
 check('the mail settings answer as stored, clamped', code == 200 and dictish(d).get('enabled') is True and dictish(d).get('poll_minutes') == 1 and dictish(d).get('backfill_hours') == 720 and dictish(d).get('model') == 'stub/mail', (code, d))
 code, mk = curl('POST', API + '/clients', {'name': 'gate mail reader', 'by': 'gate-mail', 'scope': {'kinds': ['person'], 'actions': [], 'write': True}})
@@ -1989,13 +2020,17 @@ code, d = curl('POST', API + '/mail/wake')
 check('the mail reader wakes', code == 200, (code, d))
 mail_last = gate.wait('the mail record lands', lambda: dictish(curl('GET', API + '/mail/last')[1]).get('at') and dictish(curl('GET', API + '/mail/last')[1]), 30)
 owner_only('the mail record is the owner\'s, even to a writing key', 'GET', '/mail/last')
+def brief_mails():
+    return len([t for t in dictish(curl('GET', HOST + '/apps/auspex/api/inbox?view=all&limit=50')[1]).get('threads', []) if str(dictish(t).get('subject', '')).startswith('Daily brief ')])
+mails0 = brief_mails()
+code, b0 = curl('GET', API + '/brief/last')
 code, d = curl('POST', API + '/brief/wake')
-check('the brief sends on a wake', code == 200, (code, d))
-brief = gate.wait('the brief record lands', lambda: dictish(curl('GET', API + '/brief/last')[1]).get('day') and dictish(curl('GET', API + '/brief/last')[1]), 60)
+check('the brief is made on a wake', code == 200, (code, d))
+brief = gate.wait('the brief record lands', lambda: (lambda b: b if b.get('day') and b.get('at') != dictish(b0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 60) or {}
 today_local = brief.get('day')
-check('the brief record names the day, its tags and its text', bool(today_local) and isinstance(brief.get('tags'), dict) and 'Waiting on you' in (brief.get('text') or '') and brief.get('sent') is True, {k: brief.get(k) for k in ('day', 'sent', 'notes')})
-inbox = gate.wait('the brief is in auspex\'s inbox', lambda: [t for t in dictish(curl('GET', HOST + '/apps/auspex/api/inbox?view=all&limit=20')[1]).get('threads', []) if dictish(t).get('subject') == 'Daily brief %s' % today_local] or None, 30)
-check('auspex holds the brief, from the owner to the owner', bool(inbox) and dictish(inbox[0]).get('from') == OUR and OUR in (dictish(inbox[0]).get('participants') or [OUR]), inbox)
+check('the brief record names the day, its tags and its text, with no word of replying', bool(today_local) and isinstance(brief.get('tags'), dict) and 'Waiting on you' in (brief.get('text') or '') and 'Reply with' not in (brief.get('text') or '') and brief.get('sent') is False, {k: brief.get(k) for k in ('day', 'sent', 'notes')})
+time.sleep(5)
+check('no brief reaches auspex (version 130)', brief_mails() == mails0, (mails0, brief_mails()))
 
 
 # ---- the executor (version 34): approved actions carried out on the ship, the todo list kept in step ----
@@ -2455,6 +2490,33 @@ before = exec_last()
 curl('POST', API + '/exec/wake', {})
 passed(before)
 check('a second pass does not place it again', len([x for x in todos() if dictish(x.get('meta')).get('orrery') == TASKID]) == 1, None)
+# a due moved on either side reaches the other (version 130): the owner's
+# move in the calendar is the task's, even for a todo the ship placed, and
+# a move on the ship keeps the action's id and moves the todo
+OWNER_DUE = TASK_DUE + timedelta(days=1)
+code, d = cal_poke({'action': 'edit-event', 'id': t['id'] if t else 'none', 'cat': 'todo', 'meta': dictish(t).get('meta') or {}, 'due_ms': int(OWNER_DUE.timestamp() * 1000)})
+check('a due the owner moves in the calendar is the task\'s, for a todo the ship placed',
+      until(lambda: action(TASKID).get('due') == iso(OWNER_DUE), 45), (code, action(TASKID).get('due')))
+before = exec_last()
+curl('POST', API + '/exec/wake', {})
+passed(before)
+check('and the ship leaves the owner\'s date on the todo', dictish(todo_for(TASKID, bound=1)).get('due_ms') == int(OWNER_DUE.timestamp() * 1000), todo_for(TASKID, bound=1))
+SHIP_DUE = TASK_DUE + timedelta(days=2)
+code, d = curl('POST', API + f'/actions/{TASKID}/due', {'due': iso(SHIP_DUE)})
+check('a due moved on the ship answers, the action keeping its id', code == 200 and dictish(d).get('id') == TASKID and dictish(d).get('due') == iso(SHIP_DUE) and action(TASKID).get('due') == iso(SHIP_DUE), (code, d))
+check('and its todo follows', until(lambda: dictish(todo_for(TASKID, bound=1)).get('due_ms') == int(SHIP_DUE.timestamp() * 1000), 45), todo_for(TASKID, bound=1))
+code, d = curl('POST', API + f'/actions/{TASKID}/due', {'due': None})
+check('a due cleared on the ship leaves the todo with no date', code == 200 and action(TASKID).get('due') is None
+      and until(lambda: dictish(todo_for(TASKID, bound=1)).get('due_ms') is None, 45), (code, d, todo_for(TASKID, bound=1)))
+code, d = curl('POST', API + f'/actions/{TASKID}/due', {'due': (now + timedelta(days=3)).date().isoformat()})
+check('a date alone is the day with no time', code == 200 and dictish(d).get('due', '').endswith('T00:00:00Z'), (code, d))
+code, d = curl('POST', API + f'/actions/{TASKID}/due', {'due': 'friday'})
+check('a due that is not a time or a date is a 400', code == 400, (code, d))
+code, d = curl('POST', API + f'/actions/{TASKID}/due', {})
+check('a move with no due is a 400', code == 400, (code, d))
+code, d = curl('POST', API + '/actions/no-such-action/due', {'due': None})
+check('a move on no action is a 404', code == 404, (code, d))
+t = todo_for(TASKID)
 code, d = cal_poke({'action': 'done-event', 'id': t['id'] if t else 'none'})
 a = settled(TASKID)
 check('ticked in the calendar, the task is done by the calendar', a.get('status') == 'done' and a.get('note') == 'ticked in the calendar' and steps(a)[-1] == ('done', 'calendar'), (code, a.get('status'), a.get('note'), steps(a)))
@@ -2552,6 +2614,15 @@ before = exec_last()
 curl('POST', API + '/exec/wake', {})
 passed(before)
 check('a hand-typed todo is adopted once, not placed again', len([x for x in todos() if dictish(dictish(x.get('meta'))).get('name') == 'Gate hand-typed todo %s' % XRUN]) == 1, None)
+# a todo the owner typed follows a due moved on the ship, and its task
+# learns a date moved in the calendar (version 130; before, neither)
+HAND_SHIP = HAND_DUE + timedelta(days=1)
+code, d = curl('POST', API + f'/actions/{HANDID}/due', {'due': iso(HAND_SHIP)})
+check('a todo the owner typed follows a due moved on the ship', code == 200 and until(lambda: dictish(todo_for(HANDID, bound=1)).get('due_ms') == int(HAND_SHIP.timestamp() * 1000), 45), (code, d, todo_for(HANDID, bound=1)))
+HAND_CAL = HAND_DUE + timedelta(days=2)
+t = todo_for(HANDID)
+code, d = cal_poke({'action': 'edit-event', 'id': t['id'] if t else 'none', 'cat': 'todo', 'meta': dictish(t).get('meta') or {}, 'due_ms': int(HAND_CAL.timestamp() * 1000)})
+check('and its task learns a date moved in the calendar', until(lambda: action(HANDID).get('due') == iso(HAND_CAL), 45), (code, action(HANDID).get('due')))
 curl('POST', API + f'/actions/{HANDID}', {'status': 'dismissed', 'note': 'gate'})
 check('dismissing the adopted task deletes its todo', todo_for(HANDID, gone=True) is None, None)
 # the owner's wake: the record's time moves within the second. The
