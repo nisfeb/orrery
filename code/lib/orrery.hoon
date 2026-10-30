@@ -5252,7 +5252,8 @@
   ?.  ?=([%o *] x)  ""
   ?:  (~(has by p.x) 'break')  "\0a"
   =/  ship=json  (gj x 'ship')
-  ?:  ?=(?([%s *] [%n *]) ship)  (trip (dequote p.ship))
+  ::  zuse's +ship:enjs drops the sig: "bus" is ~bus (version 134)
+  ?:  ?=(?([%s *] [%n *]) ship)  (trip (ship-key (dequote p.ship)))
   =/  nested=(unit (list json))
     =/  keys=(list @t)  ~['bold' 'italics' 'strike' 'blockquote']
     |-
@@ -5329,9 +5330,10 @@
   =/  sent=@da  (da-of-ms (fall (gn essay 'sent') 0))
   ?.  (gth sent floor)  ~
   ::  inside the ship a ship comes as zuse's +ship:enjs, a number node
-  ::  holding the quoted name ([%n '"~sarlev"']), or as a string, maybe
-  ::  quoted, or an object's ship: read like the id below, or every
-  ::  sender is '' and a stranger (versions 100 and 134)
+  ::  holding the quoted name without its sig ([%n '"sarlev"']), or as
+  ::  a string, maybe quoted, or an object's ship: read like the id
+  ::  below, the sig put back by +ship-key, or every sender is '' and a
+  ::  stranger (versions 100 and 134)
   =/  author=@t
     =/  a=json  (gj essay 'author')
     (ship-key (dequote (num-cord ?:(?=([%o *] a) (gj a 'ship') a))))

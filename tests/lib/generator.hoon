@@ -3051,19 +3051,22 @@
         %-  pairs:enjs:format
         :~  ['author' author]
             ['sent' (numb:enjs:format 1.791.558.000.000)]
-            ['content' a+~[(pairs:enjs:format ~[['inline' a+~[s+'ask ' (pairs:enjs:format ~[['ship' [%n '"~bus"']]]) s+' about 3pm']]])]]
+            ['content' a+~[(pairs:enjs:format ~[['inline' a+~[s+'ask ' (pairs:enjs:format ~[['ship' [%n '"bus"']]]) s+' about 3pm']]])]]
         ==
     ==
   =/  cfg=chat-config:orr  (de-chat-config:orr (jo '{"enabled": true, "read_own": false}'))
-  =/  q=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ [%n '"~sarlev"']) 'essay' cfg *@da '~zod')
-  =/  boxed=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ (pairs:enjs:format ~[['ship' [%n '"~sarlev"']]])) 'essay' cfg *@da '~zod')
+  ::  zuse's own shape drops the sig ([%n '"sarlev"']); with it, too
+  =/  q=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ [%n '"sarlev"']) 'essay' cfg *@da '~zod')
+  =/  sigged=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ [%n '"~sarlev"']) 'essay' cfg *@da '~zod')
+  =/  boxed=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ (pairs:enjs:format ~[['ship' [%n '"sarlev"']]])) 'essay' cfg *@da '~zod')
   ;:  weld
     (expect-eq !>('~sarlev') !>(from:(need q)))
     (expect-eq !>('~sarlev/170.141.184') !>(mid:(need q)))
     (expect-eq !>('ask ~bus about 3pm') !>(text:(need q)))
     (expect-eq !>('~sarlev') !>(from:(need boxed)))
+    (expect-eq !>('~sarlev') !>(from:(need sigged)))
     ::  the owner's own, so shaped, is left out while read_own is off
-    (expect-eq !>(~) !>((post-row:orr '~zod' (writ [%n '"~zod"']) 'essay' cfg *@da '~zod')))
+    (expect-eq !>(~) !>((post-row:orr '~zod' (writ [%n '"zod"']) 'essay' cfg *@da '~zod')))
   ==
 ++  test-chat-quoted
   =/  writ=json
