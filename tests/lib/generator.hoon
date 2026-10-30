@@ -557,6 +557,14 @@
     (expect-eq !>(0) !>((lent (ga:orr (snag 0 ops:(plan-activities:orr [(mkb 'activity/ballet' %activity 'Ballet' ~ ~ now) all] ~ now 3)) 'bodies'))))
     ::  two occurrences are not an activity
     (expect-eq !>(0) !>((lent ops:(plan-activities:orr all ~ now 4))))
+    ::  every occurrence still ahead has its next, each until its own end
+    ::  or a day on, so the one after steps up as each passes (version 134)
+    =/  more  (snoc all (mkb 'situation/2026-10-09-ballet' %situation 'Ballet' ~ ~[['started' s+(en-iso:orr (add now ~d14))]] now))
+    =/  obs=(list json)  (ga:orr (snag 0 ops:(plan-activities:orr more (sy ~['participants']) now 3)) 'observations')
+    =/  nexts=(list json)  (skim obs |=(r=json =('next' (gs:orr r 'attr'))))
+    %+  expect-eq
+      !>(`(list @t)`~[(en-iso:orr ahead) (en-iso:orr (add now ~d14))])
+      !>((turn nexts |=(r=json (gs:orr r 'value'))))
   ==
 ++  test-plan-participants
   =/  all=(list loaded:orr)
@@ -3028,6 +3036,35 @@
 ::  inside the ship the chat scry's strings can come quoted: the sender,
 ::  the id and the words are read without the quotes, so a known sender
 ::  is known (version 100)
+::  +test-chat-number-author: the shape inside the ship, which no parse of
+::  text gives: zuse's +ship:enjs is a number node holding the quoted
+::  name, for the author, the id and a mention; an author may also be an
+::  object holding one (version 134)
+::
+++  test-chat-number-author
+  =/  writ
+    |=  author=json
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['seal' (pairs:enjs:format ~[['id' [%n '"~sarlev/170.141.184"']] ['replies' [%o ~]]])]
+        :-  'essay'
+        %-  pairs:enjs:format
+        :~  ['author' author]
+            ['sent' (numb:enjs:format 1.791.558.000.000)]
+            ['content' a+~[(pairs:enjs:format ~[['inline' a+~[s+'ask ' (pairs:enjs:format ~[['ship' [%n '"~bus"']]]) s+' about 3pm']]])]]
+        ==
+    ==
+  =/  cfg=chat-config:orr  (de-chat-config:orr (jo '{"enabled": true, "read_own": false}'))
+  =/  q=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ [%n '"~sarlev"']) 'essay' cfg *@da '~zod')
+  =/  boxed=(unit tg-msg:orr)  (post-row:orr '~sarlev' (writ (pairs:enjs:format ~[['ship' [%n '"~sarlev"']]])) 'essay' cfg *@da '~zod')
+  ;:  weld
+    (expect-eq !>('~sarlev') !>(from:(need q)))
+    (expect-eq !>('~sarlev/170.141.184') !>(mid:(need q)))
+    (expect-eq !>('ask ~bus about 3pm') !>(text:(need q)))
+    (expect-eq !>('~sarlev') !>(from:(need boxed)))
+    ::  the owner's own, so shaped, is left out while read_own is off
+    (expect-eq !>(~) !>((post-row:orr '~zod' (writ [%n '"~zod"']) 'essay' cfg *@da '~zod')))
+  ==
 ++  test-chat-quoted
   =/  writ=json
     %-  jo

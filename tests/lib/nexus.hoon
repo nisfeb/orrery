@@ -1886,7 +1886,7 @@
   =/  r
     |=  [id=@ta s=@t a=@t v=json at=@da src=@t who=@t seen=@da ret=?]
     ^-  row:orr
-    [id [s a v at ~ 90 [src 'x'] who seen ret '']]
+    [id [s a v at ~ 90 [src 'x'] who seen ret ?:(ret 'struck by the owner: not a gym' '')]]
   =/  all=(list loaded:orr)
     :~  :+  'person/kid'  [%person 'Kid' ~ now ~]
         :~  (r 'r1' 'person/kid' 'school' s+'Elm' (sub now ~d2) 'mail' 'mail' (sub now ~d2) |)
@@ -1909,7 +1909,11 @@
     (expect-eq !>(`(list @t)`~['retracted' 'live' 'superseded']) !>((turn (ga:orr every 'rows') |=(x=json (gs:orr x 'status')))))
     (expect-eq !>(['place' 'Gym']) !>(=/(x (snag 0 (ga:orr every 'rows')) [(gs:orr x 'kind') (gs:orr x 'name')])))
     ::  the counts: by source kind and status, and by writer
-    (expect-eq !>([`(unit @ud)`[~ 3] `(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 2]]) !>([(gn:orr every 'total') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'retracted') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'superseded') (gn:orr (gj:orr (gj:orr every 'by_source') 'user') 'live') (gn:orr (gj:orr every 'by') 'mail')]))
+    ::  a retraction the owner struck is counted as struck (version 134)
+    (expect-eq !>([`(unit @ud)`[~ 3] `(unit @ud)`[~ 1] `(unit @ud)`~ `(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 2]]) !>([(gn:orr every 'total') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'struck') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'retracted') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'superseded') (gn:orr (gj:orr (gj:orr every 'by_source') 'user') 'live') (gn:orr (gj:orr every 'by') 'mail')]))
+    (expect-eq !>(['retracted' 'struck']) !>(=/(x (snag 0 (ga:orr every 'rows')) [(gs:orr x 'status') (gs:orr x 'class')])))
+    (expect-eq !>(`(list @t)`~['r3']) !>((ids (q ~[['status' 'struck']]))))
+    (expect-eq !>(`(list @t)`~['r3']) !>((ids (q ~[['status' 'retracted']]))))
     ::  the filters, alone and together, and a page
     (expect-eq !>(`(list @t)`~['r3' 'r1']) !>((ids (q ~[['source' 'mail']]))))
     (expect-eq !>(`(list @t)`~['r2']) !>((ids (q ~[['status' 'live']]))))

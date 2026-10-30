@@ -181,12 +181,14 @@ const xState = { me: 'person/me', bodies: [
   { id: 'place/gym', kind: 'place', name: 'Gym', attrs: {} },
   { id: 'situation/meet', kind: 'situation', name: 'Swim meet', attrs: { starts: xr('2026-11-02T14:00:00Z'), participants: [xr({ ref: 'person/kid' })], location: xr({ ref: 'place/gym' }, { by: 'mail', source: { kind: 'mail', id: 'm1' } }) } },
   { id: 'situation/fair', kind: 'situation', name: 'Book fair', attrs: { starts: xr('2026-11-01T09:00:00Z'), status: xr('open') } },
-  { id: 'situation/recital', kind: 'situation', name: 'Recital', attrs: { starts: xr('2026-10-24T18:00:00Z'), ends: xr('2026-10-24T20:00:00Z'), participants: [xr({ ref: 'person/kid' })] } }] };
+  { id: 'situation/recital', kind: 'situation', name: 'Recital', attrs: { starts: xr('2026-10-24T18:00:00Z'), ends: xr('2026-10-24T20:00:00Z'), participants: [xr({ ref: 'person/kid' })], needs: xr('a ride home') } },
+  { id: 'situation/concert', kind: 'situation', name: 'Concert', attrs: { starts: xr('2026-10-25T18:00:00Z'), ends: xr('2026-10-25T20:00:00Z'), status: xr('closed') } }] };
 const xActs = [].concat(
   [1, 2, 3, 4, 5, 6].map(function (i) { return { id: 'm' + i, kind: 'message', by: 'generator', status: 'dismissed', title: 'Tell person/kid ' + i, note: 'not needed', proposed: '2026-10-2' + i + 'T00:00:00Z' }; }),
   [1, 2].map(function (i) { return { id: 'd' + i, kind: 'message', by: 'generator', status: 'done', title: 'done ' + i }; }),
   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (i) { return { id: 't' + i, kind: 'task', by: 'generator', status: 'done', title: 'task ' + i }; }),
-  [1, 2].map(function (i) { return { id: 'x' + i, kind: 'task', by: 'generator', status: 'dismissed', title: 'no ' + i }; }));
+  [1, 2].map(function (i) { return { id: 'x' + i, kind: 'task', by: 'generator', status: 'dismissed', title: 'no ' + i }; }),
+  [1, 2, 3, 4, 5, 6].map(function (i) { return { id: 'o' + i, kind: 'message', by: 'ship', status: 'dismissed', title: 'old ' + i, proposed: '2026-09-01T00:00:00Z' }; }));
 const strangers = Array.from({ length: 12 }, function (_, i) { return { at: '2026-10-29T0' + (i % 10) + ':00:00Z', outcome: 'stranger', chat: 'dm/~zod', notes: ['not in people'] }; });
 // GET /explore's shape (version 133): each reader's days counted, the last two with their items
 const xVerdicts = { chat: { '2026-10-29': { n: 12, outcomes: { stranger: 12 }, items: strangers }, '2026-10-24': { n: 30, outcomes: { stranger: 30 } } },
@@ -198,20 +200,20 @@ ok('needs a look: a reader\'s day that went all one way, counted for a week and 
   look.includes('chat on 2026-10-29: 12 items, every one <strong>stranger</strong>') && look.includes('chat on 2026-10-24: 30 items') && look.includes('not in people') && !look.includes('telegram on'));
 ok('needs a look: what the writer refused in the last day, with why', look.includes('1 write the ship refused in the last day') && look.includes('an open twin stands'));
 ok('needs a look: an action kind turned down more than done, by who filed it, with the reasons, and not one done more',
-  look.includes('message actions from generator: 6 dismissed, 2 done') && look.includes('not needed') && !look.includes('task actions from'));
+  look.includes('message actions from generator: 6 dismissed, 2 done') && look.includes('not needed') && !look.includes('task actions from') && !look.includes('from ship'));
 ok('needs a look: a situation ended with no outcome, a value under 80 confidence with its source, the generator\'s error, the executor\'s failures',
-  look.includes('1 situation ended in the last thirty days with no outcome') && look.includes('href="#body/situation/recital"')
+  look.includes('1 situation that waited on something ended in the last thirty days with no outcome') && look.includes('href="#body/situation/recital"') && !look.includes('situation/concert')
   && look.includes('1 value under 80 confidence') && look.includes('mail m9') && look.includes('the model answered 504') && look.includes('Mail the school'));
 ok('needs a look says so when nothing does', render.needsLook({ bodies: [] }, [], {}, {}, XNOW) === '<p class="muted">Nothing needs a look.</p>');
 const xt = function (f) { return render.exploreRows(xState, Object.assign({}, render.exploreFilter, f || {}), XNOW); };
 const open0 = xt();
 ok('the table opens on open situations, soonest first, with the phase and the attributes most of them carry',
-  open0.includes('2 of 3 situations') && open0.indexOf('Book fair') < open0.indexOf('Swim meet') && !open0.includes('Recital')
+  open0.includes('2 of 4 situations') && open0.indexOf('Book fair') < open0.indexOf('Swim meet') && !open0.includes('Recital')
   && open0.includes('data-explore-sort="phase"') && open0.includes('data-explore-sort="starts"'));
 ok('a value says where it came from, and a ref is named and linked', open0.includes('title="mail m1 \u00b7 by mail \u00b7 conf 100') && open0.includes('<a href="#body/place/gym">Gym</a>'));
 ok('the filters: past situations, a source, a name, and a sort by name backwards',
   xt({ phase: 'past' }).includes('Recital') && !xt({ phase: 'past' }).includes('Book fair')
-  && xt({ source: 'mail' }).includes('1 of 3') && xt({ find: 'fair' }).includes('Book fair') && !xt({ find: 'fair' }).includes('Swim meet')
+  && xt({ source: 'mail' }).includes('1 of 4') && xt({ find: 'fair' }).includes('Book fair') && !xt({ find: 'fair' }).includes('Swim meet')
   && xt({ sort: '@name', desc: true }).indexOf('Swim meet') < xt({ sort: '@name', desc: true }).indexOf('Book fair'));
 ok('another kind, its low-confidence value marked', xt({ kind: 'person' }).includes('2 of 2 people') && xt({ kind: 'person' }).includes('class="v low"'));
 const parts = render.partsCard(xRec, xVerdicts);
@@ -220,11 +222,11 @@ ok('the parts: each one\'s last record in numbers and notes, and a reader\'s day
 const xHtml = render.explore(xState, xActs, xRec, xVerdicts, XNOW);
 ok('the explorer is the cards in order', xHtml.indexOf('Needs a look') < xHtml.indexOf('What the ship knows') && xHtml.indexOf('What the ship knows') < xHtml.indexOf('Facts, where') && xHtml.indexOf('Facts, where') < xHtml.indexOf('The parts')
   && xHtml.includes('data-explore-kind="situation" class="on"') && xHtml.includes('data-explore="find"'));
-const fAns = { total: 150, offset: 0, limit: 100, by_source: { mail: { live: 3, retracted: 1 }, user: { live: 6 } }, by: { mail: 4, owner: 6 },
+const fAns = { total: 150, offset: 0, limit: 100, by_source: { mail: { live: 2, retracted: 1, struck: 1 }, user: { live: 6 } }, by: { mail: 4, owner: 6 },
   rows: [{ id: 'r1', subject: 'person/kid', name: 'Kid', kind: 'person', attr: 'school', value: 'Elm', status: 'retracted', source: { kind: 'mail', id: 'm1' }, by: 'mail', conf: 90, seen: '2026-10-29T10:00:00Z' }] };
 const fHtml = render.factsRows(fAns, xState);
-ok('the facts: counts by source and status with the share taken back, by writer, each row with its source to follow, and a next page (version 133)',
-  fHtml.includes('25%') && fHtml.includes('by owner 6') && fHtml.includes('data-facts-source="mail|m1"') && fHtml.includes('1 to 1 of 150 facts') && fHtml.includes('data-facts-page="1"') && !fHtml.includes('data-facts-page="-1"'));
+ok('the facts: counts by source and status with the share you struck apart from what the ship retired, by writer, each row with its source to follow, and a next page (versions 133, 134)',
+  fHtml.includes('25%') && fHtml.includes('struck by you') && fHtml.includes('retired by the ship') && fHtml.includes('by owner 6') && fHtml.includes('data-facts-source="mail|m1"') && fHtml.includes('1 to 1 of 150 facts') && fHtml.includes('data-facts-page="1"') && !fHtml.includes('data-facts-page="-1"'));
 ok('the facts are asked for with the filters set, the time as an instant, and the page',
   render.factsQuery({ source: 'mail', source_id: '', since: '7', offset: 100 }, XNOW) === 'source=mail&since=2026-10-23T12%3A00%3A00.000Z&offset=100&limit=100');
 ok('before any is asked for, the card says how', render.factsRows(null, xState).includes('press show') && render.factsCard(xState, null).includes('data-facts-show="1"'));

@@ -1135,6 +1135,35 @@
     (expect !>((is-closed:orr (mk 'closed'))))
     (expect !>(!(is-closed:orr (mk 'open'))))
   ==
+::  +test-fold-next: an activity's next is the soonest claim still ahead,
+::  whatever was said last; a time past never wins; words only when no
+::  time is ahead; a cancelled activity has none (version 134)
+::
+++  test-fold-next
+  =/  now  ~2026.10.30..12.00.00
+  =/  ob
+    |=  [attr=@t v=json src=@t at=@da]
+    ^-  obs:orr
+    ['activity/ballet' attr v at ~ 100 [src ''] src at | '']
+  =/  past  (r 'past' (ob 'next' s+'2026-10-30T10:00:00Z' 'reconcile' ~2026.10.30..11.00.00))
+  =/  soon  (r 'soon' (ob 'next' s+'2026-10-30T20:45:00Z' 'calendar' ~2026.10.23..20.45.00))
+  =/  late  (r 'late' (ob 'next' s+'2026-11-04T20:45:00Z' 'calendar' ~2026.10.28..20.45.00))
+  =/  word  (r 'word' (ob 'next' s+'after the holidays' 'mail' ~2026.10.30..11.30.00))
+  =/  stop  (r 'stop' (ob 'status' s+'cancelled' 'owner' ~2026.10.29))
+  =/  win  |=(rs=(list row:orr) (turn (fall (~(get by (fold:orr rs ~ now)) 'next') ~) |=(x=row:orr id.x)))
+  =/  four=(list row:orr)  ~[past soon late word]
+  ;:  weld
+    ::  the soonest ahead, over a series begun later and the latest said
+    (expect-eq !>(`(list @ta)`~['soon']) !>((win four)))
+    (expect-eq !>(%superseded) !>((status-of:orr past (fold:orr four ~ now) now)))
+    ::  no time ahead: the words, the latest said; only a time past: none
+    (expect-eq !>(`(list @ta)`~['word']) !>((win ~[past word])))
+    (expect-eq !>(`(list @ta)`~) !>((win ~[past])))
+    ::  a cancelled activity has none
+    (expect-eq !>(`(list @ta)`~) !>((win ~[soon stop])))
+    ::  the current view keeps every next, so it folds to the same
+    (expect-eq !>((win four)) !>((win (current-rows:orr four ~ now))))
+  ==
 ::  the fencing clash: a weekly series whose winning next is a stale
 ::  reconcile row (an hour early, a day-long until) still yields a
 ::  pick-up appointment, at the end of the calendar's own occurrence

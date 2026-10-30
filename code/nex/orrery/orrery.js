@@ -1125,9 +1125,11 @@
     var refused = ((rec.trail || {}).refused) || [];
     if (refused.length) line(refused.length + ' write' + (refused.length === 1 ? '' : 's') + ' the ship refused in the last day',
       list(refused.slice(0, 20).map(function (e) { return '<li>' + fmtTime(e.at) + ' ' + esc(e.op || '') + ' <span class="muted">' + esc(clip([e.by ? 'by ' + e.by : '', e.why || ''].filter(Boolean).join(' \u00b7 '), 200)) + '</span></li>'; })));
-    // what the owner turns down more than they take, by who filed it
-    var tally = Object.create(null);
-    (acts || []).forEach(function (a) {
+    // what the owner turns down more than they take, by who filed it, in
+    // the last thirty days: a cause since fixed leaves the list (version
+    // 134; the running-late messages, gone in 124, stood there for good)
+    var tally = Object.create(null), since30 = new Date(Date.parse(now) - 30 * 86400000).toISOString();
+    (acts || []).filter(function (a) { return !a.proposed || a.proposed >= since30; }).forEach(function (a) {
       var k = a.kind + '|' + (a.by || '');
       var t = tally[k] = tally[k] || { kind: a.kind, by: a.by || '', done: 0, dismissed: 0, failed: 0, gone: [] };
       if (a.status === 'done') t.done += 1;
@@ -1140,13 +1142,16 @@
       line(esc(t.kind) + ' actions from ' + esc(t.by || 'nobody') + ': ' + t.dismissed + ' dismissed' + (t.failed ? ', ' + t.failed + ' failed' : '') + ', ' + t.done + ' done',
         list(t.gone.slice(0, 10).map(function (a) { return '<li>' + badge(a.status) + ' ' + namedText(a.title || '', byId) + (a.note ? ' <span class="muted">' + esc(clip(a.note, 160)) + '</span>' : '') + '</li>'; })));
     });
-    // situations: ended in the last month with no outcome, and still open
-    // past their end
+    // situations: one that waited on something (needs, waiting on) and
+    // ended in the last month with no outcome, and one still open past
+    // its end. An event that only happened needs no outcome: on ricsul
+    // all 48 such were concerts and lessons (version 134)
     var sits = all.filter(function (b) { return b.kind === 'situation'; });
     var month = new Date(Date.parse(now) - 30 * 86400000).toISOString();
     var endOf = function (b) { return timeOf(b, 'ended') || timeOf(b, 'ends'); };
-    var bare = sits.filter(function (b) { var p = phase(b, now); return (p === 'over' || p === 'closed') && !rowsAt(b, 'outcome').length && endOf(b) >= month; });
-    if (bare.length) line(bare.length + ' situation' + (bare.length === 1 ? '' : 's') + ' ended in the last thirty days with no outcome', situationCards(bare.map(function (b) { return b.id; }), state, 20));
+    var waited = function (b) { return rowsAt(b, 'needs').length || rowsAt(b, 'waiting-on').length; };
+    var bare = sits.filter(function (b) { var p = phase(b, now); return (p === 'over' || p === 'closed') && waited(b) && !rowsAt(b, 'outcome').length && endOf(b) >= month; });
+    if (bare.length) line(bare.length + ' situation' + (bare.length === 1 ? '' : 's') + ' that waited on something ended in the last thirty days with no outcome', situationCards(bare.map(function (b) { return b.id; }), state, 20));
     var lingering = sits.filter(function (b) { return phase(b, now) === 'over' && !/^(resolved|done|over)$/.test(timeOf(b, 'status')); });
     if (lingering.length) line(lingering.length + ' situation' + (lingering.length === 1 ? '' : 's') + ' still open past the end', situationCards(lingering.map(function (b) { return b.id; }), state, 20));
     // values the asserter was not sure of
@@ -1281,7 +1286,10 @@
   // every body. Counts by source and status say how often each source
   // is taken back; a source's id lists everything that one message gave
   var factsFilter = { source: '', source_id: '', by: '', attr: '', kind: '', status: '', since: '', offset: 0 };
-  var STATUSES = ['live', 'superseded', 'expired', 'retracted', 'future'];
+  // struck: a retraction the owner made, apart from the ship's own
+  // housekeeping, which on ricsul was most of what was taken back
+  // (version 134)
+  var STATUSES = ['live', 'superseded', 'expired', 'retracted', 'struck', 'future'];
   function factsQuery(f, now) {
     now = now || new Date().toISOString();
     return Object.keys(f).filter(function (k) { return k !== 'offset' && f[k]; }).map(function (k) {
@@ -1296,10 +1304,10 @@
     var src = ans.by_source || {}, total = function (k) { return Object.keys(src[k]).reduce(function (n, x) { return n + src[k][x]; }, 0); };
     var kinds = Object.keys(src).sort(function (a, b) { return total(b) - total(a); });
     if (kinds.length) {
-      out += thead(['source'].concat(STATUSES, ['taken back'])) + kinds.map(function (k) {
+      out += thead(['source'].concat(STATUSES.map(function (x) { return x === 'retracted' ? 'retired by the ship' : x === 'struck' ? 'struck by you' : x; }), ['you struck'])) + kinds.map(function (k) {
         var c = src[k], all = total(k);
         return '<tr>' + cell('source', esc(k || '(none)')) + STATUSES.map(function (x) { return cell(x, String(c[x] || 0)); }).join('') +
-          cell('taken back', all ? Math.round(100 * (c.retracted || 0) / all) + '%' : '') + '</tr>';
+          cell('you struck', all ? Math.round(100 * (c.struck || 0) / all) + '%' : '') + '</tr>';
       }).join('') + '</tbody></table>';
     }
     var who = ans.by || {}, ws = Object.keys(who).sort(function (a, b) { return who[b] - who[a]; });
@@ -1310,7 +1318,7 @@
       out += thead(['recorded', 'body', 'attribute', 'value', 'status', 'source', 'by', 'conf']) + rows.map(function (r) {
         var s = r.source || {};
         return '<tr>' + cell('recorded', fmtTime(r.seen)) + cell('body', '<a href="#body/' + esc(r.subject) + '">' + esc(r.name || r.subject) + '</a>') +
-          cell('attribute', esc(r.attr)) + cell('value', esc(clip(plain(r.value, byId), 80))) + cell('status', badge(r.status)) +
+          cell('attribute', esc(r.attr)) + cell('value', esc(clip(plain(r.value, byId), 80))) + cell('status', badge(r.class || r.status)) +
           cell('source', '<button class="link" data-facts-source="' + esc((s.kind || '') + '|' + (s.id || '')) + '" title="everything from this source">' + esc(clip((s.kind || '') + (s.id ? ' ' + s.id : ''), 60)) + '</button>') +
           cell('by', esc(r.by || '')) + cell('conf', String(r.conf)) + '</tr>';
       }).join('') + '</tbody></table>';

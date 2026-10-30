@@ -787,11 +787,57 @@
 ::  +fold: attr to its winners. A single-valued attr keeps the latest
 ::  row; a multi-valued one (named in multi) keeps the latest row per
 ::  distinct value. A null value on a multi attr contributes nothing.
+::  An activity's next is the soonest still ahead (+fold-next).
 ::
 ++  fold
   |=  [rows=(list row) multi=(set @t) when=@da]
   ^-  (map @t (list row))
   =/  live=(list row)  (skim rows |=(r=row (is-live obs.r when)))
+  (fold-next (fold-base live multi) live when)
+::  +fold-next: the soonest of the live next claims still ahead, laid
+::  over the fold (version 134). The calendar reader writes each
+::  series' next once, reconcile its own, a model or the owner theirs,
+::  and the latest at was not the soonest: the series begun last, or
+::  an occurrence that had just passed and was still both last and
+::  next. A time past never wins; a claim that is no time (words, or
+::  null) is taken only when no time is ahead, the latest said; a
+::  cancelled activity has none
+::
+++  fold-next
+  |=  [base=(map @t (list row)) live=(list row) when=@da]
+  ^-  (map @t (list row))
+  =/  cands=(list row)  (skim live |=(r=row =('next' attr.obs.r)))
+  ?~  cands  base
+  =/  st=(list row)  (fall (~(get by base) 'status') ~)
+  ?:  &(?=(^ st) =(value.obs.i.st [%s 'cancelled']))  (~(del by base) 'next')
+  =/  timed=(list [t=@da r=row])
+    %+  murn  `(list row)`cands
+    |=  r=row
+    ^-  (unit [t=@da r=row])
+    ?.  ?=([%s *] value.obs.r)  ~
+    =/  t=(unit @da)  (de-iso p.value.obs.r)
+    ?~  t  ~
+    ?.  (gth u.t when)  ~
+    `[u.t r]
+  ?^  timed
+    =/  best=[t=@da r=row]
+      %+  roll  t.timed
+      |=  [x=[t=@da r=row] acc=_i.timed]
+      ?:  (lth t.x t.acc)  x
+      ?:  &(=(t.x t.acc) (later r.x r.acc))  x
+      acc
+    (~(put by base) 'next' ~[r.best])
+  =/  words=(list row)
+    %+  skim  `(list row)`cands
+    |=(r=row ?.(?=([%s *] value.obs.r) & =(~ (de-iso p.value.obs.r))))
+  ?~  words  (~(del by base) 'next')
+  (~(put by base) 'next' ~[(roll t.words |=([x=row acc=_i.words] ?:((later x acc) x acc)))])
+::  +fold-base: the fold before +fold-next: a single-valued attr keeps
+::  the latest row, a multi-valued one the latest row per value
+::
+++  fold-base
+  |=  [live=(list row) multi=(set @t)]
+  ^-  (map @t (list row))
   %+  roll  live
   |=  [r=row acc=(map @t (list row))]
   =/  attr=@t  attr.obs.r
@@ -852,7 +898,9 @@
   %+  skim  rows
   |=  r=row
   ?:  retracted.obs.r  |
-  ?:  (~(has in timed-attrs) attr.obs.r)  &
+  ::  every next is kept: +fold-next takes the soonest ahead, not the
+  ::  latest said, so a later row never outranks one (version 134)
+  ?:  |((~(has in timed-attrs) attr.obs.r) =('next' attr.obs.r))  &
   ?:  ?&(?=(^ until.obs.r) (lte u.until.obs.r when))  |
   ?:  &((~(has in multi) attr.obs.r) ?=(~ value.obs.r))  |
   =/  t=(unit row)  (~(get by top) (key obs.r))
@@ -917,7 +965,7 @@
     ?:  &(!=('' (want 'source_id')) !=((want 'source_id') id.source.o))  ~
     ?:  &(!=('' (want 'by')) !=((want 'by') by.o))  ~
     ?:  &(!=('' (want 'attr')) !=((want 'attr') attr.o))  ~
-    ?:  &(!=('' (want 'status')) !=((want 'status') status))  ~
+    ?:  &(!=('' (want 'status')) !=((want 'status') status) !=((want 'status') (row-class r status)))  ~
     ?:  &(?=(^ since) (lth seen.o u.since))  ~
     ?:  &(?=(^ until) (gth seen.o u.until))  ~
     `[l r status]
@@ -927,8 +975,9 @@
     %+  roll  hits
     |=  [h=[l=loaded r=row status=@tas] acc=(map @t (map @t @ud))]
     =/  k=@t  kind.source.obs.r.h
+    =/  c=@t  (row-class r.h status.h)
     =/  in=(map @t @ud)  (~(gut by acc) k ~)
-    (~(put by acc) k (~(put by in) status.h +((~(gut by in) status.h 0))))
+    (~(put by acc) k (~(put by in) c +((~(gut by in) c 0))))
   =/  per-who=(map @t @ud)
     %+  roll  hits
     |=  [h=[l=loaded r=row status=@tas] acc=(map @t @ud)]
@@ -945,10 +994,20 @@
       ^-  json
       =/  j=json  (en-obs r.h status.h)
       ?.  ?=([%o *] j)  j
-      [%o (~(gas by p.j) ~[['kind' s+kind.body.l.h] ['name' s+name.body.l.h]])]
+      [%o (~(gas by p.j) ~[['kind' s+kind.body.l.h] ['name' s+name.body.l.h] ['class' s+(row-class r.h status.h)]])]
       ['by_source' [%o (~(run by per-src) |=(c=(map @t @ud) ^-(json [%o (~(run by c) num)])))]]
       ['by' [%o (~(run by per-who) num)]]
   ==
+::  +row-class: a row's status for the counts, with a retraction the
+::  owner struck told from one the ship made in its own housekeeping
+::  (version 134): on ricsul the ship's own were most of what was taken
+::  back, reconcile retiring the occurrences that had passed
+::
+++  row-class
+  |=  [r=row status=@tas]
+  ^-  @t
+  ?.  =(%retracted status)  status
+  ?:(=('struck by the owner' (end [3 19] note.obs.r)) 'struck' 'retracted')
 ::  +verdict-count: a reader's day as how many items it holds and how
 ::  many of each outcome
 ::
@@ -4475,13 +4534,17 @@
       ?.  (gth u.start.o now)  ~
       `[u.start.o end.o (cat 3 'reconcile/' id.l.o)]
     |=([a=[at=@da *] b=[at=@da *]] (lth at.a at.b))
+  ::  a next for every occurrence still ahead, each until its end: the
+  ::  fold takes the soonest still ahead (+fold-next, version 134), so
+  ::  the one after steps up as each passes, without waiting for the
+  ::  next pass twelve hours on
   =/  next-rows=(list json)
-    ?~  ahead  ~
-    :_  ~
+    %+  turn  ahead
+    |=  [at=@da end=(unit @da) src=@t]
     %-  obs-row
-    :*  aid  'next'  s+(en-iso at.i.ahead)  now
-        `(fall end.i.ahead (add at.i.ahead ~d1))  90
-        ['reconcile' src.i.ahead]  'reconcile'
+    :*  aid  'next'  s+(en-iso at)  now
+        `(fall end (add at ~d1))  90
+        ['reconcile' src]  'reconcile'
     ==
   =/  location=@t
     =/  ls=(list @t)
@@ -5189,7 +5252,7 @@
   ?.  ?=([%o *] x)  ""
   ?:  (~(has by p.x) 'break')  "\0a"
   =/  ship=json  (gj x 'ship')
-  ?:  ?=([%s *] ship)  (trip (dequote p.ship))
+  ?:  ?=(?([%s *] [%n *]) ship)  (trip (dequote p.ship))
   =/  nested=(unit (list json))
     =/  keys=(list @t)  ~['bold' 'italics' 'strike' 'blockquote']
     |-
@@ -5265,11 +5328,13 @@
   ?.  ?=([%o *] essay)  ~
   =/  sent=@da  (da-of-ms (fall (gn essay 'sent') 0))
   ?.  (gth sent floor)  ~
-  ::  inside the ship the scry's strings can arrive quoted ("~sarlev"):
-  ::  unquoted, or every sender is a stranger (version 100)
+  ::  inside the ship a ship comes as zuse's +ship:enjs, a number node
+  ::  holding the quoted name ([%n '"~sarlev"']), or as a string, maybe
+  ::  quoted, or an object's ship: read like the id below, or every
+  ::  sender is '' and a stranger (versions 100 and 134)
   =/  author=@t
     =/  a=json  (gj essay 'author')
-    (ship-key (dequote ?:(?=([%s *] a) p.a (gs a 'ship'))))
+    (ship-key (dequote (num-cord ?:(?=([%o *] a) (gj a 'ship') a))))
   ?:  &(!read-own.cfg =(author (ship-key our)))  ~
   =/  mid=@t  (dequote (num-cord (gj (gj w 'seal') 'id')))
   ?:  =('' mid)  ~
