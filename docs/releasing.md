@@ -224,6 +224,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 133's owner steps
+
+Nothing to do: no new roads, so no consent prompt. The explorer gains a Facts card: every fact with its history, filtered by where it came from, who said it and when, with how much of each source was later taken back, and a tap on a fact's source lists everything that source gave. The parts now show a week of each reader's days, and Needs a look lists anything the ship refused to write in the last day. The explorer reads all of this in one request instead of eleven, so it costs your ship less.
+
 ### Version 132's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The page opens on Explore, a new view beside the others that changes nothing. Needs a look lists what the ship's own records say deserves a glance, such as a reader that read nothing all day or proposals you keep dismissing, each opening to its items. What the ship knows is a table a kind at a time, situations first, with filters and where each value came from. The parts show what each reader and pass last did. The Bodies graph is one tap away, under Bodies.
