@@ -995,11 +995,27 @@
   // the bodies it names (its people, its place), else home's. The
   // people, places and the rest fold under a line of counts
   var PLURAL = { person: 'people', activity: 'activities' };
+  function plural(k, n) { return n === 1 ? k : PLURAL[k] || k + 's'; }
+  function rowsAt(b, a) { var v = b && b.attrs && b.attrs[a]; return !v ? [] : Array.isArray(v) ? v : [v]; }
+  function refIn(r) { return r && r.value && typeof r.value === 'object' ? String(r.value.ref || '') : ''; }
+  function sphereRefs(b) { return rowsAt(b, 'sphere').map(refIn).filter(Boolean); }
+  function situationSpheres(b, byId) {
+    var own = sphereRefs(b);
+    if (own.length) return own;
+    var via = [];
+    Object.keys(b.attrs || {}).forEach(function (a) {
+      rowsAt(b, a).forEach(function (r) {
+        var m = byId[refIn(r)];
+        if (m && m.kind !== 'situation') sphereRefs(m).forEach(function (x) { if (via.indexOf(x) < 0) via.push(x); });
+      });
+    });
+    return via.length ? via : ['sphere/home'];
+  }
   function kindCounts(list) {
     var n = Object.create(null);
     list.forEach(function (b) { n[b.kind] = (n[b.kind] || 0) + 1; });
     return Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a < b ? -1 : 1); }).map(function (k) {
-      return n[k] + ' ' + (n[k] === 1 ? k : PLURAL[k] || k + 's');
+      return n[k] + ' ' + plural(k, n[k]);
     }).join(', ');
   }
   function spheres(state) {
@@ -1013,20 +1029,6 @@
     list.sort(function (a, b) { return a.id === 'sphere/home' ? -1 : b.id === 'sphere/home' ? 1 : String(a.name).localeCompare(String(b.name)); });
     var waiting = (state.actions || []).filter(function (a) { return a.kind === 'fact' && a.status === 'proposed' && a.payload && a.payload.attr === 'sphere'; });
     var unfiled = all.filter(function (b) { return b.kind !== 'sphere' && b.kind !== 'note' && b.id !== 'person/me' && !rowsOf(b).length; }).length;
-    var filedIn = function (b) { return rowsOf(b).map(refOf).filter(Boolean); };
-    var sitSpheres = function (b) {
-      var own = filedIn(b);
-      if (own.length) return own;
-      var via = [];
-      Object.keys(b.attrs || {}).forEach(function (a) {
-        var v = b.attrs[a];
-        (Array.isArray(v) ? v : [v]).forEach(function (r) {
-          var m = byId[refOf(r)];
-          if (m && m.kind !== 'situation') filedIn(m).forEach(function (x) { if (via.indexOf(x) < 0) via.push(x); });
-        });
-      });
-      return via.length ? via : ['sphere/home'];
-    };
     var live = all.filter(function (b) { var p = b.kind === 'situation' && phase(b); return p && p !== 'over' && p !== 'closed' && p !== 'cancelled'; });
     var out = '<h1>Spheres</h1><p class="muted">The parts of your life. Whatever is filed under none is home\'s. ' +
       'What a model files under a sphere waits for you in the Inbox until you have confirmed three there.</p>' +
@@ -1035,7 +1037,7 @@
       var members = all.filter(function (b) { return rowsOf(b).some(function (r) { return refOf(r) === s.id; }); });
       var asks = waiting.filter(function (a) { return a.payload.value && a.payload.value.ref === s.id; });
       var summary = s.attrs && s.attrs.summary && s.attrs.summary.value;
-      var sits = live.filter(function (b) { return sitSpheres(b).indexOf(s.id) >= 0; }).map(function (b) { return b.id; });
+      var sits = live.filter(function (b) { return situationSpheres(b, byId).indexOf(s.id) >= 0; }).map(function (b) { return b.id; });
       var others = members.filter(function (b) { return b.kind !== 'situation'; });
       out += '<div class="card"><h2>' + esc(s.name || s.id) + '</h2>' + (summary ? '<p>' + esc(summary) + '</p>' : '');
       if (sits.length) out += situationCards(sits, state, 12);
@@ -1057,7 +1059,7 @@
 
   function seg(id) { return String(id).split('/').map(encodeURIComponent).join('/'); }
   function route(hash) {
-    var h = String(hash || '').replace(/^#/, '') || 'bodies';
+    var h = String(hash || '').replace(/^#/, '') || 'explore';
     if (h.indexOf('body/') === 0) return { name: 'body', id: h.slice(5) };
     return { name: h };
   }
@@ -1072,8 +1074,213 @@
     return { name: name, data: data };
   }
 
+  // ---- the explorer (version 132): what the ship knows, where each
+  // value came from and what each part did, read from the state, every
+  // action, the settings page's records and the readers' verdicts. What
+  // needs a look comes first, then a table a kind at a time, then the
+  // parts. The page alone, over routes the ship already has (phase 1 of
+  // specs/2026-10-30-orrery-explorer); nothing here writes
+  var READERS = ['telegram', 'chat', 'mail', 'web', 'browsing'];
+  var PAST = { over: true, closed: true, cancelled: true };
+  function allRows(b) {
+    var out = [];
+    Object.keys(b.attrs || {}).forEach(function (a) { rowsAt(b, a).forEach(function (r) { if (r) out.push({ attr: a, r: r }); }); });
+    return out;
+  }
+  function srcOf(r) { return r && r.source && typeof r.source === 'object' ? String(r.source.kind || '') : String((r && r.source) || ''); }
+  // where a value came from, in a line: the source, who said it, how
+  // sure and when
+  function whence(r) {
+    var s = r && r.source && typeof r.source === 'object' ? r.source : {};
+    return [srcOf(r) + (s.id ? ' ' + s.id : ''), r.by ? 'by ' + r.by : '', typeof r.conf === 'number' ? 'conf ' + r.conf : '', r.at ? fmtTime(r.at) : ''].filter(Boolean).join(' · ');
+  }
+  function plain(v, byId) {
+    if (v && typeof v === 'object' && typeof v.ref === 'string') { var b = byId[v.ref]; return b && b.name ? b.name : v.ref; }
+    if (v === null || v === undefined) return '';
+    return typeof v === 'string' ? v : JSON.stringify(v);
+  }
+  function clip(t, n) { t = String(t); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+  function lines(xs) { return [].concat(xs || []).map(String).filter(Boolean); }
+
+  // what needs a look: each check a line that opens to its items, and a
+  // check with nothing to say says nothing. The page alone shows it: it
+  // never pushes (the owner's choice, 2026-10-30)
+  function needsLook(state, acts, rec, verdicts, now) {
+    state = state || {}; rec = rec || {}; verdicts = verdicts || {};
+    now = now || new Date().toISOString();
+    var all = state.bodies || [], byId = index(state), out = [];
+    function line(title, items) { out.push('<details class="look"><summary>' + title + '</summary>' + items + '</details>'); }
+    function list(xs) { return '<ul>' + xs.join('') + '</ul>'; }
+    // a reader whose day went all one way, and not to facts
+    READERS.forEach(function (r) {
+      Object.keys(verdicts[r] || {}).sort().reverse().forEach(function (day) {
+        var es = verdicts[r][day] || [], o = es.length ? es[0].outcome : '';
+        if (es.length < 10 || o === 'facts' || es.some(function (e) { return e.outcome !== o; })) return;
+        line(esc(r) + ' on ' + esc(day) + ': ' + es.length + ' items, every one <strong>' + esc(o) + '</strong>',
+          list(es.slice(0, 10).map(function (e) { return '<li>' + fmtTime(e.at) + ' <span class="muted">' + esc(clip([e.chat || ''].concat(lines(e.notes)).filter(Boolean).join(' · '), 160)) + '</span></li>'; })));
+      });
+    });
+    // what the owner turns down more than they take, by who filed it
+    var tally = Object.create(null);
+    (acts || []).forEach(function (a) {
+      var k = a.kind + '|' + (a.by || '');
+      var t = tally[k] = tally[k] || { kind: a.kind, by: a.by || '', done: 0, dismissed: 0, failed: 0, gone: [] };
+      if (a.status === 'done') t.done += 1;
+      if (a.status === 'dismissed' || a.status === 'failed') { t[a.status] += 1; t.gone.push(a); }
+    });
+    Object.keys(tally).sort().forEach(function (k) {
+      var t = tally[k], no = t.dismissed + t.failed;
+      if (no < 5 || no <= t.done) return;
+      t.gone.sort(function (x, y) { return String(y.proposed || '') < String(x.proposed || '') ? -1 : 1; });
+      line(esc(t.kind) + ' actions from ' + esc(t.by || 'nobody') + ': ' + t.dismissed + ' dismissed' + (t.failed ? ', ' + t.failed + ' failed' : '') + ', ' + t.done + ' done',
+        list(t.gone.slice(0, 10).map(function (a) { return '<li>' + badge(a.status) + ' ' + namedText(a.title || '', byId) + (a.note ? ' <span class="muted">' + esc(clip(a.note, 160)) + '</span>' : '') + '</li>'; })));
+    });
+    // situations: ended in the last month with no outcome, and still open
+    // past their end
+    var sits = all.filter(function (b) { return b.kind === 'situation'; });
+    var month = new Date(Date.parse(now) - 30 * 86400000).toISOString();
+    var endOf = function (b) { return timeOf(b, 'ended') || timeOf(b, 'ends'); };
+    var bare = sits.filter(function (b) { var p = phase(b, now); return (p === 'over' || p === 'closed') && !rowsAt(b, 'outcome').length && endOf(b) >= month; });
+    if (bare.length) line(bare.length + ' situation' + (bare.length === 1 ? '' : 's') + ' ended in the last thirty days with no outcome', situationCards(bare.map(function (b) { return b.id; }), state, 20));
+    var lingering = sits.filter(function (b) { return phase(b, now) === 'over' && !/^(resolved|done|over)$/.test(timeOf(b, 'status')); });
+    if (lingering.length) line(lingering.length + ' situation' + (lingering.length === 1 ? '' : 's') + ' still open past the end', situationCards(lingering.map(function (b) { return b.id; }), state, 20));
+    // values the asserter was not sure of
+    var low = [];
+    all.forEach(function (b) { allRows(b).forEach(function (x) { if (typeof x.r.conf === 'number' && x.r.conf < 80) low.push({ b: b, x: x }); }); });
+    if (low.length) line(low.length + ' value' + (low.length === 1 ? '' : 's') + ' under 80 confidence',
+      list(low.slice(0, 30).map(function (y) { return '<li><a href="#body/' + esc(y.b.id) + '">' + esc(y.b.name || y.b.id) + '</a> ' + esc(y.x.attr) + ': ' + esc(clip(plain(y.x.r.value, byId), 80)) + ' <span class="muted">' + esc(whence(y.x.r)) + '</span></li>'; })));
+    // duplicates and the unconnected, as the Bodies page's tidy card has them
+    var g = graphOf(state, true, true), linked = Object.create(null);
+    g.nodes.forEach(function (n) { linked[n.id] = true; });
+    var dupes = dupesOf(state).length, loose = g.all.filter(function (n) { return !linked[n.id] && n.id !== (state.me || 'person/me'); }).length;
+    if (dupes || loose) out.push('<p class="look"><a href="#bodies">' + dupes + ' possible duplicate' + (dupes === 1 ? '' : 's') + ' and ' + loose + ' with no connection</a> <span class="muted">on the Bodies page\'s tidy card</span></p>');
+    // the parts' own word on what went wrong
+    var gen = rec.generator_last || {};
+    if (gen.error) line('the generator\'s last pass: <strong>' + esc(clip(gen.error, 120)) + '</strong>', '<p class="muted">' + fmtTime(gen.at) + '</p>');
+    var failed = (rec.exec_last || {}).failed || [];
+    if (failed.length) line(failed.length + ' action' + (failed.length === 1 ? '' : 's') + ' the executor could not carry out',
+      list(failed.map(function (f) { return '<li>' + namedText(f.title || f.id || '', byId) + ' <span class="muted">' + esc(clip(f.note || '', 160)) + '</span></li>'; })));
+    return out.length ? out.join('') : '<p class="muted">Nothing needs a look.</p>';
+  }
+
+  // the table, a kind at a time: one row per body, the columns the
+  // attributes most of its kind carry, each value's source on hover;
+  // filters and sorting redraw it from the state held
+  var exploreFilter = { kind: 'situation', find: '', phase: 'open', sphere: '', source: '', by: '', conf: '', since: '', attr: '', has: 'has', sort: '', desc: false };
+  function exploreKind(state, f) {
+    var kinds = Object.create(null);
+    (state.bodies || []).forEach(function (b) { kinds[b.kind] = (kinds[b.kind] || 0) + 1; });
+    var kind = kinds[f.kind] ? f.kind : kinds.situation ? 'situation' : Object.keys(kinds).sort()[0] || '';
+    return { kinds: kinds, kind: kind, mine: (state.bodies || []).filter(function (b) { return b.kind === kind; }) };
+  }
+  function exploreCols(k) {
+    var counts = Object.create(null);
+    k.mine.forEach(function (b) { Object.keys(b.attrs || {}).forEach(function (a) { counts[a] = (counts[a] || 0) + 1; }); });
+    var attrs = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || (a < b ? -1 : 1); });
+    return { attrs: attrs, cols: (k.kind === 'situation' ? ['phase'] : []).concat(attrs.slice(0, k.kind === 'situation' ? 8 : 7)) };
+  }
+  function exploreRows(state, f, now) {
+    state = state || {}; f = f || exploreFilter; now = now || new Date().toISOString();
+    var byId = index(state), k = exploreKind(state, f), c = exploreCols(k);
+    var since = f.since ? new Date(Date.parse(now) - Number(f.since) * 86400000).toISOString() : '';
+    var rows = k.mine.filter(function (b) {
+      if (f.find && String(b.name || b.id).toLowerCase().indexOf(String(f.find).toLowerCase()) < 0) return false;
+      if (k.kind === 'situation' && f.phase !== 'all' && !!PAST[phase(b, now)] !== (f.phase === 'past')) return false;
+      var xs = allRows(b);
+      if (f.source && !xs.some(function (x) { return srcOf(x.r) === f.source; })) return false;
+      if (f.by && !xs.some(function (x) { return x.r.by === f.by; })) return false;
+      if (f.conf && !xs.some(function (x) { return typeof x.r.conf === 'number' && x.r.conf < Number(f.conf); })) return false;
+      if (since && !xs.some(function (x) { return x.r.at && x.r.at >= since; })) return false;
+      if (f.attr && (rowsAt(b, f.attr).length > 0) !== (f.has !== 'lacks')) return false;
+      if (f.sphere) {
+        var sp = k.kind === 'situation' ? situationSpheres(b, byId) : sphereRefs(b).length ? sphereRefs(b) : ['sphere/home'];
+        if (sp.indexOf(f.sphere) < 0) return false;
+      }
+      return true;
+    });
+    var text = function (b, col) { return col === '@name' ? String(b.name || b.id) : col === 'phase' ? phase(b, now) : rowsAt(b, col).map(function (r) { return plain(r.value, byId); }).join(', '); };
+    var key = f.sort || (k.kind === 'situation' ? 'starts' : ''), dir = f.desc ? -1 : 1;
+    rows.sort(function (a, b) {
+      var x = key ? text(a, key) : '', y = key ? text(b, key) : '';
+      if (x !== y) { if (!x) return 1; if (!y) return -1; return (x < y ? -1 : 1) * dir; }
+      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+    });
+    var head = function (col, label) { return '<th scope="col"><button class="link" data-explore-sort="' + esc(col) + '">' + esc(label) + (key === col && f.sort ? (f.desc ? ' ↓' : ' ↑') : '') + '</button></th>'; };
+    var out = '<div id="explore-rows"><p class="muted">' + rows.length + ' of ' + k.mine.length + ' ' + esc(plural(k.kind, k.mine.length)) + (rows.length > 200 ? ', the first 200 shown' : '') + '</p>';
+    if (!rows.length) return out + '</div>';
+    out += '<table class="explore"><thead><tr>' + head('@name', 'name') + c.cols.map(function (col) { return head(col, col); }).join('') + '</tr></thead><tbody>';
+    rows.slice(0, 200).forEach(function (b) {
+      out += '<tr>' + cell('name', '<a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) + '</a>') + c.cols.map(function (col) {
+        if (col === 'phase') return cell(col, esc(phase(b, now)));
+        return cell(col, rowsAt(b, col).map(function (r) {
+          var t = esc(clip(plain(r.value, byId), 80)), low = typeof r.conf === 'number' && r.conf < 80;
+          var inner = r.value && typeof r.value === 'object' && typeof r.value.ref === 'string' ? '<a href="#body/' + esc(r.value.ref) + '">' + t + '</a>' : t;
+          return '<span class="v' + (low ? ' low' : '') + '" title="' + esc(whence(r)) + '">' + inner + '</span>';
+        }).join(', '));
+      }).join('') + '</tr>';
+    });
+    return out + '</tbody></table></div>';
+  }
+  function exploreTable(state, f, now) {
+    state = state || {}; f = f || exploreFilter;
+    var byId = index(state), k = exploreKind(state, f), c = exploreCols(k);
+    var seenSrc = Object.create(null), seenBy = Object.create(null);
+    k.mine.forEach(function (b) { allRows(b).forEach(function (x) { var s = srcOf(x.r); if (s) seenSrc[s] = true; if (x.r.by) seenBy[x.r.by] = true; }); });
+    var spheresHere = [['sphere/home', 'Home']].concat((state.bodies || []).filter(function (b) { return b.kind === 'sphere' && b.id !== 'sphere/home'; }).map(function (b) { return [b.id, b.name || b.id]; }));
+    var pick = function (name, label, values, cur, none) {
+      return '<label class="field">' + label + ' <select data-explore="' + name + '">' + (none === false ? '' : '<option value="">' + (none || 'any') + '</option>') +
+        values.map(function (v) { var val = Array.isArray(v) ? v[0] : v, txt = Array.isArray(v) ? v[1] : v; return '<option value="' + esc(val) + '"' + (String(val) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>'; }).join('') + '</select></label> ';
+    };
+    var out = '<div id="explore-table"><p class="kinds">' + Object.keys(k.kinds).sort(function (a, b) { return k.kinds[b] - k.kinds[a]; }).map(function (kd) {
+      return '<button data-explore-kind="' + esc(kd) + '"' + (kd === k.kind ? ' class="on"' : '') + '>' + esc(plural(kd, k.kinds[kd])) + ' ' + k.kinds[kd] + '</button>';
+    }).join(' ') + '</p><p>' +
+      '<label class="field">name <input data-explore="find" value="' + esc(f.find || '') + '" placeholder="any"></label> ' +
+      (k.kind === 'situation' ? pick('phase', 'phase', [['open', 'open'], ['past', 'past'], ['all', 'all']], f.phase || 'open', false) : '') +
+      pick('sphere', 'sphere', spheresHere, f.sphere) +
+      pick('source', 'a value from', Object.keys(seenSrc).sort(), f.source) +
+      pick('by', 'said by', Object.keys(seenBy).sort(), f.by) +
+      pick('conf', 'a value under', [['95', '95 confidence'], ['80', '80 confidence']], f.conf) +
+      pick('since', 'a value since', [['1', 'a day ago'], ['7', 'a week ago'], ['30', 'a month ago']], f.since) +
+      pick('has', '', [['has', 'has'], ['lacks', 'lacks']], f.has || 'has', false) + pick('attr', '', c.attrs, f.attr, 'any attribute') +
+      '</p>' + exploreRows(state, f, now) + '</div>';
+    return out;
+  }
+
+  // the parts: what each last did, by its own record, and for each reader
+  // its verdicts by day, each item with its outcome and notes
+  function partsCard(rec, verdicts) {
+    rec = rec || {}; verdicts = verdicts || {};
+    var parts = [['generator', rec.generator_last], ['reconcile', rec.reconcile_last], ['executor', rec.exec_last], ['calendar events', rec.calendar_last],
+      ['telegram', rec.telegram_last, 'telegram'], ['chat', rec.chat_last, 'chat'], ['mail', rec.mail_last, 'mail'], ['read channel', rec.read_last, 'web'], ['browsing', rec.browsing_last, 'browsing']];
+    var out = '<ul class="parts">';
+    parts.forEach(function (p) {
+      var r = p[1] && typeof p[1] === 'object' ? p[1] : {}, at = r.at || r.pass_at || '';
+      var nums = Object.keys(r).filter(function (x) { return typeof r[x] === 'number' && !/^(rev|day|month)$/.test(x); }).slice(0, 10).map(function (x) { return esc(x.replace(/_/g, ' ')) + ' ' + r[x]; });
+      var notes = lines(r.notes);
+      out += '<li><strong>' + esc(p[0]) + '</strong> <span class="muted">' + (at ? 'last ' + fmtTime(at) : 'no record') + '</span>' +
+        (nums.length ? '<br><span class="muted">' + nums.join(' · ') + '</span>' : '') +
+        (notes.length ? '<details><summary class="muted">' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + '</summary><ul>' + notes.slice(0, 20).map(function (n) { return '<li>' + esc(clip(n, 200)) + '</li>'; }).join('') + '</ul></details>' : '');
+      var v = p[2] ? verdicts[p[2]] || {} : {};
+      Object.keys(v).sort().reverse().forEach(function (day) {
+        var es = v[day] || [], by = Object.create(null);
+        es.forEach(function (e) { by[e.outcome] = (by[e.outcome] || 0) + 1; });
+        out += '<details><summary class="muted">' + esc(day) + ': ' + es.length + ' item' + (es.length === 1 ? '' : 's') + (es.length ? ' (' + Object.keys(by).map(function (o) { return by[o] + ' ' + esc(o); }).join(', ') + ')' : '') + '</summary>' +
+          (es.length ? '<ul>' + es.slice(0, 50).map(function (e) { return '<li>' + fmtTime(e.at) + ' ' + badge(e.outcome || '') + ' <span class="muted">' + esc(clip([e.chat || '', typeof e.facts === 'number' ? e.facts + ' facts' : ''].concat(lines(e.notes)).filter(Boolean).join(' · '), 200)) + '</span></li>'; }).join('') + '</ul>' : '') + '</details>';
+      });
+      out += '</li>';
+    });
+    return out + '</ul>';
+  }
+  function explore(state, acts, rec, verdicts, now) {
+    return '<h1>Explore</h1>' +
+      '<div class="card"><h2>Needs a look</h2><div id="look">' + needsLook(state, acts, rec, verdicts, now) + '</div></div>' +
+      '<div class="card"><h2>What the ship knows</h2>' + exploreTable(state, exploreFilter, now) + '</div>' +
+      '<div class="card"><h2>The parts</h2><div id="parts">' + partsCard(rec, verdicts) + '</div></div>';
+  }
+
   var render = {
     phase: phase,
+    explore: explore, needsLook: needsLook, exploreTable: exploreTable, exploreRows: exploreRows, partsCard: partsCard, exploreFilter: exploreFilter,
     bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, browsingCard: browsingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox,
     personPicker: personPicker, matchScore: matchScore, pickMatches: pickMatches, pickList: pickList, payloadLine: payloadLine, namedText: namedText, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
@@ -1399,7 +1606,7 @@
   var refreshing = false, again = false, drawn = '', seen = Object.create(null), lastState = null;
   function viewNow() {
     var r = route(location.hash);
-    var name = r.name === 'body' || r.name === 'inbox' || r.name === 'settings' || r.name === 'keys' || r.name === 'spheres' || r.name === 'sharing' ? r.name : 'bodies';
+    var name = r.name === 'body' || r.name === 'inbox' || r.name === 'settings' || r.name === 'keys' || r.name === 'spheres' || r.name === 'sharing' || r.name === 'explore' ? r.name : 'bodies';
     return { r: r, name: name, here: name + ' ' + (r.id || ''), cached: name !== 'settings' && name !== 'keys' && name !== 'sharing' };
   }
   // one view drawn from its answer, through show, which may hold it
@@ -1417,6 +1624,7 @@
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
     if (v.name === 'spheres') { var shown = show(spheres(d)); if (shown) fillPairing(); return shown; }
+    if (v.name === 'explore') { var drewX = show(explore(d[0], d[1][0], d[1][1], verdictCache)); if (drewX) fillVerdicts(); return drewX; }
     // the graph drawn already takes the new state in place: a redraw
     // would drop the hand on it and the find box's words
     if (drawn === v.here && document.getElementById('graph')) {
@@ -1433,6 +1641,52 @@
   function drawSeen(v) {
     if (v.here === drawn || !v.cached || !seen[v.here]) return;
     drawView(v, seen[v.here], function (html) { view.innerHTML = html; drawn = v.here; return true; });
+  }
+  // the state: with the rev drawn already the ship answers "same" when
+  // nothing moved since, and the state already held stands
+  function freshState() {
+    var had = lastState;
+    var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';
+    return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });
+  }
+  // the explorer's every action and the settings records, read at most
+  // every five minutes: the beacon moves on every fact, and /settings
+  // alone took five seconds on a busy ship (2026-10-30)
+  // ponytail: a light route of the parts' records alone, when it shows
+  var EXTRAS_MS = 300000;
+  var extrasHeld = null, extrasAt = 0;
+  function exploreExtras() {
+    if (extrasHeld && Date.now() - extrasAt < EXTRAS_MS) return Promise.resolve(extrasHeld);
+    return Promise.all([api('/actions?status=all'), api('/settings')]).then(function (d) { extrasHeld = d; extrasAt = Date.now(); return d; });
+  }
+  // each reader's verdicts for today and yesterday, read after the
+  // explorer draws and at most every five minutes, then painted in place
+  var verdictCache = Object.create(null), verdictAt = 0;
+  function paintVerdicts() {
+    var d = seen['explore '], look = document.getElementById('look'), parts = document.getElementById('parts');
+    if (!d) return;
+    if (look) look.innerHTML = needsLook(d[0], d[1][0], d[1][1], verdictCache);
+    if (parts) parts.innerHTML = partsCard(d[1][1], verdictCache);
+  }
+  function fillVerdicts() {
+    if (Date.now() - verdictAt < EXTRAS_MS) return;
+    verdictAt = Date.now();
+    var yday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    Promise.all(READERS.map(function (r) {
+      return api('/verdicts?reader=' + r).then(function (d) {
+        var m = Object.create(null);
+        if (d.day && (d.entries || []).length) m[d.day] = d.entries;
+        verdictCache[r] = m;
+        if ((d.days || []).indexOf(yday) < 0 || yday === d.day) return;
+        return api('/verdicts?reader=' + r + '&day=' + yday).then(function (y) { if ((y.entries || []).length) m[yday] = y.entries; });
+      }).catch(function () { /* a reader with no record says nothing */ });
+    })).then(paintVerdicts);
+  }
+  // the explorer's filters redraw its rows from the answer held; a new
+  // kind redraws its controls too. Nothing is fetched
+  function redrawExplore(whole) {
+    var d = seen['explore '], el = document.getElementById(whole ? 'explore-table' : 'explore-rows');
+    if (d && el) el.outerHTML = whole ? exploreTable(d[0], exploreFilter) : exploreRows(d[0], exploreFilter);
   }
   function refresh(force) {
     var v = viewNow();
@@ -1457,11 +1711,8 @@
       if (v.name === 'settings') return api('/settings');
       if (v.name === 'keys') return Promise.all([api('/clients'), api('/schema')]);
       if (v.name === 'sharing') return Promise.all([lastState ? Promise.resolve(lastState) : api('/state'), api('/shares'), api('/location'), api('/pairing'), api('/policy'), api('/private')]);
-      // the rev drawn already: the ship answers "same" when nothing moved
-      // since, and the state already held stands
-      var had = lastState;
-      var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';
-      return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });
+      if (v.name === 'explore') return Promise.all([freshState(), exploreExtras()]);
+      return freshState();
     }
     drawSeen(v);
     var before = lastState && lastState.rev;
@@ -1469,7 +1720,7 @@
       // the very answer drawn already needs no drawing again; asked before
       // the answer is kept below, or every answer would look drawn
       var again = seen[v.here] === d && drawn === v.here;
-      var s = v.name === 'body' ? d[1] : (v.name === 'bodies' || v.name === 'inbox') ? d : null;
+      var s = v.name === 'body' ? d[1] : v.name === 'explore' ? d[0] : (v.name === 'bodies' || v.name === 'inbox') ? d : null;
       if (awaitMove > 0 && s) {
         var still = awaitGone ? (s.bodies || []).some(function (x) { return awaitGone.indexOf(x.id) >= 0; }) : s.rev === before;
         if (still) { awaitMove -= 1; if (awaitMove > 0) setTimeout(function () { refresh(!dirty); }, 1000); }
@@ -2331,10 +2582,34 @@
   });
   view.addEventListener('input', function (e) {
     var el = e.target;
+    if (el && el.dataset && el.dataset.explore !== undefined) return;
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }
   });
   view.addEventListener('change', function (e) {
+    if (e.target && e.target.dataset && e.target.dataset.explore !== undefined) return;
     if (e.target && e.target.tagName === 'SELECT') { dirty = true; edits += 1; }
+  });
+  ['input', 'change'].forEach(function (t) {
+    view.addEventListener(t, function (e) {
+      var el = e.target;
+      if (!el || !el.dataset || el.dataset.explore === undefined) return;
+      exploreFilter[el.dataset.explore] = el.value;
+      redrawExplore(false);
+    });
+  });
+  view.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-explore-kind],[data-explore-sort]');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.exploreKind !== undefined) {
+      exploreFilter.kind = b.dataset.exploreKind; exploreFilter.sort = ''; exploreFilter.desc = false; exploreFilter.attr = '';
+      redrawExplore(true);
+    } else {
+      var col = b.dataset.exploreSort;
+      exploreFilter.desc = exploreFilter.sort === col ? !exploreFilter.desc : false;
+      exploreFilter.sort = col;
+      redrawExplore(false);
+    }
   });
   function editing() {
     if (dirty || graphView.touching) return true;

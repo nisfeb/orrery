@@ -102,6 +102,15 @@ textarea.short { min-height: 0; margin-top: .2rem; }
 .instruct textarea { font: inherit; }
 label.block { display: block; margin: .4rem 0; }
 details#tidy summary { cursor: pointer; font-weight: 600; }
+/* the explorer (version 132) */
+.look { margin: .35rem 0; }
+.look summary, .parts summary { cursor: pointer; }
+.parts { list-style: none; padding: 0; }
+.parts > li { padding: .45rem 0; border-bottom: 1px solid var(--line); }
+.kinds button.on { border-color: var(--amber); font-weight: 600; }
+button.link { border: 0; background: none; padding: 0; margin: 0; font-weight: 600; color: inherit; }
+table.explore .v.low { color: var(--muted); font-style: italic; }
+table.explore .v[title] { cursor: help; }
 details#tidy h3 { font-size: .9rem; color: var(--muted); margin: 1rem 0 .3rem; }
 select { font: inherit; padding: .2rem .3rem; border: 1px solid var(--line); border-radius: 5px; }
 details#tidy li.done > a { text-decoration: line-through; color: var(--muted); }

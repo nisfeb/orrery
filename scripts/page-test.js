@@ -171,7 +171,51 @@ ok('fmtValue renders strings, refs and objects', render.fmtValue('x') === 'x' &&
 
 const first = render.sseEvent('event: old /rev\ndata: 1789600000000');
 ok('sseEvent reads the initial "old /rev" name and its data', first.name === 'old /rev' && first.data === '1789600000000' && render.sseEvent(': comment\n').name === '');
-ok('route reads a body hash, and an empty hash is the body list', render.route('#body/person/me').name === 'body' && render.route('#body/person/me').id === 'person/me' && render.route('').name === 'bodies' && render.route('#inbox').name === 'inbox');
+ok('route reads a body hash, and an empty hash is the explorer (version 132)', render.route('#body/person/me').name === 'body' && render.route('#body/person/me').id === 'person/me' && render.route('').name === 'explore' && render.route('#bodies').name === 'bodies' && render.route('#inbox').name === 'inbox');
+// the explorer (version 132): what needs a look, a table a kind at a time, the parts
+const XNOW = '2026-10-30T12:00:00Z';
+const xr = function (value, more) { return Object.assign({ value: value, at: '2026-10-29T10:00:00Z', by: 'owner', conf: 100, source: { kind: 'user', id: 'u1' } }, more || {}); };
+const xState = { me: 'person/me', bodies: [
+  { id: 'person/me', kind: 'person', name: 'me', attrs: {} },
+  { id: 'person/kid', kind: 'person', name: 'Kid', attrs: { relationship: xr('son', { conf: 70, by: 'mail', source: { kind: 'mail', id: 'm9' } }) } },
+  { id: 'place/gym', kind: 'place', name: 'Gym', attrs: {} },
+  { id: 'situation/meet', kind: 'situation', name: 'Swim meet', attrs: { starts: xr('2026-11-02T14:00:00Z'), participants: [xr({ ref: 'person/kid' })], location: xr({ ref: 'place/gym' }, { by: 'mail', source: { kind: 'mail', id: 'm1' } }) } },
+  { id: 'situation/fair', kind: 'situation', name: 'Book fair', attrs: { starts: xr('2026-11-01T09:00:00Z'), status: xr('open') } },
+  { id: 'situation/recital', kind: 'situation', name: 'Recital', attrs: { starts: xr('2026-10-24T18:00:00Z'), ends: xr('2026-10-24T20:00:00Z'), participants: [xr({ ref: 'person/kid' })] } }] };
+const xActs = [].concat(
+  [1, 2, 3, 4, 5, 6].map(function (i) { return { id: 'm' + i, kind: 'message', by: 'generator', status: 'dismissed', title: 'Tell person/kid ' + i, note: 'not needed', proposed: '2026-10-2' + i + 'T00:00:00Z' }; }),
+  [1, 2].map(function (i) { return { id: 'd' + i, kind: 'message', by: 'generator', status: 'done', title: 'done ' + i }; }),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (i) { return { id: 't' + i, kind: 'task', by: 'generator', status: 'done', title: 'task ' + i }; }),
+  [1, 2].map(function (i) { return { id: 'x' + i, kind: 'task', by: 'generator', status: 'dismissed', title: 'no ' + i }; }));
+const strangers = Array.from({ length: 12 }, function (_, i) { return { at: '2026-10-29T0' + (i % 10) + ':00:00Z', outcome: 'stranger', chat: 'dm/~zod', notes: ['not in people'] }; });
+const xVerdicts = { chat: { '2026-10-29': strangers }, telegram: { '2026-10-29': strangers.slice(0, 11).concat([{ at: '2026-10-29T11:00:00Z', outcome: 'facts' }]) } };
+const xRec = { generator_last: { at: '2026-10-30T11:00:00Z', filed: 3, dropped: 1, error: 'the model answered 504', notes: ['one dropped'] }, exec_last: { at: '2026-10-30T11:00:00Z', failed: [{ id: 'm7', title: 'Mail the school', note: 'no email attribute' }] } };
+const look = render.needsLook(xState, xActs, xRec, xVerdicts, XNOW);
+ok('needs a look: a reader\'s day that went all one way, and not one that went two ways',
+  look.includes('chat on 2026-10-29: 12 items, every one <strong>stranger</strong>') && !look.includes('telegram on'));
+ok('needs a look: an action kind turned down more than done, by who filed it, with the reasons, and not one done more',
+  look.includes('message actions from generator: 6 dismissed, 2 done') && look.includes('not needed') && !look.includes('task actions from'));
+ok('needs a look: a situation ended with no outcome, a value under 80 confidence with its source, the generator\'s error, the executor\'s failures',
+  look.includes('1 situation ended in the last thirty days with no outcome') && look.includes('href="#body/situation/recital"')
+  && look.includes('1 value under 80 confidence') && look.includes('mail m9') && look.includes('the model answered 504') && look.includes('Mail the school'));
+ok('needs a look says so when nothing does', render.needsLook({ bodies: [] }, [], {}, {}, XNOW) === '<p class="muted">Nothing needs a look.</p>');
+const xt = function (f) { return render.exploreRows(xState, Object.assign({}, render.exploreFilter, f || {}), XNOW); };
+const open0 = xt();
+ok('the table opens on open situations, soonest first, with the phase and the attributes most of them carry',
+  open0.includes('2 of 3 situations') && open0.indexOf('Book fair') < open0.indexOf('Swim meet') && !open0.includes('Recital')
+  && open0.includes('data-explore-sort="phase"') && open0.includes('data-explore-sort="starts"'));
+ok('a value says where it came from, and a ref is named and linked', open0.includes('title="mail m1 \u00b7 by mail \u00b7 conf 100') && open0.includes('<a href="#body/place/gym">Gym</a>'));
+ok('the filters: past situations, a source, a name, and a sort by name backwards',
+  xt({ phase: 'past' }).includes('Recital') && !xt({ phase: 'past' }).includes('Book fair')
+  && xt({ source: 'mail' }).includes('1 of 3') && xt({ find: 'fair' }).includes('Book fair') && !xt({ find: 'fair' }).includes('Swim meet')
+  && xt({ sort: '@name', desc: true }).indexOf('Swim meet') < xt({ sort: '@name', desc: true }).indexOf('Book fair'));
+ok('another kind, its low-confidence value marked', xt({ kind: 'person' }).includes('2 of 2 people') && xt({ kind: 'person' }).includes('class="v low"'));
+const parts = render.partsCard(xRec, xVerdicts);
+ok('the parts: each one\'s last record in numbers and notes, and a reader\'s days by outcome',
+  parts.includes('<strong>generator</strong>') && parts.includes('filed 3') && parts.includes('1 note') && parts.includes('2026-10-29: 12 items (12 stranger)'));
+const xHtml = render.explore(xState, xActs, xRec, xVerdicts, XNOW);
+ok('the explorer is the three cards in order', xHtml.indexOf('Needs a look') < xHtml.indexOf('What the ship knows') && xHtml.indexOf('What the ship knows') < xHtml.indexOf('The parts')
+  && xHtml.includes('data-explore-kind="situation" class="on"') && xHtml.includes('data-explore="find"'));
 ok('seg encodes each segment and keeps the slash', render.seg('situation/2026-09-16 breakdown') === 'situation/2026-09-16%20breakdown');
 const gen = { enabled: true, url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3', api_key_set: true, reasoning: { effort: 'high' }, max_tokens: 32000, max_actions: 5, timezone: '', cooldown_minutes: 60, max_daily: 24, max_urgent: 5 };
 const genLast = { at: '2026-09-19T01:07:41Z', filed: 3, dropped: 1, skipped: false, notes: ['model note: the trip is stale'], usage: { cost: 0.0229, prompt_tokens: 6621, completion_tokens: 1404 }, seconds: 17, error: null, calls_today: 4, urgent_today: 1, month: '2026-09', spend_month_micro: 1234567 };
