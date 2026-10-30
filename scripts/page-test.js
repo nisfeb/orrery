@@ -218,8 +218,27 @@ const sphState = { bodies: [
 const sph = render.spheres(sphState);
 ok('the spheres page lists home first (made when the ship has none), what each holds and who filed it, and what waits (version 84)',
   sph.indexOf('<h2>Home</h2>') < sph.indexOf('<h2>The llc</h2>') && sph.includes('Ballet</a> <span class="muted">activity &middot; filed by owner')
-  && sph.includes('And 1 more under no sphere.') && sph.includes('<p>client work</p>') && sph.includes('Client dinner</a>')
+  && sph.includes('And 1 more under no sphere.') && sph.includes('<p>client work</p>') && sph.includes('href="#body/situation/client-dinner">Client dinner')
   && sph.includes('1 waiting for you</a>: File invoice under the-llc'));
+const future = new Date(Date.now() + 86400000).toISOString(), past = new Date(Date.now() - 86400000).toISOString();
+const sph2 = render.spheres({ bodies: [
+    { id: 'sphere/llc', kind: 'sphere', name: 'LLC', attrs: {} },
+    { id: 'person/kid', kind: 'person', name: 'Kid', attrs: { sphere: { value: { ref: 'sphere/llc' }, by: 'owner' } } },
+    { id: 'place/office', kind: 'place', name: 'Office', attrs: { sphere: { value: { ref: 'sphere/llc' }, by: 'owner' } } },
+    { id: 'situation/recital', kind: 'situation', name: 'Recital', attrs: { participants: [{ value: { ref: 'person/kid' } }], starts: { value: future } } },
+    { id: 'situation/old-play', kind: 'situation', name: 'Old play', attrs: { participants: [{ value: { ref: 'person/kid' } }], ends: { value: past } } },
+    { id: 'situation/chores', kind: 'situation', name: 'Chores', attrs: {} }], actions: [] });
+const card = function (html, name) { return html.split('<div class="card">').filter(function (c) { return c.indexOf('<h2>' + name + '</h2>') === 0; })[0] || ''; };
+const llc = card(sph2, 'LLC'), home2 = card(sph2, 'Home');
+ok('a sphere leads with its open situations, one filed nowhere taken from the person it names, and folds the rest under its counts (version 131)',
+  llc.includes('>Recital') && !llc.includes('Old play') && llc.indexOf('Recital') < llc.indexOf('<details>') && llc.includes('1 person, 1 place filed here')
+  && home2.includes('>Chores') && !home2.includes('Recital'));
+const pg = render.graphOf({ me: 'person/me', bodies: [
+  { id: 'person/kid', kind: 'person', name: 'Kid', attrs: { school: { value: { ref: 'place/school' } } } },
+  { id: 'place/school', kind: 'place', name: 'School', attrs: {} },
+  { id: 'situation/recital', kind: 'situation', name: 'Recital', attrs: { participants: [{ value: { ref: 'person/kid' } }] } }] }, false);
+const kidPane = render.nodePane(pg.byId['person/kid'], pg);
+ok('a body\'s connections list its situations first (version 131)', kidPane.indexOf('Recital') > 0 && kidPane.indexOf('Recital') < kidPane.indexOf('School'));
 ok('a route to the spheres page is its own view', render.route('#spheres').name === 'spheres');
 ok('a twin reads as the body on the other ship (version 89)', render.fmtValue({ ship: '~zod', id: 'person/lena' }) === 'person/lena on ~zod');
 const pairHtml = render.pairingCard([{ key: '~zod|sphere/home', host: '~zod', sphere: 'sphere/home', there: 'person/rowan', there_name: 'Rowan', here: 'person/kid', here_name: 'Rowan', why: 'name' }]);

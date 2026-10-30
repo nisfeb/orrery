@@ -83,8 +83,9 @@
   // phase and start, the id as subtext, soonest first (a start in the past
   // is ongoing and comes before one still ahead), then the ones with the
   // most open actions, then by name; never in id order and never a run of
-  // bare ids. Without the state each card is named by its id.
-  function situationCards(ids, state) {
+  // bare ids. Without the state each card is named by its id. With a
+  // limit, the first that many and a count of the rest.
+  function situationCards(ids, state, limit) {
     var byId = index(state);
     var pending = Object.create(null);
     ((state && state.actions) || []).forEach(function (a) { (a.about || []).forEach(function (id) { pending[id] = (pending[id] || 0) + 1; }); });
@@ -97,6 +98,8 @@
       if (na !== nb) return nb - na;
       return (a.name || a.id).toLowerCase() < (b.name || b.id).toLowerCase() ? -1 : 1;
     });
+    var more = limit && open.length > limit ? open.length - limit : 0;
+    if (more) open = open.slice(0, limit);
     var out = '<div class="bodies">';
     open.forEach(function (b) {
       var n = pending[b.id] || 0;
@@ -105,7 +108,7 @@
         (n ? ' <span class="muted">' + n + ' open action' + (n === 1 ? '' : 's') + '</span>' : '') +
         '<span class="id">' + esc(b.id) + '</span></a>';
     });
-    return out + '</div>';
+    return out + '</div>' + (more ? '<p class="muted">and ' + more + ' more</p>' : '');
   }
 
   // the bodies view (version 58): every body a node, every ref
@@ -307,6 +310,9 @@
       out += '</tbody></table>';
     }
     var links = g.edges.filter(function (e) { return e.from === n.id || e.to === n.id; });
+    // what is going on before who and where (version 131)
+    var sitLast = function (e) { var o = g.byId[e.from === n.id ? e.to : e.from]; return o && o.kind === 'situation' ? 0 : 1; };
+    links.sort(function (x, y) { return sitLast(x) - sitLast(y); });
     if (links.length) {
       out += '<h3>Connections</h3><ul class="links">';
       links.forEach(function (e) {
@@ -982,8 +988,20 @@
   }
 
   // the parts of the owner's life (version 84): each sphere, what is
-  // filed under it and who filed it, and the filings a model made that
-  // wait for the owner; whatever is under no sphere is home's
+  // going on in it, what is filed under it and who filed it, and the
+  // filings a model made that wait for the owner; whatever is under no
+  // sphere is home's. Since 131 a card leads with its open situations:
+  // a situation is the sphere's it is filed under, else the spheres of
+  // the bodies it names (its people, its place), else home's. The
+  // people, places and the rest fold under a line of counts
+  var PLURAL = { person: 'people', activity: 'activities' };
+  function kindCounts(list) {
+    var n = Object.create(null);
+    list.forEach(function (b) { n[b.kind] = (n[b.kind] || 0) + 1; });
+    return Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a < b ? -1 : 1); }).map(function (k) {
+      return n[k] + ' ' + (n[k] === 1 ? k : PLURAL[k] || k + 's');
+    }).join(', ');
+  }
   function spheres(state) {
     state = state || {};
     var all = state.bodies || [], byId = {};
@@ -995,6 +1013,21 @@
     list.sort(function (a, b) { return a.id === 'sphere/home' ? -1 : b.id === 'sphere/home' ? 1 : String(a.name).localeCompare(String(b.name)); });
     var waiting = (state.actions || []).filter(function (a) { return a.kind === 'fact' && a.status === 'proposed' && a.payload && a.payload.attr === 'sphere'; });
     var unfiled = all.filter(function (b) { return b.kind !== 'sphere' && b.kind !== 'note' && b.id !== 'person/me' && !rowsOf(b).length; }).length;
+    var filedIn = function (b) { return rowsOf(b).map(refOf).filter(Boolean); };
+    var sitSpheres = function (b) {
+      var own = filedIn(b);
+      if (own.length) return own;
+      var via = [];
+      Object.keys(b.attrs || {}).forEach(function (a) {
+        var v = b.attrs[a];
+        (Array.isArray(v) ? v : [v]).forEach(function (r) {
+          var m = byId[refOf(r)];
+          if (m && m.kind !== 'situation') filedIn(m).forEach(function (x) { if (via.indexOf(x) < 0) via.push(x); });
+        });
+      });
+      return via.length ? via : ['sphere/home'];
+    };
+    var live = all.filter(function (b) { var p = b.kind === 'situation' && phase(b); return p && p !== 'over' && p !== 'closed' && p !== 'cancelled'; });
     var out = '<h1>Spheres</h1><p class="muted">The parts of your life. Whatever is filed under none is home\'s. ' +
       'What a model files under a sphere waits for you in the Inbox until you have confirmed three there.</p>' +
       '<div id="pairing-card"></div>';
@@ -1002,13 +1035,17 @@
       var members = all.filter(function (b) { return rowsOf(b).some(function (r) { return refOf(r) === s.id; }); });
       var asks = waiting.filter(function (a) { return a.payload.value && a.payload.value.ref === s.id; });
       var summary = s.attrs && s.attrs.summary && s.attrs.summary.value;
+      var sits = live.filter(function (b) { return sitSpheres(b).indexOf(s.id) >= 0; }).map(function (b) { return b.id; });
+      var others = members.filter(function (b) { return b.kind !== 'situation'; });
       out += '<div class="card"><h2>' + esc(s.name || s.id) + '</h2>' + (summary ? '<p>' + esc(summary) + '</p>' : '');
-      if (!members.length) out += '<p class="muted">' + (s.id === 'sphere/home' ? 'Nothing filed here by name.' : 'Nothing filed here yet.') + '</p>';
-      else {
-        out += '<ul>' + members.map(function (b) {
+      if (sits.length) out += situationCards(sits, state, 12);
+      else if (!others.length) out += '<p class="muted">' + (s.id === 'sphere/home' ? 'Nothing filed here by name.' : 'Nothing filed here yet.') + '</p>';
+      else out += '<p class="muted">No open situations.</p>';
+      if (others.length) {
+        out += '<details><summary class="muted">' + esc(kindCounts(others)) + ' filed here</summary><ul>' + others.map(function (b) {
           var r = rowsOf(b).filter(function (x) { return refOf(x) === s.id; })[0] || {};
           return '<li><a href="#body/' + esc(b.id) + '">' + esc(b.name || b.id) + '</a> <span class="muted">' + esc(b.kind) + ' &middot; filed by ' + esc(r.by || '') + '</span></li>';
-        }).join('') + '</ul>';
+        }).join('') + '</ul></details>';
       }
       if (s.id === 'sphere/home' && unfiled) out += '<p class="muted">And ' + unfiled + ' more under no sphere.</p>';
       if (asks.length) out += '<p><a href="#inbox">' + asks.length + ' waiting for you</a>: ' + asks.map(function (a) { return namedText(a.title, byId); }).join('; ') + '</p>';
