@@ -1667,6 +1667,8 @@
     %get-browsing-page      (serve-browsing-page eyre-id args act)
     %get-browsing-recent    (serve-browsing-recent eyre-id act)
     %get-verdicts           (serve-verdicts eyre-id args)
+    %get-explore            (serve-explore eyre-id args)
+    %get-rows               (serve-rows eyre-id args)
     %post-browsing-file     (serve-browsing-file eyre-id jon act)
     %post-browsing-unrelate  (serve-browsing-unrelate eyre-id jon act)
     %post-browsing-place    (serve-browsing-place eyre-id jon act)
@@ -10632,6 +10634,96 @@
       ['days' a+(turn days |=(d=@ta `json`s+d))]
       ['entries' got]
   ==
+::  +serve-explore: GET /api/explore?days=: what the page's explorer
+::  reads beside the state and the actions, in one request since each
+::  costs the ship seconds (version 133): the parts' records; each
+::  reader's verdicts counted by outcome for the last days (seven unless
+::  given, forty at most), with the items of the last two; and the
+::  writer's trail counted by op, with what it refused in the last day.
+::  Owner only
+::
+++  serve-explore
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  q=(map @t @t)  (~(gas by *(map @t @t)) args)
+  =/  days=@ud  (max 1 (min 40 (fall (rush (~(gut by q) 'days' '') dem) 7)))
+  =/  doc  |=(n=@ta (read-json (rf 1 / n)))
+  ;<  now=@da  bind:m  get-time:io
+  ;<  generator-last=json  bind:m  (doc %'generator-last.json')
+  ;<  reconcile-last=json  bind:m  (doc %'reconcile-last.json')
+  ;<  exec-last=json  bind:m  (doc %'exec-last.json')
+  ;<  calendar-last=json  bind:m  (doc %'calendar-events-last.json')
+  ;<  telegram-last=json  bind:m  (doc %'telegram-last.json')
+  ;<  chat-last=json  bind:m  (doc %'chat-last.json')
+  ;<  mail-last=json  bind:m  (doc %'mail-last.json')
+  ;<  read-last=json  bind:m  (doc %'read-last.json')
+  ;<  browsing-last=json  bind:m  (doc %'browsing-last.json')
+  ;<  log=json  bind:m  (read-json (rf 1 /tr %log))
+  =/  want=(list @ta)
+    (turn (gulf 0 (dec days)) |=(i=@ud `@ta`(end [3 10] (en-iso:orr (sub now (mul i ~d1))))))
+  ;<  verdicts=json  bind:m  (verdict-days want)
+  %^  send-json  eyre-id  200
+  %-  pairs:enjs:format
+  :~  :-  'records'
+      %-  pairs:enjs:format
+      :~  ['generator_last' generator-last]
+          ['reconcile_last' reconcile-last]
+          ['exec_last' exec-last]
+          ['calendar_last' calendar-last]
+          ['telegram_last' telegram-last]
+          ['chat_last' chat-last]
+          ['mail_last' mail-last]
+          ['read_last' read-last]
+          ['browsing_last' browsing-last]
+      ==
+      ['verdicts' verdicts]
+      ['trail' (trail-summary:orr log (sub now ~d1))]
+  ==
+::  +verdict-days: each reader's verdicts on the days asked that it
+::  holds, newest first as asked, each counted, the first two with their
+::  items
+::
+++  verdict-days
+  |=  want=(list @ta)
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  =/  readers=(list @t)  ~['telegram' 'chat' 'mail' 'web' 'browsing']
+  =|  out=(list [@t json])
+  |-
+  ?~  readers  (pure:m [%o (malt out)])
+  ;<  j=json  bind:m  (reader-days i.readers want)
+  $(readers t.readers, out [[i.readers j] out])
+++  reader-days
+  |=  [reader=@t want=(list @ta)]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  =/  dir=path  ~[%verdicts `@ta`reader]
+  ;<  held=(list @ta)  bind:m  (grub-days 1 dir)
+  =/  recent=(set @ta)  (sy (scag 2 want))
+  =|  out=(list [@t json])
+  |-
+  ?~  want  (pure:m [%o (malt out)])
+  ?.  (lien held |=(h=@ta =(h i.want)))  $(want t.want)
+  ;<  es=json  bind:m  (read-json (rf 1 dir i.want))
+  =/  c=json  (verdict-count:orr es)
+  =?  c  (~(has in recent) i.want)  (set-key:orr c 'items' es)
+  $(want t.want, out [[`@t`i.want c] out])
+::  +serve-rows: GET /api/rows: every body's observations, the history
+::  with the live, filtered, newest recorded first, a page at a time,
+::  with counts by source and status and by writer (version 133,
+::  +rows-query). Owner only: it is every fact with where it came from,
+::  the sensitive ones too
+::
+++  serve-rows
+  |=  [eyre-id=@ta args=quay:eyre]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  q=(map @t @t)  (~(gas by *(map @t @t)) args)
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  ;<  schema=json  bind:m  (read-json (rf 1 / %'schema.json'))
+  ;<  now=@da  bind:m  get-time:io
+  (send-json eyre-id 200 (rows-query:orr all (multi-of:orr schema) now q))
 ::  +tg-status-check: analyze.status_check: each status proposed for a
 ::  person put to the decider; one it calls a feeling with 60 or more is
 ::  dropped with a note

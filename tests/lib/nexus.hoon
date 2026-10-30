@@ -1878,6 +1878,52 @@
     (expect-eq !>(|) !>((evening-due:orr r ~2026.10.28..21.30.00 'UTC' ~)))
     (expect-eq !>(|) !>((evening-due:orr off ~2026.10.28..20.35.00 'UTC' ~)))
   ==
+::  +test-explore-reads: what the explorer reads beside the state: every
+::  body's rows with their status, filtered, paged and counted; a
+::  reader's day counted; the writer's trail counted (version 133)
+::
+++  test-explore-reads
+  =/  r
+    |=  [id=@ta s=@t a=@t v=json at=@da src=@t who=@t seen=@da ret=?]
+    ^-  row:orr
+    [id [s a v at ~ 90 [src 'x'] who seen ret '']]
+  =/  all=(list loaded:orr)
+    :~  :+  'person/kid'  [%person 'Kid' ~ now ~]
+        :~  (r 'r1' 'person/kid' 'school' s+'Elm' (sub now ~d2) 'mail' 'mail' (sub now ~d2) |)
+            (r 'r2' 'person/kid' 'school' s+'Oak' (sub now ~d1) 'user' 'owner' (sub now ~d1) |)
+        ==
+        :+  'place/gym'  [%place 'Gym' ~ now ~]
+        ~[(r 'r3' 'place/gym' 'type' s+'gym' (sub now ~h1) 'mail' 'mail' (sub now ~h1) &)]
+    ==
+  =/  q  |=(kv=(list [@t @t]) (rows-query:orr all ~ now (~(gas by *(map @t @t)) kv)))
+  =/  ids  |=(j=json (turn (ga:orr j 'rows') |=(x=json (gs:orr x 'id'))))
+  =/  every  (q ~)
+  =/  log=json
+    %-  jo
+    '[{"op": "act", "ok": true, "at": "2026-09-18T10:00:00Z"}, {"op": "act", "ok": false, "at": "2026-09-18T11:00:00Z", "why": "a twin"}, {"op": "observe", "ok": false, "at": "2026-09-10T00:00:00Z"}]'
+  =/  trail  (trail-summary:orr log (sub now ~d1))
+  =/  day  (verdict-count:orr (jo '[{"outcome": "stranger"}, {"outcome": "stranger"}, {"outcome": "facts"}]'))
+  ;:  weld
+    ::  every row, newest recorded first, each with its status and its body
+    (expect-eq !>(`(list @t)`~['r3' 'r2' 'r1']) !>((ids every)))
+    (expect-eq !>(`(list @t)`~['retracted' 'live' 'superseded']) !>((turn (ga:orr every 'rows') |=(x=json (gs:orr x 'status')))))
+    (expect-eq !>(['place' 'Gym']) !>(=/(x (snag 0 (ga:orr every 'rows')) [(gs:orr x 'kind') (gs:orr x 'name')])))
+    ::  the counts: by source kind and status, and by writer
+    (expect-eq !>([`(unit @ud)`[~ 3] `(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 2]]) !>([(gn:orr every 'total') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'retracted') (gn:orr (gj:orr (gj:orr every 'by_source') 'mail') 'superseded') (gn:orr (gj:orr (gj:orr every 'by_source') 'user') 'live') (gn:orr (gj:orr every 'by') 'mail')]))
+    ::  the filters, alone and together, and a page
+    (expect-eq !>(`(list @t)`~['r3' 'r1']) !>((ids (q ~[['source' 'mail']]))))
+    (expect-eq !>(`(list @t)`~['r2']) !>((ids (q ~[['status' 'live']]))))
+    (expect-eq !>(`(list @t)`~['r3']) !>((ids (q ~[['kind' 'place']]))))
+    (expect-eq !>(`(list @t)`~['r1']) !>((ids (q ~[['subject' 'person/kid'] ['by' 'mail']]))))
+    (expect-eq !>(`(list @t)`~['r3' 'r2']) !>((ids (q ~[['since' '2026-09-16T13:00:00Z']]))))
+    (expect-eq !>(`(list @t)`~['r1']) !>((ids (q ~[['until' '2026-09-16T12:00:00Z']]))))
+    (expect-eq !>(`(list @t)`~['r2']) !>((ids (q ~[['limit' '1'] ['offset' '1']]))))
+    (expect-eq !>(`(list @t)`~) !>((ids (q ~[['source_id' 'nope']]))))
+    ::  a reader's day counted, and the trail by op with the day's refusals
+    (expect-eq !>([`(unit @ud)`[~ 3] `(unit @ud)`[~ 2]]) !>([(gn:orr day 'n') (gn:orr (gj:orr day 'outcomes') 'stranger')]))
+    (expect-eq !>([`(unit @ud)`[~ 1] `(unit @ud)`[~ 1] `(unit @ud)`[~ 1]]) !>([(gn:orr (gj:orr (gj:orr trail 'ops') 'act') 'ok') (gn:orr (gj:orr (gj:orr trail 'ops') 'act') 'refused') (gn:orr (gj:orr (gj:orr trail 'ops') 'observe') 'refused')]))
+    (expect-eq !>(`(list @t)`~['a twin']) !>((turn (ga:orr trail 'refused') |=(x=json (gs:orr x 'why')))))
+  ==
 ++  test-outdoors
   =/  fc=json  (jo '{"properties": {"periods": [{"startTime": "2026-09-18T06:00:00-05:00", "endTime": "2026-09-18T18:00:00-05:00", "isDaytime": true, "temperature": 78, "windSpeed": "10 to 15 mph", "probabilityOfPrecipitation": {"value": 20}, "shortForecast": "Mostly Sunny"}, {"startTime": "2026-09-18T18:00:00-05:00", "endTime": "2026-09-19T06:00:00-05:00", "isDaytime": false, "temperature": 60, "windSpeed": "5 mph", "probabilityOfPrecipitation": {"value": null}, "shortForecast": "Clear"}, {"startTime": "2026-09-19T06:00:00-05:00", "endTime": "2026-09-19T18:00:00-05:00", "isDaytime": true, "temperature": 84, "windSpeed": "20 to 25 mph", "probabilityOfPrecipitation": {"value": 60}, "shortForecast": "Chance Showers And Thunderstorms"}]}}')
   =/  ps  (nws-periods:orr fc)

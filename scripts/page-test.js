@@ -188,11 +188,15 @@ const xActs = [].concat(
   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function (i) { return { id: 't' + i, kind: 'task', by: 'generator', status: 'done', title: 'task ' + i }; }),
   [1, 2].map(function (i) { return { id: 'x' + i, kind: 'task', by: 'generator', status: 'dismissed', title: 'no ' + i }; }));
 const strangers = Array.from({ length: 12 }, function (_, i) { return { at: '2026-10-29T0' + (i % 10) + ':00:00Z', outcome: 'stranger', chat: 'dm/~zod', notes: ['not in people'] }; });
-const xVerdicts = { chat: { '2026-10-29': strangers }, telegram: { '2026-10-29': strangers.slice(0, 11).concat([{ at: '2026-10-29T11:00:00Z', outcome: 'facts' }]) } };
-const xRec = { generator_last: { at: '2026-10-30T11:00:00Z', filed: 3, dropped: 1, error: 'the model answered 504', notes: ['one dropped'] }, exec_last: { at: '2026-10-30T11:00:00Z', failed: [{ id: 'm7', title: 'Mail the school', note: 'no email attribute' }] } };
+// GET /explore's shape (version 133): each reader's days counted, the last two with their items
+const xVerdicts = { chat: { '2026-10-29': { n: 12, outcomes: { stranger: 12 }, items: strangers }, '2026-10-24': { n: 30, outcomes: { stranger: 30 } } },
+  telegram: { '2026-10-29': { n: 12, outcomes: { stranger: 11, facts: 1 } } } };
+const xRec = { generator_last: { at: '2026-10-30T11:00:00Z', filed: 3, dropped: 1, error: 'the model answered 504', notes: ['one dropped'] }, exec_last: { at: '2026-10-30T11:00:00Z', failed: [{ id: 'm7', title: 'Mail the school', note: 'no email attribute' }] },
+  trail: { ops: { act: { ok: 5, refused: 1 } }, refused: [{ op: 'act', at: '2026-10-30T10:00:00Z', by: 'mail', why: 'an open twin stands' }] } };
 const look = render.needsLook(xState, xActs, xRec, xVerdicts, XNOW);
-ok('needs a look: a reader\'s day that went all one way, and not one that went two ways',
-  look.includes('chat on 2026-10-29: 12 items, every one <strong>stranger</strong>') && !look.includes('telegram on'));
+ok('needs a look: a reader\'s day that went all one way, counted for a week and listed for the last two, and not one that went two ways (version 133)',
+  look.includes('chat on 2026-10-29: 12 items, every one <strong>stranger</strong>') && look.includes('chat on 2026-10-24: 30 items') && look.includes('not in people') && !look.includes('telegram on'));
+ok('needs a look: what the writer refused in the last day, with why', look.includes('1 write the ship refused in the last day') && look.includes('an open twin stands'));
 ok('needs a look: an action kind turned down more than done, by who filed it, with the reasons, and not one done more',
   look.includes('message actions from generator: 6 dismissed, 2 done') && look.includes('not needed') && !look.includes('task actions from'));
 ok('needs a look: a situation ended with no outcome, a value under 80 confidence with its source, the generator\'s error, the executor\'s failures',
@@ -214,8 +218,16 @@ const parts = render.partsCard(xRec, xVerdicts);
 ok('the parts: each one\'s last record in numbers and notes, and a reader\'s days by outcome',
   parts.includes('<strong>generator</strong>') && parts.includes('filed 3') && parts.includes('1 note') && parts.includes('2026-10-29: 12 items (12 stranger)'));
 const xHtml = render.explore(xState, xActs, xRec, xVerdicts, XNOW);
-ok('the explorer is the three cards in order', xHtml.indexOf('Needs a look') < xHtml.indexOf('What the ship knows') && xHtml.indexOf('What the ship knows') < xHtml.indexOf('The parts')
+ok('the explorer is the cards in order', xHtml.indexOf('Needs a look') < xHtml.indexOf('What the ship knows') && xHtml.indexOf('What the ship knows') < xHtml.indexOf('Facts, where') && xHtml.indexOf('Facts, where') < xHtml.indexOf('The parts')
   && xHtml.includes('data-explore-kind="situation" class="on"') && xHtml.includes('data-explore="find"'));
+const fAns = { total: 150, offset: 0, limit: 100, by_source: { mail: { live: 3, retracted: 1 }, user: { live: 6 } }, by: { mail: 4, owner: 6 },
+  rows: [{ id: 'r1', subject: 'person/kid', name: 'Kid', kind: 'person', attr: 'school', value: 'Elm', status: 'retracted', source: { kind: 'mail', id: 'm1' }, by: 'mail', conf: 90, seen: '2026-10-29T10:00:00Z' }] };
+const fHtml = render.factsRows(fAns, xState);
+ok('the facts: counts by source and status with the share taken back, by writer, each row with its source to follow, and a next page (version 133)',
+  fHtml.includes('25%') && fHtml.includes('by owner 6') && fHtml.includes('data-facts-source="mail|m1"') && fHtml.includes('1 to 1 of 150 facts') && fHtml.includes('data-facts-page="1"') && !fHtml.includes('data-facts-page="-1"'));
+ok('the facts are asked for with the filters set, the time as an instant, and the page',
+  render.factsQuery({ source: 'mail', source_id: '', since: '7', offset: 100 }, XNOW) === 'source=mail&since=2026-10-23T12%3A00%3A00.000Z&offset=100&limit=100');
+ok('before any is asked for, the card says how', render.factsRows(null, xState).includes('press show') && render.factsCard(xState, null).includes('data-facts-show="1"'));
 ok('seg encodes each segment and keeps the slash', render.seg('situation/2026-09-16 breakdown') === 'situation/2026-09-16%20breakdown');
 const gen = { enabled: true, url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3', api_key_set: true, reasoning: { effort: 'high' }, max_tokens: 32000, max_actions: 5, timezone: '', cooldown_minutes: 60, max_daily: 24, max_urgent: 5 };
 const genLast = { at: '2026-09-19T01:07:41Z', filed: 3, dropped: 1, skipped: false, notes: ['model note: the trip is stale'], usage: { cost: 0.0229, prompt_tokens: 6621, completion_tokens: 1404 }, seconds: 17, error: null, calls_today: 4, urgent_today: 1, month: '2026-09', spend_month_micro: 1234567 };

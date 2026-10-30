@@ -3127,6 +3127,43 @@ for kk in (k, k2, k3):
 nag_lay('rhythm.json', rhythm_was)
 check('the rhythm is put back', nag_raw('rhythm.json') == rhythm_was, nag_raw('rhythm.json'))
 
+# ---- the explorer (version 133): what the page reads beside the state, in one request, and every fact with its history ----
+print('== the explorer')
+code, ex = curl('GET', API + '/explore')
+exd = dictish(ex)
+check('the explorer\'s read answers the parts\' records, the readers\' verdicts and the trail',
+      code == 200 and 'generator_last' in dictish(exd.get('records')) and 'exec_last' in dictish(exd.get('records')) and isinstance(exd.get('verdicts'), dict)
+      and isinstance(dictish(exd.get('trail')).get('ops'), dict) and isinstance(dictish(exd.get('trail')).get('refused'), list), (code, list(exd.keys())))
+code, ex2 = curl('GET', API + '/explore?days=2')
+check('days bounds the verdicts', code == 200 and all(len(dictish(v)) <= 2 for v in dictish(dictish(ex2).get('verdicts')).values()), dictish(ex2).get('verdicts'))
+owner_only('the explorer\'s read is the owner\'s', 'GET', '/explore')
+ERUN = '%x' % int(time.time())
+EB = 'thing/gate-explore-' + ERUN
+ESRC = 'explore-' + ERUN
+enow = datetime.now(timezone.utc)
+code, d = curl('POST', API + '/observe', {'bodies': [{'id': EB, 'name': 'Gate explore ' + ERUN}], 'observations': [
+    {'subject': EB, 'attr': 'colour', 'value': 'red', 'at': iso(enow - timedelta(hours=2)), 'conf': 90, 'source': {'kind': 'gate', 'id': ESRC}},
+    {'subject': EB, 'attr': 'colour', 'value': 'blue', 'at': iso(enow - timedelta(hours=1)), 'conf': 90, 'source': {'kind': 'gate', 'id': ESRC}}]})
+code, rows = curl('GET', API + '/rows?source_id=' + ESRC)
+er = dictish(rows)
+check('every fact one source gave, the history with the live, each with its body',
+      code == 200 and er.get('total') == 2 and sorted(dictish(x).get('status') for x in er.get('rows', [])) == ['live', 'superseded']
+      and all(dictish(x).get('name') == 'Gate explore ' + ERUN and dictish(x).get('kind') == 'thing' for x in er.get('rows', [])), er)
+live_id = next((dictish(x).get('id') for x in er.get('rows', []) if dictish(x).get('status') == 'live'), '')
+curl('POST', API + '/retract', {'id': live_id, 'note': 'gate explore'})
+code, rows = curl('GET', API + '/rows?source=gate&source_id=' + ESRC)
+ebs = dictish(dictish(dictish(rows).get('by_source')).get('gate'))
+check('a fact taken back is counted so by its source, and the one before it is live again', ebs.get('retracted') == 1 and ebs.get('live') == 1, dictish(rows).get('by_source'))
+code, rows = curl('GET', API + '/rows?status=retracted&source_id=' + ESRC)
+check('by status', code == 200 and dictish(rows).get('total') == 1 and dictish(dictish(rows).get('rows', [{}])[0]).get('note') == 'gate explore', rows)
+code, rows = curl('GET', API + '/rows?source_id=' + ESRC + '&limit=1&offset=1')
+check('a page at a time', code == 200 and dictish(rows).get('total') == 2 and len(dictish(rows).get('rows', [])) == 1 and dictish(rows).get('offset') == 1, rows)
+code, rows = curl('GET', API + '/rows?kind=thing&attr=colour&subject=' + EB + '&since=' + urllib.parse.quote(iso(enow - timedelta(minutes=10))))
+check('by kind, attribute, body and when the ship recorded it', code == 200 and dictish(rows).get('total') == 2, rows)
+code, rows = curl('GET', API + '/rows?subject=' + EB + '&until=' + urllib.parse.quote(iso(enow - timedelta(days=1))))
+check('and nothing recorded before it was', code == 200 and dictish(rows).get('total') == 0, rows)
+owner_only('every fact with its source is the owner\'s to read', 'GET', '/rows')
+curl('DELETE', API + '/body/' + EB)
 # ---- a reload keeps the settings (version 97): the place lookups' key and the sharing trust survive a load ----
 # a grub no on-load row declares is dropped at every load: until 97 that
 # was search.json, search-last.json and sphere-trust.json, and ricsul's

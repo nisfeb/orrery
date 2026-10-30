@@ -1111,15 +1111,20 @@
     var all = state.bodies || [], byId = index(state), out = [];
     function line(title, items) { out.push('<details class="look"><summary>' + title + '</summary>' + items + '</details>'); }
     function list(xs) { return '<ul>' + xs.join('') + '</ul>'; }
-    // a reader whose day went all one way, and not to facts
+    // a reader whose day went all one way, and not to facts: each day
+    // counted by outcome, the last two with their items (GET /explore)
     READERS.forEach(function (r) {
       Object.keys(verdicts[r] || {}).sort().reverse().forEach(function (day) {
-        var es = verdicts[r][day] || [], o = es.length ? es[0].outcome : '';
-        if (es.length < 10 || o === 'facts' || es.some(function (e) { return e.outcome !== o; })) return;
-        line(esc(r) + ' on ' + esc(day) + ': ' + es.length + ' items, every one <strong>' + esc(o) + '</strong>',
-          list(es.slice(0, 10).map(function (e) { return '<li>' + fmtTime(e.at) + ' <span class="muted">' + esc(clip([e.chat || ''].concat(lines(e.notes)).filter(Boolean).join(' · '), 160)) + '</span></li>'; })));
+        var d = verdicts[r][day] || {}, outs = Object.keys(d.outcomes || {}), o = outs[0];
+        if ((d.n || 0) < 10 || outs.length !== 1 || o === 'facts') return;
+        line(esc(r) + ' on ' + esc(day) + ': ' + d.n + ' items, every one <strong>' + esc(o) + '</strong>',
+          d.items ? list(d.items.slice(0, 10).map(function (e) { return '<li>' + fmtTime(e.at) + ' <span class="muted">' + esc(clip([e.chat || ''].concat(lines(e.notes)).filter(Boolean).join(' \u00b7 '), 160)) + '</span></li>'; })) : '');
       });
     });
+    // what the writer refused in the last day, from its trail
+    var refused = ((rec.trail || {}).refused) || [];
+    if (refused.length) line(refused.length + ' write' + (refused.length === 1 ? '' : 's') + ' the ship refused in the last day',
+      list(refused.slice(0, 20).map(function (e) { return '<li>' + fmtTime(e.at) + ' ' + esc(e.op || '') + ' <span class="muted">' + esc(clip([e.by ? 'by ' + e.by : '', e.why || ''].filter(Boolean).join(' \u00b7 '), 200)) + '</span></li>'; })));
     // what the owner turns down more than they take, by who filed it
     var tally = Object.create(null);
     (acts || []).forEach(function (a) {
@@ -1247,7 +1252,7 @@
   }
 
   // the parts: what each last did, by its own record, and for each reader
-  // its verdicts by day, each item with its outcome and notes
+  // its verdicts by day for a week, the last two days item by item
   function partsCard(rec, verdicts) {
     rec = rec || {}; verdicts = verdicts || {};
     var parts = [['generator', rec.generator_last], ['reconcile', rec.reconcile_last], ['executor', rec.exec_last], ['calendar events', rec.calendar_last],
@@ -1262,25 +1267,83 @@
         (notes.length ? '<details><summary class="muted">' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + '</summary><ul>' + notes.slice(0, 20).map(function (n) { return '<li>' + esc(clip(n, 200)) + '</li>'; }).join('') + '</ul></details>' : '');
       var v = p[2] ? verdicts[p[2]] || {} : {};
       Object.keys(v).sort().reverse().forEach(function (day) {
-        var es = v[day] || [], by = Object.create(null);
-        es.forEach(function (e) { by[e.outcome] = (by[e.outcome] || 0) + 1; });
-        out += '<details><summary class="muted">' + esc(day) + ': ' + es.length + ' item' + (es.length === 1 ? '' : 's') + (es.length ? ' (' + Object.keys(by).map(function (o) { return by[o] + ' ' + esc(o); }).join(', ') + ')' : '') + '</summary>' +
-          (es.length ? '<ul>' + es.slice(0, 50).map(function (e) { return '<li>' + fmtTime(e.at) + ' ' + badge(e.outcome || '') + ' <span class="muted">' + esc(clip([e.chat || '', typeof e.facts === 'number' ? e.facts + ' facts' : ''].concat(lines(e.notes)).filter(Boolean).join(' · '), 200)) + '</span></li>'; }).join('') + '</ul>' : '') + '</details>';
+        var d = v[day] || {}, outs = d.outcomes || {}, n = d.n || 0;
+        var head = esc(day) + ': ' + n + ' item' + (n === 1 ? '' : 's') + (n ? ' (' + Object.keys(outs).map(function (o) { return outs[o] + ' ' + esc(o); }).join(', ') + ')' : '');
+        if (!d.items || !d.items.length) { out += '<div class="muted">' + head + '</div>'; return; }
+        out += '<details><summary class="muted">' + head + '</summary><ul>' + d.items.slice(0, 50).map(function (e) { return '<li>' + fmtTime(e.at) + ' ' + badge(e.outcome || '') + ' <span class="muted">' + esc(clip([e.chat || '', typeof e.facts === 'number' ? e.facts + ' facts' : ''].concat(lines(e.notes)).filter(Boolean).join(' \u00b7 '), 200)) + '</span></li>'; }).join('') + '</ul></details>';
       });
       out += '</li>';
     });
     return out + '</ul>';
   }
-  function explore(state, acts, rec, verdicts, now) {
+  // facts across every body, the history with the live (version 133):
+  // asked of the ship on a press, never on a refresh, since it folds
+  // every body. Counts by source and status say how often each source
+  // is taken back; a source's id lists everything that one message gave
+  var factsFilter = { source: '', source_id: '', by: '', attr: '', kind: '', status: '', since: '', offset: 0 };
+  var STATUSES = ['live', 'superseded', 'expired', 'retracted', 'future'];
+  function factsQuery(f, now) {
+    now = now || new Date().toISOString();
+    return Object.keys(f).filter(function (k) { return k !== 'offset' && f[k]; }).map(function (k) {
+      var v = k === 'since' ? new Date(Date.parse(now) - Number(f[k]) * 86400000).toISOString() : f[k];
+      return encodeURIComponent(k) + '=' + encodeURIComponent(v);
+    }).concat(['offset=' + (f.offset || 0), 'limit=100']).join('&');
+  }
+  function factsRows(ans, state) {
+    if (!ans) return '<p class="muted">Pick what to see and press show.</p>';
+    if (ans.error) return '<p class="bad">' + esc(ans.error) + '</p>';
+    var byId = index(state), out = '';
+    var src = ans.by_source || {}, total = function (k) { return Object.keys(src[k]).reduce(function (n, x) { return n + src[k][x]; }, 0); };
+    var kinds = Object.keys(src).sort(function (a, b) { return total(b) - total(a); });
+    if (kinds.length) {
+      out += thead(['source'].concat(STATUSES, ['taken back'])) + kinds.map(function (k) {
+        var c = src[k], all = total(k);
+        return '<tr>' + cell('source', esc(k || '(none)')) + STATUSES.map(function (x) { return cell(x, String(c[x] || 0)); }).join('') +
+          cell('taken back', all ? Math.round(100 * (c.retracted || 0) / all) + '%' : '') + '</tr>';
+      }).join('') + '</tbody></table>';
+    }
+    var who = ans.by || {}, ws = Object.keys(who).sort(function (a, b) { return who[b] - who[a]; });
+    if (ws.length) out += '<p class="muted">by ' + ws.map(function (w) { return esc(w) + ' ' + who[w]; }).join(' \u00b7 ') + '</p>';
+    var rows = ans.rows || [], from = ans.offset || 0;
+    out += '<p class="muted">' + (rows.length ? (from + 1) + ' to ' + (from + rows.length) + ' of ' : '') + (ans.total || 0) + ' facts, newest recorded first</p>';
+    if (rows.length) {
+      out += thead(['recorded', 'body', 'attribute', 'value', 'status', 'source', 'by', 'conf']) + rows.map(function (r) {
+        var s = r.source || {};
+        return '<tr>' + cell('recorded', fmtTime(r.seen)) + cell('body', '<a href="#body/' + esc(r.subject) + '">' + esc(r.name || r.subject) + '</a>') +
+          cell('attribute', esc(r.attr)) + cell('value', esc(clip(plain(r.value, byId), 80))) + cell('status', badge(r.status)) +
+          cell('source', '<button class="link" data-facts-source="' + esc((s.kind || '') + '|' + (s.id || '')) + '" title="everything from this source">' + esc(clip((s.kind || '') + (s.id ? ' ' + s.id : ''), 60)) + '</button>') +
+          cell('by', esc(r.by || '')) + cell('conf', String(r.conf)) + '</tr>';
+      }).join('') + '</tbody></table>';
+      out += '<p>' + (from > 0 ? '<button data-facts-page="-1">newer</button>' : '') + (from + rows.length < (ans.total || 0) ? '<button data-facts-page="1">older</button>' : '') + '</p>';
+    }
+    return out;
+  }
+  function factsCard(state, ans, f) {
+    state = state || {}; f = f || factsFilter;
+    var kinds = Object.keys((state.bodies || []).reduce(function (m, b) { m[b.kind] = true; return m; }, {})).sort();
+    var sel = function (name, label, values, cur) {
+      return '<label class="field">' + label + ' <select data-facts="' + name + '"><option value="">any</option>' + values.map(function (v) {
+        var val = Array.isArray(v) ? v[0] : v, txt = Array.isArray(v) ? v[1] : v;
+        return '<option value="' + esc(val) + '"' + (String(val) === String(cur) ? ' selected' : '') + '>' + esc(txt) + '</option>';
+      }).join('') + '</select></label> ';
+    };
+    var box = function (name, label) { return '<label class="field">' + label + ' <input data-facts="' + name + '" value="' + esc(f[name] || '') + '" placeholder="any"></label> '; };
+    return '<div id="facts-card"><p>' + box('source', 'source') + box('source_id', 'source id') + box('by', 'said by') + box('attr', 'attribute') +
+      sel('kind', 'of a', kinds, f.kind) + sel('status', 'status', STATUSES, f.status) + sel('since', 'recorded since', [['1', 'a day ago'], ['7', 'a week ago'], ['30', 'a month ago']], f.since) +
+      '<button data-facts-show="1">show</button></p><div id="facts-rows">' + factsRows(ans, state) + '</div></div>';
+  }
+  function explore(state, acts, rec, verdicts, now, facts) {
     return '<h1>Explore</h1>' +
       '<div class="card"><h2>Needs a look</h2><div id="look">' + needsLook(state, acts, rec, verdicts, now) + '</div></div>' +
       '<div class="card"><h2>What the ship knows</h2>' + exploreTable(state, exploreFilter, now) + '</div>' +
+      '<div class="card"><h2>Facts, where they came from</h2>' + factsCard(state, facts, factsFilter) + '</div>' +
       '<div class="card"><h2>The parts</h2><div id="parts">' + partsCard(rec, verdicts) + '</div></div>';
   }
 
   var render = {
     phase: phase,
     explore: explore, needsLook: needsLook, exploreTable: exploreTable, exploreRows: exploreRows, partsCard: partsCard, exploreFilter: exploreFilter,
+    factsCard: factsCard, factsRows: factsRows, factsQuery: factsQuery,
     bodies: bodies, body: body, inbox: inbox, settings: settings, keys: keys, spheres: spheres, locationCard: locationCard, pairingCard: pairingCard, browsingCard: browsingCard, byWho: byWho, sharing: sharing, bodySharingCard: bodySharingCard, forWhom: forWhom, assignBox: assignBox,
     personPicker: personPicker, matchScore: matchScore, pickMatches: pickMatches, pickList: pickList, payloadLine: payloadLine, namedText: namedText, esc: esc, fmtValue: fmtValue,
     seg: seg, route: route, sseEvent: sseEvent, graphOf: graphOf, nodePane: nodePane, edgePane: edgePane, dupesOf: dupesOf, tidyCard: tidyCard, prefsCard: prefsCard, qualityCard: qualityCard, correctionsCard: correctionsCard, instructBox: instructBox, notTrue: notTrue,
@@ -1624,7 +1687,7 @@
     }
     if (v.name === 'keys') return show(keys(d[0], d[1], minted));
     if (v.name === 'spheres') { var shown = show(spheres(d)); if (shown) fillPairing(); return shown; }
-    if (v.name === 'explore') { var drewX = show(explore(d[0], d[1][0], d[1][1], verdictCache)); if (drewX) fillVerdicts(); return drewX; }
+    if (v.name === 'explore') { var ex = d[1][1] || {}; return show(explore(d[0], d[1][0], exploreRec(ex), ex.verdicts || {}, undefined, factsHeld)); }
     // the graph drawn already takes the new state in place: a redraw
     // would drop the hand on it and the find box's words
     if (drawn === v.here && document.getElementById('graph')) {
@@ -1649,38 +1712,24 @@
     var rev = had && typeof had.rev === 'number' ? '?rev=' + had.rev : '';
     return api('/state' + rev).then(function (s) { return s && s.same ? had : s; });
   }
-  // the explorer's every action and the settings records, read at most
-  // every five minutes: the beacon moves on every fact, and /settings
-  // alone took five seconds on a busy ship (2026-10-30)
-  // ponytail: a light route of the parts' records alone, when it shows
+  // the explorer's every action, and GET /explore (the parts' records,
+  // a week of verdicts, the trail), read at most every five minutes: the
+  // beacon moves on every fact, and each request costs the ship seconds
   var EXTRAS_MS = 300000;
   var extrasHeld = null, extrasAt = 0;
   function exploreExtras() {
     if (extrasHeld && Date.now() - extrasAt < EXTRAS_MS) return Promise.resolve(extrasHeld);
-    return Promise.all([api('/actions?status=all'), api('/settings')]).then(function (d) { extrasHeld = d; extrasAt = Date.now(); return d; });
+    return Promise.all([api('/actions?status=all'), api('/explore')]).then(function (d) { extrasHeld = d; extrasAt = Date.now(); return d; });
   }
-  // each reader's verdicts for today and yesterday, read after the
-  // explorer draws and at most every five minutes, then painted in place
-  var verdictCache = Object.create(null), verdictAt = 0;
-  function paintVerdicts() {
-    var d = seen['explore '], look = document.getElementById('look'), parts = document.getElementById('parts');
-    if (!d) return;
-    if (look) look.innerHTML = needsLook(d[0], d[1][0], d[1][1], verdictCache);
-    if (parts) parts.innerHTML = partsCard(d[1][1], verdictCache);
-  }
-  function fillVerdicts() {
-    if (Date.now() - verdictAt < EXTRAS_MS) return;
-    verdictAt = Date.now();
-    var yday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    Promise.all(READERS.map(function (r) {
-      return api('/verdicts?reader=' + r).then(function (d) {
-        var m = Object.create(null);
-        if (d.day && (d.entries || []).length) m[d.day] = d.entries;
-        verdictCache[r] = m;
-        if ((d.days || []).indexOf(yday) < 0 || yday === d.day) return;
-        return api('/verdicts?reader=' + r + '&day=' + yday).then(function (y) { if ((y.entries || []).length) m[yday] = y.entries; });
-      }).catch(function () { /* a reader with no record says nothing */ });
-    })).then(paintVerdicts);
+  function exploreRec(ex) { return Object.assign({}, ex.records || {}, { trail: ex.trail || {} }); }
+  // the facts card's last answer, and a new one asked for on a press
+  var factsHeld = null;
+  function fetchFacts() {
+    var slot = document.getElementById('facts-rows');
+    if (slot) slot.innerHTML = '<p class="muted">Reading the facts\u2026</p>';
+    api('/rows?' + factsQuery(factsFilter)).then(function (a) { factsHeld = a; })
+      .catch(function (e) { factsHeld = { error: String(e.message || e) }; })
+      .then(function () { var el = document.getElementById('facts-rows'); if (el) el.innerHTML = factsRows(factsHeld, lastState); });
   }
   // the explorer's filters redraw its rows from the answer held; a new
   // kind redraws its controls too. Nothing is fetched
@@ -2582,12 +2631,34 @@
   });
   view.addEventListener('input', function (e) {
     var el = e.target;
-    if (el && el.dataset && el.dataset.explore !== undefined) return;
+    if (el && el.dataset && (el.dataset.explore !== undefined || el.dataset.facts !== undefined)) return;
     if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) { dirty = true; edits += 1; }
   });
   view.addEventListener('change', function (e) {
-    if (e.target && e.target.dataset && e.target.dataset.explore !== undefined) return;
+    if (e.target && e.target.dataset && (e.target.dataset.explore !== undefined || e.target.dataset.facts !== undefined)) return;
     if (e.target && e.target.tagName === 'SELECT') { dirty = true; edits += 1; }
+  });
+  ['input', 'change'].forEach(function (t) {
+    view.addEventListener(t, function (e) {
+      var el = e.target;
+      if (el && el.dataset && el.dataset.facts !== undefined) factsFilter[el.dataset.facts] = el.value;
+    });
+  });
+  view.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-facts-show],[data-facts-page],[data-facts-source]');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.factsPage !== undefined) factsFilter.offset = Math.max(0, (factsFilter.offset || 0) + 100 * Number(b.dataset.factsPage));
+    else {
+      factsFilter.offset = 0;
+      if (b.dataset.factsSource !== undefined) {
+        var kv = b.dataset.factsSource.split('|');
+        factsFilter.source = kv[0]; factsFilter.source_id = kv.slice(1).join('|');
+        var card = document.getElementById('facts-card');
+        if (card) card.outerHTML = factsCard(lastState, null, factsFilter);
+      }
+    }
+    fetchFacts();
   });
   ['input', 'change'].forEach(function (t) {
     view.addEventListener(t, function (e) {

@@ -883,6 +883,118 @@
   ^-  (list [r=row status=@tas])
   =/  sorted=(list row)  (sort rows later)
   (turn sorted |=(r=row [r (status-of r winners when)]))
+::  ==  the explorer (version 133): what the page's explorer reads
+::  beside the state and the actions
+::
+::  +rows-query: every body's observations, the history kept with the
+::  live, for GET /api/rows. The filters in q: source (a kind),
+::  source_id, by, attr, kind, subject, status (live, superseded,
+::  expired, retracted, future), and since and until on seen, when the
+::  ship recorded each. Newest recorded first, a page of limit (100,
+::  500 at most) from offset, with counts over all the filters keep:
+::  by source kind and status, and by writer
+::
+++  rows-query
+  |=  [all=(list loaded) multi=(set @t) now=@da q=(map @t @t)]
+  ^-  json
+  =/  want  |=(k=@t (~(gut by q) k ''))
+  =/  since=(unit @da)  (de-iso (want 'since'))
+  =/  until=(unit @da)  (de-iso (want 'until'))
+  =/  limit=@ud  (min 500 (max 1 (fall (rush (want 'limit') dem) 100)))
+  =/  offset=@ud  (fall (rush (want 'offset') dem) 0)
+  =/  hits=(list [l=loaded r=row status=@tas])
+    %-  zing
+    %+  turn  all
+    |=  l=loaded
+    ^-  (list [l=loaded r=row status=@tas])
+    ?:  &(!=('' (want 'kind')) !=((want 'kind') kind.body.l))  ~
+    ?:  &(!=('' (want 'subject')) !=((want 'subject') id.l))  ~
+    %+  murn  (timeline rows.l (fold rows.l multi now) now)
+    |=  [r=row status=@tas]
+    ^-  (unit [l=loaded r=row status=@tas])
+    =/  o=obs  obs.r
+    ?:  &(!=('' (want 'source')) !=((want 'source') kind.source.o))  ~
+    ?:  &(!=('' (want 'source_id')) !=((want 'source_id') id.source.o))  ~
+    ?:  &(!=('' (want 'by')) !=((want 'by') by.o))  ~
+    ?:  &(!=('' (want 'attr')) !=((want 'attr') attr.o))  ~
+    ?:  &(!=('' (want 'status')) !=((want 'status') status))  ~
+    ?:  &(?=(^ since) (lth seen.o u.since))  ~
+    ?:  &(?=(^ until) (gth seen.o u.until))  ~
+    `[l r status]
+  =/  sorted=(list [l=loaded r=row status=@tas])
+    (sort hits |=([a=[l=loaded r=row status=@tas] b=[l=loaded r=row status=@tas]] (gth seen.obs.r.a seen.obs.r.b)))
+  =/  per-src=(map @t (map @t @ud))
+    %+  roll  hits
+    |=  [h=[l=loaded r=row status=@tas] acc=(map @t (map @t @ud))]
+    =/  k=@t  kind.source.obs.r.h
+    =/  in=(map @t @ud)  (~(gut by acc) k ~)
+    (~(put by acc) k (~(put by in) status.h +((~(gut by in) status.h 0))))
+  =/  per-who=(map @t @ud)
+    %+  roll  hits
+    |=  [h=[l=loaded r=row status=@tas] acc=(map @t @ud)]
+    (~(put by acc) by.obs.r.h +((~(gut by acc) by.obs.r.h 0)))
+  =/  num  |=(n=@ud (numb:enjs:format n))
+  %-  pairs:enjs:format
+  :~  ['total' (num (lent hits))]
+      ['offset' (num offset)]
+      ['limit' (num limit)]
+      :-  'rows'
+      :-  %a
+      %+  turn  (scag limit (slag offset sorted))
+      |=  h=[l=loaded r=row status=@tas]
+      ^-  json
+      =/  j=json  (en-obs r.h status.h)
+      ?.  ?=([%o *] j)  j
+      [%o (~(gas by p.j) ~[['kind' s+kind.body.l.h] ['name' s+name.body.l.h]])]
+      ['by_source' [%o (~(run by per-src) |=(c=(map @t @ud) ^-(json [%o (~(run by c) num)])))]]
+      ['by' [%o (~(run by per-who) num)]]
+  ==
+::  +verdict-count: a reader's day as how many items it holds and how
+::  many of each outcome
+::
+++  verdict-count
+  |=  es=json
+  ^-  json
+  =/  xs=(list json)  ?:(?=([%a *] es) p.es ~)
+  =/  per=(map @t @ud)
+    %+  roll  xs
+    |=  [e=json acc=(map @t @ud)]
+    =/  o=@t  (gs e 'outcome')
+    (~(put by acc) o +((~(gut by acc) o 0)))
+  %-  pairs:enjs:format
+  :~  ['n' (numb:enjs:format (lent xs))]
+      ['outcomes' [%o (~(run by per) |=(n=@ud (numb:enjs:format n)))]]
+  ==
+::  +trail-summary: the writer's trail (oldest first, as +ring keeps
+::  it) counted by op, applied and refused, and what it refused since a
+::  time, newest first, fifty at most
+::
+++  trail-summary
+  |=  [log=json since=@da]
+  ^-  json
+  =/  xs=(list json)  ?:(?=([%a *] log) p.log ~)
+  =/  done  |=(e=json ?=([%b %.y] (gj e 'ok')))
+  =/  ops=(map @t [ok=@ud no=@ud])
+    %+  roll  xs
+    |=  [e=json acc=(map @t [ok=@ud no=@ud])]
+    =/  op=@t  (gs e 'op')
+    =/  c=[ok=@ud no=@ud]  (~(gut by acc) op [0 0])
+    (~(put by acc) op ?:((done e) c(ok +(ok.c)) c(no +(no.c))))
+  =/  refused=(list json)
+    %+  scag  50
+    %-  flop
+    %+  skim  xs
+    |=  e=json
+    ?:  (done e)  |
+    =/  at=(unit @da)  (de-iso (gs e 'at'))
+    |(?=(~ at) (gte u.at since))
+  %-  pairs:enjs:format
+  :~  :-  'ops'
+      :-  %o
+      %-  ~(run by ops)
+      |=(c=[ok=@ud no=@ud] (pairs:enjs:format ~[['ok' (numb:enjs:format ok.c)] ['refused' (numb:enjs:format no.c)]]))
+      ['refused' a+refused]
+  ==
 ::  ==  reverse references
 ::
 ::  +ref-of: the body a {"ref"} value names, or ~
@@ -11767,6 +11879,8 @@
   ?:  &(=('GET' meth) ?=([%api %browsing %page ~] suffix))      `[%get-browsing-page %writes]
   ?:  &(=('GET' meth) ?=([%api %browsing %recent ~] suffix))    `[%get-browsing-recent %writes]
   ?:  &(=('GET' meth) ?=([%api %verdicts ~] suffix))             `[%get-verdicts %own]
+  ?:  &(=('GET' meth) ?=([%api %explore ~] suffix))              `[%get-explore %own]
+  ?:  &(=('GET' meth) ?=([%api %rows ~] suffix))                 `[%get-rows %own]
   ?:  &(=('POST' meth) ?=([%api %browsing %file ~] suffix))     `[%post-browsing-file %writes]
   ?:  &(=('POST' meth) ?=([%api %browsing %unrelate ~] suffix))  `[%post-browsing-unrelate %writes]
   ?:  &(=('POST' meth) ?=([%api %browsing %place ~] suffix))    `[%post-browsing-place %writes]
