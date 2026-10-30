@@ -224,6 +224,14 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 134's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- The chat reader reads your Tlon DMs again. Until now it took every sender as blank, so every message counted as a stranger's and none was read. The messages it already passed over are not read again.
+- A recurring activity's next date is the soonest occurrence still ahead, whoever wrote it, instead of whichever was written last. A date that has passed never shows as next, so time to leave, your habit slots and the brief stop going by a session that has already happened.
+- In the explorer, facts you struck count apart from those the ship retired itself, so each source's share struck by you is its error rate. "Needs a look" flags only situations that were waiting on something and ended with no outcome, and weighs only the last thirty days of actions you turned down.
+
 ### Version 133's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The explorer gains a Facts card: every fact with its history, filtered by where it came from, who said it and when, with how much of each source was later taken back, and a tap on a fact's source lists everything that source gave. The parts now show a week of each reader's days, and Needs a look lists anything the ship refused to write in the last day. The explorer reads all of this in one request instead of eleven, so it costs your ship less.
