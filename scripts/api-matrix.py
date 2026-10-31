@@ -796,7 +796,8 @@ curl('PUT', API + '/generator', {'max_urgent': 1000})
 #  a conversation of the section's own in the reader's window, put back
 #  after: the pass reads the windows the readers keep (version 136)
 code, tg_window = curl('GET', INSTANCE + '/telegram-recent.json?raw=1')
-put_file('telegram-recent.json', {'424242': [{'id': 'chat/telegram/424242/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-talk', 'text': 'the gate talk %s is settled' % XRUN}]})
+TALK = secrets.token_hex(3)
+put_file('telegram-recent.json', {'424242': [{'id': 'chat/telegram/424242/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-talk', 'text': 'the gate talk %s is settled' % TALK}]})
 time.sleep(0.5)
 n = len(seen)
 code, before = curl('GET', API + '/generator/last')
@@ -807,7 +808,7 @@ check('the urgent pass ran past the cooldown and says so', last and not dictish(
 gen_new = [b for _, _, b in seen[n:] if b.get('messages') and not system_of(b).startswith(('You turn', 'You refine'))]
 prompt_seen = json.dumps(gen_new[-1]) if len(gen_new) == 1 else ''
 check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(gen_new), len(seen), n))
-talk = 'person/gate-talk: the gate talk %s is settled' % XRUN
+talk = 'person/gate-talk: the gate talk %s is settled' % TALK
 check('the model saw the conversations after the decisions and before the urgent line (version 136)', 'Recent conversations the readers kept' in prompt_seen and talk in prompt_seen
       and prompt_seen.index('Recent decisions') < prompt_seen.index(talk) < prompt_seen.index('Urgent:'), (len(gen_new), talk in prompt_seen))
 put_file('telegram-recent.json', tg_window if isinstance(tg_window, dict) else {})

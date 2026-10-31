@@ -11254,9 +11254,13 @@
     ;<  [ok=? why=@t]  bind:m
       %+  send-telegram  tg
       %-  pairs:enjs:format
-      :~  ['chat_id' s+(gs:orr body.p 'chat_id')]
-          ['text' s+(clean-text:orr (gs:orr body.p 'text'))]
-      ==
+      ::  a business chat's connection rides along (+with-vias, version 136)
+      =/  via=@t  (gs:orr body.p 'business_connection_id')
+      %+  weld
+        :~  ['chat_id' s+(gs:orr body.p 'chat_id')]
+            ['text' s+(clean-text:orr (gs:orr body.p 'text'))]
+        ==
+      ?:(=('' via) ~ ~[['business_connection_id' s+via]])
     (pure:m [ok ?:(ok (rap 3 'sent to ' (gs:orr body.p 'who') ' by telegram' ~) why)])
   ::
       %mail
