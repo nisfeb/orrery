@@ -6021,7 +6021,12 @@
   ;<  notes=(list [id=@t text=@t])  bind:m  (body-notes (prompt-shown:orr all (multi-of:orr schema) now))
   ;<  rules=(list @t)  bind:m  lattice-rules
   =.  schema  (with-rules:orr schema rules)
+  ::  the conversations the readers keep (version 136)
+  ;<  tg-talk=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  ;<  chat-talk=json  bind:m  (read-json (rf 0 / %'chat-recent.json'))
+  ;<  mail-talk=json  bind:m  (read-json (rf 0 / %'mail-recent.json'))
   =/  parts=(list @t)  (with-notes:orr (with-peer:orr (build-parts:orr all acts decided schema now tz max-actions.cfg cs) peer-j) notes)
+  =.  parts  (with-talk:orr parts ~[['telegram' tg-talk] ['tlon' chat-talk] ['mail' mail-talk]])
   =?  parts  ?=(^ urgent)  (urgent-parts:orr parts u.urgent)
   =/  dg=@ux  (digest:orr parts)
   =/  last=json  last0
@@ -11104,7 +11109,11 @@
   =/  tg=tg-config:orr  (de-tg-config:orr tg-json)
   ;<  tz=@t  bind:m  owner-tz
   ;<  policy=json  bind:m  (read-json (rf 0 / %'policy.json'))
-  =/  plans=(list exec-plan:orr)  (plan-exec:orr acts all (multi-of:orr schema) people.tg now tz (exec-cals:orr policy))
+  ::  a chat that came in through a business connection is answered
+  ::  through it (version 136)
+  ;<  tg-recent=json  bind:m  (read-json (rf 0 / %'telegram-recent.json'))
+  =/  plans=(list exec-plan:orr)
+    (with-vias:orr (plan-exec:orr acts all (multi-of:orr schema) people.tg now tz (exec-cals:orr policy)) tg-recent)
   ;<  chat-j=json  bind:m  (read-json (rf 0 / %'chat.json'))
   =/  chat=chat-config:orr  (de-chat-config:orr chat-j)
   ::  the desks the plans need, found and their roads proved, once, and

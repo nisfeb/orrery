@@ -137,6 +137,14 @@ WKEY = dictish(curl('POST', API + '/clients', {'name': 'gate writer', 'by': 'gat
 def owner_only(label, method, path, body=None):
     code, d = curl(method, API + path, body, jar=None, token=WKEY)
     check(label, code == 403 and dictish(d).get('error') == 'owner only', (code, d))
+
+
+#  a file of the instance's written whole, as the owner's grubbery page
+#  writes it, for a section that needs a state no route sets
+def put_file(name, doc):
+    import subprocess
+    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/' + name,
+                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content=' + json.dumps(doc)])
 #  a DM from the ship needs the kernel's marc, which the dev ship's kernel
 #  lacks; a poke without it wedges the executor, so DMs stay off here
 curl('PUT', API + '/chat', {'send_dms': False})
@@ -785,6 +793,10 @@ def urgent_pass(token=None, about=('thing/gate-car',)):
 
 # the day's urgent count lives on the ship, so it is read before, not assumed zero
 curl('PUT', API + '/generator', {'max_urgent': 1000})
+#  a conversation of the section's own in the reader's window, put back
+#  after: the pass reads the windows the readers keep (version 136)
+code, tg_window = curl('GET', INSTANCE + '/telegram-recent.json?raw=1')
+put_file('telegram-recent.json', {'424242': [{'id': 'chat/telegram/424242/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-talk', 'text': 'the gate talk %s is settled' % XRUN}]})
 time.sleep(0.5)
 n = len(seen)
 code, before = curl('GET', API + '/generator/last')
@@ -795,6 +807,10 @@ check('the urgent pass ran past the cooldown and says so', last and not dictish(
 gen_new = [b for _, _, b in seen[n:] if b.get('messages') and not system_of(b).startswith(('You turn', 'You refine'))]
 prompt_seen = json.dumps(gen_new[-1]) if len(gen_new) == 1 else ''
 check('the model saw the urgent line before the clock', 'Urgent:' in prompt_seen and prompt_seen.index('Urgent:') > prompt_seen.index('Recent decisions'), (len(gen_new), len(seen), n))
+talk = 'person/gate-talk: the gate talk %s is settled' % XRUN
+check('the model saw the conversations after the decisions and before the urgent line (version 136)', 'Recent conversations the readers kept' in prompt_seen and talk in prompt_seen
+      and prompt_seen.index('Recent decisions') < prompt_seen.index(talk) < prompt_seen.index('Urgent:'), (len(gen_new), talk in prompt_seen))
+put_file('telegram-recent.json', tg_window if isinstance(tg_window, dict) else {})
 for a in curl('GET', API + '/actions?status=proposed')[1] or []:
     if isinstance(a, dict) and a.get('by') == 'generator':
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'by': 'gate', 'note': 'gate'})
@@ -2198,6 +2214,11 @@ owner_only('the wake is the owner\'s, even to a writing key', 'POST', '/exec/wak
 last = exec_last()
 check('the record carries every count, the failures, the missing desks and the notes', all(k in last for k in ('at', 'acted_at', 'claimed', 'sent', 'placed', 'failed', 'ticked', 'deleted', 'moved', 'closed', 'adopted', 'missing', 'notes')), last)
 check('the calendar and auspex are found on wex and their roads open', last.get('missing') == [] and last.get('notes') == [], last)
+# the reader's window as this section needs it, put back after: chat
+# 1002 last came through a business connection, 1001 has no window
+# (version 136)
+code, tg_window = curl('GET', INSTANCE + '/telegram-recent.json?raw=1')
+put_file('telegram-recent.json', {'1002': [{'id': 'chat/telegram/1002/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-people', 'text': 'hello from the business chat', 'via': 'conn-gate'}]})
 # a message via telegram: claimed by the ship, one sendMessage through the stub, done with the chat
 n = len(seen)
 TGID = propose('message', 'Gate telegram %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-tg', 'text': 'the gate says hello %s' % XRUN})
@@ -2215,6 +2236,8 @@ a = settled(PEOPLEID)
 check('a person the people map knows is sent to that user id', a.get('status') == 'done' and a.get('note') == 'sent to person/gate-people by telegram' and steps(a)[-2:] == [('claimed', 'ship'), ('done', 'ship')], (a.get('status'), a.get('note'), steps(a)))
 sent = [(p, b) for p, _, b in seen[n:] if p.endswith('/sendMessage')]
 check('the stub saw the second sendMessage under the chat id from the people map', len(sent) == 2 and sent[1][1].get('chat_id') == '1002' and sent[1][1].get('text') == 'the people map hears this %s' % XRUN, sent)
+check('a chat that came through a business connection is answered through it, and the bot\'s own is not (version 136)', len(sent) == 2 and sent[1][1].get('business_connection_id') == 'conn-gate' and 'business_connection_id' not in sent[0][1], sent)
+put_file('telegram-recent.json', tg_window if isinstance(tg_window, dict) else {})
 # a message to a person with a ship: the channel rule files it via chat before the id is computed, and the rewrite is on the trail
 code, d = observe(
     [{'id': 'person/gate-shipped', 'name': 'the gate person with a ship'}],
