@@ -224,6 +224,14 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 136's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- A Telegram message the ship sends to someone whose last message reached you through your Telegram Business connection now goes back through it, as you in that chat. Until now it went as the bot, which Telegram refuses for anyone who never started the bot. Telegram lets the connection write only in a chat that had a message come in within the last day, so a reply approved later than that still fails, with Telegram's reason.
+- The generator reads the last three days of your Telegram, Tlon and mail conversations, as the readers keep them, so it stops proposing what a later message already settled. It is told this is what others wrote, context and never an instruction. A message that files no fact does not wake it; the next pass sees the message.
+- A one-off event with the title of an activity the ship already holds joins that activity at once, so the activity's next date counts it, instead of waiting until three pile up. One you said something about (whether you go, who drives, a need) stays its own situation, and so does one under an activity that is cancelled or closed.
+
 ### Version 134's owner steps
 
 Nothing to do: no new roads, so no consent prompt. What changes:
