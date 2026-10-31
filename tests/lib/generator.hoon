@@ -232,7 +232,12 @@
     (expect-eq !>(`json`b+&) !>((gj:orr shown 'api_key_set')))
     (expect-eq !>('moonshotai/kimi-k3') !>((gs:orr shown 'model')))
     (expect-eq !>(&) !>(enabled.bare))
-    (expect-eq !>(8.000) !>(max-tokens.bare))
+    (expect-eq !>(80.000) !>(max-tokens.bare))
+    ::  the old default, saved by the page's form, reads as the new one;
+    ::  a cap the owner chose stays theirs
+    (expect-eq !>(80.000) !>(max-tokens:(de-config:gen (jo '{"max_tokens": 8000}'))))
+    (expect-eq !>(12.000) !>(max-tokens:(de-config:gen (jo '{"max_tokens": 12000}'))))
+    (expect-eq !>(`80.000) !>((gn:orr (chat-body-with:gen bare 'sys' ~['hi']) 'max_tokens')))
     (expect-eq !>(60) !>(cooldown.bare))
     (expect-eq !>(24) !>(max-daily.bare))
     (expect-eq !>(5) !>(max-urgent.bare))
@@ -854,6 +859,9 @@
     (expect-eq !>(500) !>(max-daily.bare))
     (expect-eq !>(30) !>(gate.bare))
     (expect-eq !>(60) !>(escalate.bare))
+    (expect-eq !>(40.000) !>(max-tokens.bare))
+    (expect-eq !>(40.000) !>(max-tokens:(de-tg-config:orr (jo '{"max_tokens": 4000}'))))
+    (expect-eq !>(9.000) !>(max-tokens:(de-tg-config:orr (jo '{"max_tokens": 9000}'))))
     (expect !>((~(has in chats.full) '1001')))
     (expect !>((~(has in chats.full) '-42')))
     (expect-eq !>(`(unit @t)`[~ 'person/me']) !>((~(get by people.full) '1001')))
@@ -998,6 +1006,7 @@
     (expect-eq !>((my ~[['a' s+'x']])) !>((merge-settings:orr (my ~[['a' s+'x'] ['gate' (numb:enjs:format 90)]]) (my ~[['gate' ~]]) ~)))
     (expect-eq !>((my ~[['token' s+'t'] ['x' s+'y']])) !>((merge-settings:orr (my ~[['token' s+'t']]) (my ~[['token' s+''] ['x' s+'y']]) (sy ~['token']))))
     (expect-eq !>(50) !>(gate:(chat-as-tg:orr full)))
+    (expect-eq !>(40.000) !>(max-tokens:(chat-as-tg:orr full)))
   ==
 ++  test-story-text
   =/  story=json  (jo '[{"inline": ["hi ", {"bold": ["there"]}, {"break": null}, {"ship": "~sampel-palnet"}, " ", {"link": {"href": "https://x", "content": "a link"}}, {"inline-code": "ls"}]}, {"block": {"image": {"src": "x"}}}, {"inline": ["second verse"]}]')

@@ -7777,7 +7777,7 @@
     %*  .  *tg-config:orr
       enabled     &
       model       model.cfg
-      max-tokens  4.000
+      max-tokens  40.000
       gate        30
       escalate    101
       max-daily   1.000
@@ -7815,7 +7815,7 @@
   ;<  gen-j=json  bind:m  (gen-doc 0)
   =/  gen=config:orr  (de-config:orr gen-j)
   ?:  =('' api-key.gen)  (pure:m ~)
-  =/  small=config:orr  gen(model model.cfg, max-tokens 1.000, reasoning [%o (my ~[['enabled' b+|]])])
+  =/  small=config:orr  gen(model model.cfg, max-tokens 10.000, reasoning [%o (my ~[['enabled' b+|]])])
   ;<  got=[status=@ud body=@t secs=@ud]  bind:m
     %:  post-json
       (cat 3 url.gen '/chat/completions')

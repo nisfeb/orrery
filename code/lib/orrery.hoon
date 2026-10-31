@@ -3516,7 +3516,11 @@
       =/(m (gs j 'model') ?:(=('' m) 'moonshotai/kimi-k3' m))
       (gs j 'api_key')
       =/(r (gj j 'reasoning') ?:(?=(~ r) [%o (my ~[['effort' s+'high']])] r))
-      (fall (gn j 'max_tokens') 8.000)
+      ::  the most an answer may run to (version 135: ten times 8.000, the
+      ::  old cap, which a model that thinks first could spend before it
+      ::  answered). A saved 8.000 is the old default the page filled in,
+      ::  not a choice, so it reads as the new one.
+      =/(t (fall (gn j 'max_tokens') 80.000) ?:(=(8.000 t) 80.000 t))
       (fall (gn j 'max_actions') 5)
       (gs j 'timezone')
       (fall (gn j 'cooldown_minutes') 60)
@@ -5000,7 +5004,7 @@
   %*  .  *tg-config
     enabled     enabled.c
     model       model.c
-    max-tokens  4.000
+    max-tokens  40.000
     gate        gate.c
     escalate    escalate.c
     max-daily   max-daily.c
@@ -5028,7 +5032,8 @@
       =/(u (gs j 'api_url') ?:(=('' u) 'https://api.telegram.org' u))
       (gs j 'public_url')
       =/(m (gs j 'model') ?:(=('' m) 'deepseek/deepseek-v4-flash' m))
-      (fall (gn j 'max_tokens') 4.000)
+      ::  ten times 4.000 since version 135; a saved 4.000 is the old default
+      =/(t (fall (gn j 'max_tokens') 40.000) ?:(=(4.000 t) 40.000 t))
       (~(del in chats) '')
       people
       (hundredths (gj j 'gate') 30)
@@ -5217,7 +5222,7 @@
   %*  .  *tg-config
     enabled     enabled.c
     model       model.c
-    max-tokens  4.000
+    max-tokens  40.000
     people      people.c
     gate        gate.c
     escalate    escalate.c

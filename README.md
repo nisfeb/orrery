@@ -180,7 +180,7 @@ Each one runs the pipeline the Python bot ran on a box. First the gate and the a
 
 Then validation and grounding as `orrery-utils/common/analyze.py` and `telegram/bot.py` hold them, the status check, and, at or above `escalate`, a question that asks the generator for an urgent pass over the situations just written (the client guide's rule 16, which the ship's own reader now follows too).
 
-The reader's settings fall back on their own: `model` is `deepseek/deepseek-v4-flash` unless set, answering in `max_tokens` (4000) at most; `gate` and `escalate` are hundredths, 30 and 60 unless set; `api_url` is `https://api.telegram.org` unless set.
+The reader's settings fall back on their own: `model` is `deepseek/deepseek-v4-flash` unless set, answering in `max_tokens` (40000) at most; `gate` and `escalate` are hundredths, 30 and 60 unless set; `api_url` is `https://api.telegram.org` unless set.
 
 Facts are signed `telegram`, their source `{"kind": "chat", "id": "telegram/<chat>/<message>"}`, the same pointers the bot writes, so a backfill from an export and the live reader agree.
 
