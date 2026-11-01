@@ -1643,6 +1643,77 @@
     ::  the record round trips
     (expect-eq !>(`(list loc-grant:orr)`~[g(sent `now, left &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[(en-loc-grant:orr g(sent `now, left &))]]]))))
   ==
+::  a pass's sends and the grants it keeps (version 137)
+++  test-location-plan
+  =/  at=@da  (sub now ~m10)
+  =/  pos=json  (pairs:enjs:format ~[['lat' s+'39.781734'] ['lon' s+'-89.650123'] ['acc' s+'12'] ['at' s+(en-iso:orr at)]])
+  =/  old=json  (pairs:enjs:format ~[['lat' s+'39.781734'] ['lon' s+'-89.650123'] ['acc' s+'12'] ['at' s+(en-iso:orr (sub now ~h1))]])
+  =/  home=(unit [lat=@t lon=@t])  `['39.7817' '-89.6501']
+  =/  away=(unit [lat=@t lon=@t])  `['40.7817' '-89.6501']
+  ::  two hours, begun five minutes ago, nothing sent yet
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | (sub now ~m5) ~ |]
+  =/  end=json  (pairs:enjs:format ~[['action' s+'position-end']])
+  =/  fix
+    |=  [lat=@t lon=@t acc=@t g=loc-grant:orr]
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['action' s+'position']  ['lat' s+lat]  ['lon' s+lon]  ['acc' s+acc]
+        ['at' s+(en-iso:orr at)]  ['until' ?~(until.g ~ s+(en-iso:orr u.until.g))]  ['home' b+home.g]
+    ==
+  =/  plan  |=(p=[(list [@p json]) (list loc-grant:orr)] p)
+  ;:  weld
+    ::  the first send takes a fix of the last half hour, cut to about a
+    ::  kilometre; the grant is kept marked sent, and seen away
+    (expect-eq !>((plan ~[[~zod (fix '39.78' '-89.65' '1000' g)]] ~[g(sent `at, left &)])) !>((loc-plan:orr ~[g] now pos away)))
+    ::  exact sends the fix and its accuracy as the phone gave them
+    (expect-eq !>((plan ~[[~zod (fix '39.781734' '-89.650123' '12' g(exact &))]] ~[g(exact &, sent `at, left &)])) !>((loc-plan:orr ~[g(exact &)] now pos away)))
+    ::  a fix already sent is not sent again; nor, at first, one older
+    ::  than half an hour before the share began. Both kept as they were
+    (expect-eq !>((plan ~ ~[g(sent `at)])) !>((loc-plan:orr ~[g(sent `at)] now pos away)))
+    (expect-eq !>((plan ~ ~[g])) !>((loc-plan:orr ~[g] now old away)))
+    ::  a time run out, or until home with no home, ends: told, not kept
+    (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until `(sub now ~s1))] now pos away)))
+    (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until ~, home &)] now pos ~)))
+    ::  until home at home: begun there, it goes on; once seen away, it ends
+    (expect-eq !>((plan ~[[~zod (fix '39.78' '-89.65' '1000' g(until ~, home &))]] ~[g(until ~, home &, sent `at)])) !>((loc-plan:orr ~[g(until ~, home &)] now pos home)))
+    (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until ~, home &, left &)] now pos home)))
+    ::  no fix the ship can read sends nothing and keeps the grant
+    (expect-eq !>((plan ~ ~[g])) !>((loc-plan:orr ~[g] now (pairs:enjs:format ~[['at' s+(en-iso:orr at)]]) away)))
+    ::  the sends and the keeps go in the grants' order
+    %+  expect-eq
+      !>((plan ~[[~nec end] [~zod (fix '39.78' '-89.65' '1000' g)]] ~[g(sent `at, left &) g(ship ~bud, sent `at)]))
+    !>((loc-plan:orr ~[g(ship ~nec, until `(sub now ~s1)) g g(ship ~bud, sent `at)] now pos away))
+  ==
+::  a location send's wire: one per ship per hour (version 137)
+++  test-location-wire
+  ;:  weld
+    (expect-eq !>(`path`~['share-poke' '~zod' '~2026.9.18..12.00.00']) !>((loc-wire:orr ~zod ~2026.9.18..12.34.56)))
+    (expect-eq !>((loc-wire:orr ~zod ~2026.9.18..12.00.00)) !>((loc-wire:orr ~zod ~2026.9.18..12.59.59)))
+    (expect !>(!=((loc-wire:orr ~zod ~2026.9.18..12.59.59) (loc-wire:orr ~zod ~2026.9.18..13.00.00))))
+    (expect !>(!=((loc-wire:orr ~zod now) (loc-wire:orr ~nec now))))
+  ==
+::  a peer's share kept here shows until its end, or with none (until
+::  home) while its fix is under a day old (version 137)
+++  test-location-in-live
+  =/  v
+    |=  [until=json at=json]
+    ^-  json
+    (pairs:enjs:format ~[['lat' s+'39.78'] ['lon' s+'-89.65'] ['until' until] ['at' at]])
+  =/  iso  |=(d=@da `json`s+(en-iso:orr d))
+  ;:  weld
+    ::  an end ahead shows, one passed does not, however fresh the fix
+    (expect !>((loc-in-live:orr (v (iso (add now ~h1)) (iso now)) now)))
+    (expect !>(!(loc-in-live:orr (v (iso (sub now ~s1)) (iso now)) now)))
+    ::  no end: a fix 23 hours old shows, 25 hours old does not
+    (expect !>((loc-in-live:orr (v ~ (iso (sub now ~h23))) now)))
+    (expect !>(!(loc-in-live:orr (v ~ (iso (sub now ~h25))) now)))
+    ::  no end and no fix time, or one the ship cannot read: gone
+    (expect !>(!(loc-in-live:orr (pairs:enjs:format ~[['lat' s+'39.78'] ['until' ~]]) now)))
+    (expect !>(!(loc-in-live:orr (v ~ s+'yesterday') now)))
+    ::  an end the ship cannot read counts as none
+    (expect !>((loc-in-live:orr (v s+'soon' (iso (sub now ~h1))) now)))
+    (expect !>(!(loc-in-live:orr (v s+'soon' (iso (sub now ~h25))) now)))
+  ==
 ++  test-place-search
   =/  res=json
     %-  jo

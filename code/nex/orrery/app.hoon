@@ -3705,40 +3705,82 @@
 ::  +remote-poke-wait: a poke to another ship's grubbery, answered or
 ::  timed out (a peer that is down must not park the fiber). A timer
 ::  wake answers yes: grubbery's remote acks are unobservable and the
-::  poke usually landed. A veto or a nack answers no.
+::  poke usually landed. A veto or a nack answers no. Each call pokes on
+::  a wire of its own
 ::
 ++  remote-poke-wait
   |=  [target=@p =lane:tarball jon=json]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
+  ;<  w=wire  bind:m  (nonce:io /share-poke)
+  ;<  no=(list remote-poke)  bind:m  (remote-pokes-wait ~[[target lane w jon]])
+  (pure:m =(~ no))
+::  +remote-pokes-wait: pokes to other ships' grubberies, sent at once
+::  and waited for together under one thirty second timer (version
+::  137), so a peer that is down holds the others no longer than one
+::  wait. Answers the pokes refused, by a veto or a nack; one unanswered
+::  when the timer wakes counts as taken, as above.
+::
+::  Each poke names its dart wire, and the kernel's gall wire carries
+::  it, so pokes on one wire from one fiber share a gall duct and one
+::  ames flow, whose acks come back in order: the first poke waiting on
+::  a wire takes the next answer on it. A late answer to a poke on that
+::  wire that timed out may so answer a later one. That is harmless:
+::  the location pass, the one caller that shares wires, reads no
+::  answer, and an ack on an ordered flow says the flow moves. An
+::  answer with no poke waiting is skipped, as a late one always was,
+::  and the location fiber's idle then takes it as a wake, as before
+::
++$  remote-poke  [target=@p =lane:tarball w=wire jon=json]
+++  remote-pokes-wait
+  |=  pokes=(list remote-poke)
+  =/  m  (fiber:fiber:nexus ,(list remote-poke))
+  ^-  form:m
+  ?~  pokes  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
   ;<  tw=wire  bind:m  (nonce:io /remote)
-  =/  req=load:remo:nexus  [[/share-poke lane] %poke [[/ %json] jon]]
-  ;<  w=wire  bind:m  (nonce:io /share-poke)
   ;<  ~  bind:m
-    %-  send-dart:io
-    [%node w &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[target %grubbery] grubbery-load+req]]]
+    %-  send-darts:io
+    %+  turn  `(list remote-poke)`pokes
+    |=  p=remote-poke
+    ^-  dart:nexus
+    =/  req=load:remo:nexus  [[/share-poke lane.p] %poke [[/ %json] jon.p]]
+    [%node w.p &+&+[/sys/gall %'main.sig'] %poke [[/ %gall-poke] [[target.p %grubbery] grubbery-load+req]]]
   ;<  ~  bind:m  (set-timer:io tw (add now ~s30))
-  ;<  ok=?  bind:m
+  =/  wait=(list remote-poke)  pokes
+  =|  no=(list remote-poke)
+  |-
+  ::  the input's face is in, so the set's test is made out here
+  =/  ws=(set wire)  (silt (turn wait |=(p=remote-poke w.p)))
+  =/  ours  |=(x=wire (~(has in ws) x))
+  ;<  got=(unit [aw=wire ok=?])  bind:m
     |=  input:fiber:nexus
     :+  ~  q.state
     ?+  in  [%skip ~]
         ~  [%wait ~]
         [~ %veto %node * * *]
-      ?.(=(w wire.dart.u.in) [%skip ~] [%done %.n])
+      ?.((ours wire.dart.u.in) [%skip ~] [%done `[wire.dart.u.in %.n]])
         [~ %pack * *]
-      ?.  =(w wire.u.in)  [%skip ~]
-      ?~(err.u.in [%wait ~] [%done %.n])
+      ?.  (ours wire.u.in)  [%skip ~]
+      ?~(err.u.in [%wait ~] [%done `[wire.u.in %.n]])
         [~ %poke * *]
       ?:  =([/ %timer-wake] p.sage.u.in)
-        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done %.y])
+        ?.(=(tw !<(path q.sage.u.in)) [%skip ~] [%done ~])
       ?.  =([/ %poke-ack] p.sage.u.in)  [%skip ~]
       =/  [aw=wire err=(unit tang)]  !<([wire (unit tang)] q.sage.u.in)
-      ?.  =(w aw)  [%skip ~]
-      [%done ?=(~ err)]
+      ?.  (ours aw)  [%skip ~]
+      [%done `[aw ?=(~ err)]]
     ==
-  ;<  ~  bind:m  (cancel-timer:io tw)
-  (pure:m ok)
+  =/  i=(unit @ud)  ?~(got ~ (find ~[aw.u.got] (turn wait |=(p=remote-poke w.p))))
+  ?:  |(?=(~ got) ?=(~ i))
+    ;<  ~  bind:m  (cancel-timer:io tw)
+    (pure:m (flop no))
+  =?  no  !ok.u.got  [(snag u.i wait) no]
+  =.  wait  (oust [u.i 1] wait)
+  ?~  wait
+    ;<  ~  bind:m  (cancel-timer:io tw)
+    (pure:m (flop no))
+  $
 ::  +peek-remote-wait: a deep peek of another ship's file or directory,
 ::  ~ on veto, miss or timeout
 ::
@@ -5092,48 +5134,22 @@
         (observe-ops:orr ~ ~[(obs-row:orr 'person/me' 'timezone' s+dz now ~ 100 ['device' 'device-zone'] 'owner')])
       /location
     (pure:(fiber:fiber:nexus ,~) ~)
-  =/  at=(unit @da)  (de-iso:orr (gs:orr pos 'at'))
-  =/  fix=(unit [lat=@t lon=@t])
-    ?.  &((coordinate:orr (gs:orr pos 'lat') 90) (coordinate:orr (gs:orr pos 'lon') 180))  ~
-    `[(gs:orr pos 'lat') (gs:orr pos 'lon')]
   ;<  home=(unit [lat=@t lon=@t])  bind:m
     ?.  (lien grants |=(g=loc-grant:orr home.g))  (pure:(fiber:fiber:nexus ,(unit [lat=@t lon=@t])) ~)
     ;<  schema=json  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (read-json (rf 0 / %'schema.json'))
     ;<  all=(list loaded:orr)  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (load-bodies 0)
     ;<  gc=json  bind:(fiber:fiber:nexus ,(unit [lat=@t lon=@t]))  (read-json (rf 0 / %'geocache.json'))
     (pure:(fiber:fiber:nexus ,(unit [lat=@t lon=@t])) (home-point:orr all (multi-of:orr schema) now gc))
-  =|  keep=(list loc-grant:orr)
-  =/  todo=(list loc-grant:orr)  grants
-  |-
-  ?^  todo
-    =/  g=loc-grant:orr  i.todo
-    ::  the first send takes the latest fix of the last half hour, so the
-    ::  peer sees where the owner is at once; after that, each newer one
-    =/  fresh=?
-      ?~  at  |
-      ?~  sent.g  (gte u.at (sub since.g ~m30))
-      (gth u.at u.sent.g)
-    =/  athome=?  &(?=(^ fix) (home-reached:orr u.fix home))
-    ::  until home ends at home only once the owner has been seen away,
-    ::  so a share begun at home lasts until they leave and come back
-    =/  over=?
-      ?|  !(loc-live:orr g now)
-          &(home.g left.g fresh athome)
-          ::  a grant only home ends, with no home to see, ends now
-          &(?=(~ until.g) ?=(~ home))
-      ==
-    ?:  over
-      ;<  *  bind:m  (remote-poke-wait ship.g [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'position-end']]))
-      $(todo t.todo)
-    ?.  &(fresh ?=(^ fix) ?=(^ at))  $(todo t.todo, keep [g keep])
-    =/  pt  (loc-fix:orr lat.u.fix lon.u.fix exact.g)
-    ;<  *  bind:m
-      %^  remote-poke-wait  ship.g  [%& orrery-instance %'shares.sig']
-      %-  pairs:enjs:format
-      :~  ['action' s+'position']  ['lat' s+lat.pt]  ['lon' s+lon.pt]  ['acc' s+?:(exact.g (gs:orr pos 'acc') '1000')]
-          ['at' s+(en-iso:orr u.at)]  ['until' ?~(until.g ~ s+(en-iso:orr u.until.g))]  ['home' b+home.g]
-      ==
-    $(todo t.todo, keep [g(sent at, left |(left.g !athome)) keep])
+  ::  every send decided first, then all sent at once and waited for
+  ::  together (version 137): a peer that is down holds the others no
+  ::  longer than one wait. The answers are not read
+  =/  plan  (loc-plan:orr grants now pos home)
+  ;<  *  bind:m
+    %-  remote-pokes-wait
+    %+  turn  sends.plan
+    |=  [s=@p body=json]
+    ^-  remote-poke
+    [s [%& orrery-instance %'shares.sig'] (loc-wire:orr s now) body]
   ::  a peer's entry past its time goes
   =/  in=json  (gj:orr doc 'in')
   =/  live-in=json
@@ -5141,10 +5157,8 @@
     :-  %o
     %-  ~(gas by *(map @t json))
     %+  skim  ~(tap by p.in)
-    |=  [k=@t v=json]
-    =/  u=(unit @da)  (de-iso:orr (gs:orr v 'until'))
-    ?~(u & (gth u.u now))
-  =/  next=json  (pairs:enjs:format ~[['out' a+(turn (flop keep) en-loc-grant:orr)] ['in' live-in]])
+    |=([k=@t v=json] (loc-in-live:orr v now))
+  =/  next=json  (pairs:enjs:format ~[['out' a+(turn keep.plan en-loc-grant:orr)] ['in' live-in]])
   ?:  =(next doc)  (pure:m ~)
   (over:io (rf 0 / %'location.json') [[/ %json] next])
 ::  +serve-location: what the owner shares and with whom, and the peers
@@ -5171,8 +5185,7 @@
     ?.  ?=([%o *] in)  ~
     %+  murn  ~(tap by p.in)
     |=  [k=@t v=json]
-    =/  u=(unit @da)  (de-iso:orr (gs:orr v 'until'))
-    ?:  &(?=(^ u) (lte u.u now))  ~
+    ?.  (loc-in-live:orr v now)  ~
     =/  km=(unit @ud)
       ?~  home  ~
       =/  d  (metres-between:orr u.home [(gs:orr v 'lat') (gs:orr v 'lon')])
@@ -5234,8 +5247,12 @@
   ?.  (lien grants |=(x=loc-grant:orr =(ship.x u.shp)))  (send-err eyre-id 404 'not shared with that ship')
   =/  rest=(list loc-grant:orr)  (skip grants |=(x=loc-grant:orr =(ship.x u.shp)))
   ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr ?:(?=([%o *] doc) doc [%o ~]) 'out' a+(turn rest en-loc-grant:orr))])
-  ;<  told=?  bind:m  (remote-poke-wait u.shp [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'position-end']]))
-  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
+  ::  on the location sends' wire for the hour. A request fiber's gall
+  ::  wire names the request, so no other poke's answer reaches this one
+  ;<  now=@da  bind:m  get-time:io
+  ;<  no=(list remote-poke)  bind:m
+    (remote-pokes-wait ~[[u.shp [%& orrery-instance %'shares.sig'] (loc-wire:orr u.shp now) (pairs:enjs:format ~[['action' s+'position-end']])]])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' [%b =(~ no)]]]))
 ::  +take-offer: a host offers a body. An offer for a share already
 ::  accepted narrows its mode in place; a wider one waits for an accept.
 ::

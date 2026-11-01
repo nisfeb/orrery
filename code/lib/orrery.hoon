@@ -9172,6 +9172,74 @@
   ?~  home  |
   =/  m  (metres-between u.home at)
   &(?=(^ m) (lte u.m 150))
+::  +loc-plan: what one location pass sends, and the grants it keeps, in
+::  the grants' order (version 137). A grant whose time ran out, or one
+::  until home whose fix is now home, gets a position-end and goes; a
+::  live one with a fresh fix gets it, exact or cut, and is kept marked
+::  sent; the rest are kept as they were
+::
+++  loc-plan
+  |=  [grants=(list loc-grant) now=@da pos=json home=(unit [lat=@t lon=@t])]
+  ^-  [sends=(list [ship=@p body=json]) keep=(list loc-grant)]
+  =/  at=(unit @da)  (de-iso (gs pos 'at'))
+  =/  fix=(unit [lat=@t lon=@t])
+    ?.  &((coordinate (gs pos 'lat') 90) (coordinate (gs pos 'lon') 180))  ~
+    `[(gs pos 'lat') (gs pos 'lon')]
+  =|  sends=(list [ship=@p body=json])
+  =|  keep=(list loc-grant)
+  |-  ^-  [(list [ship=@p body=json]) (list loc-grant)]
+  ?~  grants  [(flop sends) (flop keep)]
+  =/  g=loc-grant  i.grants
+  ::  the first send takes the latest fix of the last half hour, so the
+  ::  peer sees where the owner is at once; after that, each newer one
+  =/  fresh=?
+    ?~  at  |
+    ?~  sent.g  (gte u.at (sub since.g ~m30))
+    (gth u.at u.sent.g)
+  =/  athome=?  &(?=(^ fix) (home-reached u.fix home))
+  ::  until home ends at home only once the owner has been seen away,
+  ::  so a share begun at home lasts until they leave and come back
+  =/  over=?
+    ?|  !(loc-live g now)
+        &(home.g left.g fresh athome)
+        ::  a grant only home ends, with no home to see, ends now
+        &(?=(~ until.g) ?=(~ home))
+    ==
+  ?:  over
+    $(grants t.grants, sends [[ship.g (pairs:enjs:format ~[['action' s+'position-end']])] sends])
+  ?.  &(fresh ?=(^ fix) ?=(^ at))  $(grants t.grants, keep [g keep])
+  =/  pt  (loc-fix lat.u.fix lon.u.fix exact.g)
+  =/  body=json
+    %-  pairs:enjs:format
+    :~  ['action' s+'position']  ['lat' s+lat.pt]  ['lon' s+lon.pt]  ['acc' s+?:(exact.g (gs pos 'acc') '1000')]
+        ['at' s+(en-iso u.at)]  ['until' ?~(until.g ~ s+(en-iso u.until.g))]  ['home' b+home.g]
+    ==
+  $(grants t.grants, sends [[ship.g body] sends], keep [g(sent at, left |(left.g !athome)) keep])
+::  +loc-wire: the dart wire of a location send to a ship, one per ship
+::  per hour (version 137). Each wire is its own ames flow, never
+::  closed, so a fix a minute on a wire each would leave 1,440 flows a
+::  day per peer. One wire for ever is no better: one unacked message
+::  holds every later one behind it, as it wedged trunk. A flow an hour
+::  heals at the next hour
+::
+++  loc-wire
+  |=  [s=@p now=@da]
+  ^-  path
+  /share-poke/(scot %p s)/(scot %da (sub now (mod now ~h1)))
+::  +loc-in-live: a peer's share kept here still shows (version 137):
+::  one with an end until then; one with none (until home) while its
+::  fix is under a day old, so a lost position-end does not leave a fix
+::  up for ever. An end the ship cannot read counts as none, and a fix
+::  with no time it can read is gone
+::
+++  loc-in-live
+  |=  [v=json now=@da]
+  ^-  ?
+  =/  u=(unit @da)  (de-iso (gs v 'until'))
+  ?^  u  (gth u.u now)
+  =/  at=(unit @da)  (de-iso (gs v 'at'))
+  ?~  at  |
+  (gth (add u.at ~d1) now)
 ::  ==  place lookups (version 87): Brave Search fills in a place
 ::
 ::  +search-config: search.json. Off until the owner turns it on with a
