@@ -224,6 +224,14 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 137's owner steps
+
+Nothing to do: no new roads, so no consent prompt. What changes:
+
+- Where you are goes to every ship you share it with at once, and to each ship on one ames flow an hour. A ship that is down holds the others back by thirty seconds at most, not thirty seconds each, so Talon can send a fix every minute while a share is on.
+- A fix someone shares with you until they are home, which has no end time, is dropped once it is a day old, so a stop that never arrived does not leave it up for ever.
+- Your phone hears when someone begins to share where they are with you, and for how long, and when a share that still showed stops.
+
 ### Version 136's owner steps
 
 Nothing to do: no new roads, so no consent prompt. What changes:
