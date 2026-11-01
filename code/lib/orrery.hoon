@@ -9240,6 +9240,20 @@
   =/  at=(unit @da)  (de-iso (gs v 'at'))
   ?~  at  |
   (gth (add u.at ~d1) now)
+::  +loc-start-said: the owner's notice that a peer has begun to share
+::  where they are, and until when (version 137)
+::
+++  loc-start-said
+  |=  [name=@t until=(unit @da) home=? now=@da]
+  ^-  @t
+  =/  hours=@ud  ?~(until 0 (div (add (sub (max u.until now) now) ~m30) ~h1))
+  %+  rap  3
+  :~  name  ' is sharing where they are'
+      ?:  home  ' until they\'re home'
+      ?:  =(0 hours)  ''
+      ?:  =(1 hours)  ' for an hour'
+      (rap 3 ' for ' (crip (a-co:co hours)) ' hours' ~)
+  ==
 ::  ==  place lookups (version 87): Brave Search fills in a place
 ::
 ::  +search-config: search.json. Off until the owner turns it on with a

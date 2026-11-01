@@ -3884,7 +3884,8 @@
   (over:io (rf up / %'offer-answers.json') [[/ %json] [%o (~(del by ans) (answer-key ref s))]])
 ::  +take-position: a ship's owner shares where they are (version 88):
 ::  kept, the latest only, when a person here carries that ship; any
-::  other ship's is refused and noted
+::  other ship's is refused and noted. The first fix of a share tells
+::  the owner's phone who is sharing, and for how long (version 137)
 ::
 ++  take-position
   |=  [src=@p jon=json]
@@ -3897,23 +3898,41 @@
   ?.  &((coordinate:orr (gs:orr jon 'lat') 90) (coordinate:orr (gs:orr jon 'lon') 180))
     (note-inbox 'position' | 'lat, lon: expected decimal degrees' (scot %p src))
   ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  ;<  now=@da  bind:m  get-time:io
   =/  in=json  (gj:orr doc 'in')
+  ::  a share is new here when no entry for the ship shows: none, or one
+  ::  whose time passed that the pass has not dropped yet (version 137)
+  =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
+  =/  new=?  ?~(was & !(loc-in-live:orr u.was now))
   =/  one=json
     %-  pairs:enjs:format
     :~  ['id' s+id.i.who]  ['name' s+name.body.i.who]  ['lat' s+(gs:orr jon 'lat')]  ['lon' s+(gs:orr jon 'lon')]
         ['acc' s+(gs:orr jon 'acc')]  ['at' s+(gs:orr jon 'at')]  ['until' (gj:orr jon 'until')]  ['home' (gj:orr jon 'home')]
     ==
   ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) (scot %p src) one))])
+  ;<  ~  bind:m
+    ?.  new  (pure:m ~)
+    %^  notify-owner  (cat 3 'orrery-location-' (scot %p src))  'Location sharing'
+    (loc-start-said:orr name.body.i.who (de-iso:orr (gs:orr jon 'until')) ?=([%b %.y] (gj:orr jon 'home')) now)
   (note-inbox 'position' & '' (scot %p src))
-::  +take-position-end: a ship stops sharing where its owner is
+::  +take-position-end: a ship stops sharing where its owner is. The
+::  owner's phone is told when its fix still showed (version 137): a
+::  share whose time had passed already went quietly
 ::
 ++  take-position-end
   |=  src=@p
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  ;<  now=@da  bind:m  get-time:io
   =/  in=json  (gj:orr doc 'in')
+  =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
   ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' ?:(?=([%o *] in) (del-key:orr in (scot %p src)) [%o ~]))])
+  ;<  ~  bind:m
+    ?.  &(?=(^ was) (loc-in-live:orr u.was now))  (pure:m ~)
+    =/  name=@t  (gs:orr u.was 'name')
+    %^  notify-owner  (cat 3 'orrery-location-' (scot %p src))  'Location sharing'
+    (rap 3 ?:(=('' name) (scot %p src) name) ' stopped sharing where they are' ~)
   (note-inbox 'position-end' & '' (scot %p src))
 ::  ==  the sphere feed (version 90)
 ::

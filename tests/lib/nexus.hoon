@@ -1684,6 +1684,17 @@
       !>((plan ~[[~nec end] [~zod (fix '39.78' '-89.65' '1000' g)]] ~[g(sent `at, left &) g(ship ~bud, sent `at)]))
     !>((loc-plan:orr ~[g(ship ~nec, until `(sub now ~s1)) g g(ship ~bud, sent `at)] now pos away))
   ==
+::  the owner's notice that a peer began to share (version 137)
+++  test-location-start-said
+  ;:  weld
+    (expect-eq !>('Sam is sharing where they are until they\'re home') !>((loc-start-said:orr 'Sam' `(add now ~h2) & now)))
+    ::  the hours left, to the nearest; under half an hour, none said
+    (expect-eq !>('Sam is sharing where they are for 2 hours') !>((loc-start-said:orr 'Sam' `(sub (add now ~h2) ~s1) | now)))
+    (expect-eq !>('Sam is sharing where they are for an hour') !>((loc-start-said:orr 'Sam' `(add now ~m40) | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(add now ~m20) | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(sub now ~h1) | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' ~ | now)))
+  ==
 ::  a location send's wire: one per ship per hour (version 137)
 ++  test-location-wire
   ;:  weld
