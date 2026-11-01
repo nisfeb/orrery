@@ -155,6 +155,12 @@ GET $SHIP/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk?info=1
 | route **403s fast** | healthy; that is just unauthenticated |
 | desk says up to date, app dead | 5a (empty tree) or 5c (neck-less dir) |
 
+### 5z. main moved to a commit the forge already has: "already up to date"
+
+Measured on ricsul, 2026-11-01 (version 137). The release branch was pushed to GitHub first, and the forge's poll fetched it with all its objects. Then main was fast-forwarded to that same commit. Every pull after that, by the poll and by `forge/api/run`, answered "already up to date" and left `refs/remotes/origin/main` on the old commit, because there were no new objects to fetch, so the forge never updated the ref. The desk stayed on the old version.
+
+The way out is a commit on main that the forge does not have yet, such as this note. To avoid the trap, don't push a release branch to GitHub before main, or push one more commit to main after it.
+
 ## 6. Desk apps and the kernel are delivered differently
 
 Do not mix these up. Calendar, lattice, auspex and orrery are **desk apps**. Grubbery itself is the **kernel**.
