@@ -231,6 +231,7 @@ Nothing to do: no new roads, so no consent prompt. What changes:
 - Where you are goes to every ship you share it with at once, and to each ship on one ames flow an hour. A ship that is down holds the others back by thirty seconds at most, not thirty seconds each, so Talon can send a fix every minute while a share is on.
 - A fix someone shares with you until they are home, which has no end time, is dropped once it is a day old, so a stop that never arrived does not leave it up for ever.
 - Your phone hears when someone begins to share where they are with you, and for how long, and when a share that still showed stops.
+- Someone whose ship you have no person for can share with you now. Their fix is not dropped but waits as an ask, and your phone hears "~ship wants to share where they are" once. Accept it and Orrery makes a person named as their ship, and shows where they are; decline it and their fixes are dropped from then. Nothing shows until you accept.
 
 ### Version 136's owner steps
 
