@@ -1715,6 +1715,8 @@
     %get-location           (serve-location eyre-id)
     %post-location-share    (serve-location-share eyre-id jon)
     %delete-location-share  (serve-location-unshare eyre-id (rear suffix))
+    %post-location-accept   (serve-location-accept eyre-id jon)
+    %post-location-decline  (serve-location-decline eyre-id jon)
     %put-search             (serve-set-doc eyre-id 'set-search' jon)
     %post-nudge-wake        (serve-prod eyre-id %'nudge.sig' 'nudge')
     %post-brief-wake        (serve-prod eyre-id %'brief.sig' 'brief')
@@ -3884,32 +3886,43 @@
   (over:io (rf up / %'offer-answers.json') [[/ %json] [%o (~(del by ans) (answer-key ref s))]])
 ::  +take-position: a ship's owner shares where they are (version 88):
 ::  kept, the latest only, when a person here carries that ship; any
-::  other ship's is refused and noted. The first fix of a share tells
-::  the owner's phone who is sharing, and for how long (version 137)
+::  other ship's is an ask, kept for the owner to accept or decline
+::  (version 137). The first fix of a share tells the owner's phone who
+::  is sharing, and for how long; the first of an ask, who asks
 ::
 ++  take-position
   |=  [src=@p jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
-  =/  who=(list loaded:orr)
-    (skim all |=(l=loaded:orr &(=(%person kind.body.l) =(`src ship.body.l) !=('person/me' id.l))))
-  ?~  who  (note-inbox 'position' | 'no person here carries this ship' (scot %p src))
   ?.  &((coordinate:orr (gs:orr jon 'lat') 90) (coordinate:orr (gs:orr jon 'lon') 180))
     (note-inbox 'position' | 'lat, lon: expected decimal degrees' (scot %p src))
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 0)
+  =/  who=(list loaded:orr)  (carriers all src)
   ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
   ;<  now=@da  bind:m  get-time:io
+  =/  key=@t  (scot %p src)
+  =/  asks=(map @t json)  =/(a (gj:orr doc 'asks') ?:(?=([%o *] a) p.a ~))
+  =/  verdict  (loc-asking:orr ?=(^ who) (strings:orr (ga:orr doc 'declined')) asks key now)
+  ?:  ?=(%declined verdict)  (note-inbox 'position' | 'the owner declined this ship' key)
+  ?:  ?=(%full verdict)  (note-inbox 'position' | 'twenty other ships ask already' key)
+  ?~  who
+    ::  an ask: the latest fix, and when the ship first asked
+    =/  asked=@t  ?:(?=(%again verdict) (gs:orr (~(got by asks) key) 'asked') (en-iso:orr now))
+    ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'asks' [%o (~(put by asks) key (loc-ask-entry:orr jon asked))])])
+    ;<  ~  bind:m
+      ?.  ?=(%new verdict)  (pure:m ~)
+      (notify-owner (cat 3 'orrery-location-ask-' key) 'Location sharing' (rap 3 key ' wants to share where they are' ~))
+    (note-inbox 'position' & 'an ask: no person here carries this ship' key)
   =/  in=json  (gj:orr doc 'in')
   ::  a share is new here when no entry for the ship shows: none, or one
   ::  whose time passed that the pass has not dropped yet (version 137)
   =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
   =/  new=?  ?~(was & !(loc-in-live:orr u.was now))
-  =/  one=json
-    %-  pairs:enjs:format
-    :~  ['id' s+id.i.who]  ['name' s+name.body.i.who]  ['lat' s+(gs:orr jon 'lat')]  ['lon' s+(gs:orr jon 'lon')]
-        ['acc' s+(gs:orr jon 'acc')]  ['at' s+(gs:orr jon 'at')]  ['until' (gj:orr jon 'until')]  ['home' (gj:orr jon 'home')]
-    ==
-  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) (scot %p src) one))])
+  =/  one=json  (loc-in-entry:orr id.i.who name.body.i.who jon)
+  =/  next=json  (set-key:orr doc 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) (scot %p src) one))
+  ::  an ask from before a person here carried the ship is done with
+  =?  next  (~(has by asks) key)  (set-key:orr next 'asks' [%o (~(del by asks) key)])
+  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] next])
   ;<  ~  bind:m
     ?.  new  (pure:m ~)
     %^  notify-owner  (cat 3 'orrery-location-' (scot %p src))  'Location sharing'
@@ -3917,7 +3930,7 @@
   (note-inbox 'position' & '' (scot %p src))
 ::  +take-position-end: a ship stops sharing where its owner is. The
 ::  owner's phone is told when its fix still showed (version 137): a
-::  share whose time had passed already went quietly
+::  share whose time had passed already went quietly, and so does an ask
 ::
 ++  take-position-end
   |=  src=@p
@@ -3927,7 +3940,10 @@
   ;<  now=@da  bind:m  get-time:io
   =/  in=json  (gj:orr doc 'in')
   =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
-  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' ?:(?=([%o *] in) (del-key:orr in (scot %p src)) [%o ~]))])
+  =/  asks=json  (gj:orr doc 'asks')
+  =/  next=json  (set-key:orr doc 'in' ?:(?=([%o *] in) (del-key:orr in (scot %p src)) [%o ~]))
+  =?  next  ?=([%o *] asks)  (set-key:orr next 'asks' (del-key:orr asks (scot %p src)))
+  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] next])
   ;<  ~  bind:m
     ?.  &(?=(^ was) (loc-in-live:orr u.was now))  (pure:m ~)
     =/  name=@t  (gs:orr u.was 'name')
@@ -4830,7 +4846,7 @@
   ::  the writer took the poke, which is not the same as having made the
   ::  bodies: a row applied to a body not there yet is dropped unseen
   ;<  made=?  bind:m
-    (await-bodies (murn fresh |=([b=bid:orr *] ?:((~(has in held) b) ~ `b))))
+    (await-bodies 0 (murn fresh |=([b=bid:orr *] ?:((~(has in held) b) ~ `b))))
   ?.  made  (pure:m |)
   ::  past the wait, so a page read again does not ask twice
   ;<  ~  bind:m  (send-ops asks)
@@ -5100,7 +5116,7 @@
 ::  answers whether they all do
 ::
 ++  await-bodies
-  |=  ids=(list bid:orr)
+  |=  [up=@ud ids=(list bid:orr)]
   =/  m  (fiber:fiber:nexus ,?)
   ^-  form:m
   =/  tries=@ud  20
@@ -5113,7 +5129,7 @@
     ?~  todo  (pure:n missing)
     =/  pk  (parse-bid:orr i.todo)
     ?~  pk  $(todo t.todo)
-    ;<  ex=?  bind:n  (peek-exists:io (rf 0 (body-dir kind.u.pk slug.u.pk) %body))
+    ;<  ex=?  bind:n  (peek-exists:io (rf up (body-dir kind.u.pk slug.u.pk) %body))
     $(todo t.todo, missing ?:(ex missing [i.todo missing]))
   ?~  gone  (pure:m &)
   ?:  =(0 tries)  (pure:m |)
@@ -5169,16 +5185,25 @@
     |=  [s=@p body=json]
     ^-  remote-poke
     [s [%& orrery-instance %'shares.sig'] (loc-wire:orr s now) body]
+  ::  read again after the wait, so an ask, an accept or a decline made
+  ::  meanwhile stays (version 137). The grants are the pass's own
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'location.json'))
   ::  a peer's entry past its time goes
-  =/  in=json  (gj:orr doc 'in')
+  =/  in=json  (gj:orr cur 'in')
   =/  live-in=json
     ?.  ?=([%o *] in)  [%o ~]
     :-  %o
     %-  ~(gas by *(map @t json))
     %+  skim  ~(tap by p.in)
     |=([k=@t v=json] (loc-in-live:orr v now))
-  =/  next=json  (pairs:enjs:format ~[['out' a+(turn keep.plan en-loc-grant:orr)] ['in' live-in]])
-  ?:  =(next doc)  (pure:m ~)
+  ::  and an ask whose fix is a day old (version 137); what else the file
+  ::  holds, the ships declined, stays
+  =/  asks=json  (gj:orr cur 'asks')
+  =/  next=json  (set-key:orr (set-key:orr cur 'out' a+(turn keep.plan en-loc-grant:orr)) 'in' live-in)
+  =?  next  ?=([%o *] asks)
+    %^  set-key:orr  next  'asks'
+    [%o (~(gas by *(map @t json)) (skim ~(tap by p.asks) |=([k=@t v=json] (loc-fresh:orr v now))))]
+  ?:  =(next cur)  (pure:m ~)
   (over:io (rf 0 / %'location.json') [[/ %json] next])
 ::  +serve-location: what the owner shares and with whom, and the peers
 ::  sharing with them, each with how far from home; the people here with
@@ -5210,10 +5235,18 @@
       =/  d  (metres-between:orr u.home [(gs:orr v 'lat') (gs:orr v 'lon')])
       ?~(d ~ `(div (add u.d 500) 1.000))
     `(set-key:orr (set-key:orr v 'ship' s+k) 'km_from_home' ?~(km ~ (numb:enjs:format u.km)))
+  ::  the ships no person here carries that ask to share (version 137)
+  =/  asks=json  (gj:orr doc 'asks')
+  =/  ask-list=(list json)
+    ?.  ?=([%o *] asks)  ~
+    %+  murn  ~(tap by p.asks)
+    |=  [k=@t v=json]
+    ?.  (loc-fresh:orr v now)  ~
+    `(set-key:orr v 'ship' s+k)
   %^  send-json  eyre-id  200
   %-  pairs:enjs:format
   :~  ['out' a+(turn (skim (de-loc-grants:orr doc) |=(g=loc-grant:orr (loc-live:orr g now))) en-loc-grant:orr)]
-      ['in' a+ins]  ['peers' a+peers]
+      ['in' a+ins]  ['peers' a+peers]  ['asks' a+ask-list]
   ==
 ::  +serve-location-share: share the owner's position with a ship for a
 ::  while: {"ship", "hours" or "until", "home", "precision": "exact" or
@@ -5272,6 +5305,91 @@
   ;<  no=(list remote-poke)  bind:m
     (remote-pokes-wait ~[[u.shp [%& orrery-instance %'shares.sig'] (loc-wire:orr u.shp now) (pairs:enjs:format ~[['action' s+'position-end']])]])
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' [%b =(~ no)]]]))
+::  +carriers: the people here who carry a ship, person/me aside
+::
+++  carriers
+  |=  [all=(list loaded:orr) s=@p]
+  ^-  (list loaded:orr)
+  (skim all |=(l=loaded:orr &(=(%person kind.body.l) =(`s ship.body.l) !=('person/me' id.l))))
+::  +serve-location-accept: the owner takes a ship's ask to share where
+::  they are (version 137): {"ship"}. A person here carries the ship
+::  from now, the one that does already or one made for it, named as the
+::  ship, and the ask's fix shows as any peer's
+::
+++  serve-location-accept
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  shp=(unit @p)  (slaw %p (gs:orr jon 'ship'))
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  =/  key=@t  (scot %p u.shp)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
+  ?.  (loc-fresh:orr (gj:orr (gj:orr doc 'asks') key) now)  (send-err eyre-id 404 'no ask from that ship')
+  ;<  all=(list loaded:orr)  bind:m  (load-bodies 1)
+  =/  who=(list loaded:orr)  (carriers all u.shp)
+  ;<  got=(each [id=@t name=@t] [code=@ud why=@t])  bind:m
+    ?^  who  (pure:(fiber:fiber:nexus ,(each [id=@t name=@t] [code=@ud why=@t])) &+[id.i.who name.body.i.who])
+    (make-carrier all u.shp)
+  ?:  ?=(%| -.got)  (send-err eyre-id code.p.got why.p.got)
+  ::  read again: a newer fix may have come while the person was made
+  ;<  cur=json  bind:m  (read-json (rf 1 / %'location.json'))
+  =/  asks=json  (gj:orr cur 'asks')
+  =/  ask=json  (gj:orr asks key)
+  =/  in=json  (gj:orr cur 'in')
+  =/  next=json  (set-key:orr cur 'asks' ?:(?=([%o *] asks) (del-key:orr asks key) [%o ~]))
+  =?  next  ?=([%a *] (gj:orr cur 'declined'))
+    (set-key:orr next 'declined' a+(turn (skip (strings:orr (ga:orr cur 'declined')) |=(d=@t =(d key))) |=(d=@t `json`s+d)))
+  ::  an ask a stop took away meanwhile leaves nothing to show
+  =?  next  (loc-fresh:orr ask now)
+    (set-key:orr next 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) key (loc-in-entry:orr id.p.got name.p.got ask)))
+  ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] next])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['id' s+id.p.got]]))
+::  +make-carrier: a person for a ship, named as the ship, at
+::  person/<ship> unless another body holds that id, then with four hex
+::  digits after it. Answers once the writer has made it
+::
+++  make-carrier
+  |=  [all=(list loaded:orr) s=@p]
+  =/  m  (fiber:fiber:nexus ,(each [id=@t name=@t] [code=@ud why=@t]))
+  ^-  form:m
+  ;<  our=@p  bind:m  get-our:io
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  base=bid:orr  (mirror-target:orr our s ~ 'person/me')
+  =/  id=bid:orr
+    ?~  (loaded-of:orr all base)  base
+    (rap 3 base '-' (crip ((x-co:co 4) (end [3 2] eny))) ~)
+  ?^  (loaded-of:orr all id)  (pure:m |+[409 'the new person id is taken; accept again'])
+  =/  name=@t  (scot %p s)
+  ;<  ~  bind:m
+    %+  poke-writer  1
+    %-  pairs:enjs:format
+    :~  ['op' s+'upsert-body']
+        ['body' (pairs:enjs:format ~[['id' s+id] ['name' s+name] ['ship' s+name]])]
+    ==
+  ;<  made=?  bind:m  (await-bodies 1 ~[id])
+  ?.  made  (pure:m |+[500 'the person was not written in time; try again'])
+  (pure:m &+[id name])
+::  +serve-location-decline: the owner turns a ship's ask down (version
+::  137): {"ship"}. Its fixes are dropped from now, unasked and
+::  unnoticed, until a person here comes to carry it
+::
+++  serve-location-decline
+  |=  [eyre-id=@ta jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  shp=(unit @p)  (slaw %p (gs:orr jon 'ship'))
+  ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
+  =/  key=@t  (scot %p u.shp)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
+  =/  asks=json  (gj:orr doc 'asks')
+  ?.  (loc-fresh:orr (gj:orr asks key) now)  (send-err eyre-id 404 'no ask from that ship')
+  =/  declined=(list @t)  (loc-declined:orr (strings:orr (ga:orr doc 'declined')) key)
+  =/  next=json  (set-key:orr doc 'asks' (del-key:orr asks key))
+  ;<  ~  bind:m
+    (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr next 'declined' a+(turn declined |=(d=@t `json`s+d)))])
+  (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&]]))
 ::  +take-offer: a host offers a body. An offer for a share already
 ::  accepted narrows its mode in place; a wider one waits for an accept.
 ::

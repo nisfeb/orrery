@@ -112,6 +112,9 @@
     ['GET' `path`~[%api %exec %last] %get-exec-last %own]
     ['GET' `path`~[%api %calendar %last] %get-calendar-last %own]
     ['POST' `path`~[%api %exec %wake] %post-exec-wake %own]
+    ['GET' `path`~[%api %location] %get-location %own]
+    ['POST' `path`~[%api %location %accept] %post-location-accept %own]
+    ['POST' `path`~[%api %location %decline] %post-location-decline %own]
     ==
   ;:  weld
     %+  expect-eq
@@ -1683,6 +1686,70 @@
     %+  expect-eq
       !>((plan ~[[~nec end] [~zod (fix '39.78' '-89.65' '1000' g)]] ~[g(sent `at, left &) g(ship ~bud, sent `at)]))
     !>((loc-plan:orr ~[g(ship ~nec, until `(sub now ~s1)) g g(ship ~bud, sent `at)] now pos away))
+  ==
+::  a fix from a ship no person here carries is an ask (version 137)
+++  test-location-asking
+  =/  fix  |=(at=@da `json`(pairs:enjs:format ~[['lat' s+'39.78'] ['lon' s+'-89.65'] ['at' s+(en-iso:orr at)]]))
+  =/  fresh=json  (fix (sub now ~h1))
+  =/  stale=json  (fix (sub now ~h25))
+  =/  twenty=(map @t json)  (malt (turn (gulf 1 20) |=(n=@ud [(scot %ud n) fresh])))
+  ;:  weld
+    ::  a ship a person carries is kept, declined or not, however many ask
+    (expect-eq !>(%keep) !>((loc-asking:orr & ~['~bus'] twenty '~bus' now)))
+    ::  from any other: new, or again while its ask shows
+    (expect-eq !>(%new) !>((loc-asking:orr | ~ ~ '~bus' now)))
+    (expect-eq !>(%again) !>((loc-asking:orr | ~ (malt ~[['~bus' fresh]]) '~bus' now)))
+    ::  an ask a day old counts as none, for the ship and for the cap
+    (expect-eq !>(%new) !>((loc-asking:orr | ~ (malt ~[['~bus' stale]]) '~bus' now)))
+    (expect-eq !>(%new) !>((loc-asking:orr | ~ (~(run by twenty) |=(* stale)) '~bus' now)))
+    ::  declined: dropped, before anything else
+    (expect-eq !>(%declined) !>((loc-asking:orr | ~['~nec' '~bus'] (malt ~[['~bus' fresh]]) '~bus' now)))
+    ::  twenty others ask: the twenty-first is dropped; one of the twenty asks again
+    (expect-eq !>(%full) !>((loc-asking:orr | ~ twenty '~bus' now)))
+    (expect-eq !>(%again) !>((loc-asking:orr | ~ twenty '7' now)))
+    (expect-eq !>(%new) !>((loc-asking:orr | ~ (~(del by twenty) '7') '~bus' now)))
+  ==
+::  an ask's age: its fix under a day old (version 137)
+++  test-location-fresh
+  =/  at  |=(d=@da `json`(pairs:enjs:format ~[['at' s+(en-iso:orr d)]]))
+  ;:  weld
+    (expect !>((loc-fresh:orr (at (sub now ~h23)) now)))
+    (expect !>(!(loc-fresh:orr (at (sub now ~h25)) now)))
+    (expect !>(!(loc-fresh:orr (pairs:enjs:format ~[['at' s+'soon']]) now)))
+    (expect !>(!(loc-fresh:orr ~ now)))
+  ==
+::  an ask kept, and the accept's move of it into in (version 137)
+++  test-location-ask-entry
+  =/  jon=json
+    %-  pairs:enjs:format
+    :~  ['action' s+'position']  ['lat' s+'39.78']  ['lon' s+'-89.65']  ['acc' s+'1000']
+        ['at' s+'2026-09-18T11:50:00Z']  ['until' ~]  ['home' b+&]
+    ==
+  =/  ask=json  (loc-ask-entry:orr jon '2026-09-18T11:00:00Z')
+  ;:  weld
+    %+  expect-eq
+      !>  %-  pairs:enjs:format
+          :~  ['lat' s+'39.78']  ['lon' s+'-89.65']  ['acc' s+'1000']  ['at' s+'2026-09-18T11:50:00Z']
+              ['until' ~]  ['home' b+&]  ['asked' s+'2026-09-18T11:00:00Z']
+          ==
+    !>(ask)
+    ::  what the inbox keeps for a person here, from the poke or from its ask
+    %+  expect-eq
+      !>  %-  pairs:enjs:format
+          :~  ['id' s+'person/bus']  ['name' s+'~bus']  ['lat' s+'39.78']  ['lon' s+'-89.65']  ['acc' s+'1000']
+              ['at' s+'2026-09-18T11:50:00Z']  ['until' ~]  ['home' b+&]
+          ==
+    !>((loc-in-entry:orr 'person/bus' '~bus' jon))
+    (expect-eq !>((loc-in-entry:orr 'person/bus' '~bus' jon)) !>((loc-in-entry:orr 'person/bus' '~bus' ask)))
+  ==
+::  the ships declined: newest first, once each, two hundred at most
+++  test-location-declined
+  =/  full=(list @t)  (turn (gulf 1 200) |=(n=@ud (scot %ud n)))
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['~bus' '~nec']) !>((loc-declined:orr ~['~nec'] '~bus')))
+    (expect-eq !>(`(list @t)`~['~bus' '~nec']) !>((loc-declined:orr ~['~nec' '~bus'] '~bus')))
+    (expect-eq !>(200) !>((lent (loc-declined:orr full '~bus'))))
+    (expect-eq !>(['~bus' '199']) !>([(snag 0 (loc-declined:orr full '~bus')) (snag 199 (loc-declined:orr full '~bus'))]))
   ==
 ::  the owner's notice that a peer began to share (version 137)
 ++  test-location-start-said

@@ -1986,6 +1986,14 @@ curl('DELETE', API + '/body/' + TWB)
 print('== location sharing')
 code, d = curl('GET', API + '/location')
 check('the location route answers what is shared, with whom, and who could be', code == 200 and all(k in dictish(d) for k in ('out', 'in', 'peers')), (code, d))
+# asks (version 137): a fix from a ship no person carries waits for the owner; the two-ship part is
+# scripts/location-matrix.py's to add
+check('and the ships that ask to share, a list', isinstance(dictish(d).get('asks'), list), d)
+for verb in ('accept', 'decline'):
+    code, d = curl('POST', API + '/location/' + verb, {'ship': 'not-a-ship'})
+    check(verb + ' with no ship is a 400', code == 400 and dictish(d).get('error') == 'ship: expected an @p', (code, d))
+    code, d = curl('POST', API + '/location/' + verb, {'ship': '~sampel-palnet'})
+    check(verb + ' with no ask from that ship is a 404', code == 404 and dictish(d).get('error') == 'no ask from that ship', (code, d))
 code, d = curl('POST', API + '/location/share', {'ship': 'not-a-ship'})
 check('a share to no ship is a 400', code == 400, (code, d))
 code, d = curl('POST', API + '/location/share', {'ship': str(curl('GET', HOST + '/~/host')[1]).strip()})

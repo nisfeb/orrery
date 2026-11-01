@@ -9237,9 +9237,65 @@
   ^-  ?
   =/  u=(unit @da)  (de-iso (gs v 'until'))
   ?^  u  (gth u.u now)
+  (loc-fresh v now)
+::  +loc-fresh: an entry's fix is under a day old; one with no time the
+::  ship can read is not
+::
+++  loc-fresh
+  |=  [v=json now=@da]
+  ^-  ?
   =/  at=(unit @da)  (de-iso (gs v 'at'))
   ?~  at  |
   (gth (add u.at ~d1) now)
+::  +loc-fields: a fix's fields as the inbox keeps them, from a position
+::  poke or from an ask, which keeps the same
+::
+++  loc-fields
+  |=  fix=json
+  ^-  (list [@t json])
+  :~  ['lat' s+(gs fix 'lat')]  ['lon' s+(gs fix 'lon')]  ['acc' s+(gs fix 'acc')]  ['at' s+(gs fix 'at')]
+      ['until' (gj fix 'until')]  ['home' (gj fix 'home')]
+  ==
+::  +loc-in-entry: a peer's fix kept in location.json's in, under the
+::  person here who carries its ship
+::
+++  loc-in-entry
+  |=  [id=@t name=@t fix=json]
+  ^-  json
+  (pairs:enjs:format (weld `(list [@t json])`~[['id' s+id] ['name' s+name]] (loc-fields fix)))
+::  +loc-ask-entry: a fix from a ship no person here carries, kept in
+::  asks until the owner accepts or declines it, with when it first
+::  asked (version 137)
+::
+++  loc-ask-entry
+  |=  [fix=json asked=@t]
+  ^-  json
+  (pairs:enjs:format (snoc (loc-fields fix) ['asked' s+asked]))
+::  +loc-asking: what a position does here (version 137). A ship a
+::  person carries is kept as before; from any other ship it is an ask:
+::  dropped when the owner declined that ship, again when its ask still
+::  shows, new otherwise, unless twenty others show. An ask past a day
+::  counts as none
+::
+++  max-loc-asks  20
+++  loc-asking
+  |=  [known=? declined=(list @t) asks=(map @t json) src=@t now=@da]
+  ^-  ?(%keep %declined %again %full %new)
+  ?:  known  %keep
+  ?:  (lien declined |=(d=@t =(d src)))  %declined
+  =/  had=(unit json)  (~(get by asks) src)
+  ?:  &(?=(^ had) (loc-fresh u.had now))  %again
+  =/  others=@ud
+    (lent (skim ~(tap by (~(del by asks) src)) |=([k=@t v=json] (loc-fresh v now))))
+  ?:  (gte others max-loc-asks)  %full
+  %new
+::  +loc-declined: the declined ships with one more, newest first, two
+::  hundred at most (version 137)
+::
+++  loc-declined
+  |=  [declined=(list @t) src=@t]
+  ^-  (list @t)
+  (scag 200 `(list @t)`[src (skip declined |=(d=@t =(d src)))])
 ::  +loc-start-said: the owner's notice that a peer has begun to share
 ::  where they are, and until when (version 137)
 ::
@@ -12180,6 +12236,8 @@
   ?:  &(=('POST' meth) ?=([%api %pairing ~] suffix))            `[%post-pairing %own]
   ?:  &(=('POST' meth) ?=([%api %location %share ~] suffix))    `[%post-location-share %own]
   ?:  &(=('DELETE' meth) ?=([%api %location %share @ ~] suffix))  `[%delete-location-share %own]
+  ?:  &(=('POST' meth) ?=([%api %location %accept ~] suffix))   `[%post-location-accept %own]
+  ?:  &(=('POST' meth) ?=([%api %location %decline ~] suffix))  `[%post-location-decline %own]
   ?:  &(=('PUT' meth) ?=([%api %search ~] suffix))              `[%put-search %own]
   ?:  &(=('PUT' meth) ?=([%api %rhythm ~] suffix))              `[%put-rhythm %own]
   ?:  &(=('POST' meth) ?=([%api %nudge %wake ~] suffix))        `[%post-nudge-wake %own]
