@@ -2449,6 +2449,40 @@
     (expect-eq !>((retract-op:orr 'old-me' 'calendar: the event does not name the owner' 'calendar')) !>((rear ops.got)))
     (expect-eq !>(1) !>((lent ops:(plan old(retracted.obs &)))))
   ==
+::  a one-off already written is not read again: its title's new name
+::  makes no person, and the owner's row on it stays; the same event
+::  written for the first time does both (version 139)
+++  test-plan-events-written
+  =/  store=json
+    %-  jo
+    '{"events": [{"id": "u-ballet", "cal": "home", "cat": "timed", "kind": "once", "meta": {"name": "Wren- Ballet", "location": "", "note": "", "tags": []}}]}'
+  =/  at=@da  ~2026.9.22..15.00.00
+  =/  order=cal-order:orr
+    %+  gas:on-cal-order:orr  *cal-order:orr
+    ~[[at (sy ~[`cal-ref:orr`['u-ballet' 0 at (add at ~h1)]])]]
+  =/  sit=@t  'situation/2026-09-22-wren-ballet'
+  =/  me=row:orr
+    :-  'ballet-me'
+    :*  sit  'participants'  (pairs:enjs:format ~[['ref' s+'person/me']])
+        cal-now  ~  100  ['calendar' 'home/u-ballet']  'calendar'  cal-now  |  ''
+    ==
+  =/  all=(list loaded:orr)
+    :~  (mkb 'person/me' %person 'Jackson' ~ ~ cal-now)
+        [sit [%situation 'Wren- Ballet' ~ cal-now ~] ~[me]]
+    ==
+  =/  key=@t  (rap 3 'occ/home/u-ballet/' (crip (a-co:co (ms-of:orr at))) ~)
+  =/  plan
+    |=  seen=(map @t @t)
+    (plan-events:orr (events-of:orr store) order all (sy ~['participants']) cal-now seen 'America/New_York')
+  =/  first=event-plan:orr  (plan ~)
+  =/  later=event-plan:orr  (plan (my ~[[key 's']]))
+  =/  made  |=(p=event-plan:orr (zing (turn ops.p |=(o=json (turn (ga:orr o 'bodies') |=(b=json (gs:orr b 'id')))))))
+  =/  ops  |=(p=event-plan:orr (turn ops.p |=(o=json (gs:orr o 'op'))))
+  ;:  weld
+    (expect-eq !>(`(list @t)`~['person/wren']) !>((made first)))
+    (expect !>(?=(^ (find ~['retract'] (ops first)))))
+    (expect-eq !>(`(list json)`~) !>(ops.later))
+  ==
 ::  once the coffee is behind, its situation gets the past tense at
 ::  the event's time; once the calendar drops it while still ahead,
 ::  the situation is cancelled, once

@@ -10861,6 +10861,25 @@
   ::  the owner's calendar is the owner's to organize, but they are at
   ::  an event only when it names them or names nobody else
   =/  at-it  |=(p=[ids=(list bid) made=(list json) me=?] ^-(? |(me.p ?=(~ ids.p))))
+  ::  before version 60 the owner stood in every event; a row that says
+  ::  so of an event that names others is retracted. Judged where who
+  ::  the event names is read anyway, a series every pass and a one-off
+  ::  as it is written: reading the names in a long note is the dear
+  ::  step, and doing it for every event every pass held a ship with
+  ::  1,400 events for twelve seconds (version 139)
+  =/  unsaid
+    |=  [hit=(unit loaded) with-me=?]
+    ^-  (list json)
+    ?:  |(with-me ?=(~ hit))  ~
+    %+  murn  rows.u.hit
+    |=  r=row
+    ^-  (unit json)
+    ?.  ?&  =('participants' attr.obs.r)  !retracted.obs.r
+            =('calendar' kind.source.obs.r)  ?=([%o *] value.obs.r)
+            =('person/me' (ref-or-text value.obs.r))
+        ==
+      ~
+    `(retract-op id.r 'calendar: the event does not name the owner' 'calendar')
   ::  a person made here is known to the next event of the pass
   =/  learn
     |=  [k=(map @t bid) made=(list json)]
@@ -10886,29 +10905,9 @@
       ?~  hit  |
       =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
       &(!=('' cur) !=(cur kind.ev))
-    ::  before version 60 the owner stood in every event; a row that
-    ::  says so of an event that names others is retracted. The rows
-    ::  are looked at first, and who the event names is read only for a
-    ::  body holding such a row: reading the names in a long note is the
-    ::  dear step, and doing it for every event every pass held a ship
-    ::  with 1,400 events for twelve seconds (version 139)
-    =/  mine=(list row)
-      ?~  hit  ~
-      %+  skim  rows.u.hit
-      |=  r=row
-      ?&  =('participants' attr.obs.r)  !retracted.obs.r
-          =('calendar' kind.source.obs.r)  ?=([%o *] value.obs.r)
-          =('person/me' (ref-or-text value.obs.r))
-      ==
-    =/  unsaid=(list json)
-      ?~  mine  ~
-      ?:  (at-it (cast ev known))  ~
-      (turn mine |=(r=row (retract-op id.r 'calendar: the event does not name the owner' 'calendar')))
-    =.  drops  (weld drops unsaid)
     ::  nothing in the window says nothing more (but a series held at
     ::  the wrong cadence is still corrected), and a cancel below sees
-    ::  only a one-off the calendar has dropped altogether. The owner's
-    ::  rows above are judged for every event the calendar holds.
+    ::  only a one-off the calendar has dropped altogether
     ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
     ?.  repeats
       ::  a one-off: one situation, one occurrence
@@ -10927,6 +10926,7 @@
       ::  who it names, read only for a one-off being written
       =/  people  (cast ev known)
       =/  with-me=?  (at-it people)
+      =.  drops  (weld drops (unsaid hit with-me))
       =.  bodies  (weld bodies made.people)
       =.  known  (learn known made.people)
       =?  bodies  ?=(~ hit)
@@ -10959,6 +10959,7 @@
     ::  content, so a series reads it every pass
     =/  people  (cast ev known)
     =/  with-me=?  (at-it people)
+    =.  drops  (weld drops (unsaid hit with-me))
     =.  bodies  (weld bodies made.people)
     =.  known  (learn known made.people)
     =/  id=bid  ?^(hit id.u.hit (cat 3 'activity/' (slug name.ev)))
