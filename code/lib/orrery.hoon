@@ -10858,6 +10858,14 @@
   =/  ids=(set @t)  (sy (turn events |=(ev=cal-event id.ev)))
   =/  idx=event-index  (index-events all)
   =/  occ  (occurrences-in order from to)
+  ::  the owner's calendar is the owner's to organize, but they are at
+  ::  an event only when it names them or names nobody else
+  =/  at-it  |=(p=[ids=(list bid) made=(list json) me=?] ^-(? |(me.p ?=(~ ids.p))))
+  ::  a person made here is known to the next event of the pass
+  =/  learn
+    |=  [k=(map @t bid) made=(list json)]
+    ^-  (map @t bid)
+    (roll made |=([b=json acc=_k] (~(put by acc) (lower (gs b 'name')) (gs b 'id'))))
   =/  todo=(list cal-event)  events
   |-
   ?^  todo
@@ -10878,34 +10886,30 @@
       ?~  hit  |
       =/  cur=@t  (winner-text (fold rows.u.hit multi now) 'cadence')
       &(!=('' cur) !=(cur kind.ev))
-    =/  people  (cast ev known)
-    ::  the owner's calendar is the owner's to organize, but they are
-    ::  at an event only when it names them or names nobody else
-    =/  with-me=?  |(me.people ?=(~ ids.people))
     ::  before version 60 the owner stood in every event; a row that
-    ::  says so of an event that names others is retracted
-    =/  unsaid=(list json)
-      ?:  |(with-me ?=(~ hit))  ~
-      %+  murn  rows.u.hit
+    ::  says so of an event that names others is retracted. The rows
+    ::  are looked at first, and who the event names is read only for a
+    ::  body holding such a row: reading the names in a long note is the
+    ::  dear step, and doing it for every event every pass held a ship
+    ::  with 1,400 events for twelve seconds (version 139)
+    =/  mine=(list row)
+      ?~  hit  ~
+      %+  skim  rows.u.hit
       |=  r=row
-      ^-  (unit json)
-      ?.  ?&  =('participants' attr.obs.r)  !retracted.obs.r
-              =('calendar' kind.source.obs.r)  ?=([%o *] value.obs.r)
-              =('person/me' (ref-or-text value.obs.r))
-          ==
-        ~
-      `(retract-op id.r 'calendar: the event does not name the owner' 'calendar')
+      ?&  =('participants' attr.obs.r)  !retracted.obs.r
+          =('calendar' kind.source.obs.r)  ?=([%o *] value.obs.r)
+          =('person/me' (ref-or-text value.obs.r))
+      ==
+    =/  unsaid=(list json)
+      ?~  mine  ~
+      ?:  (at-it (cast ev known))  ~
+      (turn mine |=(r=row (retract-op id.r 'calendar: the event does not name the owner' 'calendar')))
     =.  drops  (weld drops unsaid)
     ::  nothing in the window says nothing more (but a series held at
     ::  the wrong cadence is still corrected), and a cancel below sees
     ::  only a one-off the calendar has dropped altogether. The owner's
     ::  rows above are judged for every event the calendar holds.
     ?:  &(?=(~ occs) !&(repeats stale))  $(todo t.todo)
-    =.  bodies  (weld bodies made.people)
-    ::  a person made here is known to the next event of the pass
-    =.  known
-      %+  roll  made.people
-      |=([b=json acc=_known] (~(put by acc) (lower (gs b 'name')) (gs b 'id')))
     ?.  repeats
       ::  a one-off: one situation, one occurrence
       =/  occ=[idx=@ud l=@da r=@da]  ?~(occs [0 now now] i.occs)
@@ -10920,6 +10924,11 @@
       =/  gkey=@t  (cat 3 'gone/' id.ev)
       =/  back=?  &(?=(^ hit) (~(has by seen) gkey))
       ?:  &(!back |(=('f' mark) &(=('s' mark) !behind)))  $(todo t.todo)
+      ::  who it names, read only for a one-off being written
+      =/  people  (cast ev known)
+      =/  with-me=?  (at-it people)
+      =.  bodies  (weld bodies made.people)
+      =.  known  (learn known made.people)
       =?  bodies  ?=(~ hit)
         (snoc bodies (pairs:enjs:format ~[['id' s+id] ['name' s+name.ev]]))
       =?  made  ?=(~ hit)  +(made)
@@ -10946,7 +10955,12 @@
         seen  (~(put by (~(del by seen) gkey)) key ?:(behind 'f' 's'))
       ==
     ::  a series: one activity, its content once, each occurrence
-    ::  behind as last, the next as next
+    ::  behind as last, the next as next. Who it names is part of the
+    ::  content, so a series reads it every pass
+    =/  people  (cast ev known)
+    =/  with-me=?  (at-it people)
+    =.  bodies  (weld bodies made.people)
+    =.  known  (learn known made.people)
     =/  id=bid  ?^(hit id.u.hit (cat 3 'activity/' (slug name.ev)))
     =/  all-occs=(list [idx=@ud l=@da r=@da])  occs
     =/  behind=(list [idx=@ud l=@da r=@da])  (skim all-occs |=(o=[idx=@ud l=@da r=@da] (lte l.o now)))
