@@ -10556,6 +10556,13 @@
     =/  e=@t  (gs payload.a 'event')
     ?:(=('' e) ~ `e)
   =/  idx=event-index  (index-events all)
+  ::  one walk of the order for every event asked about below: the 90
+  ::  days ahead, and a day either side of any occurrence in them
+  =/  occ  (occurrences-in order (sub now ~d1) (add now ~d91))
+  =/  span
+    |=  [id=@t a=@da b=@da]
+    ^-  (list [idx=@ud l=@da r=@da])
+    (skim (~(gut by occ) id ~) |=([* l=@da *] &((gte l a) (lte l b))))
   %+  murn  own
   |=  ev=cal-event
   ^-  (unit json)
@@ -10563,7 +10570,7 @@
   =/  title=@t  (normalize-title name.ev)
   ?:  =('' title)  ~
   =/  ahead=(list [idx=@ud l=@da r=@da])
-    (skim (occurrences id.ev order now (add now ~d90)) |=([* l=@da *] (gth l now)))
+    (skim (span id.ev now (add now ~d90)) |=([* l=@da *] (gth l now)))
   ?~  ahead  ~
   =/  at=@da  l.i.ahead
   =/  twin=(unit cal-event)
@@ -10571,7 +10578,7 @@
     :-  other
     |=  o=cal-event
     ?.  =(title (normalize-title name.o))  |
-    ?=(^ (occurrences id.o order (sub at ~d1) (add at ~d1)))
+    ?=(^ (span id.o (sub at ~d1) (add at ~d1)))
   ?~  twin  ~
   =/  about=(list json)
     =/  b=(unit loaded)  (~(get by uids.idx) id.u.twin)
@@ -10610,7 +10617,8 @@
   =/  f=@t  (lower (rsh [3 5] i.freq))
   ?:(=('' f) 'rrule' f)
 ::  +occurrences: an event's spans starting between from and to, from
-::  the calendar's order, oldest first, one per index
+::  the calendar's order, oldest first, one per index. A lookup in
+::  +occurrences-in, so a caller asking for many events builds that once
 ::
 ::  +soonest-start: the first occurrence of any event to start after
 ::  now, in the next two days: when the events reader must look again,
@@ -10621,29 +10629,39 @@
 ++  soonest-start
   |=  [events=(list cal-event) order=cal-order now=@da]
   ^-  (unit @da)
-  =/  to=@da  (add now ~d2)
+  =/  occ  (occurrences-in order now (add now ~d2))
   %+  roll  events
   |=  [ev=cal-event best=(unit @da)]
   =/  ls=(list @da)
-    (murn (occurrences id.ev order now to) |=([* l=@da *] ?:((gth l now) `l ~)))
+    (murn (~(gut by occ) id.ev ~) |=([* l=@da *] ?:((gth l now) `l ~)))
   ?~  ls  best
   ?~(best `i.ls `(min u.best i.ls))
 ++  occurrences
   |=  [id=@t order=cal-order from=@da to=@da]
   ^-  (list [idx=@ud l=@da r=@da])
+  (~(gut by (occurrences-in order from to)) id ~)
+::  +occurrences-in: every event's spans starting between from and to,
+::  by event id, in one walk of the calendar's order (version 139).
+::  Asking for each event in turn walked the whole window once per
+::  event: on 1,400 events, eight of the twenty seconds a calendar
+::  pass held the ship
+::
+++  occurrences-in
+  |=  [order=cal-order from=@da to=@da]
+  ^-  (map @t (list [idx=@ud l=@da r=@da]))
   =/  lo=(unit @da)  [~ ?:(=(0 from) `@da`0 `@da`(dec from))]
   =/  hi=(unit @da)  [~ `@da`+(to)]
   =/  ents=(list [@da (set cal-ref)])  (tap:on-cal-order (lot:on-cal-order order lo hi))
-  =|  seen=(set @ud)
-  =|  out=(list [idx=@ud l=@da r=@da])
-  |-
-  ?~  ents  (flop out)
-  =/  rs=(list cal-ref)
-    (sort (skim ~(tap in +.i.ents) |=(r=cal-ref =(id id.r))) |=([a=cal-ref b=cal-ref] (lth idx.a idx.b)))
-  |-
-  ?~  rs  ^$(ents t.ents)
-  ?:  (~(has in seen) idx.i.rs)  $(rs t.rs)
-  $(rs t.rs, seen (~(put in seen) idx.i.rs), out [[idx.i.rs l.i.rs r.i.rs] out])
+  ::  newest first while gathering, each index once per event
+  =/  got=(map @t [seen=(set @ud) out=(list [idx=@ud l=@da r=@da])])
+    %+  roll  ents
+    |=  [[* refs=(set cal-ref)] acc=(map @t [seen=(set @ud) out=(list [idx=@ud l=@da r=@da])])]
+    %+  roll  (sort ~(tap in refs) |=([a=cal-ref b=cal-ref] (lth idx.a idx.b)))
+    |=  [r=cal-ref a=_acc]
+    =/  cur=[seen=(set @ud) out=(list [idx=@ud l=@da r=@da])]  (~(gut by a) id.r [~ ~])
+    ?:  (~(has in seen.cur) idx.r)  a
+    (~(put by a) id.r [(~(put in seen.cur) idx.r) [[idx.r l.r r.r] out.cur]])
+  (~(run by got) |=([* out=(list [idx=@ud l=@da r=@da])] (flop out)))
 ::  +people-named: the people a text names, by the words the ship knows
 ::  them by: a whole word, case aside
 ::
@@ -10839,6 +10857,7 @@
   =|  drops=(list json)
   =/  ids=(set @t)  (sy (turn events |=(ev=cal-event id.ev)))
   =/  idx=event-index  (index-events all)
+  =/  occ  (occurrences-in order from to)
   =/  todo=(list cal-event)  events
   |-
   ?^  todo
@@ -10847,7 +10866,7 @@
     ::  an all-day or dated event's days are UTC days in the calendar;
     ::  the owner lives them on their own clock, midnight to midnight
     =/  occs=(list [idx=@ud l=@da r=@da])
-      =/  raw  (occurrences id.ev order from to)
+      =/  raw  (~(gut by occ) id.ev ~)
       ?.  ?=(?(%allday %date) cat.ev)  raw
       (turn raw |=([i=@ud l=@da r=@da] [i (unwall l tz) (unwall r tz)]))
     =/  repeats=?  |(!=('once' kind.ev) ?=([* ^] occs))
@@ -11132,6 +11151,8 @@
   ::  in the calendar; the owner's day as such a day is d0 to d1
   =/  d0=@da  =/(w (wall-of from tz) (sub w (mod w ~d1)))
   =/  d1=@da  (add d0 ~d1)
+  ::  a month back, so a span that began before the day is found
+  =/  occ  (occurrences-in order (sub from ~d31) to)
   =/  rows=(list [all=? at=@da text=@t])
     %-  zing
     %+  turn  events
@@ -11139,8 +11160,7 @@
     ^-  (list [all=? at=@da text=@t])
     =/  text=@t  ?:(=('' location.ev) name.ev (rap 3 name.ev ', ' location.ev ~))
     =/  timed=?  =('timed' cat.ev)
-    ::  a month back, so a span that began before the day is found
-    %+  murn  (occurrences id.ev order (sub from ~d31) to)
+    %+  murn  (~(gut by occ) id.ev ~)
     |=  [idx=@ud l=@da r=@da]
     ^-  (unit [all=? at=@da text=@t])
     ?:  timed

@@ -2186,6 +2186,29 @@
     (expect-eq !>(`(list @da)`~[~2026.9.20 ~2027.9.20]) !>((turn b |=([* l=@da *] l))))
     (expect-eq !>(`(list [@ud @da @da])`~) !>((occurrences:orr 'u-none' cal-order ~2026.9.1 ~2027.12.31)))
   ==
+::  every event's spans in one walk of the order: oldest first, an
+::  index once per event, two at one moment by index, the window's
+::  ends kept (version 139)
+++  test-occurrences-in
+  =/  t1=@da  ~2026.10.1..10.00.00
+  =/  t2=@da  ~2026.10.2..10.00.00
+  =/  t3=@da  ~2026.10.9..10.00.00
+  =/  order=cal-order:orr
+    %+  gas:on-cal-order:orr  *cal-order:orr
+    :~  [t1 (sy `(list cal-ref:orr)`~[['a' 0 t1 (add t1 ~h1)] ['b' 0 t1 (add t1 ~h2)]])]
+        [t2 (sy `(list cal-ref:orr)`~[['a' 3 t2 (add t2 ~h1)] ['a' 2 t2 (add t2 ~h1)] ['a' 0 t2 (add t2 ~h1)]])]
+        [t3 (sy `(list cal-ref:orr)`~[['b' 1 t3 (add t3 ~h2)]])]
+    ==
+  =/  got  (occurrences-in:orr order t1 t2)
+  ;:  weld
+    (expect-eq !>(`(list @ud)`~[0 2 3]) !>((turn (~(gut by got) 'a' ~) |=([i=@ud *] i))))
+    (expect-eq !>(`(list [@ud @da @da])`~[[0 t1 (add t1 ~h2)]]) !>((~(gut by got) 'b' ~)))
+    (expect-eq !>(`(list [@ud @da @da])`~[[0 t1 (add t1 ~h2)] [1 t3 (add t3 ~h2)]]) !>((occurrences:orr 'b' order t1 t3)))
+    ::  the same answer the fixture's own events give one at a time
+    %+  expect-eq
+      !>((occurrences:orr 'u-standup' cal-order ~2026.9.13 ~2026.9.27))
+      !>((~(gut by (occurrences-in:orr cal-order ~2026.9.13 ~2026.9.27)) 'u-standup' ~))
+  ==
 ++  test-possessed
   =/  known=(map @t bid:orr)  (my ~[['magnus' 'person/magnus'] ['linus' 'person/linus'] ['jackson' 'person/me']])
   =/  ev=cal-event:orr  (snag 0 (events-of:orr cal-store))
