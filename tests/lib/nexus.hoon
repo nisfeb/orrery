@@ -2173,7 +2173,7 @@
   =/  store=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 15) |=(n=@ud [(d17 n) (hd n (mul n 1.000))])))]
   =/  thin=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 13) |=(n=@ud [(d17 n) (hd n 4.000)])))]
   =/  plain=rhythm:orr  (de-rhythm:orr ~)
-  =/  own=rhythm:orr  (de-rhythm:orr (jo '{"quiet_from": "23:00", "quiet_to": "07:00", "family_from": "17:00", "family_to": "19:30", "evening_from": "19:30", "evening_to": "23:00", "weekend_from": "08:00", "weekend_to": "11:00", "per_window": 1, "young_age": 6, "young_share": 50}'))
+  =/  own=rhythm:orr  (de-rhythm:orr (jo '{"quiet_from": "23:00", "quiet_to": "07:00", "family_from": "17:00", "family_to": "19:30", "evening_from": "19:30", "evening_to": "23:00", "weekend_from": "08:00", "weekend_to": "11:00", "per_window": 1, "young_age": 6, "young_share": 50, "brief": true}'))
   ;:  weld
     ::  the clock: quiet from nine at night to seven in the morning
     ::  the defaults, for anyone: quiet nine at night to seven, evenings six to nine, weekend mornings
@@ -2188,6 +2188,13 @@
     (expect-eq !>(`(unit [@ud @ud])`~) !>(young.plain))
     (expect-eq !>('23:00') !>((gs:orr (en-rhythm:orr own) 'quiet_from')))
     (expect-eq !>(own) !>((de-rhythm:orr (en-rhythm:orr own))))
+    ::  the brief and the week's write-up are off unless turned on, each on
+    ::  its own, since each lands in lattice's journal (version 138)
+    (expect-eq !>([| |]) !>([brief.plain week.plain]))
+    (expect-eq !>([& |]) !>([brief.own week.own]))
+    (expect-eq !>(`json`[%b |]) !>((gj:orr (en-rhythm:orr plain) 'week_review')))
+    (expect-eq !>(&) !>(week:(de-rhythm:orr (jo '{"week_review": true}'))))
+    (expect-eq !>(|) !>(brief:(de-rhythm:orr (jo '{"brief": "yes"}'))))
     (expect !>((in-span:orr 30 1.380 420)))
     (expect !>(!(in-span:orr 600 1.380 420)))
     ::  a stretch: the latest block, ninety minutes or more, ending within seven of now

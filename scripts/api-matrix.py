@@ -1693,6 +1693,14 @@ owner_only('and to set', 'PUT', '/rhythm', {'per_window': 1})
 code, d = curl('PUT', API + '/rhythm', {'young_age': 5, 'young_share': 50})
 code, d = curl('GET', API + '/rhythm')
 check('an owner\'s share for younger children reads back', dictish(d).get('young_age') == 5 and dictish(d).get('young_share') == 50, d)
+# the brief and the week's write-up (version 138): off unless turned on, each on its own, since each lands in
+# lattice's journal; the wakes below and in the brief's section make one either way
+curl('PUT', API + '/rhythm', {'brief': True})
+code, d = curl('GET', API + '/rhythm')
+check('the brief turns on alone, and the week stays off (version 138)', dictish(d).get('brief') is True and dictish(d).get('week_review') is False, d)
+curl('PUT', API + '/rhythm', {'brief': False})
+code, d = curl('GET', API + '/rhythm')
+check('and the brief turns off again (version 138)', dictish(d).get('brief') is False, d)
 code, r0 = curl('GET', API + '/review/last')
 code, d = curl('POST', API + '/review/wake', {})
 rv = gate.wait('the review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r0).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}
@@ -2054,6 +2062,7 @@ check('the brief is made on a wake', code == 200, (code, d))
 brief = gate.wait('the brief record lands', lambda: (lambda b: b if b.get('day') and b.get('at') != dictish(b0).get('at') else None)(dictish(curl('GET', API + '/brief/last')[1])), 60) or {}
 today_local = brief.get('day')
 check('the brief record names the day, its tags and its text, with no word of replying', bool(today_local) and isinstance(brief.get('tags'), dict) and 'Waiting on you' in (brief.get('text') or '') and 'Reply with' not in (brief.get('text') or '') and brief.get('sent') is False, {k: brief.get(k) for k in ('day', 'sent', 'notes')})
+check('the wake makes one with the daily brief off (version 138)', bool(today_local) and dictish(curl('GET', API + '/rhythm')[1]).get('brief') is False, today_local)
 time.sleep(5)
 check('no brief reaches auspex (version 130)', brief_mails() == mails0, (mails0, brief_mails()))
 

@@ -793,8 +793,8 @@
   }
   function briefCard(last) {
     last = last || {};
-    var out = '<div class="card"><h2>Daily brief</h2><p class="muted">At seven on your clock the ship writes the day: the calendar, the actions waiting on you under tags, and the analyst\'s few lines. ' +
-      'Your phone\'s assistant reads it to you, and each day\'s brief is kept for your journal.</p>' +
+    var out = '<div class="card"><h2>Daily brief</h2><p class="muted">When you turn it on under Your day, at seven on your clock the ship writes the day: the calendar, the actions waiting on you under tags, and the analyst\'s few lines. ' +
+      'Your phone\'s assistant reads it to you, and each day\'s brief is kept for your journal. Make one now works either way.</p>' +
       '<p><button data-brief-wake="1">make one now</button></p>';
     if (last.at) {
       out += '<p class="muted">Last brief for ' + esc(last.day || '') + ' at ' + fmtTime(last.at) + '; ' + Object.keys(last.tags || {}).length + ' actions tagged.</p>';
@@ -880,7 +880,7 @@
     w = w || {};
     var h = w.health || {}, k = w.work || {}, r = w.review || {};
     var out = '<div class="card"><h2>The week</h2><p class="muted">Your phone sends a day of health (steps, workouts, sleep) and your computer a day of work; ' +
-      'the ship keeps sixty days, never as facts, and on Sunday at six it writes up the week for your journal: work, health, time with each child, and the week ahead.</p>';
+      'the ship keeps sixty days, never as facts, and when you turn it on under Your day, on Sunday at six it writes up the week for your journal: work, health, time with each child, and the week ahead.</p>';
     var days = w.healthDays || 0;
     out += '<p class="muted">' + (days ? 'Health: ' + days + ' day' + (days === 1 ? '' : 's') + ' kept' + (days < 14 ? '; the baseline needs 14' : '') + '.' : 'Health: nothing from your phone yet.') +
       (h.day ? ' Last, ' + esc(h.day) + ': ' + (h.steps != null ? esc(String(h.steps)) + ' steps' : 'no steps') + ', ' + (h.workouts || []).length + ' workout' + ((h.workouts || []).length === 1 ? '' : 's') + '.' : '') + '</p>';
@@ -899,6 +899,10 @@
       '<p>' + fld('weekend_from', 'and weekend mornings from', '09:00') + fld('weekend_to', 'to', '12:00') + '</p>' +
       '<p>' + fld('per_window', 'habits a window', '2') + fld('young_age', 'children under', '0') + fld('young_share', 'get this share of your time, %', '100') + '</p>' +
       '<p>' + fld('review_at', 'evening review reminder at', 'blank for none') + '</p>' +
+      // off unless turned on, since each one lands in lattice's journal (version 138)
+      '<p><label class="box"><input type="checkbox" name="brief"' + (rh.brief ? ' checked' : '') + '> write the daily brief at seven</label> ' +
+      '<label class="box"><input type="checkbox" name="week_review"' + (rh.week_review ? ' checked' : '') + '> write up the week on Sunday at six</label></p>' +
+      '<p class="muted">Each brief and each week\'s write-up is kept for your journal, which lattice shows under journal/.</p>' +
       '<p><button data-save-rhythm="1">save your day</button></p></div>';
     // outdoors (version 76): the weather from the National Weather Service, and Parks on the Air parks near you
     var od = w.outdoors || {}, wl = w.weather || {}, pl = w.parks || {};
@@ -2364,6 +2368,7 @@
       var rf = {};
       ['quiet_from', 'quiet_to', 'family_from', 'family_to', 'evening_from', 'evening_to', 'weekend_from', 'weekend_to', 'review_at'].forEach(function (k) { rf[k] = rv(k); });
       ['per_window', 'young_age', 'young_share'].forEach(function (k) { rf[k] = numOrNull(rv(k)); });
+      ['brief', 'week_review'].forEach(function (k) { rf[k] = !!view.querySelector('#rhythm input[name="' + k + '"]:checked'); });
       say('saving your day');
       post('/rhythm', rf, 'PUT').then(function () { dirty = false; say('your day saved'); }).catch(oops);
     } else if (b.dataset.locShare) {

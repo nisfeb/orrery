@@ -525,8 +525,8 @@
         ;<  ~  bind:m  (cancel-timer:io /watch)
         $
           ::  the daily brief (version 52): at seven on the owner's clock,
-          ::  one mail from the owner to the owner through auspex; the
-          ::  owner's wake sends one now
+          ::  once the owner turned it on (version 138), never mailed since
+          ::  version 130; the owner's wake makes one now
           [~ %'weather.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery weather: failed")
         |-
@@ -643,8 +643,8 @@
           (review-send (local-day:orr now tz) &)
         $
           ::  the week's review (version 74): at six on Sunday evening on
-          ::  the owner's clock, the week by mail and a push; the owner's
-          ::  wake sends one now
+          ::  the owner's clock, once the owner turned it on (version 138);
+          ::  the owner's wake makes one now
           [~ %'brief.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery brief: failed")
         |-
@@ -9627,6 +9627,10 @@
   ^-  form:m
   ;<  last=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
   ?:  &(!forced =(day (gs:orr last 'day')))  (pure:m ~)
+  ::  off unless the owner turned it on, since each brief lands in
+  ::  lattice's journal; the owner's own wake makes one (version 138)
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  ?:  &(!forced !brief:(de-rhythm:orr rhythm-j))  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
   ::  tz is home (events, leave times); local is where the phone is, which
   ::  the owner's own rhythm follows (version NN). They are equal at home
@@ -9638,7 +9642,6 @@
   ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
   =/  multi=(set @t)  (multi-of:orr schema)
   =/  [from=@da to=@da]  (day-bounds:orr day tz)
-  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
   ;<  cal=exec-cal  bind:m  (read-calendar ~)
   ;<  cache=(unit cal-cache:orr)  bind:m  (calendar-cache base.cal)
   =/  store=json  (fall store.cal [%o ~])
@@ -10199,6 +10202,9 @@
   ^-  form:m
   ;<  last=json  bind:m  (read-json (rf 0 / %'review-last.json'))
   ?:  &(!forced =(day (gs:orr last 'day')))  (pure:m ~)
+  ::  off unless the owner turned it on, as the brief is (version 138)
+  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+  ?:  &(!forced !week:(de-rhythm:orr rhythm-j))  (pure:m ~)
   ;<  now=@da  bind:m  get-time:io
   ::  tz is home (the week's events); local is where the phone is, which
   ::  the habits and baseline follow (version NN). Equal at home
@@ -10234,7 +10240,6 @@
     =/  doc=json  (gj:orr health-j (end [3 10] (en-iso:orr (sub midnight (mul n ~d1)))))
     ?:  |(=(~ doc) =([%b &] (gj:orr doc 'partial')))  c
     +(c)
-  ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
   =/  kids  (children:orr all multi now young:(de-rhythm:orr rhythm-j))
   =/  kidset=(set @t)  (silt (turn kids |=([id=@t *] id)))
   =/  drives=(list [at=@da kids=(list @t)])

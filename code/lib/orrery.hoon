@@ -8343,6 +8343,11 @@
       per-window=@ud
       young=(unit [age=@ud share=@ud])
       review=(unit @ud)
+      ::  whether the ship writes the daily brief and the Sunday review,
+      ::  which lattice mirrors under journal/: off unless the owner
+      ::  turns them on (version 138)
+      brief=?
+      week=?
   ==
 ::  +clock-of: "HH:MM" as minutes past midnight
 ::
@@ -8381,6 +8386,8 @@
       ::  the evening review's push (version 130): 20:00 unless set, off
       ::  when set blank
       ?.((has-key j 'review_at') `1.200 (clock-of (gs j 'review_at')))
+      ?=([%b %.y] (gj j 'brief'))
+      ?=([%b %.y] (gj j 'week_review'))
   ==
 ++  en-rhythm
   |=  r=rhythm
@@ -8398,6 +8405,8 @@
       ['young_age' ?~(young.r (numb:enjs:format 0) (numb:enjs:format age.u.young.r))]
       ['young_share' ?~(young.r (numb:enjs:format 100) (numb:enjs:format share.u.young.r))]
       ['review_at' s+?~(review.r '' (en-clock u.review.r))]
+      ['brief' b+brief.r]
+      ['week_review' b+week.r]
   ==
 ::  +in-span: minutes inside a span, one that crosses midnight included
 ::
