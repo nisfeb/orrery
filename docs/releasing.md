@@ -230,6 +230,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 138's owner steps
+
+Nothing to do unless you read the daily brief: no new roads, so no consent prompt. The daily brief and the Sunday write-up of the week are now off unless you turn them on, each on its own, under Your day on the settings page. Each one made became a page in lattice's journal folder, which came back however often it was deleted. If your phone's assistant reads you the brief, tick "write the daily brief at seven" and save. Make one now still makes one either way, and the briefs and reviews already made stay where they are.
+
 ### Version 137's owner steps
 
 Nothing to do: no new roads, so no consent prompt. What changes:
