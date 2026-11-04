@@ -230,6 +230,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 140's owner steps
+
+Nothing to do: no new roads, so no consent prompt. The daily brief can be made at a time you choose: set it beside "write the daily brief" under Your day on the settings page (07:00 unless you set another, blank for 07:00). A new time holds within half an hour of saving it.
+
 ### Version 139's owner steps
 
 Nothing to do: no new roads, so no consent prompt. A ship with a big calendar no longer goes quiet for long while orrery reads it. With 1,400 Google events, every hourly look and every calendar change held the ship for about half a minute on a fast machine, and for minutes on a slower one. The reader's planning now takes about a second there. One thing changes with it: a one-off event already written is not read again, so a person its title named who was later deleted is not made again, and a row putting you in it stays when someone it names is added later.
