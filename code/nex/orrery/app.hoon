@@ -524,9 +524,10 @@
         ;<  ~  bind:m  (idle-until-poke /watch)
         ;<  ~  bind:m  (cancel-timer:io /watch)
         $
-          ::  the daily brief (version 52): at seven on the owner's clock,
-          ::  once the owner turned it on (version 138), never mailed since
-          ::  version 130; the owner's wake makes one now
+          ::  the daily brief (version 52): at brief_at on the owner's clock
+          ::  (07:00 unless set, version 140), once the owner turned it on
+          ::  (version 138), never mailed since version 130; the owner's
+          ::  wake makes one now
           [~ %'weather.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery weather: failed")
         |-
@@ -650,12 +651,19 @@
         |-
         ;<  now=@da  bind:m  get-time:io
         ;<  tz=@t  bind:m  local-tz
+        ;<  rhythm-j=json  bind:m  (read-json (rf 0 / %'rhythm.json'))
+        =/  mi=@ud  brief-at:(de-rhythm:orr rhythm-j)
         =/  day=@t  (local-day:orr now tz)
-        =/  seven=@da  (seven-of:orr day tz)
+        =/  at=@da  (clock-on:orr day tz mi)
         ;<  ~  bind:m
-          ?.  &((gte now seven) (lth now (add seven ~h1)))  (pure:(fiber:fiber:nexus ,~) ~)
+          ?.  &((gte now at) (lth now (add at ~h1)))  (pure:(fiber:fiber:nexus ,~) ~)
           (brief-send day |)
-        =/  next=@da  ?:((lth now seven) seven (seven-of:orr (day-after:orr day) tz))
+        ::  a time the owner moves holds from the next look, within half an
+        ::  hour, since a look comes at least that often (version 140); the
+        ::  hour after the time is the window, so the brief is never missed
+        =/  next=@da
+          %+  min  (add now ~m30)
+          ?:((lth now at) at (clock-on:orr (day-after:orr day) tz mi))
         ;<  ~  bind:m  (cancel-timer:io /brief)
         ;<  ~  bind:m  (set-timer:io /brief (add next ~s1))
         ;<  in=gen-in  bind:m  (take-gen-in /brief)

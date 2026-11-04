@@ -1701,6 +1701,13 @@ check('the brief turns on alone, and the week stays off (version 138)', dictish(
 curl('PUT', API + '/rhythm', {'brief': False})
 code, d = curl('GET', API + '/rhythm')
 check('and the brief turns off again (version 138)', dictish(d).get('brief') is False, d)
+# the brief's time (version 140): 07:00 unless set, a blank time back to it
+curl('PUT', API + '/rhythm', {'brief_at': '06:30'})
+code, d = curl('GET', API + '/rhythm')
+check('the brief\'s time reads back as set (version 140)', dictish(d).get('brief_at') == '06:30', d)
+curl('PUT', API + '/rhythm', {'brief_at': ''})
+code, d = curl('GET', API + '/rhythm')
+check('and a blank one is 07:00 again (version 140)', dictish(d).get('brief_at') == '07:00', d)
 code, r0 = curl('GET', API + '/review/last')
 code, d = curl('POST', API + '/review/wake', {})
 rv = gate.wait('the review lands', lambda: (lambda r: r if r.get('at') and r.get('at') != dictish(r0).get('at') else None)(dictish(curl('GET', API + '/review/last')[1])), 90) or {}

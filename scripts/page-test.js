@@ -255,12 +255,14 @@ ok('the brief card shows the stops on a map when the brief had any', mapSettings
 const weekSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
   { review: { at: '2026-10-11T22:00:00Z', sent: true, text: 'Your week, Sunday 2026-10-11\n\nWork\nMon 9 h' }, healthDays: 9, health: { day: '2026-10-10', steps: 4210, workouts: [{}] }, work: { day: '2026-10-11', active_minutes: 545 },
     nudge: { day: '2026-10-11', sent: [{ at: '2026-10-11T19:05:00Z', kind: 'desk', title: '1 h 35 min at the desk' }] },
-    rhythm: { quiet_from: '22:00', quiet_to: '07:00', family_from: '', family_to: '', evening_from: '18:00', evening_to: '21:00', weekend_from: '09:00', weekend_to: '12:00', per_window: 2, young_age: 0, young_share: 100, review_at: '20:00' } });
+    rhythm: { quiet_from: '22:00', quiet_to: '07:00', family_from: '', family_to: '', evening_from: '18:00', evening_to: '21:00', weekend_from: '09:00', weekend_to: '12:00', per_window: 2, young_age: 0, young_share: 100, review_at: '20:00', brief: true, brief_at: '06:30', week_review: false } });
 ok('the week card says what came in, how far the baseline is, and shows the last review (version 74)',
   weekSettings.includes('<h2>The week</h2>') && weekSettings.includes('Health: 9 days kept; the baseline needs 14.') && weekSettings.includes('4210 steps, 1 workout')
   && weekSettings.includes('9 h 5 min at the computer') && weekSettings.includes('data-review-wake="1"') && weekSettings.includes('Your week, Sunday 2026-10-11')
   && weekSettings.includes('Nudges on 2026-10-11: 1 of 3. Last: 1 h 35 min at the desk')
-  && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"') && weekSettings.includes('name="review_at" value="20:00"'));
+  && weekSettings.includes('name="quiet_from" value="22:00"') && weekSettings.includes('name="family_from" value=""') && weekSettings.includes('data-save-rhythm="1"') && weekSettings.includes('name="review_at" value="20:00"')
+  // the brief's own time beside its switch (version 140)
+  && weekSettings.includes('name="brief" checked') && weekSettings.includes('name="brief_at" value="06:30"') && !weekSettings.includes('name="week_review" checked'));
 const outSettings = render.settings({ kinds: {} }, {}, {}, {}, {}, {}, {}, {}, {}, {}, [], [], {}, {}, {}, {}, {}, {}, [], [], [], {}, {},
   { outdoors: { weather: true, pota: true, pota_location: 'US-GT', pota_radius_km: 30 }, weather: { forecast_at: '2026-10-06T18:00:00Z', alerts: 1, note: '' }, parks: { at: '2026-10-06T18:01:00Z', near: 4, added: 2, note: '' } });
 ok('the outdoors form shows the settings, the forecast and the parks (version 76)',

@@ -2173,7 +2173,7 @@
   =/  store=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 15) |=(n=@ud [(d17 n) (hd n (mul n 1.000))])))]
   =/  thin=json  [%o (~(gas by *(map @t json)) (turn (gulf 1 13) |=(n=@ud [(d17 n) (hd n 4.000)])))]
   =/  plain=rhythm:orr  (de-rhythm:orr ~)
-  =/  own=rhythm:orr  (de-rhythm:orr (jo '{"quiet_from": "23:00", "quiet_to": "07:00", "family_from": "17:00", "family_to": "19:30", "evening_from": "19:30", "evening_to": "23:00", "weekend_from": "08:00", "weekend_to": "11:00", "per_window": 1, "young_age": 6, "young_share": 50, "brief": true}'))
+  =/  own=rhythm:orr  (de-rhythm:orr (jo '{"quiet_from": "23:00", "quiet_to": "07:00", "family_from": "17:00", "family_to": "19:30", "evening_from": "19:30", "evening_to": "23:00", "weekend_from": "08:00", "weekend_to": "11:00", "per_window": 1, "young_age": 6, "young_share": 50, "brief": true, "brief_at": "06:15"}'))
   ;:  weld
     ::  the clock: quiet from nine at night to seven in the morning
     ::  the defaults, for anyone: quiet nine at night to seven, evenings six to nine, weekend mornings
@@ -2195,6 +2195,16 @@
     (expect-eq !>(`json`[%b |]) !>((gj:orr (en-rhythm:orr plain) 'week_review')))
     (expect-eq !>(&) !>(week:(de-rhythm:orr (jo '{"week_review": true}'))))
     (expect-eq !>(|) !>(brief:(de-rhythm:orr (jo '{"brief": "yes"}'))))
+    ::  the brief's time: 07:00 unless set, blank or nonsense the same
+    ::  (version 140)
+    (expect-eq !>([420 375]) !>([brief-at.plain brief-at.own]))
+    (expect-eq !>('06:15') !>((gs:orr (en-rhythm:orr own) 'brief_at')))
+    (expect-eq !>(420) !>(brief-at:(de-rhythm:orr (jo '{"brief_at": ""}'))))
+    (expect-eq !>(420) !>(brief-at:(de-rhythm:orr (jo '{"brief_at": "25:00"}'))))
+    ::  a time on the owner's clock: 06:15 in New York is 11:15 UTC in
+    ::  November and 10:15 in October, either side of the clocks moving
+    (expect-eq !>(~2026.11.4..11.15.00) !>((clock-on:orr '2026-11-04' 'America/New_York' 375)))
+    (expect-eq !>(~2026.10.30..10.15.00) !>((clock-on:orr '2026-10-30' 'America/New_York' 375)))
     (expect !>((in-span:orr 30 1.380 420)))
     (expect !>(!(in-span:orr 600 1.380 420)))
     ::  a stretch: the latest block, ninety minutes or more, ending within seven of now

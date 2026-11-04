@@ -8347,6 +8347,9 @@
       ::  which lattice mirrors under journal/: off unless the owner
       ::  turns them on (version 138)
       brief=?
+      ::  when on the owner's clock the brief is made, minutes past
+      ::  midnight: 07:00 unless set (version 140)
+      brief-at=@ud
       week=?
   ==
 ::  +clock-of: "HH:MM" as minutes past midnight
@@ -8387,6 +8390,7 @@
       ::  when set blank
       ?.((has-key j 'review_at') `1.200 (clock-of (gs j 'review_at')))
       ?=([%b %.y] (gj j 'brief'))
+      (at 'brief_at' 420)
       ?=([%b %.y] (gj j 'week_review'))
   ==
 ++  en-rhythm
@@ -8406,6 +8410,7 @@
       ['young_share' ?~(young.r (numb:enjs:format 100) (numb:enjs:format share.u.young.r))]
       ['review_at' s+?~(review.r '' (en-clock u.review.r))]
       ['brief' b+brief.r]
+      ['brief_at' s+(en-clock brief-at.r)]
       ['week_review' b+week.r]
   ==
 ::  +in-span: minutes inside a span, one that crosses midnight included
@@ -11113,15 +11118,16 @@
   =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
   [(utc-of wall tz) (utc-of (add wall ~d1) tz)]
 ++  hhmm  |=([at=@da tz=@t] ^-(@t (cut 3 [11 5] (local-iso (en-iso at) tz))))
-::  +seven-of: 07:00 on the owner's clock on a day, as an instant;
-::  +day-after: the next day's date. Midnight plus seven hours is not
-::  seven on a day the clocks change.
+::  +clock-on: a time on the owner's clock on a day, minutes past
+::  midnight, as an instant (the brief's, 07:00 unless the owner set
+::  another, version 140); +day-after: the next day's date. Midnight
+::  plus seven hours is not seven on a day the clocks change.
 ::
-++  seven-of
-  |=  [day=@t tz=@t]
+++  clock-on
+  |=  [day=@t tz=@t mi=@ud]
   ^-  @da
   =/  wall=@da  (fall (de-iso (cat 3 day 'T00:00:00Z')) ~2000.1.1)
-  (utc-of (add wall ~h7) tz)
+  (utc-of (add wall (mul mi ~m1)) tz)
 ++  day-after
   |=  day=@t
   ^-  @t
