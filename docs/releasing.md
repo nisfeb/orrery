@@ -230,6 +230,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 141's owner steps
+
+Nothing to do: no new roads, so no consent prompt. The daily brief lists the day's tasks as a checklist, and its page in your lattice journal is one you can work from: change a task's `[ ]` to `[x]` and within five minutes orrery marks the task done and ticks it in your calendar. Only the day's own page counts, and only while the day lasts; the next morning's brief starts a new list. Lattice shows the boxes but does not tick them on a click yet, so tick them in the editor.
+
 ### Version 140's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The daily brief can be made at a time you choose: set it beside "write the daily brief" under Your day on the settings page (07:00 unless you set another, blank for 07:00). A new time holds within half an hour of saving it.
