@@ -11218,6 +11218,32 @@
     (lth at.a at.b)
   =/  slot-lines=(list @t)
     (turn slots |=([all=? at=@da text=@t] (rap 3 ?:(all 'All day' (hhmm at tz)) '  ' text ~)))
+  ::  a todo backed by a task is a box to tick in the day's journal
+  ::  page, with its tag (version 141); one with none is a plain line
+  =/  listed  (brief-todos todos from to tz)
+  =/  tags=(map @t @t)
+    (~(gas by *(map @t @t)) (turn (todo-tags shown.listed) |=([tag=@t todo=@t *] [todo tag])))
+  =/  todo-lines=(list @t)
+    %+  weld
+      %+  turn  shown.listed
+      |=  [t=todo late=?]
+      =/  name=@t  (rap 3 name.t ?:(late ' (overdue)' '') ~)
+      =/  tag=(unit @t)  (~(get by tags) id.t)
+      ?~  tag  (cat 3 'To do  ' name)
+      (rap 3 '- [ ] ' name ' [' u.tag ']' ~)
+    ?:  =(0 more.listed)  ~
+    ~[(rap 3 'and ' (crip (a-co:co more.listed)) ' more to do' ~)]
+  (weld slot-lines todo-lines)
+::  +brief-todos: the todos the brief lists, in its order: those due by
+::  the day's end, soonest first, each said late when it is, then the
+::  first ten with no due; and how many more have none. +brief-today
+::  and the day's checklist read the one list (version 141)
+::
+++  brief-todos
+  |=  [todos=(list todo) from=@da to=@da tz=@t]
+  ^-  [shown=(list [t=todo late=?]) more=@ud]
+  =/  d0=@da  =/(w (wall-of from tz) (sub w (mod w ~d1)))
+  =/  d1=@da  (add d0 ~d1)
   =/  open=(list todo)  (skim todos |=(t=todo &(!done.t !=('' (trim-cord name.t)))))
   ::  a due at midnight UTC is a date: due today is not overdue today
   =/  on-date  |=(d=@da =(0 (mod d ~d1)))
@@ -11232,14 +11258,69 @@
     ^-  ?
     ?~  due.t  |
     ?:((on-date u.due.t) (lth u.due.t d0) (lth u.due.t from))
-  =/  todo-lines=(list @t)
-    %+  weld
-      %+  turn  dated
-      |=(t=todo (rap 3 'To do  ' name.t ?:((late t) ' (overdue)' '') ~))
-    %+  weld  (turn (scag 10 undated) |=(t=todo (cat 3 'To do  ' name.t)))
-    ?:  (lte (lent undated) 10)  ~
-    ~[(rap 3 'and ' (crip (a-co:co (sub (lent undated) 10))) ' more to do' ~)]
-  (weld slot-lines todo-lines)
+  :-  (weld (turn dated |=(t=todo [t (late t)])) (turn (scag 10 undated) |=(t=todo [t |])))
+  (sub (lent undated) (min 10 (lent undated)))
+::  +todo-tags: the listed todos backed by an orrery task, tagged T1 on in
+::  the order listed. A todo with no task yet gets no box: the calendar
+::  mirror takes it up as a task within minutes, and the next brief
+::  boxes it (version 141)
+::
+++  todo-tags
+  |=  shown=(list [t=todo late=?])
+  ^-  (list [tag=@t todo=@t action=@t])
+  =|  out=(list [tag=@t todo=@t action=@t])
+  =/  n=@ud  1
+  |-
+  ?~  shown  (flop out)
+  ?:  =('' orrery.t.i.shown)  $(shown t.shown)
+  $(shown t.shown, n +(n), out [[(cat 3 'T' (crip (a-co:co n))) id.t.i.shown orrery.t.i.shown] out])
+::  +checked-tags: the tags of the lines a page's text has checked off:
+::  a list item (-, * or +) whose box is [x] or [X], and the last
+::  [T<n>] on it (version 141)
+::
+++  checked-tags
+  |=  text=@t
+  ^-  (set @t)
+  %-  sy
+  %+  murn  (split-char 10 (trip text))
+  |=  l=tape
+  ^-  (unit @t)
+  =/  s=tape  (skip-spaces l)
+  ?.  ?=([@ @ @ @ @ *] s)  ~
+  ?.  ?&  |(=('-' i.s) =('*' i.s) =('+' i.s))  =(' ' i.t.s)  =('[' i.t.t.s)
+          |(=('x' i.t.t.t.s) =('X' i.t.t.t.s))  =(']' i.t.t.t.t.s)
+      ==
+    ~
+  =/  rest=tape  t.t.t.t.t.s
+  =|  got=(unit @t)
+  |-
+  ?~  rest  got
+  ?.  &(=('[' i.rest) ?=([%'T' *] t.rest))  $(rest t.rest)
+  =/  ds=tape  (scag-digits t.t.rest)
+  =/  tail=tape  (slag (lent ds) t.t.rest)
+  ?.  &(?=(^ ds) ?=([%']' *] tail))  $(rest t.rest)
+  $(rest t.tail, got `(crip ['T' ds]))
+++  scag-digits
+  |=  t=tape
+  ^-  tape
+  ?~  t  ~
+  ?.  (is-digit i.t)  ~
+  [i.t $(t t.t)]
+::  +journal-pages: the names lattice may give a day's brief page: the
+::  one its journal writes today (journal/2026-11-05) first, then the
+::  dotted forms its daily note button opens (version 141)
+::
+++  journal-pages
+  |=  day=@t
+  ^-  (list @t)
+  =/  y=@t  (end [3 4] day)
+  =/  m=@ud  (fall (rush (cut 3 [5 2] day) dem) 0)
+  =/  d=@ud  (fall (rush (cut 3 [8 2] day) dem) 0)
+  =/  p2  |=(n=@ud ^-(@t (rap 3 ?:((lth n 10) '0' '') (crip (a-co:co n)) ~)))
+  :~  (cat 3 'journal/' day)
+      (rap 3 'journal/' y '.' (crip (a-co:co m)) '.' (crip (a-co:co d)) ~)
+      (rap 3 'journal/' y '.' (p2 m) '.' (p2 d) ~)
+  ==
 ::  +brief-waiting: every proposed action under a tag, A1 on: its
 ::  title, then its kind, whom it is about and its due, then why
 ::

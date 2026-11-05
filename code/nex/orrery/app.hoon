@@ -177,6 +177,7 @@
           [%fall %& [/ %'mail-recent.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'mail.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'brief-last.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'brief-checks.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'brief.sig'] [[/ %sig] ~]]
           ::  the read channel (version 59): what clients hand the ship
           ::  to read, until read; its settings, record and window
@@ -614,6 +615,7 @@
         ;<  ~  bind:m  (world-pass all acts)
         ;<  ~  bind:m  (nudge-pass all)
         ;<  ~  bind:m  (evening-pass acts)
+        ;<  ~  bind:m  brief-checks-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
         ;<  ~  bind:m  (idle-until-poke /nudge)
@@ -9734,6 +9736,13 @@
     ~[(rap 3 'Map of the stops: ' public ?:(=('/' (cut 3 [(dec (max 1 (met 3 public))) 1] public)) '' '/') 'apps/orrery/api/brief/map' ~)]
   =/  text=@t  (brief-render:orr day today leaving lines.waiting suggestions)
   =/  tags-j=json  [%o (~(gas by *(map @t json)) (turn tags.waiting |=([tag=@t id=@ta] [tag `json`s+id])))]
+  ::  the day's checklist: each boxed todo's tag, its calendar todo and
+  ::  its task, for +brief-checks-pass to find (version 141)
+  =/  todos-j=json
+    =/  ts  (todo-tags:orr shown:(brief-todos:orr (todos-of:orr store) from to tz))
+    :-  %o
+    %-  ~(gas by *(map @t json))
+    (turn ts |=([tag=@t todo=@t action=@t] [tag (pairs:enjs:format ~[['todo' s+todo] ['action' s+action]])]))
   =/  rec=json
     %-  pairs:enjs:format
     :~  ['day' s+day]
@@ -9741,6 +9750,7 @@
         ::  never mailed since version 130; kept for the readers
         ['sent' b+|]
         ['tags' tags-j]
+        ['todos' todos-j]
         ['text' s+text]
         :-  'today'
         :-  %a
@@ -9754,6 +9764,65 @@
   ::  ponytail: a couple of KB a day kept for good; prune by age if it shows
   ;<  ~  bind:m  (put-json (rf 0 /briefs `@ta`day) rec)
   (over:io (rf 0 / %'brief-last.json') [[/ %json] rec])
+::  +brief-checks-pass: the day's checklist (version 141). While today's
+::  brief stands, its page in lattice's journal is read each round, and
+::  a todo checked off there is done: its task set done, signed journal,
+::  and the calendar mirror ticks the todo within seconds. Once the day
+::  is over the page is left alone, and the next brief's is read from
+::  then. A line taken once is not taken again, so unticking it reopens
+::  nothing; a task already over is left as it is. Lattice keeps no
+::  page's author, so whoever may write the page may tick a task done
+::  (a done task, nothing more)
+::
+++  brief-checks-pass
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
+  =/  day=@t  (gs:orr last 'day')
+  =/  todos=json  (gj:orr last 'todos')
+  ?.  ?=([%o ^] todos)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  local-tz
+  ?.  =(day (local-day:orr now tz))  (pure:m ~)
+  ;<  base=(unit path)  bind:m  (find-base %lattice)
+  ?~  base  (pure:m ~)
+  ;<  text=(unit @t)  bind:m  (first-page base (journal-pages:orr day))
+  ?~  text  (pure:m ~)
+  ;<  had=json  bind:m  (read-json (rf 0 / %'brief-checks.json'))
+  =/  taken=(set @t)  ?.(=(day (gs:orr had 'day')) ~ (sy (strings:orr (ga:orr had 'done'))))
+  =/  fresh=(list @t)
+    (sort (skip ~(tap in (checked-tags:orr u.text)) |=(t=@t |((~(has in taken) t) =('' (gs:orr (gj:orr todos t) 'action'))))) aor)
+  ?~  fresh  (pure:m ~)
+  ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
+  =/  live=(set @t)
+    (sy (murn acts |=([id=@ta a=action:orr] ?.(?=(?(%approved %claimed) status.a) ~ `id))))
+  =/  ops=(list json)
+    %+  murn  `(list @t)`fresh
+    |=  tag=@t
+    =/  act=@t  (gs:orr (gj:orr todos tag) 'action')
+    ?.  (~(has in live) act)  ~
+    `(set-action-op:orr `@ta`act 'done' 'checked off in the day\'s journal' 'journal')
+  |-
+  ?^  ops
+    ;<  *  bind:m  (poke-soft:io (rf 0 / %'main.sig') [[/ %json] i.ops])
+    $(ops t.ops)
+  %+  over:io  (rf 0 / %'brief-checks.json')
+  :-  [/ %json]
+  %-  pairs:enjs:format
+  :~  ['day' s+day]
+      ['done' a+(turn (sort ~(tap in (~(gas in taken) `(list @t)`fresh)) aor) |=(t=@t `json`s+t))]
+  ==
+::  +first-page: the text of the first of these lattice pages that can be
+::  read, ~ when none can
+::
+++  first-page
+  |=  [base=(unit path) names=(list @t)]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  ?~  names  (pure:m ~)
+  ;<  t=(unit @t)  bind:m  (page-text base i.names)
+  ?^  t  (pure:m t)
+  $(names t.names)
 ::  +model-health: one push when the model stops answering and one when
 ::  it answers again (version 111), the outage kept in model-down.json.
 ::  While it is down, texts handed in wait and are read once it is back,

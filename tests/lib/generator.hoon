@@ -2597,6 +2597,39 @@
       !>(`(list @t)`~['09:30  Standup' '14:00  Dentist' '20:00  Coffee with Mira Quill, Blue Bottle' 'To do  Buy milk (overdue)' 'To do  Pay rent' 'To do  Call the shop' 'To do  Someday'])
       !>(got)
   ==
+::  a todo backed by an orrery task is a box with a tag, one with none a
+::  plain line; a line checked off in the page names its tag; the day's
+::  page goes by the name lattice writes, then the dotted ones (version 141)
+++  test-brief-checklist
+  =/  todos=(list todo:orr)
+    :~  ['t1' 'Buy milk' 'act-1' | `~2026.9.20 '' ~ &]
+        ['t2' 'Call the shop' '' | `~2026.9.21..15.00.00 '' ~ &]
+        ['t4' 'Someday' 'act-4' | ~ '' ~ &]
+    ==
+  =/  [from=@da to=@da]  (day-bounds:orr '2026-09-21' 'America/New_York')
+  =/  got=(list @t)  (brief-today:orr ~ *cal-order:orr todos ~ ~ from to 'America/New_York')
+  =/  tags  (todo-tags:orr shown:(brief-todos:orr todos from to 'America/New_York'))
+  =/  page=@t
+    '''
+    # Brief, 2026-09-21
+
+    - [x] Buy milk (overdue) [T1]
+      * [X] Someday [T2]
+    - [ ] Not this [T3]
+    - [x] Read the [T9] notes, no tag at the end
+    To do  [x] [T4]
+    '''
+  ;:  weld
+    %+  expect-eq
+      !>(`(list @t)`~['- [ ] Buy milk (overdue) [T1]' 'To do  Call the shop' '- [ ] Someday [T2]'])
+      !>(got)
+    (expect-eq !>(`(list [@t @t @t])`~[['T1' 't1' 'act-1'] ['T2' 't4' 'act-4']]) !>(tags))
+    (expect-eq !>((sy `(list @t)`~['T1' 'T2' 'T9'])) !>((checked-tags:orr page)))
+    (expect-eq !>(`(set @t)`~) !>((checked-tags:orr '- [ ] Buy milk [T1]')))
+    %+  expect-eq
+      !>(`(list @t)`~['journal/2026-09-05' 'journal/2026.9.5' 'journal/2026.09.05'])
+      !>((journal-pages:orr '2026-09-05'))
+  ==
 ::  the day's edges: a show ending as the day starts and a flight
 ::  leaving as it ends are the neighbours' days, tomorrow's fair and a
 ::  todo due tomorrow wait for it, a span of exactly the day is all day,
