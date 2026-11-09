@@ -9144,9 +9144,10 @@
 ::  been seen away, ends it), or both; exact, or cut to about a
 ::  kilometre; since when, the time of the last fix sent, and whether a
 ::  fix away from home has gone. Position never becomes a fact on either
-::  ship
+::  ship. A check-in (version 142): until home by a time, and whether
+::  the ship was told the owner is not home yet
 ::
-+$  loc-grant  [ship=@p until=(unit @da) home=? exact=? since=@da sent=(unit @da) left=?]
++$  loc-grant  [ship=@p until=(unit @da) home=? exact=? since=@da sent=(unit @da) left=? by=(unit @da) told=?]
 ++  de-loc-grants
   |=  j=json
   ^-  (list loc-grant)
@@ -9156,13 +9157,17 @@
   =/  s=(unit @p)  (slaw %p (gs g 'ship'))
   =/  since=(unit @da)  (de-iso (gs g 'since'))
   ?.  &(?=(^ s) ?=(^ since))  ~
-  `[u.s (de-iso (gs g 'until')) ?=([%b %.y] (gj g 'home')) ?=([%b %.y] (gj g 'exact')) u.since (de-iso (gs g 'sent')) ?=([%b %.y] (gj g 'left'))]
+  :-  ~
+  :*  u.s  (de-iso (gs g 'until'))  ?=([%b %.y] (gj g 'home'))  ?=([%b %.y] (gj g 'exact'))  u.since
+      (de-iso (gs g 'sent'))  ?=([%b %.y] (gj g 'left'))  (de-iso (gs g 'by'))  ?=([%b %.y] (gj g 'told'))
+  ==
 ++  en-loc-grant
   |=  g=loc-grant
   ^-  json
   %-  pairs:enjs:format
   :~  ['ship' s+(scot %p ship.g)]  ['until' ?~(until.g ~ s+(en-iso u.until.g))]  ['home' b+home.g]
       ['exact' b+exact.g]  ['since' s+(en-iso since.g)]  ['sent' ?~(sent.g ~ s+(en-iso u.sent.g))]  ['left' b+left.g]
+      ['by' ?~(by.g ~ s+(en-iso u.by.g))]  ['told' b+told.g]
   ==
 ::  +loc-live: a grant still runs: before its time, or until home
 ::
@@ -9190,7 +9195,10 @@
 ::  the grants' order (version 137). A grant whose time ran out, or one
 ::  until home whose fix is now home, gets a position-end and goes; a
 ::  live one with a fresh fix gets it, exact or cut, and is kept marked
-::  sent; the rest are kept as they were
+::  sent; the rest are kept as they were. A check-in whose time passed
+::  with the owner not home tells the ship so, once (version 142),
+::  before the fix it may also send. The pass runs every ten minutes as
+::  well as on each fix, so a phone gone quiet is still told about
 ::
 ++  loc-plan
   |=  [grants=(list loc-grant) now=@da pos=json home=(unit [lat=@t lon=@t])]
@@ -9221,6 +9229,10 @@
     ==
   ?:  over
     $(grants t.grants, sends [[ship.g (pairs:enjs:format ~[['action' s+'position-end']])] sends])
+  =/  late=?  &(?=(^ by.g) !told.g (gte now (need by.g)))
+  =?  sends  late
+    [[ship.g (pairs:enjs:format ~[['action' s+'position-late'] ['by' s+(en-iso (need by.g))]])] sends]
+  =?  g  late  g(told &)
   ?.  &(fresh ?=(^ fix) ?=(^ at))  $(grants t.grants, keep [g keep])
   =/  pt  (loc-fix lat.u.fix lon.u.fix exact.g)
   =/  body=json
@@ -9324,6 +9336,13 @@
       ?:  =(1 hours)  ' for an hour'
       (rap 3 ' for ' (crip (a-co:co hours)) ' hours' ~)
   ==
+::  +loc-late-said: the owner's notice that a peer checking in is not
+::  home by the time they gave (version 142)
+::
+++  loc-late-said
+  |=  name=@t
+  ^-  @t
+  (rap 3 name ' isn\'t home yet, and meant to be by now' ~)
 ::  ==  place lookups (version 87): Brave Search fills in a place
 ::
 ::  +search-config: search.json. Off until the owner turns it on with a

@@ -1633,8 +1633,9 @@
     (expect-eq !>(`(list @t)`~['0vabc@~zod']) !>((cal-uids:orr ~[[*@ta ['situation/x' 'starts' s+'x' now ~ 100 ['calendar' 'family/0vabc@~zod'] 'calendar' now | '']] [*@ta ['situation/x' 'note' s+'x' now ~ 100 ['user' 'u'] 'owner' now | '']]])))
   ==
 ++  test-location-share
-  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ |]
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ | ~ |]
   =/  home=(unit [@t @t])  `['39.7817' '-89.6501']
+  =/  old=json  (pairs:enjs:format ~[['ship' s+'~zod'] ['until' ~] ['home' b+&] ['exact' b+|] ['since' s+(en-iso:orr now)] ['sent' ~] ['left' b+|]])
   ;:  weld
     ::  live before its time; until home lives on with no time; none at all is not a grant
     (expect-eq !>([& |]) !>([(loc-live:orr g (add now ~h1)) (loc-live:orr g (add now ~h3))]))
@@ -1645,6 +1646,10 @@
     (expect-eq !>([& | |]) !>([(home-reached:orr ['39.7820' '-89.6501'] home) (home-reached:orr ['39.7844' '-89.6501'] home) (home-reached:orr ['39.7817' '-89.6501'] ~)]))
     ::  the record round trips
     (expect-eq !>(`(list loc-grant:orr)`~[g(sent `now, left &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[(en-loc-grant:orr g(sent `now, left &))]]]))))
+    ::  a check-in's time and whether it was told round trip too (version 142)
+    (expect-eq !>(`(list loc-grant:orr)`~[g(by `(add now ~h1), told &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[(en-loc-grant:orr g(by `(add now ~h1), told &))]]]))))
+    ::  a grant from before version 142 reads as no check-in
+    (expect-eq !>(`(list loc-grant:orr)`~[g(until ~, home &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[old]]]))))
   ==
 ::  a pass's sends and the grants it keeps (version 137)
 ++  test-location-plan
@@ -1654,7 +1659,7 @@
   =/  home=(unit [lat=@t lon=@t])  `['39.7817' '-89.6501']
   =/  away=(unit [lat=@t lon=@t])  `['40.7817' '-89.6501']
   ::  two hours, begun five minutes ago, nothing sent yet
-  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | (sub now ~m5) ~ |]
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | (sub now ~m5) ~ | ~ |]
   =/  end=json  (pairs:enjs:format ~[['action' s+'position-end']])
   =/  fix
     |=  [lat=@t lon=@t acc=@t g=loc-grant:orr]
@@ -1664,6 +1669,9 @@
         ['at' s+(en-iso:orr at)]  ['until' ?~(until.g ~ s+(en-iso:orr u.until.g))]  ['home' b+home.g]
     ==
   =/  plan  |=(p=[(list [@p json]) (list loc-grant:orr)] p)
+  ::  a check-in, until home by a minute ago (version 142)
+  =/  ci=loc-grant:orr  g(until ~, home &, by `(sub now ~m1))
+  =/  late=json  (pairs:enjs:format ~[['action' s+'position-late'] ['by' s+(en-iso:orr (sub now ~m1))]])
   ;:  weld
     ::  the first send takes a fix of the last half hour, cut to about a
     ::  kilometre; the grant is kept marked sent, and seen away
@@ -1682,6 +1690,15 @@
     (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until ~, home &, left &)] now pos home)))
     ::  no fix the ship can read sends nothing and keeps the grant
     (expect-eq !>((plan ~ ~[g])) !>((loc-plan:orr ~[g] now (pairs:enjs:format ~[['at' s+(en-iso:orr at)]]) away)))
+    ::  a check-in past its time, not home: told once, before the fix,
+    ::  and kept marked told; the next pass tells nothing more
+    (expect-eq !>((plan ~[[~zod late] [~zod (fix '39.78' '-89.65' '1000' ci)]] ~[ci(told &, sent `at, left &)])) !>((loc-plan:orr ~[ci] now pos away)))
+    (expect-eq !>((plan ~ ~[ci(told &, sent `at)])) !>((loc-plan:orr ~[ci(told &, sent `at)] now pos away)))
+    ::  told with no fresh fix: a phone gone quiet is still told about
+    (expect-eq !>((plan ~[[~zod late]] ~[ci(told &, sent `at)])) !>((loc-plan:orr ~[ci(sent `at)] now pos away)))
+    ::  before its time, nothing; home before the pass, it ends and tells no lateness
+    (expect-eq !>((plan ~ ~[ci(by `(add now ~h1), sent `at)])) !>((loc-plan:orr ~[ci(by `(add now ~h1), sent `at)] now pos away)))
+    (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[ci(left &)] now pos home)))
     ::  the sends and the keeps go in the grants' order
     %+  expect-eq
       !>((plan ~[[~nec end] [~zod (fix '39.78' '-89.65' '1000' g)]] ~[g(sent `at, left &) g(ship ~bud, sent `at)]))
@@ -1761,6 +1778,7 @@
     (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(add now ~m20) | now)))
     (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(sub now ~h1) | now)))
     (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' ~ | now)))
+    (expect-eq !>('Sam isn\'t home yet, and meant to be by now') !>((loc-late-said:orr 'Sam')))
   ==
 ::  a location send's wire: one per ship per hour (version 137)
 ++  test-location-wire

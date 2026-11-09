@@ -3845,6 +3845,7 @@
   =/  id=@t  (gs:orr jon 'id')
   ?:  =('position' act)  (take-position src jon)
   ?:  =('position-end' act)  (take-position-end src)
+  ?:  =('position-late' act)  (take-position-late src jon)
   ?:  =('sphere-offer' act)  (take-sphere-offer src jon)
   ?:  =('sphere-accept' act)  (take-sphere-accept src jon)
   ?:  =('sphere-revoke' act)  (take-sphere-revoke src jon)
@@ -3929,6 +3930,9 @@
   =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
   =/  new=?  ?~(was & !(loc-in-live:orr u.was now))
   =/  one=json  (loc-in-entry:orr id.i.who name.body.i.who jon)
+  ::  a check-in's lateness stays on the fixes after it (version 142)
+  =/  late=json  ?~(was ~ (gj:orr u.was 'late'))
+  =?  one  !=(~ late)  (set-key:orr one 'late' late)
   =/  next=json  (set-key:orr doc 'in' (set-key:orr ?:(?=([%o *] in) in [%o ~]) (scot %p src) one))
   ::  an ask from before a person here carried the ship is done with
   =?  next  (~(has by asks) key)  (set-key:orr next 'asks' [%o (~(del by asks) key)])
@@ -3938,6 +3942,26 @@
     %^  notify-owner  (cat 3 'orrery-location-' (scot %p src))  'Location sharing'
     (loc-start-said:orr name.body.i.who (de-iso:orr (gs:orr jon 'until')) ?=([%b %.y] (gj:orr jon 'home')) now)
   (note-inbox 'position' & '' (scot %p src))
+::  +take-position-late: a ship checking in says its owner is not home
+::  by the time they gave (version 142): kept on their fix, so the phone
+::  shows it, and the owner told. Only while their share still shows
+::
+++  take-position-late
+  |=  [src=@p jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  doc=json  bind:m  (read-json (rf 0 / %'location.json'))
+  ;<  now=@da  bind:m  get-time:io
+  =/  in=json  (gj:orr doc 'in')
+  =/  was=(unit json)  ?.(?=([%o *] in) ~ (~(get by p.in) (scot %p src)))
+  ?.  &(?=(^ was) (loc-in-live:orr u.was now))  (note-inbox 'position-late' | 'no share from that ship shows' (scot %p src))
+  =/  one=json  (set-key:orr u.was 'late' s+(gs:orr jon 'by'))
+  ;<  ~  bind:m  (over:io (rf 0 / %'location.json') [[/ %json] (set-key:orr doc 'in' (set-key:orr in (scot %p src) one))])
+  =/  name=@t  (gs:orr u.was 'name')
+  ;<  ~  bind:m
+    %^  notify-owner  (cat 3 'orrery-location-late-' (scot %p src))  'Check-in'
+    (loc-late-said:orr ?:(=('' name) (scot %p src) name))
+  (note-inbox 'position-late' & '' (scot %p src))
 ::  +take-position-end: a ship stops sharing where its owner is. The
 ::  owner's phone is told when its fix still showed (version 137): a
 ::  share whose time had passed already went quietly, and so does an ask
@@ -5290,7 +5314,10 @@
     (pure:n (home-point:orr all (multi-of:orr schema) now gc))
   ?:  &(?=(~ until) ?=(~ hp))
     (send-err eyre-id 400 'home: this ship does not know where home is; give hours too')
-  =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ |]
+  ::  a check-in (version 142): home by a time, or the ship is told
+  =/  by=(unit @da)  ?.(home ~ (de-iso:orr (gs:orr jon 'by')))
+  ?:  &(?=(^ by) (lte u.by now))  (send-err eyre-id 400 'by: in the past')
+  =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ | by |]
   ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
   =/  rest=(list loc-grant:orr)  (skip (de-loc-grants:orr doc) |=(x=loc-grant:orr =(ship.x u.shp)))
   ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr ?:(?=([%o *] doc) doc [%o ~]) 'out' a+(turn [g rest] en-loc-grant:orr))])
