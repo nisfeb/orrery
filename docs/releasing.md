@@ -230,6 +230,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 143's owner steps
+
+Nothing to do: no new roads, so no consent prompt. A check-in's time can be worked out for you: a share until home with "by": "auto" asks Mapbox for the drive from your latest position to home, with traffic, and sets the time to now, the drive and your travel buffer, up to the whole minute. It needs the Mapbox token you set for time to leave (the time-to-leave switch itself can stay off). Without a token, a position from the last twelve hours, a home, or a route, the share is refused with the reason. Groundwire offers it as Automatic.
+
 ### Version 142's owner steps
 
 Nothing to do: no new roads, so no consent prompt. A location share until home can carry a check-in time ("by"): if you are not home by then, orrery tells the ship you share with, once, from its location pass, which runs on each fix and every ten minutes, so it still tells them when your phone is off. Their orrery keeps the lateness on your fix and tells their phone. Groundwire offers it from this version.
