@@ -2034,8 +2034,13 @@ check('a share only until home is refused while the ship knows no home, kept whe
 if code == 200:
     curl('DELETE', API + '/location/share/~sampel-palnet')
 # a check-in worked out from the drive home (version 143), against the stub's Mapbox: half an hour from
-# anywhere but the gate's place, plus the five-minute buffer, up to the whole minute
-if home_known:
+# anywhere but the gate's place, plus the five-minute buffer, up to the whole minute. A ship that knows no
+# home gets one for the check, taken back after
+home_row = None
+if not home_known:
+    code, hd = observe([{'id': 'place/home', 'name': 'Home'}], [obs('place/home', 'geo', '39.7817,-89.6501', datetime.now(timezone.utc), {'kind': 'user', 'id': 'gate-check-in'})])
+    home_row = (dictish(hd).get('observations') or [{}])[0].get('id')
+try:
     curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
     code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'home': True, 'by': 'auto'})
     check('a check-in worked out with no Mapbox token is a 400 that says so', code == 400 and 'Mapbox' in str(dictish(d).get('error')), (code, d))
@@ -2056,6 +2061,8 @@ if home_known:
         curl('DELETE', API + '/location/share/~sampel-palnet')
         curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
         srv.shutdown(); srv.server_close()
+finally:
+    if home_row: curl('POST', API + '/retract', {'id': home_row, 'note': 'check-in gate'})
 
 
 # ---- the owner's cookie from another site (security audit): Fetch Metadata reaches only https and localhost,
