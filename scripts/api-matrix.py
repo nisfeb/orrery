@@ -2033,6 +2033,29 @@ check('a share only until home is refused while the ship knows no home, kept whe
       (not home_known and code == 400 and str(dictish(d).get('error', '')).startswith('home:')) or (home_known and code == 200), (home_known, code, d))
 if code == 200:
     curl('DELETE', API + '/location/share/~sampel-palnet')
+# a check-in worked out from the drive home (version 143), against the stub's Mapbox: half an hour from
+# anywhere but the gate's place, plus the five-minute buffer, up to the whole minute
+if home_known:
+    curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
+    code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'home': True, 'by': 'auto'})
+    check('a check-in worked out with no Mapbox token is a 400 that says so', code == 400 and 'Mapbox' in str(dictish(d).get('error')), (code, d))
+    srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        curl('PUT', API + '/travel', {'enabled': True, 'token': 'gate-token', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT, 'buffer_min': 5})
+        curl('POST', API + '/position', {'lat': 39.6012, 'lon': -89.7012, 'acc': 12})
+        seen.clear()
+        t0 = datetime.now(timezone.utc)
+        code, d = curl('POST', API + '/location/share', {'ship': '~sampel-palnet', 'home': True, 'by': 'auto'})
+        by = dictish(d).get('by')
+        when = datetime.fromisoformat(by.replace('Z', '+00:00')) if by else None
+        check('worked out, the check-in is now, the drive home and the buffer, to the next minute',
+              code == 200 and when is not None and t0 + timedelta(minutes=35) <= when <= t0 + timedelta(minutes=36, seconds=30) and when.second == 0, (code, d, t0))
+        check('and the drive home was asked of Mapbox', any(x[0].startswith('/directions/v5/mapbox/driving-traffic?') for x in seen), len(seen))
+    finally:
+        curl('DELETE', API + '/location/share/~sampel-palnet')
+        curl('PUT', API + '/travel', {'enabled': False, 'token': None, 'api_url': None})
+        srv.shutdown(); srv.server_close()
 
 
 # ---- the owner's cookie from another site (security audit): Fetch Metadata reaches only https and localhost,

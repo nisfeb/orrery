@@ -1783,6 +1783,25 @@
     (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' ~ | now)))
     (expect-eq !>('Sam isn\'t home yet, and meant to be by now') !>((loc-late-said:orr 'Sam')))
   ==
+::  a check-in worked out from the drive home (version 143)
+++  test-location-auto-by
+  =/  home=(unit [lat=@t lon=@t])  `['39.7817' '-89.6501']
+  =/  fix  |=([lat=@t at=@da] `json`(pairs:enjs:format ~[['lat' s+lat] ['lon' s+'-89.6501'] ['at' s+(en-iso:orr at)]]))
+  =/  m0=@da  (sub now (mod now ~m1))
+  ;:  weld
+    ::  now, the drive and the buffer, up to the next whole minute; a whole minute stays
+    (expect-eq !>((add m0 ~m21)) !>((auto-by:orr (add m0 ~s10) 900 ~m5)))
+    (expect-eq !>((add m0 ~m20)) !>((auto-by:orr m0 900 ~m5)))
+    (expect-eq !>((add m0 ~m1)) !>((auto-by:orr (add m0 ~s59) 0 ~s0)))
+    ::  a fix away from home, under twelve hours old, is where the drive starts
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%& ['39.6012' '-89.6501']]) !>((auto-by-from:orr (fix '39.6012' (sub now ~h11)) now home)))
+    ::  no home, no fix, an old fix, a fix to come, or at home already: why not
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%| 'by: this ship does not know where home is']) !>((auto-by-from:orr (fix '39.6012' now) now ~)))
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%| 'by: no position to work out the drive home from']) !>((auto-by-from:orr ~ now home)))
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%| 'by: no position in the last twelve hours to work out the drive home from']) !>((auto-by-from:orr (fix '39.6012' (sub now ~h12)) now home)))
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%| 'by: no position in the last twelve hours to work out the drive home from']) !>((auto-by-from:orr (fix '39.6012' (add now ~m1)) now home)))
+    (expect-eq !>(`(each [lat=@t lon=@t] @t)`[%| 'by: already home, so give a time']) !>((auto-by-from:orr (fix '39.7820' now) now home)))
+  ==
 ::  a location send's wire: one per ship per hour (version 137)
 ++  test-location-wire
   ;:  weld

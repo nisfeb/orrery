@@ -5314,8 +5314,32 @@
     (pure:n (home-point:orr all (multi-of:orr schema) now gc))
   ?:  &(?=(~ until) ?=(~ hp))
     (send-err eyre-id 400 'home: this ship does not know where home is; give hours too')
-  ::  a check-in (version 142): home by a time, or the ship is told
-  =/  by=(unit @da)  ?.(home ~ (de-iso:orr (gs:orr jon 'by')))
+  ::  a check-in (version 142): home by a time, or the ship is told. "auto"
+  ::  works the time out from the drive home with Mapbox (version 143),
+  ::  under its own wire and a short timer, so the share still answers
+  ::  promptly when Mapbox is slow
+  ;<  chk=(each (unit @da) @t)  bind:m
+    =/  n  (fiber:fiber:nexus ,(each (unit @da) @t))
+    ?.  &(home =('auto' (gs:orr jon 'by')))
+      (pure:n [%& ?.(home ~ (de-iso:orr (gs:orr jon 'by')))])
+    ;<  tj=json  bind:n  (read-json (rf 1 / %'travel.json'))
+    =/  tc=travel-config:orr  (de-travel-config:orr tj)
+    ?:  =('' token.tc)  (pure:n [%| 'by: no Mapbox token to work out the drive home'])
+    ;<  pos=json  bind:n  (read-json (rf 1 / %'position.json'))
+    =/  from  (auto-by-from:orr pos now hp)
+    ?:  ?=(%| -.from)  (pure:n [%| p.from])
+    =/  route=request:http
+      :^  %'POST'  (directions-url:orr api.tc token.tc)
+        ~[['content-type' 'application/x-www-form-urlencoded']]
+      `(as-octs:mimes:html (directions-body:orr p.from (need hp) ~))
+    ;<  got=[status=@ud body=@t secs=@ud]  bind:n  (fetch-json route ~s15 %check-in-route)
+    ?.  =(200 status.got)
+      (pure:n [%| (rap 3 'by: Mapbox answered ' (scot %ud status.got) ' for the drive home' ~)])
+    =/  secs=(unit @ud)  (route-secs:orr (fall (de:json:html body.got) ~))
+    ?~  secs  (pure:n [%| 'by: Mapbox found no route home'])
+    (pure:n [%& `(auto-by:orr now u.secs buffer.tc)])
+  ?:  ?=(%| -.chk)  (send-err eyre-id 400 p.chk)
+  =/  by=(unit @da)  p.chk
   ?:  &(?=(^ by) (lte u.by now))  (send-err eyre-id 400 'by: in the past')
   =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ | by |]
   ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))

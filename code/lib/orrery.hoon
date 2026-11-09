@@ -9336,6 +9336,32 @@
       ?:  =(1 hours)  ' for an hour'
       (rap 3 ' for ' (crip (a-co:co hours)) ' hours' ~)
   ==
+::  +auto-by: a check-in's time worked out from the drive home (version
+::  143): now, the drive and the owner's travel buffer, up to the next
+::  whole minute
+::
+++  auto-by
+  |=  [now=@da secs=@ud buffer=@dr]
+  ^-  @da
+  =/  t=@da  (add now (add (mul ~s1 secs) buffer))
+  =/  r=@dr  (mod t ~m1)
+  ?:(=(0 r) t (add (sub t r) ~m1))
+::  +auto-by-from: where a worked-out check-in's drive starts (version
+::  143): the owner's fix, when it is under twelve hours old and not at
+::  home already, or why it cannot be worked out
+::
+++  auto-by-from
+  |=  [pos=json now=@da home=(unit [lat=@t lon=@t])]
+  ^-  (each [lat=@t lon=@t] @t)
+  ?~  home  [%| 'by: this ship does not know where home is']
+  =/  at=(unit @da)  (de-iso (gs pos 'at'))
+  ?.  &((coordinate (gs pos 'lat') 90) (coordinate (gs pos 'lon') 180))
+    [%| 'by: no position to work out the drive home from']
+  ?.  &(?=(^ at) (lte u.at now) (lth (sub now u.at) ~h12))
+    [%| 'by: no position in the last twelve hours to work out the drive home from']
+  =/  fix=[lat=@t lon=@t]  [(gs pos 'lat') (gs pos 'lon')]
+  ?:  (home-reached fix home)  [%| 'by: already home, so give a time']
+  [%& fix]
 ::  +loc-late-said: the owner's notice that a peer checking in is not
 ::  home by the time they gave (version 142)
 ::
