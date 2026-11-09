@@ -3907,10 +3907,12 @@
 ::  hours after it starts, since a performance or an appointment with
 ::  no end given is over by then; one with a start but no end that
 ::  began more than stale ago with nothing seen since closes at its
-::  newest observation. Times are read the way the readers write them,
-::  a bare date included, so a trip that started on a date closes. The
-::  close time lands one second past a later live status row, so a
-::  reminder that said "open" after the event does not win the fold.
+::  newest observation, and one with neither start nor end the same,
+::  counted from when it was made. Times are read the way the readers
+::  write them, a bare date included, so a trip that started on a date
+::  closes. The close time lands one second past a later live status
+::  row, so a reminder that said "open" after the event does not win
+::  the fold.
 ::
 ++  retire-trip       ~d7
 ++  retire-scheduled  ~h6
@@ -3952,17 +3954,24 @@
   ?^  end
     ?.  (lth u.end now)  ~
     `[id.l (after u.end) (cat 3 'ended ' (en-iso u.end))]
-  ?~  start  ~
+  =/  latest=@da
+    %+  roll  rows.l
+    |=  [r=row acc=@da]
+    ?:(retracted.obs.r acc (max seen.obs.r acc))
+  ::  no time at all (version 144): a request waiting on a reply, opened
+  ::  by a reader with neither a schedule nor a start, closes once
+  ::  nothing is seen for stale since it was made, or it stays open for
+  ::  good
+  ?~  start
+    =.  latest  (max latest created.body.l)
+    ?.  (lth latest cutoff)  ~
+    `[id.l (after latest) (rap 3 'no start or end, nothing since ' (en-iso latest) ~)]
   ?:  &((is-trip id.l) (lth (add u.start retire-trip) now))
     =/  e=@da  (add u.start retire-trip)
     `[id.l (after e) (rap 3 'a trip started ' (en-iso u.start) ' with no end' ~)]
   ?:  &(=('' started) (lth (add u.start retire-scheduled) now))
     =/  e=@da  (add u.start retire-scheduled)
     `[id.l (after e) (rap 3 'scheduled for ' (en-iso u.start) ' with no end' ~)]
-  =/  latest=@da
-    %+  roll  rows.l
-    |=  [r=row acc=@da]
-    ?:(retracted.obs.r acc (max seen.obs.r acc))
   =.  latest  (max latest u.start)
   ?.  &((lth u.start cutoff) (lth latest cutoff))  ~
   `[id.l (after latest) (rap 3 'started ' (en-iso u.start) ', nothing since ' (en-iso latest) ~)]

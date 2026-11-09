@@ -367,6 +367,31 @@
     ::  a trip whose start is a bare date closes a week on
     (expect-eq !>(~2026.9.12) !>(at:(snag 4 got)))
   ==
+++  test-plan-retire-undated
+  ::  a request waiting on a reply, no start or end: closed once nothing
+  ::  is seen for stale since it was made (version 144)
+  =/  ago=@da  (sub now ~d40)
+  =/  made
+    |=  [l=loaded:orr at=@da]
+    ^-  loaded:orr
+    l(created.body at)
+  =/  all=(list loaded:orr)
+    :~  (made (sit 'situation/quiet' ~[['needs' 'a reply']] ago) ago)
+        (made (sit 'situation/news' ~[['needs' 'a reply']] (sub now ~d10)) ago)
+        (made (sit 'situation/bare' ~ ago) ago)
+        (made (sit 'situation/new' ~ ago) (sub now ~d10))
+        (made (sit 'situation/answered' ~[['status' 'closed']] ago) ago)
+        (made (sit 'situation/garbled' ~[['started' 'last week']] ago) ago)
+    ==
+  =/  got  (plan-retire:orr all ~ now ~d30)
+  ;:  weld
+    %+  expect-eq
+      !>(`(list @t)`~['situation/quiet' 'situation/bare' 'situation/garbled'])
+      !>(`(list @t)`(turn got |=([id=@t *] id)))
+    (expect-eq !>(ago) !>(at:(snag 0 got)))
+    (expect-eq !>(ago) !>(at:(snag 1 got)))
+    (expect !>((has-sub why:(snag 0 got) 'no start or end, nothing since')))
+  ==
 ++  test-plan-expire
   =/  thing
     |=  [id=@t st=@t at=@da]
