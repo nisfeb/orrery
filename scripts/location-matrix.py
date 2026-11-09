@@ -88,6 +88,30 @@ check('home, the share ends and the peer drops it', bool(wait('home ends it', la
 code, d = h('GET', '/location')
 check('and no grant is left on the host', not listish(dictish(d).get('out')), d)
 
+# a check-in (version 142): until home by a time; past it with the owner
+# away, the peer is told, once, and the lateness stays on later fixes
+def iso(t): return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(t))
+code, d = h('POST', '/location/share', {'ship': PEERNAME, 'home': True, 'precision': 'exact', 'by': iso(time.time() - 60)})
+check('a check-in already past is refused', code == 400, (code, d))
+by = iso(time.time() + 20)
+code, d = h('POST', '/location/share', {'ship': PEERNAME, 'home': True, 'precision': 'exact', 'by': by})
+check('a check-in keeps its time, not yet told', code == 200 and dictish(d).get('by') == by and dictish(d).get('told') is False, (code, d))
+h('POST', '/position', {'lat': 39.6021, 'lon': -89.7021, 'acc': 12})
+e = wait('the away fix arrives', lambda: (lambda x: x if x.get('lat') == '39.6021' else None)(theirs()), 60) or {}
+check('before its time, the peer sees no lateness', e and not e.get('late'), e)
+time.sleep(max(0, time.mktime(time.strptime(by, '%Y-%m-%dT%H:%M:%SZ')) - time.mktime(time.gmtime()) + 3))
+h('POST', '/position', {'lat': 39.6022, 'lon': -89.7022, 'acc': 12})
+e = wait('the peer hears the owner is late', lambda: (lambda x: x if x.get('late') else None)(theirs()), 60) or {}
+check('past its time and away, the peer keeps when they meant to be home', e.get('late') == by, e)
+code, d = h('GET', '/location')
+g = next((dictish(x) for x in listish(dictish(d).get('out')) if dictish(x).get('ship') == PEERNAME), {})
+check('and the host marks the grant told', g.get('told') is True, g)
+h('POST', '/position', {'lat': 39.6023, 'lon': -89.7023, 'acc': 12})
+e = wait('a later fix arrives', lambda: (lambda x: x if x.get('lat') == '39.6023' else None)(theirs()), 60) or {}
+check('a later fix keeps the lateness', e.get('late') == by, e)
+h('DELETE', '/location/share/' + PEERNAME)
+wait('the peer drops it', lambda: (not theirs()) or None, 60)
+
 # put back what this run changed
 if home_row: h('POST', '/retract', {'id': home_row, 'note': 'location gate'})
 h('DELETE', '/body/' + HP)
