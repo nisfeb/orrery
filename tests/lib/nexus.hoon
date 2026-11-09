@@ -1694,6 +1694,9 @@
     ::  and kept marked told; the next pass tells nothing more
     (expect-eq !>((plan ~[[~zod late] [~zod (fix '39.78' '-89.65' '1000' ci)]] ~[ci(told &, sent `at, left &)])) !>((loc-plan:orr ~[ci] now pos away)))
     (expect-eq !>((plan ~ ~[ci(told &, sent `at)])) !>((loc-plan:orr ~[ci(told &, sent `at)] now pos away)))
+    ::  at its time exactly it is late
+    =/  at-by=json  (pairs:enjs:format ~[['action' s+'position-late'] ['by' s+(en-iso:orr now)]])
+    (expect-eq !>((plan ~[[~zod at-by]] ~[ci(by `now, told &, sent `at)])) !>((loc-plan:orr ~[ci(by `now, sent `at)] now pos away)))
     ::  told with no fresh fix: a phone gone quiet is still told about
     (expect-eq !>((plan ~[[~zod late]] ~[ci(told &, sent `at)])) !>((loc-plan:orr ~[ci(sent `at)] now pos away)))
     ::  before its time, nothing; home before the pass, it ends and tells no lateness
