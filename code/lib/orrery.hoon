@@ -11345,7 +11345,12 @@
           |(=('x' i.t.t.t.s) =('X' i.t.t.t.s))  =(']' i.t.t.t.t.s)
       ==
     ~
-  =/  rest=tape  t.t.t.t.t.s
+  (last-tag t.t.t.t.t.s)
+::  +last-tag: the last [T<n>] on a line, ~ when it has none
+::
+++  last-tag
+  |=  rest=tape
+  ^-  (unit @t)
   =|  got=(unit @t)
   |-
   ?~  rest  got
@@ -11354,6 +11359,29 @@
   =/  tail=tape  (slag (lent ds) t.t.rest)
   ?.  &(?=(^ ds) ?=([%']' *] tail))  $(rest t.rest)
   $(rest t.tail, got `(crip ['T' ds]))
+::  +tick-tags: a brief's text with the box ticked on each todo line,
+::  as the brief writes one (- [ ] at the line's start), whose tag is
+::  among these; every other line as it was (version 145)
+::
+++  tick-tags
+  |=  [text=@t tags=(set @t)]
+  ^-  @t
+  =/  tick
+    |=  l=tape
+    ^-  tape
+    ?.  ?=([@ @ @ @ @ *] l)  l
+    ?.  &(=('-' i.l) =(' ' i.t.l) =('[' i.t.t.l) =(' ' i.t.t.t.l) =(']' i.t.t.t.t.l))  l
+    =/  tag=(unit @t)  (last-tag t.t.t.t.t.l)
+    ?.  &(?=(^ tag) (~(has in tags) u.tag))  l
+    ['-' ' ' '[' 'x' t.t.t.t.l]
+  =/  t=tape  (trip text)
+  ::  cur and out are built backwards
+  =|  cur=tape
+  =|  out=tape
+  |-
+  ?~  t  (crip (flop (weld (flop (tick (flop cur))) out)))
+  ?.  =('\0a' i.t)  $(t t.t, cur [i.t cur])
+  $(t t.t, cur ~, out ['\0a' (weld (flop (tick (flop cur))) out)])
 ++  scag-digits
   |=  t=tape
   ^-  tape

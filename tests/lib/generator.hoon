@@ -2651,6 +2651,11 @@
     (expect-eq !>(`(list [@t @t @t])`~[['T1' 't1' 'act-1'] ['T2' 't4' 'act-4']]) !>(tags))
     (expect-eq !>((sy `(list @t)`~['T1' 'T2' 'T9'])) !>((checked-tags:orr page)))
     (expect-eq !>(`(set @t)`~) !>((checked-tags:orr '- [ ] Buy milk [T1]')))
+    ::  the other way (version 145): a done task's box ticked in the
+    ::  brief, blank lines and every other line as they were
+    %+  expect-eq
+      !>('To do\0a\0a- [x] Buy milk (overdue) [T1]\0a- [ ] Someday [T2]\0a  - [ ] Nested [T1]\0aRead [T1]\0a')
+      !>((tick-tags:orr 'To do\0a\0a- [ ] Buy milk (overdue) [T1]\0a- [ ] Someday [T2]\0a  - [ ] Nested [T1]\0aRead [T1]\0a' (sy `(list @t)`~['T1' 'T7'])))
     %+  expect-eq
       !>(`(list @t)`~['journal/2026-09-05' 'journal/2026.9.5' 'journal/2026.09.05'])
       !>((journal-pages:orr '2026-09-05'))

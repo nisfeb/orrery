@@ -615,6 +615,7 @@
         ;<  ~  bind:m  (world-pass all acts)
         ;<  ~  bind:m  (nudge-pass all)
         ;<  ~  bind:m  (evening-pass acts)
+        ;<  ~  bind:m  (brief-ticks-pass acts)
         ;<  ~  bind:m  brief-checks-pass
         ;<  now=@da  bind:m  get-time:io
         ;<  ~  bind:m  (set-timer:io /nudge (add now ~m5))
@@ -9863,6 +9864,36 @@
   :~  ['day' s+day]
       ['done' a+(turn (sort ~(tap in (~(gas in taken) `(list @t)`fresh)) aor) |=(t=@t `json`s+t))]
   ==
+::  +brief-ticks-pass: the checklist the other way (version 145). A
+::  boxed todo whose task is done, wherever it was done (the phone, the
+::  calendar, the page here), has its box ticked in today's brief, and
+::  the record's time moved on, so lattice's journal takes the tick into
+::  its page and keeps the owner's own text and ticks. Nothing is ever
+::  unticked: a task taken up again keeps its ticked box
+::
+++  brief-ticks-pass
+  |=  acts=(list [id=@ta a=action:orr])
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  last=json  bind:m  (read-json (rf 0 / %'brief-last.json'))
+  =/  day=@t  (gs:orr last 'day')
+  =/  todos=json  (gj:orr last 'todos')
+  ?.  ?=([%o *] todos)  (pure:m ~)
+  ;<  now=@da  bind:m  get-time:io
+  ;<  tz=@t  bind:m  local-tz
+  ?.  =(day (local-day:orr now tz))  (pure:m ~)
+  =/  done=(set @t)
+    (sy (murn acts |=([id=@ta a=action:orr] ?.(?=(%done status.a) ~ `(unit @t)`[~ id]))))
+  =/  tags=(set @t)
+    %-  sy
+    %+  murn  ~(tap by p.todos)
+    |=([tag=@t j=json] ?.((~(has in done) (gs:orr j 'action')) ~ `(unit @t)`[~ tag]))
+  =/  text=@t  (gs:orr last 'text')
+  =/  new=@t  (tick-tags:orr text tags)
+  ?:  =(text new)  (pure:m ~)
+  =/  rec=json  (set-key:orr (set-key:orr last 'text' s+new) 'at' s+(en-iso:orr now))
+  ;<  ~  bind:m  (put-json (rf 0 /briefs `@ta`day) rec)
+  (over:io (rf 0 / %'brief-last.json') [[/ %json] rec])
 ::  +first-page: the text of the first of these lattice pages that can be
 ::  read, ~ when none can
 ::
