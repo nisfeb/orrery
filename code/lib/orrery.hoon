@@ -9154,9 +9154,10 @@
 ::  kilometre; since when, the time of the last fix sent, and whether a
 ::  fix away from home has gone. Position never becomes a fact on either
 ::  ship. A check-in (version 142): until home by a time, and whether
-::  the ship was told the owner is not home yet
+::  the ship was told the owner is not home yet. Always (version 146):
+::  no end at all, until the owner stops it
 ::
-+$  loc-grant  [ship=@p until=(unit @da) home=? exact=? since=@da sent=(unit @da) left=? by=(unit @da) told=?]
++$  loc-grant  [ship=@p until=(unit @da) home=? exact=? since=@da sent=(unit @da) left=? by=(unit @da) told=? always=?]
 ++  de-loc-grants
   |=  j=json
   ^-  (list loc-grant)
@@ -9169,6 +9170,7 @@
   :-  ~
   :*  u.s  (de-iso (gs g 'until'))  ?=([%b %.y] (gj g 'home'))  ?=([%b %.y] (gj g 'exact'))  u.since
       (de-iso (gs g 'sent'))  ?=([%b %.y] (gj g 'left'))  (de-iso (gs g 'by'))  ?=([%b %.y] (gj g 'told'))
+      ?=([%b %.y] (gj g 'always'))
   ==
 ++  en-loc-grant
   |=  g=loc-grant
@@ -9176,15 +9178,16 @@
   %-  pairs:enjs:format
   :~  ['ship' s+(scot %p ship.g)]  ['until' ?~(until.g ~ s+(en-iso u.until.g))]  ['home' b+home.g]
       ['exact' b+exact.g]  ['since' s+(en-iso since.g)]  ['sent' ?~(sent.g ~ s+(en-iso u.sent.g))]  ['left' b+left.g]
-      ['by' ?~(by.g ~ s+(en-iso u.by.g))]  ['told' b+told.g]
+      ['by' ?~(by.g ~ s+(en-iso u.by.g))]  ['told' b+told.g]  ['always' b+always.g]
   ==
-::  +loc-live: a grant still runs: before its time, or until home
+::  +loc-live: a grant still runs: before its time, or until home, or
+::  always (version 146)
 ::
 ++  loc-live
   |=  [g=loc-grant now=@da]
   ^-  ?
   ?^  until.g  (gth u.until.g now)
-  home.g
+  |(home.g always.g)
 ::  +loc-fix: the point a grant sends: as the phone gave it, or to two
 ::  decimals, about a kilometre
 ::
@@ -9234,7 +9237,7 @@
     ?|  !(loc-live g now)
         &(home.g left.g fresh athome)
         ::  a grant only home ends, with no home to see, ends now
-        &(?=(~ until.g) ?=(~ home))
+        &(?=(~ until.g) !always.g ?=(~ home))
     ==
   ?:  over
     $(grants t.grants, sends [[ship.g (pairs:enjs:format ~[['action' s+'position-end']])] sends])
@@ -9249,6 +9252,8 @@
     :~  ['action' s+'position']  ['lat' s+lat.pt]  ['lon' s+lon.pt]  ['acc' s+?:(exact.g (gs pos 'acc') '1000')]
         ['at' s+(en-iso u.at)]  ['until' ?~(until.g ~ s+(en-iso u.until.g))]  ['home' b+home.g]
     ==
+  ::  said only when so (version 146), so an older peer reads what it did
+  =?  body  always.g  (set-key body 'always' b+&)
   $(grants t.grants, sends [[ship.g body] sends], keep [g(sent at, left |(left.g !athome)) keep])
 ::  +loc-wire: the dart wire of a location send to a ship, one per ship
 ::  per hour (version 137). Each wire is its own ames flow, never
@@ -9272,6 +9277,9 @@
   ^-  ?
   =/  u=(unit @da)  (de-iso (gs v 'until'))
   ?^  u  (gth u.u now)
+  ::  one shared always (version 146) shows until its ship ends it: a
+  ::  phone that stays put sends nothing for days
+  ?:  ?=([%b %.y] (gj v 'always'))  &
   (loc-fresh v now)
 ::  +loc-fresh: an entry's fix is under a day old; one with no time the
 ::  ship can read is not
@@ -9288,9 +9296,12 @@
 ++  loc-fields
   |=  fix=json
   ^-  (list [@t json])
-  :~  ['lat' s+(gs fix 'lat')]  ['lon' s+(gs fix 'lon')]  ['acc' s+(gs fix 'acc')]  ['at' s+(gs fix 'at')]
-      ['until' (gj fix 'until')]  ['home' (gj fix 'home')]
-  ==
+  =/  base=(list [@t json])
+    :~  ['lat' s+(gs fix 'lat')]  ['lon' s+(gs fix 'lon')]  ['acc' s+(gs fix 'acc')]  ['at' s+(gs fix 'at')]
+        ['until' (gj fix 'until')]  ['home' (gj fix 'home')]
+    ==
+  ?.  ?=([%b %.y] (gj fix 'always'))  base
+  (snoc base ['always' b+&])
 ::  +loc-in-entry: a peer's fix kept in location.json's in, under the
 ::  person here who carries its ship
 ::
@@ -9335,11 +9346,12 @@
 ::  where they are, and until when (version 137)
 ::
 ++  loc-start-said
-  |=  [name=@t until=(unit @da) home=? now=@da]
+  |=  [name=@t until=(unit @da) home=? always=? now=@da]
   ^-  @t
   =/  hours=@ud  ?~(until 0 (div (add (sub (max u.until now) now) ~m30) ~h1))
   %+  rap  3
   :~  name  ' is sharing where they are'
+      ?:  always  ' until they stop'
       ?:  home  ' until they\'re home'
       ?:  =(0 hours)  ''
       ?:  =(1 hours)  ' for an hour'

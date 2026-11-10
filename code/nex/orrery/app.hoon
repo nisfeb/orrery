@@ -3941,7 +3941,7 @@
   ;<  ~  bind:m
     ?.  new  (pure:m ~)
     %^  notify-owner  (cat 3 'orrery-location-' (scot %p src))  'Location sharing'
-    (loc-start-said:orr name.body.i.who (de-iso:orr (gs:orr jon 'until')) ?=([%b %.y] (gj:orr jon 'home')) now)
+    (loc-start-said:orr name.body.i.who (de-iso:orr (gs:orr jon 'until')) ?=([%b %.y] (gj:orr jon 'home')) ?=([%b %.y] (gj:orr jon 'always')) now)
   (note-inbox 'position' & '' (scot %p src))
 ::  +take-position-late: a ship checking in says its owner is not home
 ::  by the time they gave (version 142): kept on their fix, so the phone
@@ -5296,9 +5296,12 @@
   ;<  our=@p  bind:m  get-our:io
   ?:  =(our u.shp)  (send-err eyre-id 400 'ship: not this ship')
   ;<  now=@da  bind:m  get-time:io
-  =/  home=?  ?=([%b %.y] (gj:orr jon 'home'))
+  ::  always (version 146): no end, and so neither a time nor home
+  =/  always=?  ?=([%b %.y] (gj:orr jon 'always'))
+  =/  home=?  &(!always ?=([%b %.y] (gj:orr jon 'home')))
   =/  hours=(unit @ud)  (gn:orr jon 'hours')
   =/  until=(unit @da)
+    ?:  always  ~
     =/  u=(unit @da)  (de-iso:orr (gs:orr jon 'until'))
     ?^  u  u
     ?^  hours  `(add now (mul ~h1 (max 1 (min 72 u.hours))))
@@ -5308,12 +5311,12 @@
   ::  never ends (security audit 3.11)
   ;<  hp=(unit [lat=@t lon=@t])  bind:m
     =/  n  (fiber:fiber:nexus ,(unit [lat=@t lon=@t]))
-    ?^  until  (pure:n ~)
+    ?:  |(always ?=(^ until))  (pure:n ~)
     ;<  schema=json  bind:n  (read-json (rf 1 / %'schema.json'))
     ;<  all=(list loaded:orr)  bind:n  (load-bodies 1)
     ;<  gc=json  bind:n  (read-json (rf 1 / %'geocache.json'))
     (pure:n (home-point:orr all (multi-of:orr schema) now gc))
-  ?:  &(?=(~ until) ?=(~ hp))
+  ?:  &(?=(~ until) !always ?=(~ hp))
     (send-err eyre-id 400 'home: this ship does not know where home is; give hours too')
   ::  a check-in (version 142): home by a time, or the ship is told. "auto"
   ::  works the time out from the drive home with Mapbox (version 143),
@@ -5342,7 +5345,7 @@
   ?:  ?=(%| -.chk)  (send-err eyre-id 400 p.chk)
   =/  by=(unit @da)  p.chk
   ?:  &(?=(^ by) (lte u.by now))  (send-err eyre-id 400 'by: in the past')
-  =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ | by |]
+  =/  g=loc-grant:orr  [u.shp until home =('exact' (gs:orr jon 'precision')) now ~ | by | always]
   ;<  doc=json  bind:m  (read-json (rf 1 / %'location.json'))
   =/  rest=(list loc-grant:orr)  (skip (de-loc-grants:orr doc) |=(x=loc-grant:orr =(ship.x u.shp)))
   ;<  ~  bind:m  (over:io (rf 1 / %'location.json') [[/ %json] (set-key:orr ?:(?=([%o *] doc) doc [%o ~]) 'out' a+(turn [g rest] en-loc-grant:orr))])

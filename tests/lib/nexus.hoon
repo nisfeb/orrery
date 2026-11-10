@@ -1633,13 +1633,16 @@
     (expect-eq !>(`(list @t)`~['0vabc@~zod']) !>((cal-uids:orr ~[[*@ta ['situation/x' 'starts' s+'x' now ~ 100 ['calendar' 'family/0vabc@~zod'] 'calendar' now | '']] [*@ta ['situation/x' 'note' s+'x' now ~ 100 ['user' 'u'] 'owner' now | '']]])))
   ==
 ++  test-location-share
-  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ | ~ |]
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | now ~ | ~ | |]
   =/  home=(unit [@t @t])  `['39.7817' '-89.6501']
   =/  old=json  (pairs:enjs:format ~[['ship' s+'~zod'] ['until' ~] ['home' b+&] ['exact' b+|] ['since' s+(en-iso:orr now)] ['sent' ~] ['left' b+|]])
   ;:  weld
     ::  live before its time; until home lives on with no time; none at all is not a grant
     (expect-eq !>([& |]) !>([(loc-live:orr g (add now ~h1)) (loc-live:orr g (add now ~h3))]))
     (expect-eq !>([& |]) !>([(loc-live:orr g(until ~, home &) (add now ~d9)) (loc-live:orr g(until ~) now)]))
+    ::  always (version 146): no end at all, kept in the file and read back
+    (expect !>((loc-live:orr g(until ~, always &) (add now ~d400))))
+    (expect-eq !>(`(list loc-grant:orr)`~[g(until ~, always &)]) !>((de-loc-grants:orr (pairs:enjs:format ~[['out' a+~[(en-loc-grant:orr g(until ~, always &))]]]))))
     ::  exact as given, or to two decimals
     (expect-eq !>([['39.781734' '-89.650123'] ['39.78' '-89.65']]) !>([(loc-fix:orr '39.781734' '-89.650123' &) (loc-fix:orr '39.781734' '-89.650123' |)]))
     ::  home within 150 m; 300 m off is not home; no home point, never
@@ -1659,7 +1662,7 @@
   =/  home=(unit [lat=@t lon=@t])  `['39.7817' '-89.6501']
   =/  away=(unit [lat=@t lon=@t])  `['40.7817' '-89.6501']
   ::  two hours, begun five minutes ago, nothing sent yet
-  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | (sub now ~m5) ~ | ~ |]
+  =/  g=loc-grant:orr  [~zod `(add now ~h2) | | (sub now ~m5) ~ | ~ | |]
   =/  end=json  (pairs:enjs:format ~[['action' s+'position-end']])
   =/  fix
     |=  [lat=@t lon=@t acc=@t g=loc-grant:orr]
@@ -1685,6 +1688,8 @@
     ::  a time run out, or until home with no home, ends: told, not kept
     (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until `(sub now ~s1))] now pos away)))
     (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until ~, home &)] now pos ~)))
+    ::  always (version 146) is not ended for want of a home, and its fix says so
+    (expect-eq !>((plan ~[[~zod (set-key:orr (fix '39.78' '-89.65' '1000' g(until ~)) 'always' b+&)]] ~[g(until ~, always &, sent `at, left &)])) !>((loc-plan:orr ~[g(until ~, always &)] now pos ~)))
     ::  until home at home: begun there, it goes on; once seen away, it ends
     (expect-eq !>((plan ~[[~zod (fix '39.78' '-89.65' '1000' g(until ~, home &))]] ~[g(until ~, home &, sent `at)])) !>((loc-plan:orr ~[g(until ~, home &)] now pos home)))
     (expect-eq !>((plan ~[[~zod end]] ~)) !>((loc-plan:orr ~[g(until ~, home &, left &)] now pos home)))
@@ -1774,13 +1779,15 @@
 ::  the owner's notice that a peer began to share (version 137)
 ++  test-location-start-said
   ;:  weld
-    (expect-eq !>('Sam is sharing where they are until they\'re home') !>((loc-start-said:orr 'Sam' `(add now ~h2) & now)))
+    (expect-eq !>('Sam is sharing where they are until they\'re home') !>((loc-start-said:orr 'Sam' `(add now ~h2) & | now)))
     ::  the hours left, to the nearest; under half an hour, none said
-    (expect-eq !>('Sam is sharing where they are for 2 hours') !>((loc-start-said:orr 'Sam' `(sub (add now ~h2) ~s1) | now)))
-    (expect-eq !>('Sam is sharing where they are for an hour') !>((loc-start-said:orr 'Sam' `(add now ~m40) | now)))
-    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(add now ~m20) | now)))
-    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(sub now ~h1) | now)))
-    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' ~ | now)))
+    (expect-eq !>('Sam is sharing where they are for 2 hours') !>((loc-start-said:orr 'Sam' `(sub (add now ~h2) ~s1) | | now)))
+    (expect-eq !>('Sam is sharing where they are for an hour') !>((loc-start-said:orr 'Sam' `(add now ~m40) | | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(add now ~m20) | | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' `(sub now ~h1) | | now)))
+    (expect-eq !>('Sam is sharing where they are') !>((loc-start-said:orr 'Sam' ~ | | now)))
+    ::  always (version 146)
+    (expect-eq !>('Sam is sharing where they are until they stop') !>((loc-start-said:orr 'Sam' ~ | & now)))
     (expect-eq !>('Sam isn\'t home yet, and meant to be by now') !>((loc-late-said:orr 'Sam')))
   ==
 ::  a check-in worked out from the drive home (version 143)
@@ -1825,6 +1832,8 @@
     ::  no end: a fix 23 hours old shows, 25 hours old does not
     (expect !>((loc-in-live:orr (v ~ (iso (sub now ~h23))) now)))
     (expect !>(!(loc-in-live:orr (v ~ (iso (sub now ~h25))) now)))
+    ::  one shared always (version 146) shows however old its fix
+    (expect !>((loc-in-live:orr (set-key:orr (v ~ (iso (sub now ~d30))) 'always' b+&) now)))
     ::  no end and no fix time, or one the ship cannot read: gone
     (expect !>(!(loc-in-live:orr (pairs:enjs:format ~[['lat' s+'39.78'] ['until' ~]]) now)))
     (expect !>(!(loc-in-live:orr (v ~ s+'yesterday') now)))
