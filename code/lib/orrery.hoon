@@ -4447,7 +4447,8 @@
 ::  becomes starts or ends, dated when it was learned; a starts or ends
 ::  dated in the future is re-dated now; a situation status that is not
 ::  open, closed or cancelled goes; an activity's next that has passed
-::  goes, and the nearest occurrence still ahead takes its place.
+::  goes, and the nearest occurrence still ahead takes its place. One
+::  the calendar says is under way stays until it ends (version 146).
 ::
 ++  plan-times
   |=  [all=(list loaded) now=@da]
@@ -4475,7 +4476,11 @@
       |=  r=row
       ?.  &(=('next' attr.obs.r) ?=([%s *] value.obs.r))  |
       =/  v=(unit @da)  (de-iso p.value.obs.r)
-      ?~(v | (lte u.v now))
+      ?~  v  |
+      ::  one the calendar says is under way has not passed yet: a
+      ::  pick-up at its end still reads it (version 146)
+      ?:  &(=('calendar' kind.source.obs.r) ?=(^ until.obs.r) (gth u.until.obs.r now))  |
+      (lte u.v now)
     =/  rs=(list json)
       (turn stale |=(r=row (retract-op id.r 'reconcile: this occurrence has passed' 'reconcile')))
     =/  ws=(list json)
@@ -7682,9 +7687,26 @@
     ?:  (is-closed w)  ~
     =/  sit=?  =(%situation kind.body.l)
     =/  begins=(unit @da)  (de-iso (winner-text w ?:(sit 'starts' 'next')))
-    ?~  begins  ~
-    ::  the occurrence window. A situation keeps the winner's start and
-    ::  its ends. A series takes its start and end from the calendar's
+    =/  da-of  |=(r=row ?.(?=([%s *] value.obs.r) `(unit @da)`~ (de-iso p.value.obs.r)))
+    ::  the occurrence under way. The calendar moves a series' next on
+    ::  at an occurrence's start, so a pick-up at its end would drop out
+    ::  before its alert. The calendar's next row whose window holds now
+    ::  keeps it (version 146)
+    =/  going=(list [start=@da ends=(unit @da)])
+      ?:  sit  ~
+      =/  on=(list row)
+        %+  sort
+          %+  skim  rows.l
+          |=  r=row
+          ?&  =('next' attr.obs.r)  =('calendar' kind.source.obs.r)  !retracted.obs.r
+              ?=(^ until.obs.r)  (gth u.until.obs.r now)
+              (lte (fall (da-of r) +(now)) now)
+          ==
+        |=([a=row b=row] (gth at.obs.a at.obs.b))
+      ?~  on  ~
+      ~[[(fall (da-of i.on) now) until.obs.i.on]]
+    ::  the occurrence window ahead. A situation keeps the winner's start
+    ::  and its ends. A series takes its start and end from the calendar's
     ::  own next row, which the reader stamps with the true start and
     ::  end: reconcile rewrites the same next later with a day-long until
     ::  that wins the fold (version 71), and sometimes with a stale time
@@ -7693,10 +7715,10 @@
     ::  start and end, so a reconcile and calendar disagreement still
     ::  lands on the right occurrence with a real end a pick-up can use
     ::  ponytail: six hours assumes occurrences sit more than that apart
-    =/  da-of  |=(r=row ?.(?=([%s *] value.obs.r) `(unit @da)`~ (de-iso p.value.obs.r)))
-    =/  gap  |=(d=@da ?:((gth d u.begins) (sub d u.begins) (sub u.begins d)))
-    =/  win=[start=@da ends=(unit @da)]
-      ?:  sit  [u.begins (de-iso (winner-text w 'ends'))]
+    =/  win=(unit [start=@da ends=(unit @da)])
+      ?~  begins  ~
+      ?:  sit  `[u.begins (de-iso (winner-text w 'ends'))]
+      =/  gap  |=(d=@da ?:((gth d u.begins) (sub d u.begins) (sub u.begins d)))
       =/  cal=(list row)
         %+  skim  rows.l
         |=  r=row
@@ -7705,11 +7727,14 @@
             (lte (gap (fall (da-of r) now)) ~h6)
         ==
       =/  sorted=(list row)  (sort cal |=([a=row b=row] (gth at.obs.a at.obs.b)))
-      ?~  sorted  [u.begins ~]
-      [(fall (da-of i.sorted) u.begins) until.obs.i.sorted]
-    =/  start=@da  start.win
-    =/  ends=(unit @da)  ends.win
-    ?:  &(?=(^ ends) (gte u.ends start) (gte (sub u.ends start) ~h20))  ~
+      ?~  sorted  `[u.begins ~]
+      `[(fall (da-of i.sorted) u.begins) until.obs.i.sorted]
+    ::  the one under way and the one ahead, each once
+    =/  wins=(list [start=@da ends=(unit @da)])
+      ?~  win  going
+      ?:  &(?=(^ going) =(start.i.going start.u.win))  going
+      (snoc going u.win)
+    ?~  wins  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
@@ -7720,7 +7745,13 @@
     =/  where=@t  ?:(?=([%s *] v) (trim-cord p.v) '')
     ?:  &(?=(~ place) |(=('' where) (online where)))  ~
     ::  each trip is to be there at the start, or at the end for a
-    ::  pick-up; one with no end known is left out
+    ::  pick-up; one with no end known is left out, and so is one that
+    ::  lasts all day
+    %-  zing
+    %+  turn  `(list [start=@da ends=(unit @da)])`wins
+    |=  [start=@da ends=(unit @da)]
+    ^-  (list appointment)
+    ?:  &(?=(^ ends) (gte u.ends start) (gte (sub u.ends start) ~h20))  ~
     %+  murn  (trips l multi now (day-in start tz))
     |=  [lg=leg vd=verdict]
     ^-  (unit appointment)

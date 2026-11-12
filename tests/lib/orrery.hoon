@@ -1192,6 +1192,44 @@
     (expect-eq !>(`(unit @da)`[~ ~2026.10.19..22.00.00]) !>(ends.a))
     (expect-eq !>(`(unit bid:orr)`[~ 'place/north-florida-fencing-club']) !>(place.a))
   ==
+::  the gymnastics miss (2026-11-11): at the class's start the calendar
+::  moved the series' next on to next week, and the pick-up at its end
+::  went with it, before its alert. The class under way keeps its
+::  pick-up until it ends, and reconcile leaves its row until then
+++  test-appointments-pick-under-way
+  =/  gb  'activity/magnus-gymnastics'
+  =/  ob
+    |=  [attr=@t v=json src=@t at=@da un=(unit @da)]
+    ^-  obs:orr
+    [gb attr v at un 100 [src ''] src at | '']
+  =/  rows=(list row:orr)
+    :~  (r 'old' (ob 'next' s+'2026-11-11T21:00:00Z' 'calendar' ~2026.11.4..21.00.00 [~ ~2026.11.11..22.00.00]))
+        (r 'new' (ob 'next' s+'2026-11-18T21:00:00Z' 'calendar' ~2026.11.11..21.00.00 [~ ~2026.11.18..22.00.00]))
+        (r 'loc' (ob 'location' (jo '{"ref":"place/starlight-gymnastics"}') 'owner' ~2026.10.7..19.31.15 ~))
+        (r 'pik' (ob 'pick-up' (jo '{"ref":"person/me"}') 'owner' ~2026.10.14..12.18.59 ~))
+        (r 'drp' (ob 'drop-off' (jo '{"ref":"person/andrea"}') 'owner' ~2026.10.14..20.19.41 ~))
+    ==
+  =/  lo=loaded:orr  [gb [%activity 'Magnus gymnastics' ~ t0 ~] rows]
+  =/  multi  (sy ~['pick-up' 'drop-off'])
+  =/  legs
+    |=  now=@da
+    ^-  (list [leg:orr @da])
+    (turn (appointments-ahead:orr ~[lo] multi now ~h12) |=(a=appointment:orr [leg.a starts.a]))
+  =/  gone
+    |=  now=@da
+    ^-  (list @t)
+    (turn (plan-times:orr ~[lo] now) |=(o=json (gs:orr o 'id')))
+  =/  pick=(list [leg:orr @da])  ~[[%pick ~2026.11.11..22.00.00]]
+  ;:  weld
+    ::  before it starts, and under way: the pick-up at its end
+    (expect-eq !>(pick) !>((legs ~2026.11.11..20.00.00)))
+    (expect-eq !>(pick) !>((legs ~2026.11.11..21.30.00)))
+    ::  over: nothing until next week's is in the window
+    (expect-eq !>(`(list [leg:orr @da])`~) !>((legs ~2026.11.11..22.30.00)))
+    ::  reconcile retracts the row only once the class has ended
+    (expect-eq !>(`(list @t)`~) !>((gone ~2026.11.11..21.30.00)))
+    (expect-eq !>(`(list @t)`~['old']) !>((gone ~2026.11.11..22.30.00)))
+  ==
 ::  a game to get to and a pick-up at the same time: the owner cannot do
 ::  both, so the game's leave-by is pinned by the pick-up. A pick-up
 ::  after the game starts does not pin it
