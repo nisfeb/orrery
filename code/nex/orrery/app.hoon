@@ -3578,14 +3578,21 @@
   (pure:m ?~(dirs ~ `i.dirs))
 ::  +armillary-base: Armillary where orrery's weir asks to read it, its
 ::  own desk, never another app that claims the link name: that one
-::  would give the address every prompt goes to (security audit)
+::  would give the address every prompt goes to (security audit). The
+::  desk is at either spelling of the shell: the develop kernel moved it
+::  from /apps/shell.shell to /apps/shell, and its registry says so
 ::
 ++  armillary-base
   =/  m  (fiber:fiber:nexus ,(unit path))
   ^-  form:m
-  =/  want=path  ~[%apps 'shell.shell' %desks 'armillary.desk']
+  =/  wants=(list path)
+    :~  ~[%apps 'shell.shell' %desks 'armillary.desk']
+        ~[%apps %shell %desks 'armillary.desk']
+    ==
   ;<  dirs=(list path)  bind:m  (find-bases %armillary)
-  =/  ok=(list path)  (skim dirs |=(d=path =(want (scag (lent want) d))))
+  =/  ok=(list path)
+    %+  skim  dirs
+    |=(d=path (lien wants |=(w=path =(w (scag (lent w) d)))))
   (pure:m ?~(ok ~ `i.ok))
 ::  +find-bases: every directory claiming a link name, in the order the
 ::  registry keeps them
