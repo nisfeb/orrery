@@ -307,7 +307,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /apps/orrery])
-        (http-dispatch:io %orrery)
+        http-dispatch:io
           ::  the inbox: other ships poke offers, revokes, and observations
           ::  on bodies shared with them in edit mode. The sender is the
           ::  transport's; the payload is data; nothing reaches the writer
