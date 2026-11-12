@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   var API = '/apps/orrery/api';
-  var KEEP = '/grubbery/api/keep/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/beacon/rev';
+  var KEEP = '/grubbery/api/keep/apps/shell/desks/orrery.desk/desk/data/orrery.orrery_app/beacon/rev';
 
   // ---- render, pure ----
   function esc(s) {

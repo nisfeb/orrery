@@ -112,6 +112,9 @@
           ::  sync.sig: the follower that pulls and pushes.
           [%fall %& [/ %'shares.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'shares.sig'] [[/ %sig] ~]]
+          ::  the /public road to shares.sig, which +lay-inbox-road names
+          ::  for the shell (version 149)
+          [%stay %& [/ %'groups.json']]
           [%fall %& [/ %'share-offers.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'ship-remotes.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'sync.sig'] [[/ %sig] ~]]
@@ -738,7 +741,9 @@
 ++  rv  |=([up=@ud p=path] ^-(road:tarball [%| up [%| p]]))
 ++  body-dir  |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]))
 ++  obs-dir   |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]/obs))
-++  srv  ~(. http-res:io [%| 1 %& ~ %'web.sig'])
+::  develop's http-res is a core, the dist kernel's a door whose road is
+::  unused: taken bare, it builds on both (version 149)
+++  srv  http-res:io
 ::  ==  after a crash (version 60): calendar's +rise-later (da42ed6)
 ::
 ::  +rise-later: a fiber that crashed goes on after a while by itself,
@@ -986,18 +991,18 @@
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
           (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions, and ask Mapbox how long the drive to your next appointment takes from where you are. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
           (line '/sys/scry/' 'read your Tlon messages, the DMs and the group channels you pick, so what people tell you on Urbit becomes facts the ship knows. Refuse this and the ship reads no chat')
-          (line '/apps/shell.shell/desks/calendar.desk/' 'put an approved calendar action on your calendar, an approved task in its todo list, and keep the two in step. Refuse this and those actions wait for another executor')
-          (line '/apps/shell.shell/desks/auspex.desk/' 'send an approved message by mail. Refuse this and mail actions wait for another executor')
+          (line '/apps/shell/desks/calendar.desk/' 'put an approved calendar action on your calendar, an approved task in its todo list, and keep the two in step. Refuse this and those actions wait for another executor')
+          (line '/apps/shell/desks/auspex.desk/' 'send an approved message by mail. Refuse this and mail actions wait for another executor')
       ==
       :-  'peek'
       :-  %a
       :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer and an offer can say where to read')
           (line '/sys/ames/usergroups/' 'read a share group before rewriting it')
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
-          (line '/apps/shell.shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
-          (line '/apps/shell.shell/desks/lattice.desk/' 'read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over. Refuse this and a sent page is read once, as sent')
-          (line '/apps/shell.shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json' 'read your Armillary settings: the address, the key, the model for each feature and the search address your Armillary vendor gives you. Approving this lets orrery run on the AI your vendor runs for you, kept current, unless you pick your own for a setting. Refuse this and orrery keeps only the settings you give it')
-          (line '/apps/shell.shell/desks/auspex.desk/' 'read your mail, so what people write you becomes facts the ship knows, and read your replies to the daily brief. Refuse this and the ship reads no mail')
+          (line '/apps/shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
+          (line '/apps/shell/desks/lattice.desk/' 'read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over. Refuse this and a sent page is read once, as sent')
+          (line '/apps/shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json' 'read your Armillary settings: the address, the key, the model for each feature and the search address your Armillary vendor gives you. Approving this lets orrery run on the AI your vendor runs for you, kept current, unless you pick your own for a setting. Refuse this and orrery keeps only the settings you give it')
+          (line '/apps/shell/desks/auspex.desk/' 'read your mail, so what people write you becomes facts the ship knows, and read your replies to the daily brief. Refuse this and the ship reads no mail')
       ==
       :-  'make'
       :-  %a
@@ -3547,7 +3552,7 @@
 ::  that offer carried, which is why a peer that installed orrery
 ::  elsewhere answers notified false (docs/sharing.md).
 ::
-++  orrery-instance  `path`/apps/'shell.shell'/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
+++  orrery-instance  `path`/apps/shell/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
 ::  +ug-base: where this ship keeps its usergroups
 ::
 ++  ug-base     `path`/sys/ames/usergroups
@@ -3650,7 +3655,12 @@
   (ug-set (group-name:orr kind slug) ships (sy ~[dir]) ~)
 ::  +lay-inbox-road: our shares.sig takes pokes from any ship, through
 ::  the /public group's weir. Quiet when the roads are refused: sharing
-::  is optional.
+::  is optional. The road goes in our own groups.json, relative to our
+::  root, and the shell derives the /public group from it once the
+::  owner grants it: develop's way, and the file our dist kernel's
+::  reg-how wrote, so one source runs on both (version 149). Other keys
+::  are kept, and an entry already there is not written again: the
+::  follower asks every pass until the owner grants the group.
 ::
 ++  lay-inbox-road
   =/  m  (fiber:fiber:nexus ,~)
@@ -3660,9 +3670,18 @@
   ;<  old=weir:nexus  bind:m  (ug-read-weir public-grp)
   =/  road=road:tarball  [%& %& u.base %'shares.sig']
   ?:  (~(has in poke.old) road)  (pure:m ~)
-  ;<  reg=(unit tang)  bind:m  (reg-register-at-soft:io [u.base %'shares.sig'])
-  ?^  reg  (pure:m ~)
-  ;<  err=(unit tang)  bind:m  (reg-how-soft:io /public [~ (sy road ~) ~])
+  =/  at=road:tarball  [%& %& u.base %'groups.json']
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io at ~)
+  =/  cur=(map @t json)
+    ?.  ?=([~ %file *] vw)  ~
+    =/  jon=(unit json)  (mole |.(!<(json (need-vase:tarball sang.u.vw))))
+    ?.(?=([~ %o *] jon) ~ p.u.jon)
+  =/  ent=json
+    %-  pairs:enjs:format
+    :~(['make' a+~] ['poke' a+~[s+'/shares.sig']] ['peek' a+~])
+  ?:  =(`ent (~(get by cur) '/public'))  (pure:m ~)
+  ;<  *  bind:m
+    (over-as-soft:io at [[/ %json] [%o (~(put by cur) '/public' ent)]] [/ %json])
   (pure:m ~)
 ::  +prod-inbox-road: the follower's part in the inbox road: when the
 ::  /public group's weir lacks it, a local poke at the inbox, which is

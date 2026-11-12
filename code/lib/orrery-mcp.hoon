@@ -6,7 +6,7 @@
 /<  orr  /lib/orrery.hoon
 /<  tools  /lib/tools.hoon
 |%
-++  base  `path`/apps/'shell.shell'/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
+++  base  `path`/apps/shell/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
 ++  body-dir  |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]))
 ++  obs-dir   |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]/obs))
 ::  +arg, +arg-json: a string argument (~ when absent or not a string),
