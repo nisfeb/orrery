@@ -10608,19 +10608,17 @@
 ::  (version 79), which reaches Talon on an iPhone and on an Android
 ::  with no UnifiedPush endpoint on grubbery, where grubbery's web push
 ::  does not; the web push still goes, for browsers, and the same tag
-::  lets a phone that gets both show one. Only when the kernel types
-::  trunk-action (a local poke at a mark it cannot type fails in the
-::  kernel) and %trunk answers wire 12 or later; under 4 KiB, cut; a nack
-::  or silence is no notice. Named as orrery on wire 14
+::  lets a phone that gets both show one. Only when %trunk answers wire
+::  12 or later; under 4 KiB, cut; a nack or silence is no notice. Named
+::  as orrery on wire 14. A kernel with no trunk-action mark answers the
+::  poke with a nack, so the mark is not looked for first: reading the
+::  kernel's /code/mar is outside orrery's ask, and the refused read
+::  sent no notice on any ship (version 150)
 ::
 ++  trunk-notice
   |=  [tag=@t title=@t body=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ::  the kernel finds the mark in either segment form, so either will do
-  ;<  one=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /code/mar/clay/trunk %'trunk-action.hoon'] ~)
-  ;<  two=(unit view:nexus)  bind:m  (peek-soft:io [%& %& /code/mar/clay/trunk/trunk %'action.hoon'] ~)
-  ?.  |(?=([~ %file *] one) ?=([~ %file *] two))  (pure:m ~)
   ;<  live=(unit ?)  bind:m  (scry-loob /gu/trunk/$)
   ?.  =(`& live)  (pure:m ~)
   ;<  v=(each json @t)  bind:m  (scry-json /gx/trunk/version/json)
