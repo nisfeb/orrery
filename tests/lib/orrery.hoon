@@ -1500,4 +1500,110 @@
     ::  cut-utf8 at that byte parses; the stray lead byte is gone
     (expect !>(?=(^ (de:json:html (en:json:html `json`s+(cut-utf8:orr txt 8.000))))))
   ==
+::  ==  the map (version 151)
+::
+++  test-zone-of
+  ;:  weld
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %radius 500]) !>((zone-of:orr (numb:enjs:format 500))))
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %radius 500]) !>((zone-of:orr s+'500')))
+    %+  expect-eq
+      !>(`(unit geo-zone:orr)`[~ %ring ~[['40.1' '-73.9'] ['40.2' '-73.9'] ['40.2' '-73.8']]])
+    !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8'))
+    ::  a ring written closed is the same three points
+    %+  expect-eq
+      !>(`(unit geo-zone:orr)`[~ %ring ~[['40.1' '-73.9'] ['40.2' '-73.9'] ['40.2' '-73.8']]])
+    !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8 40.1,-73.9'))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'junk')))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'40.1,-73.9 junk 40.2,-73.8')))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9')))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr (numb:enjs:format 0))))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'0')))
+    (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr a+~)))
+  ==
+::  a schema from before 151 gains zone on place, with the starter's note
+++  test-schema-zone
+  =/  kinds=json  (gj:orr starter-schema:orr 'kinds')
+  =/  place=json  (gj:orr kinds 'place')
+  =/  old-place=json
+    =/  p=json  (set-key:orr place 'notes' (del-key:orr (gj:orr place 'notes') 'zone'))
+    (set-key:orr p 'attrs' a+(skip (ga:orr place 'attrs') |=(j=json =(j `json`s+'zone'))))
+  =/  old=json
+    (set-key:orr (set-key:orr starter-schema:orr 'kinds' (set-key:orr kinds 'place' old-place)) 'schema_version' (numb:enjs:format 150))
+  =/  new=json  (gj:orr (gj:orr (schema-upgrade:orr old) 'kinds') 'place')
+  ;:  weld
+    (expect !>(!(lien (ga:orr old-place 'attrs') |=(j=json =(j `json`s+'zone')))))
+    (expect !>(!(has-key:orr (gj:orr old-place 'notes') 'zone')))
+    (expect !>(?=([%s *] (gj:orr (gj:orr new 'notes') 'zone'))))
+    (expect !>((lien (ga:orr new 'attrs') |=(j=json =(j `json`s+'zone')))))
+    (expect-eq !>((gj:orr (gj:orr place 'notes') 'zone')) !>((gj:orr (gj:orr new 'notes') 'zone')))
+  ==
+++  test-map-doc
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  ref  |=(id=@t (pairs:enjs:format ~[['ref' s+id]]))
+  =/  bod
+    |=  [id=@t kind=@tas name=@t rs=(list [@t json])]
+    ^-  loaded:orr
+    [id [kind name ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  all=(list loaded:orr)
+    :~  (bod 'situation/b-raw' %situation 'Barcelona' ~[['status' s+'open'] ['location' s+'41.38,2.17']])
+        (bod 'place/park' %place 'Park' ~[['geo' s+'40.70,-73.90'] ['zone' s+'40.1,-73.9 40.2,-73.9 40.2,-73.8']])
+        (bod 'situation/c-shut' %situation 'Shut' ~[['status' s+'closed'] ['location' (ref 'place/home')]])
+        (bod 'situation/d-online' %situation 'Call' ~[['status' s+'open'] ['location' s+'https://zoom.us/j/1']])
+        (bod 'situation/e-none' %situation 'Nowhere' ~[['status' s+'open']])
+        (bod 'place/nowhere' %place 'Nowhere' ~[['address' s+'1 Main St'] ['zone' (numb:enjs:format 500)]])
+        (bod 'person/me' %person 'me' ~[['location' (ref 'place/home')]])
+        %:  bod  'situation/a-trip'  %situation  'Trip'
+          ~[['status' s+'open'] ['location' (ref 'place/home')] ['summary' s+'the summary'] ['starts' s+'2026-10-18T09:00:00Z']]
+        ==
+        (bod 'place/home' %place 'Home' ~[['geo' s+'40.75,-73.98'] ['zone' (numb:enjs:format 500)]])
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  =/  prop  |=([f=json k=@t] (gs:orr (gj:orr f 'properties') k))
+  =/  geom  |=(f=json (gj:orr f 'geometry'))
+  =/  find
+    |=  [id=@t kind=@t]
+    ^-  json
+    =/  hit  (skim fs |=(f=json &(=(id (prop f 'orrery')) =(kind (prop f 'kind')))))
+    ?~(hit ~ i.hit)
+  =/  home-ring=(list json)
+    =/  c  (ga:orr (geom (find 'place/home' 'area')) 'coordinates')
+    ?~(c ~ ?:(?=([%a *] i.c) p.i.c ~))
+  =/  park-ring=(list json)
+    =/  c  (ga:orr (geom (find 'place/park' 'area')) 'coordinates')
+    ?~(c ~ ?:(?=([%a *] i.c) p.i.c ~))
+  =/  pt  |=([lon=@t lat=@t] `json`a+~[n+lon n+lat])
+  ;:  weld
+    (expect-eq !>(`json`s+'FeatureCollection') !>((gj:orr doc 'type')))
+    ::  sorted by id, then kind; the closed, the online, the unlocated
+    ::  and the place with no point are left off
+    %+  expect-eq
+      !>  ^-  (list [@t @t])
+          :~  ['place/home' 'area']  ['place/home' 'place']  ['place/park' 'area']
+              ['place/park' 'place']  ['situation/a-trip' 'situation']  ['situation/b-raw' 'situation']
+          ==
+    !>((turn fs |=(f=json [(prop f 'orrery') (prop f 'kind')])))
+    (expect-eq !>(`json`s+'Point') !>((gj:orr (geom (find 'place/home' 'place')) 'type')))
+    (expect-eq !>((pt '-73.98' '40.75')) !>((gj:orr (geom (find 'place/home' 'place')) 'coordinates')))
+    (expect-eq !>('Home') !>((prop (find 'place/home' 'place') 'name')))
+    ::  a radius is a closed ring of 24 points and the first again
+    (expect-eq !>(`json`s+'Polygon') !>((gj:orr (geom (find 'place/home' 'area')) 'type')))
+    (expect-eq !>(25) !>((lent home-ring)))
+    (expect-eq !>(`(list json)`(scag 1 home-ring)) !>(`(list json)`(scag 1 (flop home-ring))))
+    ::  a ring as written, closed
+    (expect-eq !>(4) !>((lent park-ring)))
+    (expect-eq !>(`(list json)`~[(pt '-73.9' '40.1') (pt '-73.9' '40.2') (pt '-73.8' '40.2') (pt '-73.9' '40.1')]) !>(park-ring))
+    (expect-eq !>((pt '-73.9' '40.7')) !>((gj:orr (geom (find 'place/park' 'place')) 'coordinates')))
+    ::  a situation at a place takes its point, a raw lat,lon its own
+    (expect-eq !>((pt '-73.98' '40.75')) !>((gj:orr (geom (find 'situation/a-trip' 'situation')) 'coordinates')))
+    (expect-eq !>('Trip') !>((prop (find 'situation/a-trip' 'situation') 'name')))
+    (expect-eq !>('the summary') !>((prop (find 'situation/a-trip' 'situation') 'note')))
+    (expect-eq !>('2026-10-18T09:00:00Z') !>((prop (find 'situation/a-trip' 'situation') 'time')))
+    (expect-eq !>((pt '2.17' '41.38')) !>((gj:orr (geom (find 'situation/b-raw' 'situation')) 'coordinates')))
+    (expect !>(!(has-key:orr (gj:orr (find 'situation/b-raw' 'situation') 'properties') 'note')))
+  ==
 --

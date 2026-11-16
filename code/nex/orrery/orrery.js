@@ -347,7 +347,9 @@
         (start ? ' <span class="muted">' + (timeOf(v, 'started') ? 'started ' : 'starts ') + fmtTime(start) + '</span>' : '') +
         (end ? ' <span class="muted">' + (timeOf(v, 'ended') ? 'ended ' : 'ends ') + fmtTime(end) + '</span>' : '') + '</p>';
     }
+    // the map lattice mirrors from map.json (version 151)
     out += '<p class="muted">' + esc(v.kind) + (v.ship ? ' &middot; ' + esc(v.ship) : '') +
+      (v.kind === 'place' || v.kind === 'situation' ? ' &middot; <a href="/apps/lattice/app?name=orrery/map">Map</a>' : '') +
       (v.aliases && v.aliases.length ? ' &middot; also ' + v.aliases.map(function (a) {
         return '<span class="alias">' + esc(a) + '<button class="small" data-unalias="' + esc(a) + '" data-id="' + esc(v.id) + '" aria-label="remove the alias ' + esc(a) + '">&times;</button></span>';
       }).join(' ') : '') + '</p>';

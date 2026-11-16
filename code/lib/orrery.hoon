@@ -1473,6 +1473,7 @@
       [94 ~ ~[['situation' ~['shared-with']]] ~['shared-with']]
       [98 ~['close'] ~[['situation' ~['research']] ['activity' ~['research']]] ~['research']]
       [110 ~ ~ ~]
+      [151 ~ ~[['place' ~['zone']]] ~]
   ==
 ++  schema-newest  ^-(@ud (roll (turn schema-adds |=(a=schema-add v.a)) max))
 ::  +schema-upgrade: a stored schema with what the releases since its
@@ -1619,11 +1620,12 @@
           ==
           :-  'place'
           %+  kind
-            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated' 'sphere' 'website']
+            ~['type' 'address' 'phone' 'hours' 'geo' 'pota' 'activated' 'sphere' 'website' 'zone']
           :~  ['sphere' 'which part of the owner\'s life this belongs to: a ref to a sphere body (sphere/home, sphere/work, a business, the road), a row each when it is several; none means home. A part of life with no sphere yet is a new sphere body named in the owner\'s words; the owner confirms the first few a model files in each sphere']
               ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
               ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
               ['website' 'the place\'s own website, a URL']
+              ['zone' 'the area around the place drawn on the map: a radius in metres, a number, or a polygon, "lat,lon" pairs between spaces']
               ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
@@ -9639,7 +9641,13 @@
   ^-  (unit [lat=@t lon=@t])
   =/  l=(unit loaded)  (loaded-of all id)
   ?~  l  ~
-  =/  w=(map @t (list row))  (fold rows.u.l multi now)
+  (point-of (fold rows.u.l multi now) cache)
+::  +point-of: a place's point from its folded rows: its geo, else its
+::  address as the geocache has it
+::
+++  point-of
+  |=  [w=(map @t (list row)) cache=json]
+  ^-  (unit [lat=@t lon=@t])
   =/  g=(list row)  (fall (~(get by w) 'geo') ~)
   ?^  g  (geo-of value.obs.i.g)
   =/  a=@t  (winner-text w 'address')
@@ -9916,6 +9924,138 @@
   ?.  ?=([@ @ ~] parts)  ~
   ?.  &((coordinate i.parts 90) (coordinate i.t.parts 180))  ~
   `[i.parts i.t.parts]
+::  +zone-of: a place's zone (version 151): a radius in metres, a
+::  number or its text, or a polygon, "lat,lon" pairs between spaces,
+::  three points at least. Written closed or not, the points are kept
+::  without the repeat. ~ for anything else, and for a zero radius
+::
++$  geo-zone  $%([%radius m=@ud] [%ring pts=(list [lat=@t lon=@t])])
+++  zone-of
+  |=  v=json
+  ^-  (unit geo-zone)
+  =/  t=@t  ?:(?=([%n *] v) p.v ?:(?=([%s *] v) (trim-cord p.v) ''))
+  =/  m=(unit @ud)  (rush t dem)
+  ?^  m  ?:(=(0 u.m) ~ `[%radius u.m])
+  ?.  ?=([%s *] v)  ~
+  =/  got=(list (unit [lat=@t lon=@t]))
+    (turn (split-ws (trip t)) |=(w=tape (geo-of s+(crip w))))
+  ?:  (lien got |=(g=(unit [lat=@t lon=@t]) ?=(~ g)))  ~
+  =/  pts=(list [lat=@t lon=@t])  (murn got |=(g=(unit [lat=@t lon=@t]) g))
+  =/  n=@ud  (lent pts)
+  =?  pts  &((gth n 1) =((snag 0 pts) (rear pts)))  (snip pts)
+  ?:  (lth (lent pts) 3)  ~
+  `[%ring pts]
+::  +map-doc: the map orrery keeps in map.json for lattice (version
+::  151), GeoJSON from what the ship already holds: each place's point
+::  (+point-of) and its zone as an area, and each open situation whose
+::  location is a point: a place's, a raw "lat,lon", or the geocache's
+::  (+known-point). Closed and online situations, and anything with no
+::  point, are left off. Sorted by id then kind, and with no time stamp,
+::  so the document moves only when a feature does
+::
+++  map-doc
+  |=  [all=(list loaded) multi=(set @t) now=@da cache=json]
+  ^-  json
+  ::  a coordinate as millionths with a sign
+  =/  sig
+    |=  t=@t
+    ^-  @s
+    =/  m  (micro t)
+    ?~(m --0 (new:si !neg.u.m n.u.m))
+  ::  held to a bound, so a ring near a pole or the date line is a
+  ::  wrong shape rather than a coordinate no map takes
+  =/  cap
+    |=  [s=@s bound=@ud]
+    ^-  @s
+    =/  [pos=? n=@ud]  (old:si s)
+    (new:si pos (min n (mul bound 1.000.000)))
+  ::  millionths back to a JSON number, no trailing zeros
+  =/  num
+    |=  s=@s
+    ^-  json
+    =/  [pos=? n=@ud]  (old:si s)
+    =/  f=tape  (a-co:co (mod n 1.000.000))
+    =.  f  (flop (weld (reap (sub 6 (lent f)) '0') f))
+    =.  f  |-(^-(tape ?~(f ~ ?.(=('0' i.f) f $(f t.f)))))
+    =/  int=tape  (a-co:co (div n 1.000.000))
+    n+(crip :(weld ?:(pos "" "-") int ?~(f "" ['.' (flop f)])))
+  =/  at  |=([lat=@s lon=@s] `json`a+~[(num (cap lon 180)) (num (cap lat 90))])
+  =/  pin  |=(p=[lat=@t lon=@t] [(sig lat.p) (sig lon.p)])
+  ::  a radius about a point as 24 points: cos and sin of each fifteen
+  ::  degrees from a quarter's table, in millionths. Near a pole the
+  ::  longitude's cosine is held at a hundredth, so no division by zero
+  =/  ring
+    |=  [c=[lat=@s lon=@s] m=@ud]
+    ^-  (list [lat=@s lon=@s])
+    =/  q=(list @ud)  ~[1.000.000 965.926 866.025 707.107 500.000 258.819 0]
+    =/  cos
+      |=  k=@ud
+      ^-  @s
+      =.  k  (mod k 24)
+      ?:  (lte k 6)  (sun:si (snag k q))
+      ?:  (lte k 12)  (new:si | (snag (sub 12 k) q))
+      ?:  (lte k 18)  (new:si | (snag (sub k 12) q))
+      (sun:si (snag (sub 24 k) q))
+    =/  cl=@ud  (max 10.000 (cos-of (abs:si lat.c)))
+    %+  turn  (gulf 0 23)
+    |=  k=@ud
+    :-  (sum:si lat.c (fra:si (pro:si (sun:si m) (cos k)) --111.320))
+    %+  dif:si  lon.c
+    (fra:si (pro:si (pro:si (sun:si m) (cos (add k 18))) --1.000.000) (sun:si (mul 111.320 cl)))
+  =/  poly
+    |=  ps=(list [lat=@s lon=@s])
+    ^-  json
+    =/  r=(list json)  (turn ps at)
+    (pairs:enjs:format ~[['type' s+'Polygon'] ['coordinates' a+~[a+(weld r (scag 1 r))]]])
+  =/  point  |=(p=[lat=@s lon=@s] (pairs:enjs:format ~[['type' s+'Point'] ['coordinates' (at p)]]))
+  =/  feature
+    |=  [id=@t kind=@t name=@t g=json more=(list [@t json])]
+    ^-  [id=@t kind=@t f=json]
+    :+  id  kind
+    %-  pairs:enjs:format
+    :~  ['type' s+'Feature']  ['geometry' g]
+        ['properties' (pairs:enjs:format (weld ~[['name' s+name] ['kind' s+kind] ['orrery' s+id]] more))]
+    ==
+  =/  each=(list [id=@t kind=@t f=json])
+    %-  zing
+    %+  turn  all
+    |=  l=loaded
+    ^-  (list [id=@t kind=@t f=json])
+    ?.  ?=(?(%place %situation) kind.body.l)  ~
+    =/  w=(map @t (list row))  (fold rows.l multi now)
+    ?:  ?=(%place kind.body.l)
+      =/  pt=(unit [lat=@s lon=@s])  (bind (point-of w cache) pin)
+      =/  z=(list row)  (fall (~(get by w) 'zone') ~)
+      =/  zone=(unit geo-zone)  ?~(z ~ (zone-of value.obs.i.z))
+      =/  area=(unit (list [lat=@s lon=@s]))
+        ?~  zone  ~
+        ?-  -.u.zone
+          %ring    `(turn pts.u.zone pin)
+          %radius  ?~(pt ~ `(ring u.pt m.u.zone))
+        ==
+      %+  weld
+        ?~(pt ~ ~[(feature id.l 'place' name.body.l (point u.pt) ~)])
+      ?~(area ~ ~[(feature id.l 'area' name.body.l (poly u.area) ~)])
+    ?:  (is-closed w)  ~
+    =/  loc=(list row)  (fall (~(get by w) 'location') ~)
+    ?~  loc  ~
+    =/  v=json  value.obs.i.loc
+    ?:  &(?=([%s *] v) |(=('' (trim-cord p.v)) (online p.v)))  ~
+    =/  pt=(unit [lat=@t lon=@t])
+      =/  raw  ?:(?=([%s *] v) (geo-of s+(trim-cord p.v)) ~)
+      ?^(raw raw (known-point w all multi now cache))
+    ?~  pt  ~
+    =/  note=@t  (winner-text w 'summary')
+    =/  time=@t  (winner-text w 'starts')
+    :~  %:  feature  id.l  'situation'  name.body.l  (point (pin u.pt))
+          (weld ?:(=('' note) ~ ~[['note' s+note]]) ?:(=('' time) ~ ~[['time' s+time]]))
+        ==
+    ==
+  =/  sorted
+    %+  sort  each
+    |=  [a=[id=@t kind=@t f=json] b=[id=@t kind=@t f=json]]
+    ?.(=(id.a id.b) (aor id.a id.b) (aor kind.a kind.b))
+  (pairs:enjs:format ~[['type' s+'FeatureCollection'] ['features' a+(turn sorted |=(e=[id=@t kind=@t f=json] f.e))]])
 ::  +coordinate: a decimal degree no further than bound from zero: an
 ::  optional minus, digits, an optional point and digits
 ::
@@ -10567,7 +10707,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  150
+++  version  151
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so
