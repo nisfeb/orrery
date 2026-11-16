@@ -3037,6 +3037,46 @@ wf = gate.wait('world.json is kept for lattice', lambda: (lambda d: d if any(dic
 check('and holds the same text as the route', wf.get('text') == dictish(curl('GET', API + '/world')[1]).get('text'), (wf.get('text'), dictish(curl('GET', API + '/world')[1]).get('text')))
 curl('DELETE', API + '/body/' + WSIT)
 
+# ---- the map (version 151): a place's point and zone and an open situation at it, kept in map.json for lattice ----
+MAP_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+MAPRUN = time.strftime('%H%M%S')
+MP, MS, MX = 'place/gate-map-' + MAPRUN, 'situation/gate-map-' + MAPRUN, 'situation/gate-map-shut-' + MAPRUN
+curl('POST', API + '/observe', {'bodies': [{'id': MP, 'name': 'Gate map ' + MAPRUN}, {'id': MS, 'name': 'Gate map trip ' + MAPRUN},
+                                           {'id': MX, 'name': 'Gate map shut ' + MAPRUN}], 'observations': [
+    {'subject': MP, 'attr': 'geo', 'value': '40.75,-73.98'}, {'subject': MP, 'attr': 'zone', 'value': 500},
+    {'subject': MS, 'attr': 'status', 'value': 'open'}, {'subject': MS, 'attr': 'location', 'value': {'ref': MP}},
+    {'subject': MS, 'attr': 'summary', 'value': 'a gate trip'},
+    {'subject': MX, 'attr': 'status', 'value': 'closed'}, {'subject': MX, 'attr': 'location', 'value': {'ref': MP}}]})
+#  through the file API: a ?raw=1 read answers a redirect
+def map_doc():
+    c, d = gate.curl('GET', HOST + '/grubbery/api/file' + MAP_APP + '/map.json', jar=JAR)
+    return d if c == 200 and isinstance(d, dict) else {}
+def map_mine(d):
+    return {(dictish(dictish(f).get('properties')).get('orrery'), dictish(dictish(f).get('properties')).get('kind')): dictish(f)
+            for f in listish(dictish(d).get('features')) if dictish(dictish(f).get('properties')).get('orrery') in (MP, MS, MX)}
+#  the writer lands the rows a moment after the answer: wake the pass once they are in
+gate.wait('the map rows land', lambda: all(dictish(dictish(curl('GET', API + '/body/' + b)[1]).get('attrs')).get('location') for b in (MS, MX)), 60)
+curl('POST', API + '/nudge/wake')
+md = gate.wait('map.json is kept for lattice', lambda: (lambda d: d if len(map_mine(d)) >= 3 else None)(map_doc()), 90) or {}
+mm = map_mine(md)
+geom = lambda k: dictish(dictish(mm.get(k)).get('geometry'))
+check('the map is a FeatureCollection, sorted by id then kind', md.get('type') == 'FeatureCollection'
+      and [(dictish(f.get('properties')).get('orrery'), dictish(f.get('properties')).get('kind')) for f in map(dictish, listish(md.get('features')))]
+      == sorted((dictish(f.get('properties')).get('orrery'), dictish(f.get('properties')).get('kind')) for f in map(dictish, listish(md.get('features')))), str(md)[:300])
+check('the place is a point, lon before lat', geom((MP, 'place')) == {'type': 'Point', 'coordinates': [-73.98, 40.75]}
+      and dictish(mm.get((MP, 'place'))).get('properties') == {'name': 'Gate map ' + MAPRUN, 'kind': 'place', 'orrery': MP}, mm.get((MP, 'place')))
+ring = listish((listish(geom((MP, 'area')).get('coordinates')) or [[]])[0])
+check('its zone of 500 m is a closed ring of 24 points', geom((MP, 'area')).get('type') == 'Polygon' and len(ring) == 25 and ring[0] == ring[-1]
+      and all(abs(lat - 40.75) < 0.0046 and abs(lon + 73.98) < 0.0061 for lon, lat in ring), geom((MP, 'area')))
+check('the open situation is at the place, with its summary', geom((MS, 'situation')) == {'type': 'Point', 'coordinates': [-73.98, 40.75]}
+      and dictish(dictish(mm.get((MS, 'situation'))).get('properties')).get('note') == 'a gate trip', mm.get((MS, 'situation')))
+check('the closed one is left off', not any(k[0] == MX for k in mm), list(mm))
+for b in (MP, MS, MX):
+    curl('DELETE', API + '/body/' + b)
+gate.wait('the map bodies are gone', lambda: all(curl('GET', API + '/body/' + b)[0] == 404 for b in (MP, MS, MX)), 60)
+curl('POST', API + '/nudge/wake')
+gate.wait('a body deleted leaves the map', lambda: not map_mine(map_doc()), 90)
+
 # ---- body notes (version 117): the lattice page named for a body is the owner's notes on it, read into the generator's prompt ----
 NOTESRUN = time.strftime('%H%M%S')
 NB = 'person/gate-notes-' + NOTESRUN

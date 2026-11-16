@@ -39,6 +39,7 @@
 ::    /model-down.json                  since when the model has not answered, so the owner is told once (version 111)
 ::    /briefs/<day>  /reviews/<day>     each day's brief and each Sunday's review, kept for a journal (version 116)
 ::    /world.json                       the world digest an agent reads as a session starts (version 116)
+::    /map.json                         the places, their zones and the open situations as GeoJSON, for lattice's map (version 151)
 ::    /current.noun                     the bodies with only their current rows, for the readers of the present (version 119)
 ::    /outdoors.json  /weather.json  /weather.sig  /parks-last.json  /parks.sig   the weather and nearby parks (version 76)
 ::    /location.json  /location.sig   the owner's position shared for a while, and peers' shared with us (version 88)
@@ -169,6 +170,7 @@
           [%fall %| /briefs empty-dir:loader]
           [%fall %| /reviews empty-dir:loader]
           [%fall %& [/ %'world.json'] [[/ %json] [%o ~]]]
+          [%fall %& [/ %'map.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'current.noun'] [[/orrery %current] [%0 ~]]]
           [%fall %& [/ %'chat-seen.json'] [[/ %json] [%a ~]]]
           [%fall %& [/ %'chat-recent.json'] [[/ %json] [%o ~]]]
@@ -616,6 +618,7 @@
         ;<  acts=(list [id=@ta a=action:orr])  bind:m  (load-actions 0)
         ;<  ~  bind:m  (nag-pass acts)
         ;<  ~  bind:m  (world-pass all acts)
+        ;<  ~  bind:m  (map-pass all)
         ;<  ~  bind:m  (nudge-pass all)
         ;<  ~  bind:m  (evening-pass acts)
         ;<  ~  bind:m  (brief-ticks-pass acts)
@@ -10033,6 +10036,21 @@
   =/  bare  |=(j=json (del-key:orr (del-key:orr j 'at') 'time'))
   ?:  =((bare w) (bare cur))  (pure:m ~)
   (over:io (rf 0 / %'world.json') [[/ %json] w])
+::  +map-pass: the map kept in map.json for lattice to read (version
+::  151), from the round's loaded bodies and the points the geocache
+::  already holds, written only when a feature moved
+::
+++  map-pass
+  |=  all=(list loaded:orr)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  now=@da  bind:m  get-time:io
+  ;<  schema=json  bind:m  (read-json (rf 0 / %'schema.json'))
+  ;<  gc=json  bind:m  (read-json (rf 0 / %'geocache.json'))
+  ;<  cur=json  bind:m  (read-json (rf 0 / %'map.json'))
+  =/  doc=json  (map-doc:orr all (multi-of:orr schema) now gc)
+  ?:  =(doc cur)  (pure:m ~)
+  (over:io (rf 0 / %'map.json') [[/ %json] doc])
 ::  +nag-pass: each late high-priority action pushed again every fifteen
 ::  minutes until it is done, dismissed, snoozed or moved (version 110),
 ::  under its own tag so the phone shows one per action. Only the quiet

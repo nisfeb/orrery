@@ -230,6 +230,10 @@ Version 96 asks for one new road, so the update raises the consent prompt: read 
 
 On a ship with Armillary (version 18 or later), approving it is the switch: orrery runs on the AI your Armillary vendor gives you. The generator takes the address, the key and the model; the mail, chat, Telegram readers and the read channel take the vendor's model for each; the decider takes the vendor's decision model; and place lookups go through the vendor's Brave search once the vendor has a Brave key (Armillary 20). Every setting follows, the ones you set before included, so your models change the day you approve. Change a setting's model, address or key by hand and that setting is your own pick and stops following; the Armillary card under Settings lists each setting with a button back. A ship without Armillary shows no card and nothing changes.
 
+### Version 151's owner steps
+
+Nothing to do: no new roads, so no consent prompt. A place can now have a `zone`, the area around it: a radius in metres, or a polygon written as `lat,lon` pairs between spaces. Your schema gains it on the update. Every five minutes orrery keeps a map in `map.json` of your places, their zones and the open situations that have a point, for lattice to show as the page `orrery/map`. Nothing shows until lattice reads it. A place or situation page links to that map.
+
 ### Version 145's owner steps
 
 Nothing to do: no new roads, so no consent prompt. The day's checklist now runs both ways. A task you mark done on your phone, in the calendar or on orrery's own page has its box ticked in the day's brief within five minutes, and lattice ticks it on the day's journal page at its next pass, about five minutes more, keeping whatever you wrote or ticked there yourself. Only today's brief is kept in step. A box is only ever ticked: a todo you untick in the calendar is taken up as a new task, and its box stays ticked until the next morning's brief.

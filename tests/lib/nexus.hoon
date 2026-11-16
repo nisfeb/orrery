@@ -1165,7 +1165,7 @@
     (expect-eq !>(`(list @t)`~['participants' 'children' 'parents' 'siblings' 'sphere' 'drop-off' 'pick-up' 'twin' 'shared-with' 'research']) !>((strings:orr (ga:orr new 'multi'))))
     ::  nothing else moves, and the mark says where it stands
     (expect-eq !>(['plain' `(list @t)`~['never calls']]) !>([(gs:orr new 'style') (strings:orr (ga:orr new 'preferences'))]))
-    (expect-eq !>(`(unit @ud)`[~ 110]) !>((gn:orr new 'schema_version')))
+    (expect-eq !>(`(unit @ud)`[~ 151]) !>((gn:orr new 'schema_version')))
     ::  once: a second pass, and a new ship's starter, come back as they are
     (expect-eq !>(new) !>((schema-upgrade:orr new)))
     (expect-eq !>(starter-schema:orr) !>((schema-upgrade:orr starter-schema:orr)))
