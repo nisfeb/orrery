@@ -9949,21 +9949,27 @@
 ::  151), GeoJSON from what the ship already holds: each place's point
 ::  (+point-of) and its zone as an area, and each open situation whose
 ::  location is a point: a place's, a raw "lat,lon", or the geocache's
-::  (+known-point). Closed and online situations, and anything with no
-::  point, are left off. Sorted by id then kind, and with no time stamp,
-::  so the document moves only when a feature does
+::  (+known-point). Open is as +world-of reads it: the status in lower
+::  case is "open". Other situations, online ones, and anything with no
+::  point are left off. A point is a number in range, or no point at
+::  all. Sorted by id then kind, and with no time stamp, so the
+::  document moves only when a feature does
 ::
 ++  map-doc
   |=  [all=(list loaded) multi=(set @t) now=@da cache=json]
   ^-  json
-  ::  a coordinate as millionths with a sign
+  ::  a coordinate as millionths with a sign. ~ when it is not a
+  ::  number or lies past bound
   =/  sig
-    |=  t=@t
-    ^-  @s
+    |=  [t=@t bound=@ud]
+    ^-  (unit @s)
     =/  m  (micro t)
-    ?~(m --0 (new:si !neg.u.m n.u.m))
+    ?~  m  ~
+    ?:  (gth n.u.m (mul bound 1.000.000))  ~
+    `(new:si !neg.u.m n.u.m)
   ::  held to a bound, so a ring near a pole or the date line is a
-  ::  wrong shape rather than a coordinate no map takes
+  ::  wrong shape rather than a coordinate no map takes. Only a ring
+  ::  can pass a bound: every other point came through +pin
   =/  cap
     |=  [s=@s bound=@ud]
     ^-  @s
@@ -9980,7 +9986,13 @@
     =/  int=tape  (a-co:co (div n 1.000.000))
     n+(crip :(weld ?:(pos "" "-") int ?~(f "" ['.' (flop f)])))
   =/  at  |=([lat=@s lon=@s] `json`a+~[(num (cap lon 180)) (num (cap lat 90))])
-  =/  pin  |=(p=[lat=@t lon=@t] [(sig lat.p) (sig lon.p)])
+  =/  pin
+    |=  p=[lat=@t lon=@t]
+    ^-  (unit [lat=@s lon=@s])
+    =/  la  (sig lat.p 90)
+    =/  lo  (sig lon.p 180)
+    ?.  &(?=(^ la) ?=(^ lo))  ~
+    `[u.la u.lo]
   ::  a radius about a point as 24 points: cos and sin of each fifteen
   ::  degrees from a quarter's table, in millionths. Near a pole the
   ::  longitude's cosine is held at a hundredth, so no division by zero
@@ -10024,30 +10036,31 @@
     ?.  ?=(?(%place %situation) kind.body.l)  ~
     =/  w=(map @t (list row))  (fold rows.l multi now)
     ?:  ?=(%place kind.body.l)
-      =/  pt=(unit [lat=@s lon=@s])  (bind (point-of w cache) pin)
+      =/  pt=(unit [lat=@s lon=@s])  (biff (point-of w cache) pin)
       =/  z=(list row)  (fall (~(get by w) 'zone') ~)
       =/  zone=(unit geo-zone)  ?~(z ~ (zone-of value.obs.i.z))
+      ::  a ring with a pair that is no point is no area
       =/  area=(unit (list [lat=@s lon=@s]))
         ?~  zone  ~
         ?-  -.u.zone
-          %ring    `(turn pts.u.zone pin)
+          %ring    =/(ps (murn pts.u.zone pin) ?.(=((lent ps) (lent pts.u.zone)) ~ `ps))
           %radius  ?~(pt ~ `(ring u.pt m.u.zone))
         ==
       %+  weld
         ?~(pt ~ ~[(feature id.l 'place' name.body.l (point u.pt) ~)])
       ?~(area ~ ~[(feature id.l 'area' name.body.l (poly u.area) ~)])
-    ?:  (is-closed w)  ~
+    ?.  =('open' (lower (winner-text w 'status')))  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
     ?:  &(?=([%s *] v) |(=('' (trim-cord p.v)) (online p.v)))  ~
-    =/  pt=(unit [lat=@t lon=@t])
+    =/  pt=(unit [lat=@s lon=@s])
       =/  raw  ?:(?=([%s *] v) (geo-of s+(trim-cord p.v)) ~)
-      ?^(raw raw (known-point w all multi now cache))
+      (biff ?^(raw raw (known-point w all multi now cache)) pin)
     ?~  pt  ~
     =/  note=@t  (winner-text w 'summary')
     =/  time=@t  (winner-text w 'starts')
-    :~  %:  feature  id.l  'situation'  name.body.l  (point (pin u.pt))
+    :~  %:  feature  id.l  'situation'  name.body.l  (point u.pt)
           (weld ?:(=('' note) ~ ~[['note' s+note]]) ?:(=('' time) ~ ~[['time' s+time]]))
         ==
     ==
@@ -10707,7 +10720,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  151
+++  version  152
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so

@@ -1561,7 +1561,10 @@
         ==
         (bod 'place/home' %place 'Home' ~[['geo' s+'40.75,-73.98'] ['zone' (numb:enjs:format 500)]])
     ==
-  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  ::  the geocache has the online situation's link as a point, so only
+  ::  the online check keeps it off the map
+  =/  cache=json  o+(malt `(list [@t json])`~[['https://zoom.us/j/1' s+'40.0,-73.0']])
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) cache)
   =/  fs=(list json)  (ga:orr doc 'features')
   =/  prop  |=([f=json k=@t] (gs:orr (gj:orr f 'properties') k))
   =/  geom  |=(f=json (gj:orr f 'geometry'))
@@ -1577,6 +1580,27 @@
     =/  c  (ga:orr (geom (find 'place/park' 'area')) 'coordinates')
     ?~(c ~ ?:(?=([%a *] i.c) p.i.c ~))
   =/  pt  |=([lon=@t lat=@t] `json`a+~[n+lon n+lat])
+  ::  a ring position's lon and lat as text and as signed millionths
+  =/  txt  |=(j=json ^-(@t ?>(?=([%n *] j) p.j)))
+  =/  deg
+    |=  j=json
+    ^-  @s
+    =/  m  (need (micro:orr (txt j)))
+    (new:si !neg.m n.m)
+  ::  a position within 20 millionths of a degree, about 2 m, of lon,lat
+  =/  near
+    |=  [j=json lon=@s lat=@s]
+    ^-  ?
+    ?>  ?=([%a *] j)
+    =/  gap  |=([a=@s b=@s] (abs:si (dif:si a b)))
+    &((lte (gap (deg (snag 0 p.j)) lon) 20) (lte (gap (deg (snag 1 p.j)) lat) 20))
+  ::  a position 485 to 515 m from home's point
+  =/  out
+    |=  j=json
+    ^-  ?
+    ?>  ?=([%a *] j)
+    =/  d  (metres-between:orr ['40.75' '-73.98'] [(txt (snag 1 p.j)) (txt (snag 0 p.j))])
+    ?~(d | &((gte u.d 485) (lte u.d 515)))
   ;:  weld
     (expect-eq !>(`json`s+'FeatureCollection') !>((gj:orr doc 'type')))
     ::  sorted by id, then kind; the closed, the online, the unlocated
@@ -1594,6 +1618,13 @@
     (expect-eq !>(`json`s+'Polygon') !>((gj:orr (geom (find 'place/home' 'area')) 'type')))
     (expect-eq !>(25) !>((lent home-ring)))
     (expect-eq !>(`(list json)`(scag 1 home-ring)) !>(`(list json)`(scag 1 (flop home-ring))))
+    ::  500 m is 0.004492 degrees of latitude, and 0.005929 of longitude
+    ::  at 40.75 north. The ring starts north and turns west, south, east
+    (expect !>((near (snag 0 home-ring) -73.980.000 --40.754.492)))
+    (expect !>((near (snag 6 home-ring) -73.985.929 --40.750.000)))
+    (expect !>((near (snag 12 home-ring) -73.980.000 --40.745.508)))
+    (expect !>((near (snag 18 home-ring) -73.974.071 --40.750.000)))
+    (expect !>((levy (scag 24 home-ring) out)))
     ::  a ring as written, closed
     (expect-eq !>(4) !>((lent park-ring)))
     (expect-eq !>(`(list json)`~[(pt '-73.9' '40.1') (pt '-73.9' '40.2') (pt '-73.8' '40.2') (pt '-73.9' '40.1')]) !>(park-ring))
@@ -1606,4 +1637,59 @@
     (expect-eq !>((pt '2.17' '41.38')) !>((gj:orr (geom (find 'situation/b-raw' 'situation')) 'coordinates')))
     (expect !>(!(has-key:orr (gj:orr (find 'situation/b-raw' 'situation') 'properties') 'note')))
   ==
+::  a point that is not a number, or is out of range, is no point: the
+::  place has no point and no radius area, a situation there is left
+::  off, and a polygon with such a pair is no area
+++  test-map-doc-bad-points
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  bod
+    |=  [id=@t kind=@tas name=@t rs=(list [@t json])]
+    ^-  loaded:orr
+    [id [kind name ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  geo  |=([la=@t lo=@t] `json`(pairs:enjs:format ~[['lat' n+la] ['lon' n+lo]]))
+  =/  all=(list loaded:orr)
+    :~  (bod 'place/a-exp' %place 'Exp' ~[['geo' (geo '4.075e1' '-7.398e1')] ['zone' (numb:enjs:format 500)]])
+        (bod 'place/b-far' %place 'Far' ~[['geo' (geo '500' '10')] ['zone' (numb:enjs:format 500)]])
+        (bod 'place/c-edge' %place 'Edge' ~[['geo' s+'90.5,10']])
+        (bod 'place/d-poly' %place 'Poly' ~[['geo' s+'40,-73'] ['zone' s+'40.1,-73.9 90.5,-73.9 40.2,-73.8']])
+        (bod 'place/e-ok' %place 'Ok' ~[['geo' (geo '40.5' '-73.5')]])
+        (bod 'situation/f-at-exp' %situation 'At' ~[['status' s+'open'] ['location' (pairs:enjs:format ~[['ref' s+'place/a-exp']])]])
+        (bod 'situation/g-raw' %situation 'Raw' ~[['status' s+'open'] ['location' s+'90.5,10']])
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  =/  prop  |=([f=json k=@t] (gs:orr (gj:orr f 'properties') k))
+  %+  expect-eq
+    !>(`(list [@t @t])`~[['place/d-poly' 'place'] ['place/e-ok' 'place']])
+  !>((turn fs |=(f=json [(prop f 'orrery') (prop f 'kind')])))
+::  only an open situation is drawn, the status read as the world digest
+::  reads it: lower case, and none is not open
+++  test-map-doc-open-only
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  sit
+    |=  [id=@t st=(unit @t)]
+    ^-  loaded:orr
+    =/  rs=(list [@t json])  (weld ?~(st ~ ~[['status' s+u.st]]) ~[['location' s+'41.38,2.17']])
+    [id [%situation id ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-none' ~)
+        (sit 'situation/b-closed' `'Closed')
+        (sit 'situation/c-cancelled' `'CANCELLED')
+        (sit 'situation/d-paused' `'paused')
+        (sit 'situation/e-open' `'Open')
+        (sit 'situation/f-open' `'open')
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  %+  expect-eq
+    !>(`(list @t)`~['situation/e-open' 'situation/f-open'])
+  !>((turn fs |=(f=json (gs:orr (gj:orr f 'properties') 'orrery'))))
 --
