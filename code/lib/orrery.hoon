@@ -9641,7 +9641,9 @@
   ^-  (unit [lat=@t lon=@t])
   =/  loc=(list row)  (fall (~(get by w) 'location') ~)
   ?~  loc  ~
-  ?^  (geo-of value.obs.i.loc)  (geo-of value.obs.i.loc)
+  ::  in range only: an object's numbers are not checked by +geo-of
+  =/  g=(unit [lat=@t lon=@t])  (geo-of value.obs.i.loc)
+  ?:  &(?=(^ g) (coordinate lat.u.g 90) (coordinate lon.u.g 180))  g
   ?.  ?=([%o *] value.obs.i.loc)  (geo-of (gj cache (addr-key (ref-or-text value.obs.i.loc))))
   (place-point (ref-or-text value.obs.i.loc) all multi now cache)
 ++  place-point
@@ -9971,9 +9973,12 @@
     ?~  words  (flop out)
     =/  w=tape  i.words
     ?~  out  $(words t.words, out ~[w])
+    ::  a word that is a whole pair already is not glued: "lat,lon,"
+    ::  with a comma after it, between pairs
     =/  joins=?
       ?~  i.out  |
       ?~  w  |
+      ?^  (geo-of s+(crip i.out))  |
       |(=(',' (rear i.out)) =(',' i.w))
     ?:  joins  $(words t.words, out [(weld i.out w) t.out])
     $(words t.words, out [w out])

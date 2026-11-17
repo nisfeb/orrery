@@ -1530,6 +1530,8 @@
   =/  no  `(unit geo-zone:orr)`~
   ;:  weld
     (expect-eq !>(tri) !>((zone-of:orr s+'40.1, -73.9 40.2, -73.9 40.2, -73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9, 40.2,-73.9, 40.2,-73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9,\0a40.2,-73.9,\0a40.2,-73.8,')))
     (expect-eq !>(tri) !>((zone-of:orr s+'40.1 , -73.9  40.2 ,-73.9 40.2,  -73.8')))
     (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9; 40.2,-73.9;40.2,-73.8;')))
     (expect-eq !>(tri) !>((zone-of:orr s+(crip "40.1,-73.9\0a40.2, -73.9\0a40.2,-73.8\0a"))))
@@ -1791,6 +1793,9 @@
           ==
     !>((turn fs |=(f=json [(gs:orr (gj:orr f 'properties') 'orrery') (gj:orr (gj:orr f 'geometry') 'coordinates')])))
     (expect-eq !>(`(unit [@t @t])`[~ '40.76' '-73.97']) !>((known-point:orr w all ~ (add t0 ~m1) [%o ~])))
+    ::  out of range is no point, so no away span from it
+    %+  expect-eq  !>(`(unit [@t @t])`~)
+    !>((known-point:orr (malt ~[['location' ~[(ob 'situation/d-far' 'location' (geo '95' '10'))]]]) all ~ (add t0 ~m1) [%o ~]))
   ==
 ::  the whole document for situations located every way: a ref to a
 ::  place by its geo and by its address, a raw point, an object point,
