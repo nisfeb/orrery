@@ -9631,7 +9631,8 @@
 ::  name, when, and why the ship counts it
 ::
 +$  away-span  [id=@t name=@t from=@da to=@da why=@t]
-::  +known-point: where a body's location is without asking Mapbox: the
+::  +known-point: where a body's location is without asking Mapbox: a
+::  point as written, "lat,lon" or {lat, lon} as +geo-of reads it, the
 ::  place it names, by its geo or its address in the geocache, else the
 ::  location as written, in the geocache
 ::
@@ -9640,6 +9641,7 @@
   ^-  (unit [lat=@t lon=@t])
   =/  loc=(list row)  (fall (~(get by w) 'location') ~)
   ?~  loc  ~
+  ?^  (geo-of value.obs.i.loc)  (geo-of value.obs.i.loc)
   ?.  ?=([%o *] value.obs.i.loc)  (geo-of (gj cache (addr-key (ref-or-text value.obs.i.loc))))
   (place-point (ref-or-text value.obs.i.loc) all multi now cache)
 ++  place-point
@@ -9987,8 +9989,8 @@
 ::  +map-doc: the map orrery keeps in map.json for lattice (version
 ::  151), GeoJSON from what the ship already holds: each place's point
 ::  (+point-of) and its zone as an area, and each open situation whose
-::  location is a point: a place's, a raw "lat,lon", or the geocache's
-::  (+known-point). Open is as +world-of reads it: the status in lower
+::  location is a point (+known-point): a place's, one written as
+::  "lat,lon" or {lat, lon}, or the geocache's. Open is as +world-of reads it: the status in lower
 ::  case is "open". Other situations, online ones, and anything with no
 ::  point are left off. A point is a number in range, or no point at
 ::  all. Sorted by id then kind, and with no time stamp, so the
@@ -10093,9 +10095,7 @@
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
     ?:  &(?=([%s *] v) |(=('' (trim-cord p.v)) (online p.v)))  ~
-    =/  pt=(unit [lat=@s lon=@s])
-      =/  raw  ?:(?=([%s *] v) (geo-of s+(trim-cord p.v)) ~)
-      (biff ?^(raw raw (known-point w all multi now cache)) pin)
+    =/  pt=(unit [lat=@s lon=@s])  (biff (known-point w all multi now cache) pin)
     ?~  pt  ~
     =/  note=@t  (winner-text w 'summary')
     =/  time=@t  (winner-text w 'starts')

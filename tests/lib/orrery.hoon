@@ -1758,4 +1758,38 @@
   %+  expect-eq
     !>(`(list @t)`~['situation/e-open' 'situation/f-open'])
   !>((turn fs |=(f=json (gs:orr (gj:orr f 'properties') 'orrery'))))
+::  a location written as a {lat, lon} object is a point, as a place's
+::  geo is, on the map and for the away check; a ref is still a ref
+++  test-map-doc-object-point
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  sit
+    |=  [id=@t loc=json]
+    ^-  loaded:orr
+    [id [%situation id ~ at ~] ~[(ob id 'status' s+'open') (ob id 'location' loc)]]
+  =/  geo  |=([la=@t lo=@t] `json`(pairs:enjs:format ~[['lat' n+la] ['lon' n+lo]]))
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-obj' (geo '40.76' '-73.97'))
+        (sit 'situation/b-lng' (pairs:enjs:format ~[['lat' n+'40.5'] ['lng' n+'-73.5']]))
+        (sit 'situation/c-ref' (pairs:enjs:format ~[['ref' s+'place/home']]))
+        (sit 'situation/d-far' (geo '95' '10'))
+        ['place/home' [%place 'Home' ~ at ~] ~[(ob 'place/home' 'geo' s+'40.75,-73.98')]]
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  =/  w=(map @t (list row:orr))  (malt ~[['location' ~[(ob 'situation/a-obj' 'location' (geo '40.76' '-73.97'))]]])
+  ;:  weld
+    %+  expect-eq
+      !>  ^-  (list [@t json])
+          :~  ['place/home' a+~[n+'-73.98' n+'40.75']]
+              ['situation/a-obj' a+~[n+'-73.97' n+'40.76']]
+              ['situation/b-lng' a+~[n+'-73.5' n+'40.5']]
+              ['situation/c-ref' a+~[n+'-73.98' n+'40.75']]
+          ==
+    !>((turn fs |=(f=json [(gs:orr (gj:orr f 'properties') 'orrery') (gj:orr (gj:orr f 'geometry') 'coordinates')])))
+    (expect-eq !>(`(unit [@t @t])`[~ '40.76' '-73.97']) !>((known-point:orr w all ~ (add t0 ~m1) [%o ~])))
+  ==
 --
