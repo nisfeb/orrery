@@ -1792,4 +1792,50 @@
     !>((turn fs |=(f=json [(gs:orr (gj:orr f 'properties') 'orrery') (gj:orr (gj:orr f 'geometry') 'coordinates')])))
     (expect-eq !>(`(unit [@t @t])`[~ '40.76' '-73.97']) !>((known-point:orr w all ~ (add t0 ~m1) [%o ~])))
   ==
+::  the whole document for situations located every way: a ref to a
+::  place by its geo and by its address, a raw point, an object point,
+::  a text address in the geocache, a ref to no body, and refs to a
+::  person with a geo and to one without
+++  test-map-doc-mixed
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  ref  |=(id=@t (pairs:enjs:format ~[['ref' s+id]]))
+  =/  bod
+    |=  [id=@t kind=@tas rs=(list [@t json])]
+    ^-  loaded:orr
+    [id [kind id ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  sit  |=([id=@t loc=json] (bod id %situation ~[['status' s+'open'] ['location' loc]]))
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-ref' (ref 'place/home'))
+        (sit 'situation/b-raw' s+'41.38,2.17')
+        (sit 'situation/c-addr' s+'5  Elm St')
+        (sit 'situation/d-missing' (ref 'place/gone'))
+        (sit 'situation/e-person' (ref 'person/pal'))
+        (sit 'situation/f-me' (ref 'person/me'))
+        (sit 'situation/g-addr-place' (ref 'place/shop'))
+        (sit 'situation/h-obj' (pairs:enjs:format ~[['lat' n+'40.76'] ['lon' n+'-73.97']]))
+        (bod 'person/pal' %person ~[['geo' s+'40.65,-73.65']])
+        (bod 'person/me' %person ~[['location' (ref 'place/home')]])
+        (bod 'place/shop' %place ~[['address' s+'1 Main St']])
+        (bod 'place/home' %place ~[['geo' s+'40.75,-73.98'] ['zone' s+'40.1,-73.9 40.2,-73.9 40.2,-73.8']])
+    ==
+  =/  cache=json
+    o+(malt `(list [@t json])`~[['5 elm st' s+'40.6,-73.6'] ['1 main st' s+'40.7,-74.0']])
+  =/  want=@t
+    %+  rap  3
+    :~
+        '{"features":[{"geometry":{"coordinates":[[[-73.9,40.1],[-73.9,40.2],[-73.8,40.2],[-73.9,40.1]]],"type":"Polygon"},"type":"Feature","properties":{"orrery":"place/home","name":"place/home","kind":"area"}'
+        '},{"geometry":{"coordinates":[-73.98,40.75],"type":"Point"},"type":"Feature","properties":{"orrery":"place/home","name":"place/home","kind":"place"}'
+        '},{"geometry":{"coordinates":[-74,40.7],"type":"Point"},"type":"Feature","properties":{"orrery":"place/shop","name":"place/shop","kind":"place"}'
+        '},{"geometry":{"coordinates":[-73.98,40.75],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/a-ref","name":"situation/a-ref","kind":"situation"}'
+        '},{"geometry":{"coordinates":[2.17,41.38],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/b-raw","name":"situation/b-raw","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.6,40.6],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/c-addr","name":"situation/c-addr","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.65,40.65],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/e-person","name":"situation/e-person","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-74,40.7],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/g-addr-place","name":"situation/g-addr-place","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.97,40.76],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/h-obj","name":"situation/h-obj","kind":"situation"}}],"type":"FeatureCollection"}'
+    ==
+  (expect-eq !>(want) !>((en:json:html (map-doc:orr all ~ (add t0 ~m1) cache))))
 --

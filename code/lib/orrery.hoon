@@ -10069,13 +10069,29 @@
     :~  ['type' s+'Feature']  ['geometry' g]
         ['properties' (pairs:enjs:format (weld ~[['name' s+name] ['kind' s+kind] ['orrery' s+id]] more))]
     ==
+  ::  each place and situation folded once, and each place's point, so
+  ::  a situation at a place looks the point up and does not scan every
+  ::  body and fold the place again. The first body with an id wins, as
+  ::  in +loaded-of
+  =/  folded=(list [l=loaded w=(map @t (list row))])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [l=loaded w=(map @t (list row))])
+    ?.  ?=(?(%place %situation) kind.body.l)  ~
+    `[l (fold rows.l multi now)]
+  =/  spots=(map @t (unit [lat=@t lon=@t]))
+    %-  malt
+    %-  flop
+    %+  murn  folded
+    |=  [l=loaded w=(map @t (list row))]
+    ^-  (unit [@t (unit [lat=@t lon=@t])])
+    ?.  ?=(%place kind.body.l)  ~
+    `[id.l (point-of w cache)]
   =/  each=(list [id=@t kind=@t f=json])
     %-  zing
-    %+  turn  all
-    |=  l=loaded
+    %+  turn  folded
+    |=  [l=loaded w=(map @t (list row))]
     ^-  (list [id=@t kind=@t f=json])
-    ?.  ?=(?(%place %situation) kind.body.l)  ~
-    =/  w=(map @t (list row))  (fold rows.l multi now)
     ?:  ?=(%place kind.body.l)
       =/  pt=(unit [lat=@s lon=@s])  (biff (point-of w cache) pin)
       =/  z=(list row)  (fall (~(get by w) 'zone') ~)
@@ -10095,7 +10111,15 @@
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
     ?:  &(?=([%s *] v) |(=('' (trim-cord p.v)) (online p.v)))  ~
-    =/  pt=(unit [lat=@s lon=@s])  (biff (known-point w all multi now cache) pin)
+    ::  a ref to a place is looked up. Anything else, a point as written,
+    ::  an address, a ref to another kind or to no body, as +known-point
+    =/  pt=(unit [lat=@s lon=@s])
+      %+  biff
+        =/  r=@t  (ref-or-text v)
+        ?.  &(?=([%o *] v) ?=(~ (geo-of v)) (~(has by spots) r))
+          (known-point w all multi now cache)
+        (~(got by spots) r)
+      pin
     ?~  pt  ~
     =/  note=@t  (winner-text w 'summary')
     =/  time=@t  (winner-text w 'starts')
