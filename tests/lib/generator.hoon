@@ -1125,7 +1125,14 @@
     %^  validate-reader:orr
       (jo '{"observations": [{"subject": "thing/subaru", "attr": "status", "value": ["at the shop", "towed"], "message": "telegram/1/2"}]}')
     tg-rows  tg-ctx
+  ::  a zone written as an array of "lat,lon" pairs is one polygon, not
+  ::  a row for each pair. An array with anything but text is split
+  =/  zone=tg-facts:orr
+    %^  validate-reader:orr
+      (jo '{"observations": [{"subject": "place/home", "attr": "zone", "value": ["40.1,-73.9", " 40.2, -73.9", "40.2,-73.8"], "message": "telegram/1/2"}, {"subject": "place/home", "attr": "Zone", "value": [500, "x"], "message": "telegram/1/2"}]}')
+    tg-rows  tg-ctx
   ;:  weld
+    (expect-eq !>(`(list json)`~[s+'40.1,-73.9  40.2, -73.9 40.2,-73.8' n+'500' s+'x']) !>((turn obs.zone |=(o=json (gj:orr o 'value')))))
     (expect-eq !>(`(list json)`~[s+'at the shop' s+'towed']) !>((turn obs.arr |=(o=json (gj:orr o 'value')))))
     ::  bodies: the shop is new and kept (grounding decides later), sara is Sarah, me gains an alias, cat is no kind
     (expect-eq !>(`(list @t)`~['place/johns-machine-shop' 'person/me']) !>((turn bodies.got |=(b=json (gs:orr b 'id')))))

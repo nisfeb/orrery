@@ -1520,6 +1520,72 @@
     (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'0')))
     (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr a+~)))
   ==
+::  a zone as people and agents write it: spaces after the comma, pairs
+::  between semicolons or lines, a trailing separator, a radius with a
+::  fraction, an exponent or a unit. Junk, a radius that rounds to zero,
+::  one past 5,000 km and fewer than three distinct points are refused
+++  test-zone-of-forgiving
+  =/  tri=(unit geo-zone:orr)  [~ %ring ~[['40.1' '-73.9'] ['40.2' '-73.9'] ['40.2' '-73.8']]]
+  =/  rad  |=(m=@ud `(unit geo-zone:orr)`[~ %radius m])
+  =/  no  `(unit geo-zone:orr)`~
+  ;:  weld
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1, -73.9 40.2, -73.9 40.2, -73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1 , -73.9  40.2 ,-73.9 40.2,  -73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9; 40.2,-73.9;40.2,-73.8;')))
+    (expect-eq !>(tri) !>((zone-of:orr s+(crip "40.1,-73.9\0a40.2, -73.9\0a40.2,-73.8\0a"))))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8 ')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr n+'500.0')))
+    (expect-eq !>((rad 1.000)) !>((zone-of:orr n+'1e3')))
+    (expect-eq !>((rad 1.000)) !>((zone-of:orr n+'1E+3')))
+    (expect-eq !>((rad 250)) !>((zone-of:orr n+'2.5e2')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr n+'499.5')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500 m')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500m')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500 M')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'0.5 km')))
+    (expect-eq !>((rad 1.500)) !>((zone-of:orr s+'1.5KM')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+(crip "500\0a"))))
+    (expect-eq !>((rad 5.000.000)) !>((zone-of:orr s+'5000 km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'5000.001 km')))
+    (expect-eq !>(no) !>((zone-of:orr n+'1e99')))
+    (expect-eq !>(no) !>((zone-of:orr n+'0.4')))
+    (expect-eq !>(no) !>((zone-of:orr n+'1e-5')))
+    (expect-eq !>(no) !>((zone-of:orr n+'-500')))
+    (expect-eq !>(no) !>((zone-of:orr s+'-500 m')))
+    (expect-eq !>(no) !>((zone-of:orr s+'500 mm')))
+    (expect-eq !>(no) !>((zone-of:orr s+'500 miles')))
+    (expect-eq !>(no) !>((zone-of:orr s+'km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'.5 km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'5e')))
+    (expect-eq !>(no) !>((zone-of:orr s+';;; ,')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8 40.3')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9,40.2,-73.9 40.2,-73.8 40.3,-73.7')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.1,-73.9 40.1,-73.9 40.1,-73.9')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.1,-73.9 40.2,-73.9')))
+    (expect-eq !>(no) !>((zone-of:orr b+&)))
+  ==
+::  a polygon over 2000 bytes is cut there when it is stored, maybe in a
+::  pair: the points before the cut stand when three or more remain
+++  test-zone-of-cut
+  =/  pairs=(list @t)
+    %+  turn  (gulf 1.000 1.199)
+    |=(i=@ud (rap 3 '40.' (crip (a-co:co i)) ',-73.' (crip (a-co:co i)) ' ' ~))
+  =/  long=@t  (rap 3 pairs)
+  =/  cut=@t
+    =/  c  (clean-value:orr s+long)
+    ?>(?=([%& %s *] c) p.p.c)
+  =/  want=(list [@t @t])
+    %+  turn  (gulf 1.000 1.116)
+    |=(i=@ud [(cat 3 '40.' (crip (a-co:co i))) (cat 3 '-73.' (crip (a-co:co i)))])
+  ;:  weld
+    ::  17 bytes a pair: 117 whole pairs, then "40.1117,-73", which
+    ::  reads as a point that is not the one written
+    (expect-eq !>(2.000) !>((met 3 cut)))
+    (expect-eq !>('40.1117,-73') !>((rsh [3 1.989] cut)))
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %ring want]) !>((zone-of:orr s+cut)))
+    ::  a last word at the cut that is no point is dropped too
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %ring (scag 116 want)]) !>((zone-of:orr s+(cat 3 (end [3 1.972] cut) (fil 3 28 '1')))))
+  ==
 ::  a schema from before 151 gains zone on place, with the starter's note
 ++  test-schema-zone
   =/  kinds=json  (gj:orr starter-schema:orr 'kinds')

@@ -1625,7 +1625,7 @@
               ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
               ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
               ['website' 'the place\'s own website, a URL']
-              ['zone' 'the area around the place drawn on the map: a radius in metres, a number, or a polygon, "lat,lon" pairs between spaces']
+              ['zone' 'the area around the place drawn on the map: a radius up to 5000 km, as 500, "500 m" or "0.5 km", or a polygon of three points or more, "lat,lon" pairs between spaces, lines or semicolons']
               ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
@@ -5963,6 +5963,12 @@
   ::  an array value is one observation per element: the writer holds
   ::  one value to a row
   =/  arr=json  (gj o 'value')
+  ::  but a zone written as "lat,lon" texts is one polygon (+zone-of)
+  =/  texts=(list @t)  ?:(?=([%a *] arr) (strings p.arr) ~)
+  ?:  ?&  ?=([%a ^] arr)  =((lent texts) (lent p.arr))
+          =('zone' (lower (trim-cord (gs o 'attr'))))
+      ==
+    $(raw [(set-key o 'value' s+(join-cords ' ' texts)) t.raw])
   ?:  ?=([%a *] arr)
     $(raw (weld (turn p.arr |=(e=json (set-key o 'value' e))) t.raw))
   =/  subject=@t  (canon-id alias (lower (trim-cord (gs o 'subject'))))
@@ -9924,26 +9930,59 @@
   ?.  ?=([@ @ ~] parts)  ~
   ?.  &((coordinate i.parts 90) (coordinate i.t.parts 180))  ~
   `[i.parts i.t.parts]
-::  +zone-of: a place's zone (version 151): a radius in metres, a
-::  number or its text, or a polygon, "lat,lon" pairs between spaces,
-::  three points at least. Written closed or not, the points are kept
-::  without the repeat. ~ for anything else, and for a zero radius
+::  +zone-of: a place's zone (version 151): a radius in metres, or a
+::  polygon. A radius is a number, maybe with a fraction or an
+::  exponent, or its text, maybe with "m" or "km" after it. It is
+::  rounded to whole metres, and is more than 0 and at most 5,000 km.
+::  A polygon is "lat,lon" pairs, spaces allowed around the comma,
+::  with spaces, lines or semicolons between pairs. It has three
+::  distinct points at least. Written closed or not, the points are
+::  kept without the repeat. A text at the stored limit of 2000 bytes
+::  may have been cut in its last pair, so that word is dropped. ~ for
+::  anything else
 ::
 +$  geo-zone  $%([%radius m=@ud] [%ring pts=(list [lat=@t lon=@t])])
 ++  zone-of
   |=  v=json
   ^-  (unit geo-zone)
   =/  t=@t  ?:(?=([%n *] v) p.v ?:(?=([%s *] v) (trim-cord p.v) ''))
-  =/  m=(unit @ud)  (rush t dem)
-  ?^  m  ?:(=(0 u.m) ~ `[%radius u.m])
+  =/  m=(unit @ud)
+    =/  low=tape  (cass (trip t))
+    =/  n=@ud  (lent low)
+    =/  [num=tape per=@ud]
+      ?:  &((gte n 2) =("km" (slag (sub n 2) low)))  [(scag (sub n 2) low) 1.000]
+      ?:  &((gte n 1) =("m" (slag (sub n 1) low)))  [(scag (sub n 1) low) 1]
+      [low 1]
+    =/  c=@t  (crip (trim-tape num))
+    =/  e  ;~(plug (mask "eE") (punt (mask "+-")) dem)
+    ?~  (rush c ;~(plug dem (punt ;~(plug dot (plus nud))) (punt e)))  ~
+    `(div (add (mul (micro-of c) per) 500.000) 1.000.000)
+  ?^  m  ?:(|(=(0 u.m) (gth u.m 5.000.000)) ~ `[%radius u.m])
   ?.  ?=([%s *] v)  ~
+  ::  words between spaces, lines and semicolons, a word glued to the
+  ::  next where a comma meets the gap
+  =/  words=(list tape)
+    (split-ws (turn (trip t) |=(c=@ ?:(=(';' c) ' ' c))))
+  =/  glued=(list tape)
+    =|  out=(list tape)
+    |-  ^-  (list tape)
+    ?~  words  (flop out)
+    =/  w=tape  i.words
+    ?~  out  $(words t.words, out ~[w])
+    =/  joins=?
+      ?~  i.out  |
+      ?~  w  |
+      |(=(',' (rear i.out)) =(',' i.w))
+    ?:  joins  $(words t.words, out [(weld i.out w) t.out])
+    $(words t.words, out [w out])
+  =?  glued  (gte (met 3 p.v) 2.000)  (snip glued)
   =/  got=(list (unit [lat=@t lon=@t]))
-    (turn (split-ws (trip t)) |=(w=tape (geo-of s+(crip w))))
+    (turn glued |=(w=tape (geo-of s+(crip w))))
   ?:  (lien got |=(g=(unit [lat=@t lon=@t]) ?=(~ g)))  ~
   =/  pts=(list [lat=@t lon=@t])  (murn got |=(g=(unit [lat=@t lon=@t]) g))
   =/  n=@ud  (lent pts)
   =?  pts  &((gth n 1) =((snag 0 pts) (rear pts)))  (snip pts)
-  ?:  (lth (lent pts) 3)  ~
+  ?:  (lth ~(wyt in (sy pts)) 3)  ~
   `[%ring pts]
 ::  +map-doc: the map orrery keeps in map.json for lattice (version
 ::  151), GeoJSON from what the ship already holds: each place's point
