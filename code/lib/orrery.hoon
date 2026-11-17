@@ -1625,7 +1625,7 @@
               ['geo' 'where the place is, "lat,lon" or {"lat", "lon"}: what lets a phone say the owner is at this place rather than at its coordinates']
               ['pota' 'a Parks on the Air park\'s reference, US-1234; written by the ship from the POTA list']
               ['website' 'the place\'s own website, a URL']
-              ['zone' 'the area around the place drawn on the map: a radius in metres, a number, or a polygon, "lat,lon" pairs between spaces']
+              ['zone' 'the area around the place drawn on the map: a radius up to 5000 km, as 500, "500 m" or "0.5 km", or a polygon of three points or more, "lat,lon" pairs between spaces, lines or semicolons']
               ['activated' 'when the owner last activated this park for Parks on the Air, ISO 8601 date, in their word ("activated US-1234 today")']
           ==
           :-  'thing'
@@ -5963,6 +5963,12 @@
   ::  an array value is one observation per element: the writer holds
   ::  one value to a row
   =/  arr=json  (gj o 'value')
+  ::  but a zone written as "lat,lon" texts is one polygon (+zone-of)
+  =/  texts=(list @t)  ?:(?=([%a *] arr) (strings p.arr) ~)
+  ?:  ?&  ?=([%a ^] arr)  =((lent texts) (lent p.arr))
+          =('zone' (lower (trim-cord (gs o 'attr'))))
+      ==
+    $(raw [(set-key o 'value' s+(join-cords ' ' texts)) t.raw])
   ?:  ?=([%a *] arr)
     $(raw (weld (turn p.arr |=(e=json (set-key o 'value' e))) t.raw))
   =/  subject=@t  (canon-id alias (lower (trim-cord (gs o 'subject'))))
@@ -9625,7 +9631,8 @@
 ::  name, when, and why the ship counts it
 ::
 +$  away-span  [id=@t name=@t from=@da to=@da why=@t]
-::  +known-point: where a body's location is without asking Mapbox: the
+::  +known-point: where a body's location is without asking Mapbox: a
+::  point as written, "lat,lon" or {lat, lon} as +geo-of reads it, the
 ::  place it names, by its geo or its address in the geocache, else the
 ::  location as written, in the geocache
 ::
@@ -9634,6 +9641,9 @@
   ^-  (unit [lat=@t lon=@t])
   =/  loc=(list row)  (fall (~(get by w) 'location') ~)
   ?~  loc  ~
+  ::  in range only: an object's numbers are not checked by +geo-of
+  =/  g=(unit [lat=@t lon=@t])  (geo-of value.obs.i.loc)
+  ?:  &(?=(^ g) (coordinate lat.u.g 90) (coordinate lon.u.g 180))  g
   ?.  ?=([%o *] value.obs.i.loc)  (geo-of (gj cache (addr-key (ref-or-text value.obs.i.loc))))
   (place-point (ref-or-text value.obs.i.loc) all multi now cache)
 ++  place-point
@@ -9924,46 +9934,88 @@
   ?.  ?=([@ @ ~] parts)  ~
   ?.  &((coordinate i.parts 90) (coordinate i.t.parts 180))  ~
   `[i.parts i.t.parts]
-::  +zone-of: a place's zone (version 151): a radius in metres, a
-::  number or its text, or a polygon, "lat,lon" pairs between spaces,
-::  three points at least. Written closed or not, the points are kept
-::  without the repeat. ~ for anything else, and for a zero radius
+::  +zone-of: a place's zone (version 151): a radius in metres, or a
+::  polygon. A radius is a number, maybe with a fraction or an
+::  exponent, or its text, maybe with "m" or "km" after it. It is
+::  rounded to whole metres, and is more than 0 and at most 5,000 km.
+::  A polygon is "lat,lon" pairs, spaces allowed around the comma,
+::  with spaces, lines or semicolons between pairs. It has three
+::  distinct points at least. Written closed or not, the points are
+::  kept without the repeat. A text at the stored limit of 2000 bytes
+::  may have been cut in its last pair, so that word is dropped. ~ for
+::  anything else
 ::
 +$  geo-zone  $%([%radius m=@ud] [%ring pts=(list [lat=@t lon=@t])])
 ++  zone-of
   |=  v=json
   ^-  (unit geo-zone)
   =/  t=@t  ?:(?=([%n *] v) p.v ?:(?=([%s *] v) (trim-cord p.v) ''))
-  =/  m=(unit @ud)  (rush t dem)
-  ?^  m  ?:(=(0 u.m) ~ `[%radius u.m])
+  =/  m=(unit @ud)
+    =/  low=tape  (cass (trip t))
+    =/  n=@ud  (lent low)
+    =/  [num=tape per=@ud]
+      ?:  &((gte n 2) =("km" (slag (sub n 2) low)))  [(scag (sub n 2) low) 1.000]
+      ?:  &((gte n 1) =("m" (slag (sub n 1) low)))  [(scag (sub n 1) low) 1]
+      [low 1]
+    =/  c=@t  (crip (trim-tape num))
+    =/  e  ;~(plug (mask "eE") (punt (mask "+-")) dem)
+    ?~  (rush c ;~(plug dem (punt ;~(plug dot (plus nud))) (punt e)))  ~
+    `(div (add (mul (micro-of c) per) 500.000) 1.000.000)
+  ?^  m  ?:(|(=(0 u.m) (gth u.m 5.000.000)) ~ `[%radius u.m])
   ?.  ?=([%s *] v)  ~
+  ::  words between spaces, lines and semicolons, a word glued to the
+  ::  next where a comma meets the gap
+  =/  words=(list tape)
+    (split-ws (turn (trip t) |=(c=@ ?:(=(';' c) ' ' c))))
+  =/  glued=(list tape)
+    =|  out=(list tape)
+    |-  ^-  (list tape)
+    ?~  words  (flop out)
+    =/  w=tape  i.words
+    ?~  out  $(words t.words, out ~[w])
+    ::  a word that is a whole pair already is not glued: "lat,lon,"
+    ::  with a comma after it, between pairs
+    =/  joins=?
+      ?~  i.out  |
+      ?~  w  |
+      ?^  (geo-of s+(crip i.out))  |
+      |(=(',' (rear i.out)) =(',' i.w))
+    ?:  joins  $(words t.words, out [(weld i.out w) t.out])
+    $(words t.words, out [w out])
+  =?  glued  (gte (met 3 p.v) 2.000)  (snip glued)
   =/  got=(list (unit [lat=@t lon=@t]))
-    (turn (split-ws (trip t)) |=(w=tape (geo-of s+(crip w))))
+    (turn glued |=(w=tape (geo-of s+(crip w))))
   ?:  (lien got |=(g=(unit [lat=@t lon=@t]) ?=(~ g)))  ~
   =/  pts=(list [lat=@t lon=@t])  (murn got |=(g=(unit [lat=@t lon=@t]) g))
   =/  n=@ud  (lent pts)
   =?  pts  &((gth n 1) =((snag 0 pts) (rear pts)))  (snip pts)
-  ?:  (lth (lent pts) 3)  ~
+  ?:  (lth ~(wyt in (sy pts)) 3)  ~
   `[%ring pts]
 ::  +map-doc: the map orrery keeps in map.json for lattice (version
 ::  151), GeoJSON from what the ship already holds: each place's point
 ::  (+point-of) and its zone as an area, and each open situation whose
-::  location is a point: a place's, a raw "lat,lon", or the geocache's
-::  (+known-point). Closed and online situations, and anything with no
-::  point, are left off. Sorted by id then kind, and with no time stamp,
-::  so the document moves only when a feature does
+::  location is a point (+known-point): a place's, one written as
+::  "lat,lon" or {lat, lon}, or the geocache's. Open is as +world-of reads it: the status in lower
+::  case is "open". Other situations, online ones, and anything with no
+::  point are left off. A point is a number in range, or no point at
+::  all. Sorted by id then kind, and with no time stamp, so the
+::  document moves only when a feature does
 ::
 ++  map-doc
   |=  [all=(list loaded) multi=(set @t) now=@da cache=json]
   ^-  json
-  ::  a coordinate as millionths with a sign
+  ::  a coordinate as millionths with a sign. ~ when it is not a
+  ::  number or lies past bound
   =/  sig
-    |=  t=@t
-    ^-  @s
+    |=  [t=@t bound=@ud]
+    ^-  (unit @s)
     =/  m  (micro t)
-    ?~(m --0 (new:si !neg.u.m n.u.m))
+    ?~  m  ~
+    ?:  (gth n.u.m (mul bound 1.000.000))  ~
+    `(new:si !neg.u.m n.u.m)
   ::  held to a bound, so a ring near a pole or the date line is a
-  ::  wrong shape rather than a coordinate no map takes
+  ::  wrong shape rather than a coordinate no map takes. Only a ring
+  ::  can pass a bound: every other point came through +pin
   =/  cap
     |=  [s=@s bound=@ud]
     ^-  @s
@@ -9980,7 +10032,13 @@
     =/  int=tape  (a-co:co (div n 1.000.000))
     n+(crip :(weld ?:(pos "" "-") int ?~(f "" ['.' (flop f)])))
   =/  at  |=([lat=@s lon=@s] `json`a+~[(num (cap lon 180)) (num (cap lat 90))])
-  =/  pin  |=(p=[lat=@t lon=@t] [(sig lat.p) (sig lon.p)])
+  =/  pin
+    |=  p=[lat=@t lon=@t]
+    ^-  (unit [lat=@s lon=@s])
+    =/  la  (sig lat.p 90)
+    =/  lo  (sig lon.p 180)
+    ?.  &(?=(^ la) ?=(^ lo))  ~
+    `[u.la u.lo]
   ::  a radius about a point as 24 points: cos and sin of each fifteen
   ::  degrees from a quarter's table, in millionths. Near a pole the
   ::  longitude's cosine is held at a hundredth, so no division by zero
@@ -10016,38 +10074,61 @@
     :~  ['type' s+'Feature']  ['geometry' g]
         ['properties' (pairs:enjs:format (weld ~[['name' s+name] ['kind' s+kind] ['orrery' s+id]] more))]
     ==
+  ::  each place and situation folded once, and each place's point, so
+  ::  a situation at a place looks the point up and does not scan every
+  ::  body and fold the place again. The first body with an id wins, as
+  ::  in +loaded-of
+  =/  folded=(list [l=loaded w=(map @t (list row))])
+    %+  murn  all
+    |=  l=loaded
+    ^-  (unit [l=loaded w=(map @t (list row))])
+    ?.  ?=(?(%place %situation) kind.body.l)  ~
+    `[l (fold rows.l multi now)]
+  =/  spots=(map @t (unit [lat=@t lon=@t]))
+    %-  malt
+    %-  flop
+    %+  murn  folded
+    |=  [l=loaded w=(map @t (list row))]
+    ^-  (unit [@t (unit [lat=@t lon=@t])])
+    ?.  ?=(%place kind.body.l)  ~
+    `[id.l (point-of w cache)]
   =/  each=(list [id=@t kind=@t f=json])
     %-  zing
-    %+  turn  all
-    |=  l=loaded
+    %+  turn  folded
+    |=  [l=loaded w=(map @t (list row))]
     ^-  (list [id=@t kind=@t f=json])
-    ?.  ?=(?(%place %situation) kind.body.l)  ~
-    =/  w=(map @t (list row))  (fold rows.l multi now)
     ?:  ?=(%place kind.body.l)
-      =/  pt=(unit [lat=@s lon=@s])  (bind (point-of w cache) pin)
+      =/  pt=(unit [lat=@s lon=@s])  (biff (point-of w cache) pin)
       =/  z=(list row)  (fall (~(get by w) 'zone') ~)
       =/  zone=(unit geo-zone)  ?~(z ~ (zone-of value.obs.i.z))
+      ::  a ring with a pair that is no point is no area
       =/  area=(unit (list [lat=@s lon=@s]))
         ?~  zone  ~
         ?-  -.u.zone
-          %ring    `(turn pts.u.zone pin)
+          %ring    =/(ps (murn pts.u.zone pin) ?.(=((lent ps) (lent pts.u.zone)) ~ `ps))
           %radius  ?~(pt ~ `(ring u.pt m.u.zone))
         ==
       %+  weld
         ?~(pt ~ ~[(feature id.l 'place' name.body.l (point u.pt) ~)])
       ?~(area ~ ~[(feature id.l 'area' name.body.l (poly u.area) ~)])
-    ?:  (is-closed w)  ~
+    ?.  =('open' (lower (winner-text w 'status')))  ~
     =/  loc=(list row)  (fall (~(get by w) 'location') ~)
     ?~  loc  ~
     =/  v=json  value.obs.i.loc
     ?:  &(?=([%s *] v) |(=('' (trim-cord p.v)) (online p.v)))  ~
-    =/  pt=(unit [lat=@t lon=@t])
-      =/  raw  ?:(?=([%s *] v) (geo-of s+(trim-cord p.v)) ~)
-      ?^(raw raw (known-point w all multi now cache))
+    ::  a ref to a place is looked up. Anything else, a point as written,
+    ::  an address, a ref to another kind or to no body, as +known-point
+    =/  pt=(unit [lat=@s lon=@s])
+      %+  biff
+        =/  r=@t  (ref-or-text v)
+        ?.  &(?=([%o *] v) ?=(~ (geo-of v)) (~(has by spots) r))
+          (known-point w all multi now cache)
+        (~(got by spots) r)
+      pin
     ?~  pt  ~
     =/  note=@t  (winner-text w 'summary')
     =/  time=@t  (winner-text w 'starts')
-    :~  %:  feature  id.l  'situation'  name.body.l  (point (pin u.pt))
+    :~  %:  feature  id.l  'situation'  name.body.l  (point u.pt)
           (weld ?:(=('' note) ~ ~[['note' s+note]]) ?:(=('' time) ~ ~[['time' s+time]]))
         ==
     ==
@@ -10707,7 +10788,7 @@
 ::  +version: what the desk's code/version.json says, for GET /version;
 ::  scripts/page-test.js holds the two together
 ::
-++  version  151
+++  version  152
 ::  ==  the calendar events reader (version 47): the calendar's timed,
 ::  all-day and dated events as situations and activities, the way the
 ::  phone client's calendar pipe wrote them (its OrreryCalendar), so

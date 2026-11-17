@@ -1520,6 +1520,74 @@
     (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr s+'0')))
     (expect-eq !>(`(unit geo-zone:orr)`~) !>((zone-of:orr a+~)))
   ==
+::  a zone as people and agents write it: spaces after the comma, pairs
+::  between semicolons or lines, a trailing separator, a radius with a
+::  fraction, an exponent or a unit. Junk, a radius that rounds to zero,
+::  one past 5,000 km and fewer than three distinct points are refused
+++  test-zone-of-forgiving
+  =/  tri=(unit geo-zone:orr)  [~ %ring ~[['40.1' '-73.9'] ['40.2' '-73.9'] ['40.2' '-73.8']]]
+  =/  rad  |=(m=@ud `(unit geo-zone:orr)`[~ %radius m])
+  =/  no  `(unit geo-zone:orr)`~
+  ;:  weld
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1, -73.9 40.2, -73.9 40.2, -73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9, 40.2,-73.9, 40.2,-73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9,\0a40.2,-73.9,\0a40.2,-73.8,')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1 , -73.9  40.2 ,-73.9 40.2,  -73.8')))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9; 40.2,-73.9;40.2,-73.8;')))
+    (expect-eq !>(tri) !>((zone-of:orr s+(crip "40.1,-73.9\0a40.2, -73.9\0a40.2,-73.8\0a"))))
+    (expect-eq !>(tri) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8 ')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr n+'500.0')))
+    (expect-eq !>((rad 1.000)) !>((zone-of:orr n+'1e3')))
+    (expect-eq !>((rad 1.000)) !>((zone-of:orr n+'1E+3')))
+    (expect-eq !>((rad 250)) !>((zone-of:orr n+'2.5e2')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr n+'499.5')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500 m')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500m')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'500 M')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+'0.5 km')))
+    (expect-eq !>((rad 1.500)) !>((zone-of:orr s+'1.5KM')))
+    (expect-eq !>((rad 500)) !>((zone-of:orr s+(crip "500\0a"))))
+    (expect-eq !>((rad 5.000.000)) !>((zone-of:orr s+'5000 km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'5000.001 km')))
+    (expect-eq !>(no) !>((zone-of:orr n+'1e99')))
+    (expect-eq !>(no) !>((zone-of:orr n+'0.4')))
+    (expect-eq !>(no) !>((zone-of:orr n+'1e-5')))
+    (expect-eq !>(no) !>((zone-of:orr n+'-500')))
+    (expect-eq !>(no) !>((zone-of:orr s+'-500 m')))
+    (expect-eq !>(no) !>((zone-of:orr s+'500 mm')))
+    (expect-eq !>(no) !>((zone-of:orr s+'500 miles')))
+    (expect-eq !>(no) !>((zone-of:orr s+'km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'.5 km')))
+    (expect-eq !>(no) !>((zone-of:orr s+'5e')))
+    (expect-eq !>(no) !>((zone-of:orr s+';;; ,')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.2,-73.8 40.3')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9,40.2,-73.9 40.2,-73.8 40.3,-73.7')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.1,-73.9 40.1,-73.9 40.1,-73.9')))
+    (expect-eq !>(no) !>((zone-of:orr s+'40.1,-73.9 40.2,-73.9 40.1,-73.9 40.2,-73.9')))
+    (expect-eq !>(no) !>((zone-of:orr b+&)))
+  ==
+::  a polygon over 2000 bytes is cut there when it is stored, maybe in a
+::  pair: the points before the cut stand when three or more remain
+++  test-zone-of-cut
+  =/  pairs=(list @t)
+    %+  turn  (gulf 1.000 1.199)
+    |=(i=@ud (rap 3 '40.' (crip (a-co:co i)) ',-73.' (crip (a-co:co i)) ' ' ~))
+  =/  long=@t  (rap 3 pairs)
+  =/  cut=@t
+    =/  c  (clean-value:orr s+long)
+    ?>(?=([%& %s *] c) p.p.c)
+  =/  want=(list [@t @t])
+    %+  turn  (gulf 1.000 1.116)
+    |=(i=@ud [(cat 3 '40.' (crip (a-co:co i))) (cat 3 '-73.' (crip (a-co:co i)))])
+  ;:  weld
+    ::  17 bytes a pair: 117 whole pairs, then "40.1117,-73", which
+    ::  reads as a point that is not the one written
+    (expect-eq !>(2.000) !>((met 3 cut)))
+    (expect-eq !>('40.1117,-73') !>((rsh [3 1.989] cut)))
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %ring want]) !>((zone-of:orr s+cut)))
+    ::  a last word at the cut that is no point is dropped too
+    (expect-eq !>(`(unit geo-zone:orr)`[~ %ring (scag 116 want)]) !>((zone-of:orr s+(cat 3 (end [3 1.972] cut) (fil 3 28 '1')))))
+  ==
 ::  a schema from before 151 gains zone on place, with the starter's note
 ++  test-schema-zone
   =/  kinds=json  (gj:orr starter-schema:orr 'kinds')
@@ -1561,7 +1629,10 @@
         ==
         (bod 'place/home' %place 'Home' ~[['geo' s+'40.75,-73.98'] ['zone' (numb:enjs:format 500)]])
     ==
-  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  ::  the geocache has the online situation's link as a point, so only
+  ::  the online check keeps it off the map
+  =/  cache=json  o+(malt `(list [@t json])`~[['https://zoom.us/j/1' s+'40.0,-73.0']])
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) cache)
   =/  fs=(list json)  (ga:orr doc 'features')
   =/  prop  |=([f=json k=@t] (gs:orr (gj:orr f 'properties') k))
   =/  geom  |=(f=json (gj:orr f 'geometry'))
@@ -1577,6 +1648,27 @@
     =/  c  (ga:orr (geom (find 'place/park' 'area')) 'coordinates')
     ?~(c ~ ?:(?=([%a *] i.c) p.i.c ~))
   =/  pt  |=([lon=@t lat=@t] `json`a+~[n+lon n+lat])
+  ::  a ring position's lon and lat as text and as signed millionths
+  =/  txt  |=(j=json ^-(@t ?>(?=([%n *] j) p.j)))
+  =/  deg
+    |=  j=json
+    ^-  @s
+    =/  m  (need (micro:orr (txt j)))
+    (new:si !neg.m n.m)
+  ::  a position within 20 millionths of a degree, about 2 m, of lon,lat
+  =/  near
+    |=  [j=json lon=@s lat=@s]
+    ^-  ?
+    ?>  ?=([%a *] j)
+    =/  gap  |=([a=@s b=@s] (abs:si (dif:si a b)))
+    &((lte (gap (deg (snag 0 p.j)) lon) 20) (lte (gap (deg (snag 1 p.j)) lat) 20))
+  ::  a position 485 to 515 m from home's point
+  =/  out
+    |=  j=json
+    ^-  ?
+    ?>  ?=([%a *] j)
+    =/  d  (metres-between:orr ['40.75' '-73.98'] [(txt (snag 1 p.j)) (txt (snag 0 p.j))])
+    ?~(d | &((gte u.d 485) (lte u.d 515)))
   ;:  weld
     (expect-eq !>(`json`s+'FeatureCollection') !>((gj:orr doc 'type')))
     ::  sorted by id, then kind; the closed, the online, the unlocated
@@ -1594,6 +1686,13 @@
     (expect-eq !>(`json`s+'Polygon') !>((gj:orr (geom (find 'place/home' 'area')) 'type')))
     (expect-eq !>(25) !>((lent home-ring)))
     (expect-eq !>(`(list json)`(scag 1 home-ring)) !>(`(list json)`(scag 1 (flop home-ring))))
+    ::  500 m is 0.004492 degrees of latitude, and 0.005929 of longitude
+    ::  at 40.75 north. The ring starts north and turns west, south, east
+    (expect !>((near (snag 0 home-ring) -73.980.000 --40.754.492)))
+    (expect !>((near (snag 6 home-ring) -73.985.929 --40.750.000)))
+    (expect !>((near (snag 12 home-ring) -73.980.000 --40.745.508)))
+    (expect !>((near (snag 18 home-ring) -73.974.071 --40.750.000)))
+    (expect !>((levy (scag 24 home-ring) out)))
     ::  a ring as written, closed
     (expect-eq !>(4) !>((lent park-ring)))
     (expect-eq !>(`(list json)`~[(pt '-73.9' '40.1') (pt '-73.9' '40.2') (pt '-73.8' '40.2') (pt '-73.9' '40.1')]) !>(park-ring))
@@ -1606,4 +1705,142 @@
     (expect-eq !>((pt '2.17' '41.38')) !>((gj:orr (geom (find 'situation/b-raw' 'situation')) 'coordinates')))
     (expect !>(!(has-key:orr (gj:orr (find 'situation/b-raw' 'situation') 'properties') 'note')))
   ==
+::  a point that is not a number, or is out of range, is no point: the
+::  place has no point and no radius area, a situation there is left
+::  off, and a polygon with such a pair is no area
+++  test-map-doc-bad-points
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  bod
+    |=  [id=@t kind=@tas name=@t rs=(list [@t json])]
+    ^-  loaded:orr
+    [id [kind name ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  geo  |=([la=@t lo=@t] `json`(pairs:enjs:format ~[['lat' n+la] ['lon' n+lo]]))
+  =/  all=(list loaded:orr)
+    :~  (bod 'place/a-exp' %place 'Exp' ~[['geo' (geo '4.075e1' '-7.398e1')] ['zone' (numb:enjs:format 500)]])
+        (bod 'place/b-far' %place 'Far' ~[['geo' (geo '500' '10')] ['zone' (numb:enjs:format 500)]])
+        (bod 'place/c-edge' %place 'Edge' ~[['geo' s+'90.5,10']])
+        (bod 'place/d-poly' %place 'Poly' ~[['geo' s+'40,-73'] ['zone' s+'40.1,-73.9 90.5,-73.9 40.2,-73.8']])
+        (bod 'place/e-ok' %place 'Ok' ~[['geo' (geo '40.5' '-73.5')]])
+        (bod 'situation/f-at-exp' %situation 'At' ~[['status' s+'open'] ['location' (pairs:enjs:format ~[['ref' s+'place/a-exp']])]])
+        (bod 'situation/g-raw' %situation 'Raw' ~[['status' s+'open'] ['location' s+'90.5,10']])
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  =/  prop  |=([f=json k=@t] (gs:orr (gj:orr f 'properties') k))
+  %+  expect-eq
+    !>(`(list [@t @t])`~[['place/d-poly' 'place'] ['place/e-ok' 'place']])
+  !>((turn fs |=(f=json [(prop f 'orrery') (prop f 'kind')])))
+::  only an open situation is drawn, the status read as the world digest
+::  reads it: lower case, and none is not open
+++  test-map-doc-open-only
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  sit
+    |=  [id=@t st=(unit @t)]
+    ^-  loaded:orr
+    =/  rs=(list [@t json])  (weld ?~(st ~ ~[['status' s+u.st]]) ~[['location' s+'41.38,2.17']])
+    [id [%situation id ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-none' ~)
+        (sit 'situation/b-closed' `'Closed')
+        (sit 'situation/c-cancelled' `'CANCELLED')
+        (sit 'situation/d-paused' `'paused')
+        (sit 'situation/e-open' `'Open')
+        (sit 'situation/f-open' `'open')
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  %+  expect-eq
+    !>(`(list @t)`~['situation/e-open' 'situation/f-open'])
+  !>((turn fs |=(f=json (gs:orr (gj:orr f 'properties') 'orrery'))))
+::  a location written as a {lat, lon} object is a point, as a place's
+::  geo is, on the map and for the away check; a ref is still a ref
+++  test-map-doc-object-point
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  sit
+    |=  [id=@t loc=json]
+    ^-  loaded:orr
+    [id [%situation id ~ at ~] ~[(ob id 'status' s+'open') (ob id 'location' loc)]]
+  =/  geo  |=([la=@t lo=@t] `json`(pairs:enjs:format ~[['lat' n+la] ['lon' n+lo]]))
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-obj' (geo '40.76' '-73.97'))
+        (sit 'situation/b-lng' (pairs:enjs:format ~[['lat' n+'40.5'] ['lng' n+'-73.5']]))
+        (sit 'situation/c-ref' (pairs:enjs:format ~[['ref' s+'place/home']]))
+        (sit 'situation/d-far' (geo '95' '10'))
+        ['place/home' [%place 'Home' ~ at ~] ~[(ob 'place/home' 'geo' s+'40.75,-73.98')]]
+    ==
+  =/  doc=json  (map-doc:orr all ~ (add t0 ~m1) [%o ~])
+  =/  fs=(list json)  (ga:orr doc 'features')
+  =/  w=(map @t (list row:orr))  (malt ~[['location' ~[(ob 'situation/a-obj' 'location' (geo '40.76' '-73.97'))]]])
+  ;:  weld
+    %+  expect-eq
+      !>  ^-  (list [@t json])
+          :~  ['place/home' a+~[n+'-73.98' n+'40.75']]
+              ['situation/a-obj' a+~[n+'-73.97' n+'40.76']]
+              ['situation/b-lng' a+~[n+'-73.5' n+'40.5']]
+              ['situation/c-ref' a+~[n+'-73.98' n+'40.75']]
+          ==
+    !>((turn fs |=(f=json [(gs:orr (gj:orr f 'properties') 'orrery') (gj:orr (gj:orr f 'geometry') 'coordinates')])))
+    (expect-eq !>(`(unit [@t @t])`[~ '40.76' '-73.97']) !>((known-point:orr w all ~ (add t0 ~m1) [%o ~])))
+    ::  out of range is no point, so no away span from it
+    %+  expect-eq  !>(`(unit [@t @t])`~)
+    !>((known-point:orr (malt ~[['location' ~[(ob 'situation/d-far' 'location' (geo '95' '10'))]]]) all ~ (add t0 ~m1) [%o ~]))
+  ==
+::  the whole document for situations located every way: a ref to a
+::  place by its geo and by its address, a raw point, an object point,
+::  a text address in the geocache, a ref to no body, and refs to a
+::  person with a geo and to one without
+++  test-map-doc-mixed
+  =/  at=@da  t0
+  =/  ob
+    |=  [id=@t attr=@t v=json]
+    ^-  row:orr
+    [`@ta`attr [id attr v at ~ 90 ['user' ''] 'user' at | '']]
+  =/  ref  |=(id=@t (pairs:enjs:format ~[['ref' s+id]]))
+  =/  bod
+    |=  [id=@t kind=@tas rs=(list [@t json])]
+    ^-  loaded:orr
+    [id [kind id ~ at ~] (turn rs |=([a=@t v=json] (ob id a v)))]
+  =/  sit  |=([id=@t loc=json] (bod id %situation ~[['status' s+'open'] ['location' loc]]))
+  =/  all=(list loaded:orr)
+    :~  (sit 'situation/a-ref' (ref 'place/home'))
+        (sit 'situation/b-raw' s+'41.38,2.17')
+        (sit 'situation/c-addr' s+'5  Elm St')
+        (sit 'situation/d-missing' (ref 'place/gone'))
+        (sit 'situation/e-person' (ref 'person/pal'))
+        (sit 'situation/f-me' (ref 'person/me'))
+        (sit 'situation/g-addr-place' (ref 'place/shop'))
+        (sit 'situation/h-obj' (pairs:enjs:format ~[['lat' n+'40.76'] ['lon' n+'-73.97']]))
+        (bod 'person/pal' %person ~[['geo' s+'40.65,-73.65']])
+        (bod 'person/me' %person ~[['location' (ref 'place/home')]])
+        (bod 'place/shop' %place ~[['address' s+'1 Main St']])
+        (bod 'place/home' %place ~[['geo' s+'40.75,-73.98'] ['zone' s+'40.1,-73.9 40.2,-73.9 40.2,-73.8']])
+    ==
+  =/  cache=json
+    o+(malt `(list [@t json])`~[['5 elm st' s+'40.6,-73.6'] ['1 main st' s+'40.7,-74.0']])
+  =/  want=@t
+    %+  rap  3
+    :~
+        '{"features":[{"geometry":{"coordinates":[[[-73.9,40.1],[-73.9,40.2],[-73.8,40.2],[-73.9,40.1]]],"type":"Polygon"},"type":"Feature","properties":{"orrery":"place/home","name":"place/home","kind":"area"}'
+        '},{"geometry":{"coordinates":[-73.98,40.75],"type":"Point"},"type":"Feature","properties":{"orrery":"place/home","name":"place/home","kind":"place"}'
+        '},{"geometry":{"coordinates":[-74,40.7],"type":"Point"},"type":"Feature","properties":{"orrery":"place/shop","name":"place/shop","kind":"place"}'
+        '},{"geometry":{"coordinates":[-73.98,40.75],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/a-ref","name":"situation/a-ref","kind":"situation"}'
+        '},{"geometry":{"coordinates":[2.17,41.38],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/b-raw","name":"situation/b-raw","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.6,40.6],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/c-addr","name":"situation/c-addr","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.65,40.65],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/e-person","name":"situation/e-person","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-74,40.7],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/g-addr-place","name":"situation/g-addr-place","kind":"situation"}'
+        '},{"geometry":{"coordinates":[-73.97,40.76],"type":"Point"},"type":"Feature","properties":{"orrery":"situation/h-obj","name":"situation/h-obj","kind":"situation"}}],"type":"FeatureCollection"}'
+    ==
+  (expect-eq !>(want) !>((en:json:html (map-doc:orr all ~ (add t0 ~m1) cache))))
 --
