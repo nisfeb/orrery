@@ -113,9 +113,12 @@
           ::  sync.sig: the follower that pulls and pushes.
           [%fall %& [/ %'shares.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'shares.sig'] [[/ %sig] ~]]
-          ::  the /public road to shares.sig, which +lay-inbox-road names
-          ::  for the shell (version 149)
+          ::  groups.json: our facts for the shell's usergroups, the
+          ::  /public road to shares.sig (version 149) and the /orrery/
+          ::  share groups (version 153), laid by groups.sig alone
+          ::  (+lay-groups)
           [%stay %& [/ %'groups.json']]
+          [%fall %& [/ %'groups.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'share-offers.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'ship-remotes.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'sync.sig'] [[/ %sig] ~]]
@@ -317,34 +320,26 @@
           ::  on bodies shared with them in edit mode. The sender is the
           ::  transport's; the payload is data; nothing reaches the writer
           ::  without by and source rewritten here. A local poke carries
-          ::  nothing: it is the follower saying the inbox road is not laid.
+          ::  nothing and does nothing.
           [~ %'shares.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery inbox: failed")
-        ::  the road any ship pokes is laid from here, and only from here:
-        ::  the registry takes a grant from the fiber that registered and
-        ::  no other, and scopes it to that fiber's directory, so only a
-        ::  fiber at the root can grant a road at the root. A request
-        ::  fiber's grant is refused, and so was the follower's, with a
-        ::  kernel warning on the console each time it tried.
-        ;<  ~  bind:m  lay-inbox-road
+        ::  the road any ship pokes is named in groups.json, under
+        ::  /public, by /groups.sig
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         =/  src=(unit @p)  (get-poke-src:io from)
         ;<  our=@p  bind:m  get-our:io
         ;<  ~  bind:m
-          ?:  |(?=(~ src) =(our (fall src our)))  lay-inbox-road
+          ?:  |(?=(~ src) =(our (fall src our)))  (pure:m ~)
           (take-inbox (fall src our) sage)
         $
           ::  the follower: every five minutes, and whenever prodded (an
           ::  accept, a sync request), pull every body another ship shared
           ::  with us and push our own observations back on the ones shared
-          ::  in edit mode. When the inbox road is not laid (a grant
-          ::  approved after the rise, a group rewritten) it prods the
-          ::  inbox, which lays it: the follower's own grant is refused.
+          ::  in edit mode.
           [~ %'sync.sig']
         ;<  ~  bind:m  (rise-later prod "%orrery sync: failed")
         |-
-        ;<  ~  bind:m  prod-inbox-road
         ;<  ~  bind:m  sync-pass
         ;<  ~  bind:m  sphere-follow-pass
         ;<  ~  bind:m  situation-pass
@@ -352,6 +347,19 @@
         ;<  ~  bind:m  (set-timer:io /tick (add now ~m5))
         ;<  *  bind:m  take-poke-from:io
         ;<  ~  bind:m  (cancel-timer:io /tick)
+        $
+          ::  the one writer of groups.json (+lay-groups): on its rise, so
+          ::  groups the shell dropped come back, and whenever shares.json
+          ::  or sphere-shares.json changes, so a share or an unshare
+          ::  reaches its group at once. Nothing else writes the file, since
+          ::  a read and a write are two darts and two writers lose updates
+          [~ %'groups.sig']
+        ;<  ~  bind:m  (rise-later prod "%orrery groups: failed")
+        ;<  *  bind:m  (keep:io /sh (rf 0 / %'shares.json') ~)
+        ;<  *  bind:m  (keep:io /ss (rf 0 / %'sphere-shares.json') ~)
+        |-
+        ;<  ~  bind:m  lay-groups
+        ;<  ~  bind:m  take-groups-news
         $
           ::  the generator: woken by the beacon after a change, by a
           ::  cooldown timer, and by POST /api/generate. It settles for
@@ -1000,17 +1008,16 @@
       :-  'peek'
       :-  %a
       :~  (line '/sys/link/' 'find where this app is installed, so the page can address its own writer and an offer can say where to read')
-          (line '/sys/ames/usergroups/' 'read a share group before rewriting it')
           (line '/sys/ames/ships/' 'read a body another ship shared with you, and keep it current. Refuse this and bodies shared with you are unavailable')
           (line '/apps/shell/desks/calendar.desk/' 'read your todo list, so a todo you tick or type is a task the ship knows')
           (line '/apps/shell/desks/lattice.desk/' 'read a page you send to orrery from lattice, and read it again when you edit it, so the situation it describes stays current until it is over. Refuse this and a sent page is read once, as sent')
           (line '/apps/shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json' 'read your Armillary settings: the address, the key, the model for each feature and the search address your Armillary vendor gives you. Approving this lets orrery run on the AI your vendor runs for you, kept current, unless you pick your own for a setting. Refuse this and orrery keeps only the settings you give it')
           (line '/apps/shell/desks/auspex.desk/' 'read your mail, so what people write you becomes facts the ship knows, and read your replies to the daily brief. Refuse this and the ship reads no mail')
       ==
-      :-  'make'
-      :-  %a
-      :~  (line '/sys/ames/usergroups/' 'make and rewrite the group for a shared body: the ships that may read it')
-      ==
+      ::  sharing writes no usergroup: the share groups are named in
+      ::  our groups.json under /orrery/ and the shell makes them
+      ::  (+lay-groups)
+      ['make' a+~]
   ==
 ::  ==  the writer
 ::
@@ -2546,9 +2553,9 @@
   %^  write-then  eyre-id  op
   ;<  ~  bind:m  (drop-share kind.u.pk slug.u.pk id)
   (send-json eyre-id 200 (pairs:enjs:format ~[['id' s+id] ['ok' b+&]]))
-::  +drop-share: a deleted body is shared with nobody. The record goes
-::  and the group is rewritten with no ships, so the peek grant that
-::  outlives the body goes with it. A share accepted onto it ends, so a
+::  +drop-share: a deleted body is shared with nobody. The record goes,
+::  and the group with it (/groups.sig lays groups.json from the record),
+::  so no peek grant outlives the body. A share accepted onto it ends, so a
 ::  body made again under its id neither takes the host's rows nor sends
 ::  it ours. A sphere's share goes too: its record, its feed's group,
 ::  pages and state, and every follow landing on it (security audit).
@@ -2564,7 +2571,6 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  n  (fiber:fiber:nexus ,~)
-  ;<  base=(unit path)  bind:m  self-base
   ;<  shares=(map @t json)  bind:m  (read-map (rf up / %'shares.json'))
   ;<  rm=(map @t json)  bind:m  (read-map (rf up / %'ship-remotes.json'))
   ;<  sh=(map @t json)  bind:m  (read-map (rf up / %'sphere-shares.json'))
@@ -2602,10 +2608,7 @@
     $(tells t.tells)
   ;<  ~  bind:m
     ?.  (~(has by shares) id)  (pure:n ~)
-    ;<  ~  bind:n  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by shares) id)]])
-    ?~  base
-      (note-inbox-at up 'delete-body' | 'cannot find where this app is installed' '')
-    (set-share-group u.base kind slug ~)
+    (over:io (rf up / %'shares.json') [[/ %json] [%o (~(del by shares) id)]])
   =/  rm2=(map @t json)  (malt (skip ~(tap by rm) |=([* r=json] =(id (gs:orr r 'target')))))
   ;<  ~  bind:m
     ?:  =(~(wyt by rm) ~(wyt by rm2))  (pure:n ~)
@@ -2613,9 +2616,7 @@
   ?.  =(%sphere kind)  (pure:m ~)
   ;<  ~  bind:m
     ?.  (~(has by sh) id)  (pure:n ~)
-    ;<  ~  bind:n  (over:io (rf up / %'sphere-shares.json') [[/ %json] [%o (~(del by sh) id)]])
-    ?~  base  (pure:n ~)
-    (set-feed-group u.base slug ~)
+    (over:io (rf up / %'sphere-shares.json') [[/ %json] [%o (~(del by sh) id)]])
   ;<  st=json  bind:m  (read-json (rf up / %'feed-state.json'))
   ;<  ~  bind:m
     ?.  &(?=([%o *] st) (~(has by p.st) id))  (pure:n ~)
@@ -3556,13 +3557,6 @@
 ::  elsewhere answers notified false (docs/sharing.md).
 ::
 ++  orrery-instance  `path`/apps/shell/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
-::  +ug-base: where this ship keeps its usergroups
-::
-++  ug-base     `path`/sys/ames/usergroups
-::  +public-grp: the group every ship is in, whose weir carries the road
-::  to our inbox
-::
-++  public-grp  `path`/sys/ames/usergroups/'public.grp'
 ::  +self-base: where this instance lives, from the shell's link registry
 ::  (/sys/link/orrery/dest.lanes: every instance claiming the name, ours
 ::  among them). ~ when the road is refused or the registry has no row.
@@ -3619,87 +3613,43 @@
     =/  as-set=(unit (set lane:tarball))  (mole |.(!<((set lane:tarball) u.vas)))
     ?~(as-set ~ ~(tap in u.as-set))
   (pure:m (murn lanes |=(=lane:tarball ?:(?=(%| -.lane) `p.lane ~))))
-::  +ug-read-weir: a usergroup's how, read whole, the way calendar reads
-::  its share groups
+::  +lay-groups: our groups.json, the facts the shell derives our
+::  usergroups from. It owns /sys/ames/usergroups and undoes any write an
+::  app makes there. /public lets any ship poke our shares.sig; /orrery/
+::  holds one group per shared body and per shared sphere, made whole
+::  from shares.json and sphere-shares.json (+put-groups:orr). Only
+::  /groups.sig calls this, so two writes never cross. Written only when
+::  it differs: each write has the shell derive every group again.
+::  Soft, so a refusal is a log line rather than a crash.
 ::
-++  ug-read-weir
-  |=  gdir=path
-  =/  m  (fiber:fiber:nexus ,weir:nexus)
-  ^-  form:m
-  ;<  hv=(unit view:nexus)  bind:m  (peek-soft:io [%& %& gdir %'how.weir'] ~)
-  ?~  hv  (pure:m *weir:nexus)
-  ?.  ?=([%file *] u.hv)  (pure:m *weir:nexus)
-  (pure:m (fall (mole |.(;;(weir:nexus (sang-noun:tarball sang.u.hv)))) *weir:nexus))
-::  +ug-set: a usergroup's who and how, written whole: the ships in it
-::  and the roads they reach through it
-::
-++  ug-set
-  |=  [gname=@t ships=(set @p) pk=(set road:tarball) pok=(set road:tarball)]
+++  lay-groups
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  gdir=path  (snoc ug-base (crip (weld (trip gname) ".grp")))
-  ;<  old=weir:nexus  bind:m  (ug-read-weir gdir)
-  =/  =weir:nexus  [make.old pok pk]
-  ;<  ~  bind:m  (over:io [%& %& gdir %'who.ships'] [[/ %ships] ships])
-  ;<  ~  bind:m  (over:io [%& %& gdir %'how.weir'] [[/ %weir] weir])
+  =/  at=road:tarball  (rf 0 / %'groups.json')
+  ;<  cur=json  bind:m  (read-json at)
+  ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
+  ;<  sh=json  bind:m  (read-json (rf 0 / %'sphere-shares.json'))
+  =/  new=json  (put-groups:orr cur shares sh)
+  ?:  =(new cur)  (pure:m ~)
+  ;<  how=(unit tang)  bind:m  (over-as-soft:io at [[/ %json] new] [/ %json])
+  ?~  how  (pure:m ~)
+  ~&  >>  "%orrery groups: groups.json was not written"
   (pure:m ~)
-::  +set-share-group: the ships a body is shared with may peek its
-::  directory. Edit mode adds nothing here: any ship may poke the inbox,
-::  and the inbox checks the share record before it applies an edit.
+::  +take-groups-news: /groups.sig's wait, for a change to either share
+::  record, or a poke
 ::
-++  set-share-group
-  |=  [base=path kind=@tas slug=@ta mine=(map @t json)]
+++  take-groups-news
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  ships=(set @p)
-    %-  ~(gas in *(set @p))
-    (murn ~(tap by mine) |=([s=@t *] (slaw %p s)))
-  =/  dir=road:tarball  [%& %| (weld base /bodies/[kind]/[slug])]
-  (ug-set (group-name:orr kind slug) ships (sy ~[dir]) ~)
-::  +lay-inbox-road: our shares.sig takes pokes from any ship, through
-::  the /public group's weir. Quiet when the roads are refused: sharing
-::  is optional. The road goes in our own groups.json, relative to our
-::  root, and the shell derives the /public group from it once the
-::  owner grants it: develop's way, and the file our dist kernel's
-::  reg-how wrote, so one source runs on both (version 149). Other keys
-::  are kept, and an entry already there is not written again: the
-::  follower asks every pass until the owner grants the group.
-::
-++  lay-inbox-road
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  base=(unit path)  bind:m  self-base
-  ?~  base  (pure:m ~)
-  ;<  old=weir:nexus  bind:m  (ug-read-weir public-grp)
-  =/  road=road:tarball  [%& %& u.base %'shares.sig']
-  ?:  (~(has in poke.old) road)  (pure:m ~)
-  =/  at=road:tarball  [%& %& u.base %'groups.json']
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io at ~)
-  =/  cur=(map @t json)
-    ?.  ?=([~ %file *] vw)  ~
-    =/  jon=(unit json)  (mole |.(!<(json (need-vase:tarball sang.u.vw))))
-    ?.(?=([~ %o *] jon) ~ p.u.jon)
-  =/  ent=json
-    %-  pairs:enjs:format
-    :~(['make' a+~] ['poke' a+~[s+'/shares.sig']] ['peek' a+~])
-  ?:  =(`ent (~(get by cur) '/public'))  (pure:m ~)
-  ;<  *  bind:m
-    (over-as-soft:io at [[/ %json] [%o (~(put by cur) '/public' ent)]] [/ %json])
-  (pure:m ~)
-::  +prod-inbox-road: the follower's part in the inbox road: when the
-::  /public group's weir lacks it, a local poke at the inbox, which is
-::  the registrant and lays it (+lay-inbox-road). Quiet when the roads
-::  are refused or the inbox is down: the next pass asks again.
-::
-++  prod-inbox-road
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  base=(unit path)  bind:m  self-base
-  ?~  base  (pure:m ~)
-  ;<  old=weir:nexus  bind:m  (ug-read-weir public-grp)
-  ?:  (~(has in poke.old) `road:tarball`[%& %& u.base %'shares.sig'])  (pure:m ~)
-  ;<  *  bind:m  (poke-soft:io (rf 0 / %'shares.sig') [[/ %sig] ~])
-  (pure:m ~)
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %poke * *]  [%done ~]
+      [~ %news * *]
+    ?.  ?|(=(/sh wire.u.in) =(/ss wire.u.in))  [%skip ~]
+    [%done ~]
+  ==
 ::  +tell-later: a message for another ship, left in the outbox for the
 ::  tell fiber, so the caller never waits the thirty seconds a remote
 ::  poke takes (version 126). base is where the ship keeps its inbox:
@@ -4079,16 +4029,13 @@
   ::  our own feed of the sphere, kept for it in edit mode, closes to it
   =/  local=@t  (gs:orr (fall (~(get by fl) key) ~) 'local')
   =/  lpk  (parse-bid:orr local)
-  ;<  base=(unit path)  bind:m  self-base
   ;<  ~  bind:m
-    ?.  &(?=(^ lpk) ?=(^ base))  (pure:(fiber:fiber:nexus ,~) ~)
+    ?~  lpk  (pure:(fiber:fiber:nexus ,~) ~)
     ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,~)  (read-map (rf 0 / %'sphere-shares.json'))
     =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
     ?.  (~(has by mine) (scot %p src))  (pure:(fiber:fiber:nexus ,~) ~)
     =.  mine  (~(del by mine) (scot %p src))
-    ;<  ~  bind:(fiber:fiber:nexus ,~)
-      (over:io (rf 0 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
-    (set-feed-group u.base slug.u.lpk mine)
+    (over:io (rf 0 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
   ;<  so=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-offers.json'))
   ;<  ~  bind:m  (over:io (rf 0 / %'sphere-offers.json') [[/ %json] [%o (~(del by so) key)]])
   (note-inbox 'sphere-revoke' & key (scot %p src))
@@ -4103,14 +4050,11 @@
   =/  sphere=@t  (gs:orr jon 'sphere')
   =/  pk  (parse-bid:orr sphere)
   ?~  pk  (note-inbox 'sphere-leave' | 'sphere: expected sphere/<slug>' (scot %p src))
-  ;<  base=(unit path)  bind:m  self-base
-  ?~  base  (pure:m ~)
   ;<  sh=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-shares.json'))
   =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
   ?.  (~(has by mine) (scot %p src))  (note-inbox 'sphere-leave' | 'not shared with that ship' (scot %p src))
   =.  mine  (~(del by mine) (scot %p src))
   ;<  ~  bind:m  (over:io (rf 0 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) sphere) (~(put by sh) sphere [%o mine]))]])
-  ;<  ~  bind:m  (set-feed-group u.base slug.u.pk mine)
   ;<  fl=(map @t json)  bind:m  (read-map (rf 0 / %'sphere-follows.json'))
   =/  kept=(map @t json)
     %-  ~(gas by *(map @t json))
@@ -4126,14 +4070,11 @@
   =/  id=@t  (gs:orr jon 'id')
   =/  pk  (parse-bid:orr id)
   ?~  pk  (note-inbox 'leave' | 'id: expected <kind>/<slug>' (scot %p src))
-  ;<  base=(unit path)  bind:m  self-base
-  ?~  base  (pure:m ~)
   ;<  shares=json  bind:m  (read-json (rf 0 / %'shares.json'))
   =/  all=(map @t json)  ?:(?=([%o *] shares) p.shares ~)
   =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
   ?.  (~(has by mine) (scot %p src))  (note-inbox 'leave' | 'not shared with that ship' (scot %p src))
   =.  mine  (~(del by mine) (scot %p src))
-  ;<  ~  bind:m  (set-share-group u.base kind.u.pk slug.u.pk mine)
   ;<  ~  bind:m  (over:io (rf 0 / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
   (note-inbox 'leave' & id (scot %p src))
 ::  +serve-private-list: the rows the owner keeps to themselves
@@ -4173,17 +4114,13 @@
   ?~  row  (send-err eyre-id 404 'not following that sphere')
   =/  local=@t  (gs:orr u.row 'local')
   ;<  ~  bind:m  (over:io (rf 1 / %'sphere-follows.json') [[/ %json] [%o (~(del by fl) key)]])
-  ;<  base=(unit path)  bind:m  self-base
   ;<  ~  bind:m
-    =/  lpk  (parse-bid:orr local)
-    ?.  &(?=(^ lpk) ?=(^ base))  (pure:(fiber:fiber:nexus ,~) ~)
+    ?~  (parse-bid:orr local)  (pure:(fiber:fiber:nexus ,~) ~)
     ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,~)  (read-map (rf 1 / %'sphere-shares.json'))
     =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
     ?.  (~(has by mine) (scot %p u.host))  (pure:(fiber:fiber:nexus ,~) ~)
     =.  mine  (~(del by mine) (scot %p u.host))
-    ;<  ~  bind:(fiber:fiber:nexus ,~)
-      (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
-    (set-feed-group u.base slug.u.lpk mine)
+    (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) local) (~(put by sh) local [%o mine]))]])
   ;<  told=?  bind:m
     (remote-poke-wait u.host [%& orrery-instance %'shares.sig'] (pairs:enjs:format ~[['action' s+'sphere-leave'] ['sphere' s+sphere]]))
   (send-json eyre-id 200 (pairs:enjs:format ~[['ok' b+&] ['told' b+told]]))
@@ -4298,15 +4235,6 @@
   ?.  (lien ~(val by fl) |=(r=json =((scot %p src) (gs:orr r 'host'))))  (pure:m ~)
   ;<  *  bind:m  (poke-soft:io (rf 0 / %'sync.sig') [[/ %sig] ~])
   (pure:m ~)
-::  +set-feed-group: the ships that may read a sphere's feed, one peek
-::  grant on its directory and nothing else
-::
-++  set-feed-group
-  |=  [base=path slug=@ta mine=(map @t json)]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  =/  ships=(set @p)  (~(gas in *(set @p)) (murn ~(tap by mine) |=([s=@t *] (slaw %p s))))
-  (ug-set (rap 3 'orrery-feed.' slug ~) ships (sy ~[`road:tarball`[%& %| (weld base /feeds/[slug])]]) ~)
 ::  +serve-sphere-share: share a sphere with a ship: {"sphere", "ship",
 ::  "mode": "read" or "edit"}. The ship may read the sphere's feed, and
 ::  is offered it
@@ -4332,10 +4260,10 @@
   ;<  sh=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-shares.json'))
   =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
   =.  mine  (~(put by mine) (scot %p u.shp) s+mode)
-  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) sphere [%o mine])]])
-  ::  the feed's directory exists before any group is granted it
+  ::  the feed's directory exists before any group is granted it: the
+  ::  record is what /groups.sig lays the group from
   ;<  ~  bind:m  (ensure-dirs 1 / `(list @ta)`~[%feeds slug.u.pk])
-  ;<  ~  bind:m  (set-feed-group u.base slug.u.pk mine)
+  ;<  ~  bind:m  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) sphere [%o mine])]])
   ;<  ~  bind:m  (forget-answer 1 sphere u.shp)
   ;<  told=?  bind:m
     %^  remote-poke-wait  u.shp  [%& orrery-instance %'shares.sig']
@@ -4356,14 +4284,11 @@
   =/  sphere=@t  (rap 3 kind '/' slug ~)
   =/  shp=(unit @p)  (slaw %p ship)
   ?~  shp  (send-err eyre-id 400 'ship: expected an @p')
-  ;<  base=(unit path)  bind:m  self-base
-  ?~  base  (send-err eyre-id 500 'cannot find where this app is installed')
   ;<  sh=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-shares.json'))
   =/  mine=(map @t json)  =/(j (~(get by sh) sphere) ?:(?=([~ %o *] j) p.u.j ~))
   ?.  (~(has by mine) ship)  (send-err eyre-id 404 'not shared with that ship')
   =.  mine  (~(del by mine) ship)
   ;<  ~  bind:m  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o ?~(mine (~(del by sh) sphere) (~(put by sh) sphere [%o mine]))]])
-  ;<  ~  bind:m  (set-feed-group u.base slug mine)
   ;<  fl=(map @t json)  bind:m  (read-map (rf 1 / %'sphere-follows.json'))
   =/  kept=(map @t json)
     %-  ~(gas by *(map @t json))
@@ -4444,9 +4369,8 @@
     ;<  sh=(map @t json)  bind:(fiber:fiber:nexus ,?)  (read-map (rf 1 / %'sphere-shares.json'))
     =/  mine=(map @t json)  =/(j (~(get by sh) local) ?:(?=([~ %o *] j) p.u.j ~))
     =.  mine  (~(put by mine) (scot %p u.host) s+'edit')
-    ;<  ~  bind:(fiber:fiber:nexus ,?)  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) local [%o mine])]])
     ;<  ~  bind:(fiber:fiber:nexus ,?)  (ensure-dirs 1 / `(list @ta)`~[%feeds slug.u.lpk])
-    ;<  ~  bind:(fiber:fiber:nexus ,?)  (set-feed-group u.base slug.u.lpk mine)
+    ;<  ~  bind:(fiber:fiber:nexus ,?)  (over:io (rf 1 / %'sphere-shares.json') [[/ %json] [%o (~(put by sh) local [%o mine])]])
     %^  remote-poke-wait  u.host  [%& orrery-instance %'shares.sig']
     %-  pairs:enjs:format
     :~  ['action' s+'sphere-accept']  ['sphere' s+sphere]  ['feed' s+local]  ['base' s+(spat u.base)]  ==
@@ -5809,7 +5733,6 @@
   =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
   =.  mine  (~(put by mine) (scot %p shp) s+mode)
   ;<  ~  bind:m  (over:io (rf up / %'shares.json') [[/ %json] [%o (~(put by all) id [%o mine])]])
-  ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
   ;<  bv=view:nexus  bind:m  (peek:io (rv up (body-dir kind.u.pk slug.u.pk)) ~)
   =/  uids=(list @t)  ?.(?=([%ball *] bv) ~ (cal-uids:orr (rows-in:om ball.bv)))
   ;<  ~  bind:m  (forget-answer up id shp)
@@ -5854,9 +5777,7 @@
   =/  mine=(map @t json)  =/(j (~(get by all) id) ?:(?=([~ %o *] j) p.u.j ~))
   ?.  (~(has by mine) (scot %p shp))  (pure:m |)
   =.  mine  (~(del by mine) (scot %p shp))
-  ::  the grant goes first: a crash between the two leaves a record
-  ::  claiming a share that cannot be read, never a grant with no record
-  ;<  ~  bind:m  (set-share-group base kind.u.pk slug.u.pk mine)
+  ::  the group follows the record: /groups.sig lays it from shares.json
   ;<  ~  bind:m
     (over:io (rf up / %'shares.json') [[/ %json] [%o ?:(=(~ mine) (~(del by all) id) (~(put by all) id [%o mine]))]])
   ;<  ~  bind:m  (forget-answer up id shp)
