@@ -795,6 +795,56 @@
     (expect-eq !>('orrery-per-son.me') !>((group-name:orr %per-son %me)))
     (expect-eq !>('orrery-per.son-me') !>((group-name:orr %per %son-me)))
   ==
+::  the /orrery/ groups come from the two share records alone: a body's
+::  ships may peek its directory, a sphere's ships its feed; roads are
+::  relative to our root and end in a slash. No ship, no group
+++  test-share-groups
+  =/  grp
+    |=  [who=(list @t) dir=@t]
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['members' a+(turn who |=(s=@t s+s))]
+        ['make' a+~]
+        ['poke' a+~]
+        ['peek' a+~[s+dir]]
+    ==
+  =/  shares=json
+    (jo '{"person/sarah":{"~zod":"read","~nec":"edit","nobody":"read"},"situation/trip":{"~bus":"read"},"event/empty":{},"bad id":{"~zod":"read"}}')
+  =/  sh=json
+    (jo '{"sphere/work":{"~nec":"edit"},"person/sarah":{"~zod":"read"},"sphere/none":{}}')
+  =/  want=json
+    %-  pairs:enjs:format
+    :~  ['orrery-person.sarah' (grp ~['~nec' '~zod'] '/bodies/person/sarah/')]
+        ['orrery-situation.trip' (grp ~['~bus'] '/bodies/situation/trip/')]
+        ['orrery-feed.work' (grp ~['~nec'] '/feeds/work/')]
+    ==
+  ;:  weld
+    (expect-eq !>(want) !>((share-groups:orr shares sh)))
+    (expect-eq !>(`json`[%o ~]) !>((share-groups:orr [%o ~] [%o ~])))
+    (expect-eq !>(`json`[%o ~]) !>((share-groups:orr ~ s+'junk')))
+  ==
+::  +put-groups lays /public and /orrery/ and keeps every other key; a
+::  second lay changes nothing, so nothing is written
+++  test-put-groups
+  =/  pub=json  (jo '{"make":[],"poke":["/shares.sig"],"peek":[]}')
+  =/  other=json  (jo '{"peek":["/x.json"]}')
+  =/  shares=json  (jo '{"person/sarah":{"~zod":"read"}}')
+  =/  got=json  (put-groups:orr (jo '{"/other":{"peek":["/x.json"]}}') shares [%o ~])
+  =/  ent=json  (share-groups:orr shares [%o ~])
+  ;:  weld
+    %+  expect-eq
+      !>((pairs:enjs:format ~[['/public' pub] ['/other' other] ['/orrery/' ent]]))
+    !>(got)
+    (expect-eq !>(got) !>((put-groups:orr got shares [%o ~])))
+    ::  the last share gone, the key stays, empty
+    %+  expect-eq
+      !>((pairs:enjs:format ~[['/public' pub] ['/other' other] ['/orrery/' [%o ~]]]))
+    !>((put-groups:orr got [%o ~] [%o ~]))
+    ::  a file that is not an object starts over
+    %+  expect-eq
+      !>((pairs:enjs:format ~[['/public' pub] ['/orrery/' [%o ~]]]))
+    !>((put-groups:orr s+'junk' ~ ~))
+  ==
 ::  a carried observation names the other side's body and carries the
 ::  sender's grub name; the receiver sets by and source from the ship
 ::  it heard it from, so a decode on the receiving side reads as the

@@ -2294,6 +2294,76 @@
   |=  [kind=@tas slug=@ta]
   ^-  @t
   (rap 3 'orrery-' kind '.' slug ~)
+::  +share-groups: the /orrery/ key of our groups.json, made whole from
+::  the two share records. The shell runs these groups for us under
+::  /orrery/ (it owns /sys/ames/usergroups and undoes any write an app
+::  makes there).
+::
+::    shares.json, body id to ship to mode: per body, a group of its
+::    ships that may peek the body's directory. sphere-shares.json,
+::    sphere id to ship to mode: per sphere, a group of its ships that
+::    may peek the sphere's feed directory. Roads are relative to our
+::    root and end in a slash, since each names a directory. A body or a
+::    sphere shared with no ship has no group.
+::
+++  share-groups
+  |=  [shares=json sphere-shares=json]
+  ^-  json
+  =/  omap  |=(j=json ^-((map @t json) ?.(?=([%o *] j) ~ p.j)))
+  =/  ships
+    |=  mine=json
+    ^-  (list @t)
+    %+  sort
+      (murn ~(tap by (omap mine)) |=([s=@t *] (bind (slaw %p s) |=(p=@p (scot %p p)))))
+    aor
+  =/  grp
+    |=  [who=(list @t) dir=tape]
+    ^-  json
+    %-  pairs:enjs:format
+    :~  ['members' a+(turn who |=(s=@t s+s))]
+        ['make' a+~]
+        ['poke' a+~]
+        ['peek' a+~[s+(crip dir)]]
+    ==
+  :-  %o
+  %-  ~(gas by *(map @t json))
+  %+  weld
+    %+  murn  ~(tap by (omap shares))
+    |=  [id=@t mine=json]
+    ^-  (unit [@t json])
+    =/  pk  (parse-bid id)
+    ?~  pk  ~
+    =/  who=(list @t)  (ships mine)
+    ?~  who  ~
+    :+  ~  (group-name kind.u.pk slug.u.pk)
+    (grp who "/bodies/{(trip kind.u.pk)}/{(trip slug.u.pk)}/")
+  %+  murn  ~(tap by (omap sphere-shares))
+  |=  [id=@t mine=json]
+  ^-  (unit [@t json])
+  =/  pk  (parse-bid id)
+  ?~  pk  ~
+  ?.  =(%sphere kind.u.pk)  ~
+  =/  who=(list @t)  (ships mine)
+  ?~  who  ~
+  `[(rap 3 'orrery-feed.' slug.u.pk ~) (grp who "/feeds/{(trip slug.u.pk)}/")]
+::  +put-groups: our groups.json with its two keys laid: /public, the
+::  road any ship pokes our inbox through, and /orrery/, the share
+::  groups (+share-groups). Every other key stays as it was. The
+::  /orrery/ key stands even with nothing shared, so what orrery asks
+::  the owner for holds still. A file that is not an object starts over.
+::
+++  put-groups
+  |=  [cur=json shares=json sphere-shares=json]
+  ^-  json
+  =/  pub=json
+    %-  pairs:enjs:format
+    :~(['make' a+~] ['poke' a+~[s+'/shares.sig']] ['peek' a+~])
+  =/  obj=(map @t json)  ?.(?=([%o *] cur) ~ p.cur)
+  :-  %o
+  %-  ~(gas by obj)
+  :~  ['/public' pub]
+      ['/orrery/' (share-groups shares sphere-shares)]
+  ==
 ::  +carry-obs: an observation as one ship sends it to another: the
 ::  other side's body id as subject, the sender's grub name as oid, and
 ::  whether the sender retracted it. by and source are deliberately

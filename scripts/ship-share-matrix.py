@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
 HOSTNAME, PEERNAME = (str(gate.curl('GET', b + '/~/host')[1]).strip() for b in (HOST, PEER))
-GROUP = '/grubbery/ball/sys/ames/usergroups/orrery-person.sarah.grp?info=1'
+GROUP = '/grubbery/ball/sys/ames/usergroups/orrery/orrery-person.sarah.grp?info=1'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
 PEER_POLICY = [None]
 def curl(base, jar, method, path, body=None, timeout=60):
