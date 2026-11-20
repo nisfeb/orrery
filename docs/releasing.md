@@ -200,7 +200,7 @@ The gate is two tiers. The **release gate** (steps 1 to 7) runs before every rel
 
 1. `code/version.json` bumped, the number one higher than the last release, and `++  version` in `code/lib/orrery.hoon` to the same number: it is what `GET /version` answers, and `node scripts/page-test.js` fails until the two agree. Run it after the bump.
 2. `python3 scripts/code-closure.py code` reports nothing missing, and `python3 scripts/load-rows.py` exits 0: every file the app writes has a row in `+on-load`, since the loader drops the rest at every load.
-3. `cmp code/lib/tools.hoon <grubbery checkout>/desk/gub/lib/tools.hoon` prints nothing, against the grubbery kernel checkout on the branch the publisher runs. The vendored tool types must equal the kernel's or every tool call breaks.
+3. `cmp code/lib/tools.hoon <grubbery checkout>/desk/gub/lib/tools.hoon` prints nothing, against the grubbery kernel checkout on the branch the publisher runs. The vendored tool types must equal the kernel's or every tool call breaks. Then `python3 scripts/tool-bundle.py --check` exits 0: the copies in `code/lib/tool-bundle` equal the libs (run it without `--check` to copy them).
 4. `python3 scripts/prompt-drift.py <orrery-utils checkout>/common` exits 0: the prompt cords in the lib equal the shared prompt files.
 5. The unit suites, with no ship: `scripts/eval-tests.sh nexus`, `generator` and `orrery`, run side by side, each `failed=~`.
 6. `node scripts/page-test.js` passes.

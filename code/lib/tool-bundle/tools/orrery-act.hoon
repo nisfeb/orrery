@@ -24,6 +24,7 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
+  ;<  ~  bind:m  settle:om
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
   ::  an action about person/me on a fresh instance needs it laid first
   ;<  ok=?  bind:m  ensure-me:om

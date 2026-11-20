@@ -18,6 +18,7 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
+  ;<  ~  bind:m  settle:om
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
   =/  doc=json  (arg-json:om args.st 'schema')
   ?~  doc

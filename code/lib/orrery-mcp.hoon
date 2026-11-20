@@ -1,12 +1,32 @@
-::  orrery-mcp: what the MCP tools share. Every road is absolute into
-::  the instance, and every write is one soft poke to the writer, the
-::  shape lattice's tools use. This core names kernel types, so it
+::  orrery-mcp: what the MCP tools share. Every road is relative to the
+::  instance, and every write is one soft poke to the writer, the shape
+::  lattice's tools use. This core names kernel types, so it
 ::  compiles in the desk's code namespace only, unlike the pure library.
 ::
 /<  orr  /lib/orrery.hoon
 /<  tools  /lib/tools.hoon
 |%
-++  base  `path`/apps/shell/desks/'orrery.desk'/desk/data/'orrery.orrery_app'
+::  +at-file, +at-dir: a road into the instance. A tool runs in its own
+::  tools nexus, as the run grub <instance>/tools/runs/<id> (call_tool
+::  relays there, version 154), so the instance is two steps up from the
+::  run's directory, wherever the instance is installed and however the
+::  kernel spells the shell (/apps/shell or /apps/shell.shell).
+::
+++  hops  2
+::  +settle: every tool waits on a timer before it starts, so its run
+::  finishes in a later event than the one that made it. The kernel's
+::  call_tool relay (lib/tool-bundle/tools/call-tool.hoon, +relay) stops
+::  at the first change notice that finds the run done; a run done in
+::  the event that made it leaves the second notice queued, the relay's
+::  finished run bangs on it ("inert: no handler for input"), and the
+::  MCP request is never answered. Remove once the relay drains it.
+::
+++  settle
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  (sleep:io ~s0)
+++  at-file  |=([p=path n=@ta] ^-(road:tarball [%| hops [%& p n]]))
+++  at-dir   |=(p=path ^-(road:tarball [%| hops [%| p]]))
 ++  body-dir  |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]))
 ++  obs-dir   |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]/obs))
 ::  +arg, +arg-json: a string argument (~ when absent or not a string),
@@ -41,7 +61,7 @@
   |=  [p=path n=@ta]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base p) n] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (at-file p n) ~)
   ?.  ?=([~ %file *] vw)  (pure:m [%o ~])
   (pure:m (fall (mole |.(!<(json (need-vase:tarball sang.u.vw)))) [%o ~]))
 ::  +exists: a file grub in the instance; ~ when the peek was refused,
@@ -51,7 +71,7 @@
   |=  [p=path n=@ta]
   =/  m  (fiber:fiber:nexus ,(unit ?))
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base p) n] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (at-file p n) ~)
   ?~  vw  (pure:m ~)
   (pure:m `?=([%file *] u.vw))
 ::  +poke-writer: one op to orrery's writer; the error when refused
@@ -60,7 +80,7 @@
   |=  op=json
   =/  m  (fiber:fiber:nexus ,(unit tang))
   ^-  form:m
-  (poke-soft:io [%& %& base %'main.sig'] [[/ %json] op])
+  (poke-soft:io (at-file / %'main.sig') [[/ %json] op])
 ::  +ensure-me: person/me is laid by the writer on first use; | when the
 ::  peek was refused, so a caller that needs a read can say so
 ::
@@ -77,7 +97,7 @@
 ++  load-bodies
   =/  m  (fiber:fiber:nexus ,(list loaded:orr))
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %| (weld base /bodies)] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (at-dir /bodies) ~)
   ?.  ?=([~ %ball *] vw)  (pure:m ~)
   (pure:m (bodies-in ball.u.vw))
 ++  bodies-in
@@ -115,7 +135,7 @@
 ++  load-actions
   =/  m  (fiber:fiber:nexus ,(list [id=@ta a=action:orr]))
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %| (weld base /actions)] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (at-dir /actions) ~)
   ?.  ?=([~ %ball *] vw)  (pure:m ~)
   ?~  fil.ball.u.vw  (pure:m ~)
   %-  pure:m
@@ -128,7 +148,7 @@
   |=  id=@ta
   =/  m  (fiber:fiber:nexus ,(unit action:orr))
   ^-  form:m
-  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io [%& %& (weld base /actions) id] ~)
+  ;<  vw=(unit view:nexus)  bind:m  (peek-soft:io (at-file /actions id) ~)
   ?.  ?=([~ %file *] vw)  (pure:m ~)
   (pure:m (read-action:orr (sang-noun:tarball sang.u.vw)))
 ::  ==  lookups

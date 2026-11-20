@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """mcp-matrix.py HOST JAR
-The MCP gate for orrery: the eight tools called by absolute path through
-the ship's MCP server, replaying a slice of spec section 8, and checked
-against the HTTP API's answers for the same reads. HOST like
+The MCP gate for orrery: the tools called through the ship's MCP server,
+by call_tool relaying to orrery's own tools nexus, replaying a slice of
+spec section 8, and checked against the HTTP API's answers for the same
+reads. HOST like
 http://localhost:8080; JAR a curl cookie jar from POST /~/login (the
 MCP server answers JSON-RPC to the owner cookie). Exits 1 on any
 failure. Safe to rerun: it retracts and deletes what it made."""
@@ -14,9 +15,9 @@ from datetime import datetime, timedelta, timezone
 HOST, JAR = sys.argv[1:3]
 MCP = HOST + '/grubbery/mcp'
 API = HOST + '/apps/orrery/api'
-#  tools are called through call_tool with the desk: a newer kernel
-#  refuses a tool name that is a path
-DESK = gate.shell(HOST, JAR) + '/desks/orrery.desk/desk'
+#  tools are called through call_tool with path the instance's tools
+#  nexus: call_tool relays the run there (version 154)
+TOOLS = gate.app(HOST, JAR) + '/tools'
 seq = [0]
 
 
@@ -32,7 +33,7 @@ def call(tool, args):
     """(ok, payload): the tool's JSON answer parsed, or its error message"""
     seq[0] += 1
     body = {'jsonrpc': '2.0', 'id': seq[0], 'method': 'tools/call',
-            'params': {'name': 'call_tool', 'arguments': {'tool_name': tool, 'tool_args': args, 'path': DESK}}}
+            'params': {'name': 'call_tool', 'arguments': {'tool_name': tool, 'tool_args': args, 'path': TOOLS}}}
     code, d = post(MCP, body)
     if code != 200 or not isinstance(d, dict):
         return False, 'http %s: %s' % (code, str(d)[:200])

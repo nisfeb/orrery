@@ -21,6 +21,7 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
+  ;<  ~  bind:m  settle:om
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
   ;<  schema=json  bind:m  (read-json:om / %'schema.json')
   =/  given=(map @t json)
