@@ -999,6 +999,10 @@
           (line '/sys/push/' 'notify you when the assistant proposes or files an action. Refuse this and proposals wait silently in the inbox')
           (line '/sys/gall/' 'tell another ship you shared a body with it, revoke that, send it your observations on a body it shared with you in edit mode, and send an approved message as a Tlon DM. Refuse this and sharing with ships and DMs are unavailable; everything else works')
           (line '/sys/behn/' 'the follower ticks every five minutes to pull what other ships shared with you, and a message to another ship gives up after thirty seconds. Refuse this and sharing with ships is unavailable')
+          ::  nothing pokes the registry since 153, but the line stays: the
+          ::  kernel's +migrate-approvals reads a grant of it as the owner's
+          ::  consent to our usergroups when a ship migrates from an older
+          ::  kernel, so dropping it could lose share groups there
           (line '/sys/ames/registry' 'let other ships poke your inbox with an offer, a revoke, or edits on a body you shared with them. Refuse this and sharing with ships is unavailable')
           (line '/sys/iris/' 'ask a model over HTTPS when the state changes, so it can propose actions, and ask Mapbox how long the drive to your next appointment takes from where you are. Refuse this and the on-ship generator is off; orrery-utils can still run it from a computer')
           (line '/sys/scry/' 'read your Tlon messages, the DMs and the group channels you pick, so what people tell you on Urbit becomes facts the ship knows. Refuse this and the ship reads no chat')
