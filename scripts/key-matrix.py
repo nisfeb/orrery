@@ -8,7 +8,7 @@ exactly their scope and read nothing sensitive.
 Exits 1 on any failure. Safe to rerun: it revokes what it minted,
 retracts what it observed, deletes the bodies it made and restores the
 starter policy and the schema it found."""
-import json, subprocess, sys, time
+import json, sys, time
 from gate import fails, count, check, dictish, listish, iso, all_ok
 import gate
 from datetime import datetime, timedelta, timezone
@@ -443,8 +443,8 @@ for i in (hidden_act, shown_act):
     owner('POST', '/actions/' + i, {'status': 'dismissed', 'note': 'key gate'})
 # the far zone is put back after: a device zone the ship has none of becomes person/me's home zone, and the
 # position keeps its zone, so left behind it would move every later gate onto Tokyo's clock
-POS = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/position.json'
-pos_before = gate.curl('GET', HOST + '/grubbery/api/file' + POS, jar=JAR)[1]
+POS = gate.app(HOST, JAR) + '/position.json'
+pos_before = gate.peek(HOST, POS, JAR)[1]
 tz_rows = lambda: {dictish(o).get('id') for o in listish(dictish(owner('GET', '/body/person/me')[1]).get('observations'))
                    if dictish(o).get('attr') == 'timezone' and not dictish(o).get('retracted')}
 tz_before = tz_rows()
@@ -457,8 +457,7 @@ check('the owner\'s digest is on the phone\'s zone, a key without situations is 
 for i in tz_rows() - tz_before:
     owner('POST', '/retract', {'id': i, 'note': 'key-matrix: the far zone put back'})
 if isinstance(pos_before, dict):
-    subprocess.run(['curl', '-s', '-m', '30', '-b', JAR, '-X', 'POST', HOST + '/grubbery/ball' + POS,
-                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content=' + json.dumps(pos_before)], capture_output=True)
+    gate.lay(HOST, POS, pos_before, JAR)
 code, d = things('GET', '/chat')
 check('a key without the person kind reads no people in the chat settings', code == 200 and dictish(d).get('people') == {}, (code, dictish(d).get('people')))
 code, d = triage('PUT', '/chat', {'people': {'~nec': 'person/me'}})

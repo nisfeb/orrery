@@ -16,7 +16,7 @@ MCP = HOST + '/grubbery/mcp'
 API = HOST + '/apps/orrery/api'
 #  tools are called through call_tool with the desk: a newer kernel
 #  refuses a tool name that is a path
-DESK = '/apps/shell.shell/desks/orrery.desk/desk'
+DESK = gate.shell(HOST, JAR) + '/desks/orrery.desk/desk'
 seq = [0]
 
 

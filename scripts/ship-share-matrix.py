@@ -15,16 +15,12 @@ from datetime import datetime, timedelta, timezone
 
 HOST, HJAR, PEER, PJAR = sys.argv[1:5]
 HOSTNAME, PEERNAME = (str(gate.curl('GET', b + '/~/host')[1]).strip() for b in (HOST, PEER))
-GROUP = '/grubbery/ball/sys/ames/usergroups/orrery/orrery-person.sarah.grp?info=1'
+#  the shell makes the group from the /orrery/ key of our groups.json
+GROUP = '/sys/ames/usergroups/orrery/orrery-person.sarah.grp/'
 STARTER = {'auto': ['task', 'note'], 'push': 'proposed', 'retention_days': 365}
 PEER_POLICY = [None]
 def curl(base, jar, method, path, body=None, timeout=60):
     return gate.curl(method, base + '/apps/orrery/api' + path, body, jar=jar, timeout=timeout)
-
-
-def raw(base, jar, path, timeout=60):
-    """a read of the ship's own tree, outside /apps/orrery/api"""
-    return gate.curl('GET', base + path, jar=jar, timeout=timeout)
 
 
 def host(method, path, body=None):
@@ -36,16 +32,18 @@ def peer(method, path, body=None):
 
 
 def group_ships():
-    """the size in bytes of the share group's who.ships, or None when
-    the read failed. A group with no ship in it is 0; the ?info=1 text
-    of a /ships grub is always null, so the size is what can be read."""
-    code, d = raw(HOST, HJAR, GROUP)
+    """how many ships the share group holds, or None when the read
+    failed. A group with no ship in it is 0, and so is no group: the
+    shell drops a group that groups.json no longer names."""
+    code, d = gate.peek(HOST, GROUP, HJAR)
+    if code == 404:
+        return 0
     if code != 200:
         return None
-    for c in listish(dictish(d).get('children')):
-        if dictish(c).get('name') == 'who.ships':
-            return dictish(c).get('size')
-    return None
+    code, who = gate.peek(HOST, GROUP + 'who.ships', HJAR)
+    if code != 200:
+        return None
+    return len(str(who or '').split())
 
 
 def attrs_of(side, bid):

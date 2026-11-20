@@ -20,18 +20,18 @@ never called, since that is the real openrouter.ai); the writer's rise
 sorts an own pick from before into a copy (gone) or the owner's key
 (kept), each after a reload; and place lookups hold no proxy address
 or key. Their files, search.json and Armillary's, are put back too."""
-import http.server, json, re, sys, threading, time, urllib.parse
+import http.server, json, re, sys, threading, time
 from gate import fails, check, wait, dictish
 import gate
 
 HOST, JAR = sys.argv[1].rstrip('/'), sys.argv[2]
 if not re.match(r'https?://(localhost|127\.0\.0\.1)(:\d+)?$', HOST):
     sys.exit('armillary-key-matrix: fake ships only; it rewrites Armillary\'s offer')
-ARM = '/apps/shell.shell/desks/armillary.desk/desk/data/armillary.armillary_app/app-inference.json'
-GEN = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/generator.json'
-READ = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/read.json'
-SEARCH = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/search.json'
-APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+APP = gate.app(HOST, JAR)
+ARM = gate.app(HOST, JAR, 'armillary') + '/app-inference.json'
+GEN = APP + '/generator.json'
+READ = APP + '/read.json'
+SEARCH = APP + '/search.json'
 seen = []
 
 
@@ -67,16 +67,13 @@ def api(method, path, body=None):
 
 
 def read(path):
-    code, d = gate.curl('GET', HOST + '/grubbery/api/file' + path, jar=JAR)
+    code, d = gate.peek(HOST, path, JAR)
     return d if code == 200 and isinstance(d, dict) else None
 
 
 def lay(path, doc):
-    """a file written through the explorer, past the app's writer"""
-    form = urllib.parse.urlencode({'action': 'write-text', 'content': json.dumps(doc)})
-    code, _ = gate.curl('POST', HOST + '/grubbery/ball' + path, jar=JAR, raw=form,
-                        headers=['content-type: application/x-www-form-urlencoded'])
-    return code == 200
+    """a file written whole through the kernel's API, past the app's writer"""
+    return gate.lay(HOST, path, doc, JAR)[0] in (200, 201)
 
 
 def offer(key):

@@ -2,16 +2,17 @@
 """quiet-gate.py TMUX-TARGET HOST JAR
 The quiet gate of docs/logging.md, the part a script can run: the
 ship's console is captured from its tmux pane, orrery's instance is
-reloaded through the explorer, the console is captured again once the
+reloaded through the permits page's reload, the console is captured again once the
 instance is back, and every new line that is not on the known-noise
 register is a finding. Exits 1 on any finding, or when the instance
 does not come back. The gate's other steps (an upgrade with real data,
 a refused permission, the grant that clears it) change the ship's
 permits and stay the operator's, by hand, from the same table."""
-import re, subprocess, sys, time, urllib.parse, urllib.request
+import re, subprocess, sys, time
+import gate
 
 TARGET, HOST, JAR = sys.argv[1:4]
-INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+APP = gate.app(HOST, JAR)
 
 #  lines the kernel or the runtime print on their own, reported upstream
 #  and listed in docs/logging.md so an old line can be told from a new one
@@ -31,33 +32,16 @@ def console():
     return [l for l in lines if l.strip() and not PROMPT.match(l)]
 
 
-def cookie():
-    for line in open(JAR):
-        parts = line.split('\t')
-        if len(parts) >= 7 and parts[5].startswith('urbauth'):
-            return parts[5] + '=' + parts[6].strip()
-    sys.exit('no urbauth cookie in ' + JAR)
-
-
-def http(method, url, data=None):
-    req = urllib.request.Request(url, data=data, method=method, headers={'Cookie': cookie()})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read().decode()
-
-
 before = console()
-http('POST', INSTANCE, urllib.parse.urlencode({'action': 'reload-nexus'}).encode())
+gate.curl('POST', HOST + '/apps/grubbery/permits/reload', {'app': APP}, jar=JAR, timeout=120)
 deadline = time.time() + 180
 back = False
 while time.time() < deadline:
     time.sleep(5)
-    try:
-        info = http('GET', INSTANCE + '?info=1')
-        if '"bang": null' in info or '"bang":null' in info:
-            back = True
-            break
-    except Exception:
-        pass
+    #  nothing under the instance banged, and its routes answer
+    if gate.banged(HOST, APP, JAR) == 0 and gate.curl('GET', HOST + '/apps/orrery/api/version', jar=JAR)[0] == 200:
+        back = True
+        break
 time.sleep(10)
 after = console()
 #  what the pane gained: everything after the last place the old tail

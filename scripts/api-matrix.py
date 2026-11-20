@@ -18,7 +18,10 @@ HOST, JAR = sys.argv[1:3]
 #  the ship the gate runs on, so a letter to it lands in its own inbox
 OUR = sys.argv[3] if len(sys.argv) > 3 else '~wex'
 API = HOST + '/apps/orrery/api'
-INSTANCE = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+#  the instance in the ship's namespace, read and written through the
+#  kernel's API (gate.peek, gate.lay)
+SHELL = gate.shell(HOST, JAR)
+APP = gate.app(HOST, JAR)
 # the ids of the task actions this run files: the executor on the ship
 # places each one in the calendar's todo list, and the last section
 # deletes those todos so repeated runs do not pile them up
@@ -29,16 +32,21 @@ def curl(method, url, body=None, jar=JAR, timeout=60, token=None):
     return gate.curl(method, url, body, jar=jar, token=token, timeout=timeout)
 
 
+def raw(name):
+    """(status, body) of a file of the instance, read whole"""
+    return gate.peek(HOST, APP + '/' + name, JAR)
+
+
 # a ship without a live calendar or auspex cannot pass the executor's, the calendar's or the mail's checks,
 # and each would wait out its timeout: 27 of 40 minutes on a bare test ship (2026-10-05). Say so and stop,
 # unless --partial asks for the run anyway
 def desk_live(d):
-    code, v = curl('GET', HOST + '/grubbery/ball/apps/shell.shell/desks/%s.desk/desk/data?info=1' % d)
-    return code == 200 and any(str(dictish(c).get('name', '')).startswith(d + '.') for c in dictish(v).get('children') or [])
+    code, v = gate.peek(HOST, '%s/desks/%s.desk/desk/data/' % (SHELL, d), JAR)
+    return code == 200 and any(str(c).startswith(d + '.') for c in listish(dictish(v).get('dirs')))
 # and orrery itself must have built: a banged instance answers nothing, and every check would time out
-code, info = curl('GET', INSTANCE + '?info=1')
-if code != 200 or dictish(info).get('bang') is not None or curl('GET', API + '/version')[0] != 200:
-    print('orrery is not running on this ship (its instance: %s): fix the build first.' % str(dictish(info).get('bang'))[-300:])
+bang = gate.banged(HOST, APP, JAR)
+if bang != 0 or curl('GET', API + '/version')[0] != 200:
+    print('orrery is not running on this ship (%s banged under its instance): fix the build first.' % bang)
     sys.exit(2)
 MISSING = [d for d in ('calendar', 'auspex') if not desk_live(d)]
 if MISSING and '--partial' not in sys.argv:
@@ -142,9 +150,7 @@ def owner_only(label, method, path, body=None):
 #  a file of the instance's written whole, as the owner's grubbery page
 #  writes it, for a section that needs a state no route sets
 def put_file(name, doc):
-    import subprocess
-    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/' + name,
-                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content=' + json.dumps(doc)])
+    gate.lay(HOST, APP + '/' + name, doc, JAR)
 #  a DM from the ship needs the kernel's marc, which the dev ship's kernel
 #  lacks; a poke without it wedges the executor, so DMs stay off here
 curl('PUT', API + '/chat', {'send_dms': False})
@@ -301,7 +307,7 @@ check('the history shows proposed then approved by policy', bool(mine)
       and [(h.get('status'), h.get('by')) for h in mine[0].get('history', [])] == [('proposed', 'api-matrix'), ('approved', 'policy')], mine)
 code, a2 = curl('POST', API + '/act', prop)
 check('a second identical proposal answers the same id', code == 200 and a2['id'] == AID and a2['existing'], a2)
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 #  among the newest entries, since the calendar reader may have filed since
 last = ([e for e in (log if isinstance(log, list) else [])[-6:] if dictish(e).get('op') == 'act'] or [{}])[-1]
 check('the writer noted the act', code == 200 and last.get('op') == 'act' and last.get('ok') is True, last)
@@ -366,7 +372,7 @@ loser = 'exec-y' if winner == 'exec-x' else 'exec-x'
 code, d = curl('POST', API + f'/actions/{RID}', {'status': 'done', 'by': loser})
 check('the actor that lost the race cannot report done',
       code == 409 and dictish(d).get('error') == 'claimed by ' + winner, (code, d, winner))
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 check('the audit log holds the push among its newest entries', code == 200 and isinstance(log, list)
       and any(dictish(x).get('op') == 'push' for x in log[-30:]), log[-3:] if isinstance(log, list) else log)
 
@@ -393,7 +399,7 @@ done = [x for x in allacts if isinstance(x, dict) and x.get('id') == AID] if isi
 hist = done[0].get('history', []) if done else []
 check('done is in the history with the actor', bool(hist)
       and hist[-1].get('status') == 'done' and hist[-1].get('by') == 'owner', done)
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 #  among the newest entries: the executor's mirror files whenever the
 #  calendar moves, which another session's tests can make it do
 check('the audit log holds the set-action among its newest entries', code == 200 and isinstance(log, list) and bool(log)
@@ -490,7 +496,7 @@ check('a merge from person/me is 400',
 code, d = curl('POST', API + '/merge', {'from': 'org/nobody', 'into': 'person/sarah'})
 check('a merge of an unknown body is 404',
       code == 404 and dictish(d).get('error') == 'no such body org/nobody', (code, d))
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 #  the newest entries, since the calendar reader may have filed since
 last = ([e for e in (log if isinstance(log, list) else [])[-6:] if dictish(e).get('op') == 'merge'] or [{}])[-1]
 check('the writer noted the merge last',
@@ -498,11 +504,11 @@ check('the writer noted the merge last',
 
 # ── 9. the ask ──────────────────────────────────────────────────────
 # the executor's roads are asked for in the served weir; consent is the
-# owner's, on the permits page, and a granted road shows in ?info=1
+# owner's, on the permits page
 print('9. the ask names the calendar and auspex desks')
-code, d = curl('GET', INSTANCE + '/weir.json?raw=1')
+code, d = raw('weir.json')
 roads = {k: [r.get('road') for r in v] for k, v in dictish(d).items() if isinstance(v, list)}
-CAL, AUS = '/apps/shell.shell/desks/calendar.desk/', '/apps/shell.shell/desks/auspex.desk/'
+CAL, AUS = SHELL + '/desks/calendar.desk/', SHELL + '/desks/auspex.desk/'
 check('the ask pokes the calendar desk and the auspex desk',
       code == 200 and CAL in roads.get('poke', []) and AUS in roads.get('poke', []), (code, roads))
 check('the ask peeks the calendar desk, and still the link registry',
@@ -795,7 +801,7 @@ def urgent_pass(token=None, about=('thing/gate-car',)):
 curl('PUT', API + '/generator', {'max_urgent': 1000})
 #  a conversation of the section's own in the reader's window, put back
 #  after: the pass reads the windows the readers keep (version 136)
-code, tg_window = curl('GET', INSTANCE + '/telegram-recent.json?raw=1')
+code, tg_window = raw('telegram-recent.json')
 TALK = secrets.token_hex(3)
 put_file('telegram-recent.json', {'424242': [{'id': 'chat/telegram/424242/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-talk', 'text': 'the gate talk %s is settled' % TALK}]})
 time.sleep(0.5)
@@ -946,7 +952,8 @@ check('an update seen under the old token is handled again under the new one', h
 # nor culled, read again on a retry timer five minutes out; the owner's
 # wake route is how the gate hurries it
 def inbox():
-    return [c.get('name') for c in dictish(curl('GET', INSTANCE + '/telegram-inbox')[1]).get('children', [])]
+    d = dictish(raw('telegram-inbox/')[1])
+    return listish(d.get('files')) + listish(d.get('dirs'))
 
 
 def culled(*ids, secs=30):
@@ -1222,7 +1229,6 @@ BR_SHOP = 'https://shop.gate.example/thanks-' + BR_RUN
 BR_PLAIN = 'https://gate.example/weather-' + BR_RUN
 BR_TASK_TITLE = 'Gate order cedar boards ' + BR_RUN
 BR_FORM = 'https://camp.gate.example/registration-' + BR_RUN
-BR_APP = HOST + '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 for a in curl('GET', API + '/actions?status=open')[1] or []:
     if isinstance(a, dict) and str(a.get('title', '')).startswith('Done? Gate order'):
         curl('POST', API + '/actions/' + a['id'], {'status': 'dismissed', 'note': 'matrix rerun'})
@@ -1261,11 +1267,11 @@ code, d = curl('POST', API + '/browsing', {'visits': [{}] * 5001})
 check('a batch past the cap is a 413', code == 413, (code, d))
 gate.wait('the batch is laid by day', lambda: dictish(curl('GET', API + '/browsing')[1]).get('inbox') == 0 or None, 60)
 br_day = time.strftime('%Y-%m-%d', time.gmtime(br_ms / 1000))
-br_pages = dictish(curl('GET', BR_APP + '/browsing/pages/' + br_day + '?raw=1')[1])
+br_pages = dictish(raw('browsing/pages/' + br_day)[1])
 br_urls = {dictish(v).get('url') for v in br_pages.values()}
 check('the day keeps the pages, and never a bank\'s, a Claude artifact or a site the owner left out',
       {BR_PAGE, BR_SHOP, BR_PLAIN} <= br_urls and not any(('gatebank' in str(u)) or ('claude.ai' in str(u)) or ('skip.gate' in str(u)) for u in br_urls), sorted(map(str, br_urls))[-6:])
-br_visits = listish(curl('GET', BR_APP + '/browsing/visits/' + br_day + '?raw=1')[1])
+br_visits = listish(raw('browsing/visits/' + br_day)[1])
 check('a visit keeps how it came about', any(dictish(v).get('url') == BR_SHOP and dictish(v).get('how') == 'form_submit' for v in br_visits), br_visits[-6:])
 def br_last():
     return dictish(curl('GET', API + '/browsing/last')[1])
@@ -1276,7 +1282,7 @@ def br_pass():
 last = br_pass()
 check('with no model the tied pages wait, read by no model', last.get('sent') == 0 and last.get('tied', 0) >= 2
       and any('no ZDR model' in str(n) for n in last.get('notes', [])), last)
-br_pages = dictish(curl('GET', BR_APP + '/browsing/pages/' + br_day + '?raw=1')[1])
+br_pages = dictish(raw('browsing/pages/' + br_day)[1])
 br_by = {dictish(v).get('url'): dictish(v) for v in br_pages.values()}
 check('the plain page is set aside as read, the tied one waits', bool(br_by.get(BR_PLAIN, {}).get('read')) and br_by.get(BR_PLAIN, {}).get('hits') == []
       and not br_by.get(BR_PAGE, {}).get('read'), (br_by.get(BR_PLAIN), br_by.get(BR_PAGE, {}).get('read')))
@@ -1295,7 +1301,7 @@ curl('PUT', API + '/browsing/settings', {'model': 'stub/zdr'})
 br_seen = len(seen)
 last = br_pass()
 check('with a model the tied pages are read and filed', last.get('sent', 0) >= 3 and last.get('filed', 0) >= 1, last)
-br_int = dictish(curl('GET', BR_APP + '/browsing-interests.json?raw=1')[1])
+br_int = dictish(raw('browsing-interests.json')[1])
 check('the week\'s pass names what the owner has been into', any(dictish(t).get('topic') == 'pergola building ' + BR_RUN for t in listish(br_int.get('topics'))), br_int)
 br_open = [dictish(a) for a in listish(curl('GET', API + '/actions?status=open')[1])]
 check('a new topic is proposed as one of the owner\'s likes', any(a.get('kind') == 'fact' and a.get('by') == 'browsing' and dictish(a.get('payload')).get('attr') == 'likes'
@@ -1376,9 +1382,7 @@ curl('DELETE', API + '/body/' + BR_SIT)
 # ---- a lattice page followed (version 66): a page sent from lattice is read as the owner's own, its
 # situation made, read again when edited, and the follow ends when the situation is over. Needs lattice
 # on the ship (its link name) and orrery's road into it; without lattice the section is skipped
-#  through the file API: a ?raw=1 read answers a redirect, which came back
-#  as nothing and skipped this section on every ship until version 117
-LAT = (lambda d: d[0] if isinstance(d, list) and d else '')(curl('GET', HOST + '/grubbery/api/file/sys/link/lattice/dest.lanes')[1])
+LAT = (lambda d: d[0] if isinstance(d, list) and d else '')(gate.peek(HOST, '/sys/link/lattice/dest.lanes', JAR)[1])
 if not LAT:
     print('== a lattice page followed: skipped, lattice is not installed here')
 else:
@@ -1545,7 +1549,7 @@ curl('POST', API + '/travel/wake', {})
 gate.wait('the late one is alerted', lambda: (lambda l: l if any('to leave for Gate late' in n for n in l.get('notes', [])) else None)(dictish(curl('GET', API + '/travel/last')[1])), 60)
 time.sleep(2)
 curl('POST', API + '/position', {'lat': 39.6589, 'lon': -89.7113, 'acc': 12})
-ttrip = gate.wait('the trip is told it is late', lambda: (lambda t: t if t.get('told') is True else None)(dictish(curl('GET', HOST + '/grubbery/api/file' + INSTANCE[len(HOST + '/grubbery/ball'):] + '/trip.json')[1])), 60) or {}
+ttrip = gate.wait('the trip is told it is late', lambda: (lambda t: t if t.get('told') is True else None)(dictish(raw('trip.json')[1])), 60) or {}
 late = [a for a in (curl('GET', API + '/actions?status=open')[1] or []) if isinstance(a, dict) and TLATE in (a.get('about') or [])]
 check('late by five minutes or more: nothing is proposed, not even to an organizer the ship can reach', late == [], late)
 check('the trip is told once and holds its first estimate from the road', ttrip.get('key', '').startswith(TLATE + '@') and ttrip.get('told') is True and bool(ttrip.get('eta')), ttrip)
@@ -1570,8 +1574,8 @@ owner_only('the brief map is the owner\'s', 'GET', '/brief/map')
 # there (version 73): a close fix at the place within three minutes of the last ends the trip, and an arrival
 # before the estimate teaches the place nothing to add
 curl('POST', API + '/position', {'lat': 39.7817, 'lon': -89.6501, 'acc': 10})
-gate.wait('the trip ends at the place', lambda: True if not dictish(curl('GET', INSTANCE + '/trip.json?raw=1')[1]).get('key') else None, 60)
-learned = dictish(curl('GET', INSTANCE + '/trips.json?raw=1')[1])
+gate.wait('the trip ends at the place', lambda: True if not dictish(raw('trip.json')[1]).get('key') else None, 60)
+learned = dictish(raw('trips.json')[1])
 check('the arrival is learned for the place: early, so nothing added', [v for k, v in learned.items() if TRUN in k] == [[0]], learned)
 curl('DELETE', API + '/body/' + TLATE)
 curl('DELETE', API + '/body/' + TORG)
@@ -1722,9 +1726,7 @@ check('the review keeps its line, and is neither mailed nor pushed (version 130)
 wnow = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 if 7 <= wnow.hour < 21:
     # a test ship's day of nudges starts empty, so a rerun the same day is not held by the cap of three
-    import subprocess
-    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/nudge-last.json',
-                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+    gate.lay(HOST, APP + '/nudge-last.json', {}, JAR)
     code, d = curl('POST', API + '/work', {'day': wnow.date().isoformat(), 'blocks': [{'start': iso(wnow - timedelta(minutes=100)), 'end': iso(wnow)}]})
     #  the phone ten kilometres from home: not at the desk, so no nudge,
     #  whatever the computer says (version 128); back home, the nudge
@@ -1751,12 +1753,10 @@ owner_only('the nudges are the owner\'s', 'GET', '/nudge/last')
 # the evening review's push (version 130): once a day at review_at, with
 # the open tasks overdue, due today and with no date; a blank time is none.
 # A one-minute quiet span and a time already past let it go at any hour
-import subprocess
 code, rh0 = curl('GET', API + '/rhythm')
 rh0 = dictish(rh0)
 def evening_reset():
-    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/evening-last.json',
-                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+    gate.lay(HOST, APP + '/evening-last.json', {}, JAR)
 code, d = curl('POST', API + '/act', {'kind': 'task', 'title': 'Gate evening late %s' % WRUN, 'by': 'api-matrix', 'due': iso(datetime.now(timezone.utc) - timedelta(days=2))})
 ELATE = dictish(d).get('id', '')
 curl('POST', API + f'/actions/{ELATE}', {'status': 'approved'})
@@ -1787,11 +1787,9 @@ rv2 = gate.wait('a second review lands', lambda: (lambda r: r if r.get('at') and
 check('a habit shows its week in the review', ('Gate habit %s: 1 of 3 this week' % WRUN) in rv2.get('text', ''), rv2.get('text'))
 # family time: at the computer ten minutes into it is the owner's working late, one nudge
 if 7 <= wnow.hour < 20:
-    import subprocess
     hm = lambda t: t.strftime('%H:%M')
     curl('PUT', API + '/rhythm', {'family_from': hm(wnow - timedelta(minutes=30)), 'family_to': hm(wnow + timedelta(minutes=30))})
-    subprocess.run(['curl', '-s', '-m', '60', '-b', JAR, '-o', '/dev/null', '-X', 'POST', INSTANCE + '/nudge-last.json',
-                    '--data-urlencode', 'action=write-text', '--data-urlencode', 'content={}'])
+    gate.lay(HOST, APP + '/nudge-last.json', {}, JAR)
     curl('POST', API + '/work', {'day': wnow.date().isoformat(), 'blocks': [{'start': iso(wnow - timedelta(minutes=20)), 'end': iso(wnow)}]})
     curl('POST', API + '/nudge/wake', {})
     fl = gate.wait('the family nudge lands', lambda: (lambda n: n if any(dictish(x).get('kind') == 'family' for x in n.get('sent') or []) else None)(dictish(curl('GET', API + '/nudge/last')[1])), 60) or {}
@@ -1836,7 +1834,7 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 STUB = 'http://127.0.0.1:%d' % STUB_PORT
 #  the parks are fetched again only when the location or the distance
 #  changes (or a week passes), so each run asks a distance the last did not
-pl0 = dictish(curl('GET', INSTANCE + '/parks-last.json?raw=1')[1])
+pl0 = dictish(raw('parks-last.json')[1])
 code, d = curl('PUT', API + '/outdoors', {'nws_api': STUB, 'pota': True, 'pota_location': 'US-GT', 'pota_radius_km': 21 if pl0.get('radius_km') == 20 else 20, 'pota_api': STUB})
 check('the outdoors settings answer with themselves', code == 200 and dictish(d).get('pota_location') == 'US-GT' and dictish(d).get('weather') is True, (code, d))
 owner_only('the outdoors settings are the owner\'s', 'GET', '/outdoors')
@@ -1847,7 +1845,7 @@ check('the forecast and the alert are held, and the answer names no point',
 nws = [x for x in seen if x[0].startswith(('/points/', '/gridpoints/', '/alerts/'))]
 check('every call to the weather service says who asks', nws and all('orrery' in x[1].get('user-agent', '') for x in nws), [x[1].get('user-agent') for x in nws])
 check('the point sent is coarse, two decimals', nws and all(re.match(r'/points/-?\d+\.\d{1,2},-?\d+\.\d{1,2}$', x[0]) for x in nws if x[0].startswith('/points/')), [x[0] for x in nws])
-pl = gate.wait('the parks pass lands', lambda: (lambda p: p if p.get('location') == 'US-GT' and p.get('at') != pl0.get('at') else None)(dictish(curl('GET', INSTANCE + '/parks-last.json?raw=1')[1])), 60) or {}
+pl = gate.wait('the parks pass lands', lambda: (lambda p: p if p.get('location') == 'US-GT' and p.get('at') != pl0.get('at') else None)(dictish(raw('parks-last.json')[1])), 60) or {}
 check('the near park is added, the far one not', pl.get('near') == 1 and pl.get('added') == 1, pl)
 code, b = curl('GET', API + '/body/place/pota-us-0001')
 check('the park is a place with its reference and point', code == 200 and 'US-0001' in json.dumps(b) and 'POTA park' in json.dumps(b), (code, str(b)[:300]))
@@ -1975,7 +1973,7 @@ old_ids = loc_of(MFROM)
 curl('POST', API + '/private', {'id': old_ids[0] if old_ids else '', 'private': True})
 code, d = curl('POST', API + '/merge', {'from': MFROM, 'into': MINTO})
 new_ids = gate.wait('the merged row lands on into', lambda: loc_of(MINTO) or None, 30) or []
-priv_now = listish(gate.curl('GET', HOST + '/grubbery/api/file' + INSTANCE[len(HOST + '/grubbery/ball'):] + '/private.json', jar=JAR)[1])
+priv_now = listish(raw('private.json')[1])
 check('a private row merged into another body stays private under its new id', bool(old_ids) and bool(new_ids) and new_ids[0] != old_ids[0] and new_ids[0] in priv_now, (old_ids, new_ids, priv_now))
 for i in old_ids + new_ids:
     curl('POST', API + '/private', {'id': i, 'private': False})
@@ -2114,7 +2112,7 @@ srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 curl('PUT', API + '/telegram', {'token': '123:abc', 'api_url': 'http://127.0.0.1:%d' % STUB_PORT})
 XRUN = secrets.token_hex(3)
-CAL_BASE = '/apps/shell.shell/desks/calendar.desk/desk/data/calendar.calendar_app'
+CAL_BASE = gate.app(HOST, JAR, 'calendar')
 
 
 def cal_poke(action):
@@ -2272,7 +2270,7 @@ check('the calendar and auspex are found on wex and their roads open', last.get(
 # the reader's window as this section needs it, put back after: chat
 # 1002 last came through a business connection, 1001 has no window
 # (version 136)
-code, tg_window = curl('GET', INSTANCE + '/telegram-recent.json?raw=1')
+code, tg_window = raw('telegram-recent.json')
 put_file('telegram-recent.json', {'1002': [{'id': 'chat/telegram/1002/1', 'at': iso(datetime.now(timezone.utc)), 'who': 'person/gate-people', 'text': 'hello from the business chat', 'via': 'conn-gate'}]})
 # a message via telegram: claimed by the ship, one sendMessage through the stub, done with the chat
 n = len(seen)
@@ -2301,7 +2299,7 @@ code, d = observe(
 SHIPID = propose('message', 'Gate shipped %s' % XRUN, payload={'via': 'telegram', 'to': 'person/gate-shipped', 'text': 'routed to chat'})
 a = action(SHIPID)
 check('a message to a person with a ship is filed via chat', code == 200 and bool(SHIPID) and dictish(a.get('payload')).get('via') == 'chat', (code, SHIPID, a))
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 check('the trail carries the rewrite among its newest entries', code == 200 and isinstance(log, list)
       and any(dictish(x).get('why') == 'via rewritten to chat: person/gate-shipped has a ship' for x in log[-30:]), log[-3:] if isinstance(log, list) else log)
 # ---- refine at approval (version 36): a note under the proposed message, through the stub as the generator's model ----
@@ -2328,7 +2326,7 @@ a = action(SHIPID)
 check('read back, the action is still proposed under the new title with a last step revised by the owner',
       a.get('status') == 'proposed' and a.get('title') == 'Tell Wren and Dana the tow is booked' and steps(a)[-1] == ('revised', 'owner') and steps(a)[0] == ('proposed', 'api-matrix'), (a.get('status'), a.get('title'), steps(a)))
 check('the extra is open and the executor places its todo', bool(EXTRAID) and is_open(EXTRAID) and todo_for(EXTRAID) is not None, EXTRAID)
-code, log = curl('GET', INSTANCE + '/tr/log?raw=1')
+code, log = raw('tr/log')
 check('the trail records the revision among its newest entries', code == 200 and isinstance(log, list) and any(dictish(x).get('op') == 'revise-action' and dictish(x).get('by') == 'owner' for x in log[-30:]), log[-4:] if isinstance(log, list) else log)
 code, d = refine(SHIPID, 'include karl in this')
 d = dictish(d)
@@ -2864,13 +2862,12 @@ srv.server_close()
 
 # ---- report fixes (version 111): a backfill files facts, a stale proposal is dropped, a model outage is kept, a repeated move is no error ----
 FIXRUN = time.strftime('%H%M%S')
-FIX_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+FIX_APP = APP
 def fix_file(name):
-    code, d = gate.curl('GET', HOST + '/grubbery/api/file' + FIX_APP + '/' + name, jar=JAR)
+    code, d = raw(name)
     return d if code == 200 and isinstance(d, dict) else {}
 def fix_lay(name, doc):
-    gate.curl('POST', HOST + '/grubbery/ball' + FIX_APP + '/' + name, jar=JAR, raw=urllib.parse.urlencode({'action': 'write-text', 'content': json.dumps(doc)}),
-              headers=['content-type: application/x-www-form-urlencoded'])
+    gate.lay(HOST, FIX_APP + '/' + name, doc, JAR)
 srv = socketserver.TCPServer(('127.0.0.1', STUB_PORT), Stub)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 curl('PUT', API + '/generator', {'url': 'http://127.0.0.1:%d' % STUB_PORT, 'api_key': 'sk-stub', 'reasoning': {'enabled': False}})
@@ -3033,12 +3030,12 @@ check('a key that cannot see situations gets none, and no reason for being away'
 if dictish(wk).get('id'): curl('DELETE', API + '/clients/' + dictish(wk)['id'])
 curl('POST', API + '/nudge/wake')
 wf = gate.wait('world.json is kept for lattice', lambda: (lambda d: d if any(dictish(x).get('id') == WSIT for x in listish(d.get('situations'))) else None)(
-    (lambda c, d: d if c == 200 and isinstance(d, dict) else {})(*gate.curl('GET', HOST + '/grubbery/api/file/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app/world.json', jar=JAR))), 60) or {}
+    (lambda c, d: d if c == 200 and isinstance(d, dict) else {})(*raw('world.json'))), 60) or {}
 check('and holds the same text as the route', wf.get('text') == dictish(curl('GET', API + '/world')[1]).get('text'), (wf.get('text'), dictish(curl('GET', API + '/world')[1]).get('text')))
 curl('DELETE', API + '/body/' + WSIT)
 
 # ---- the map (version 151): a place's point and zone and an open situation at it, kept in map.json for lattice ----
-MAP_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+MAP_APP = APP
 MAPRUN = time.strftime('%H%M%S')
 MP, MS, MX = 'place/gate-map-' + MAPRUN, 'situation/gate-map-' + MAPRUN, 'situation/gate-map-shut-' + MAPRUN
 curl('POST', API + '/observe', {'bodies': [{'id': MP, 'name': 'Gate map ' + MAPRUN}, {'id': MS, 'name': 'Gate map trip ' + MAPRUN},
@@ -3047,9 +3044,8 @@ curl('POST', API + '/observe', {'bodies': [{'id': MP, 'name': 'Gate map ' + MAPR
     {'subject': MS, 'attr': 'status', 'value': 'open'}, {'subject': MS, 'attr': 'location', 'value': {'ref': MP}},
     {'subject': MS, 'attr': 'summary', 'value': 'a gate trip'},
     {'subject': MX, 'attr': 'status', 'value': 'closed'}, {'subject': MX, 'attr': 'location', 'value': {'ref': MP}}]})
-#  through the file API: a ?raw=1 read answers a redirect
 def map_doc():
-    c, d = gate.curl('GET', HOST + '/grubbery/api/file' + MAP_APP + '/map.json', jar=JAR)
+    c, d = raw('map.json')
     return d if c == 200 and isinstance(d, dict) else {}
 def map_mine(d):
     return {(dictish(dictish(f).get('properties')).get('orrery'), dictish(dictish(f).get('properties')).get('kind')): dictish(f)
@@ -3169,15 +3165,13 @@ curl('DELETE', API + '/body/' + CVT)
 check('a body deleted is gone from the state at once', not any(dictish(x).get('id') == CVT for x in listish(dictish(curl('GET', API + '/state')[1]).get('bodies'))), None)
 
 # ---- late nags (version 110): a high task past its due is pushed every fifteen minutes until it is snoozed, done or unmarked ----
-NAG_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
-#  through the file API: a ?raw=1 read answers a redirect
+NAG_APP = APP
 def nag_raw(name):
-    code, d = gate.curl('GET', HOST + '/grubbery/api/file' + NAG_APP + '/' + name, jar=JAR)
+    code, d = raw(name)
     return d if code == 200 and isinstance(d, dict) else {}
 #  a file put back whole: PUT /rhythm merges, so it cannot clear a field
 def nag_lay(name, doc):
-    gate.curl('POST', HOST + '/grubbery/ball' + NAG_APP + '/' + name, jar=JAR, raw=urllib.parse.urlencode({'action': 'write-text', 'content': json.dumps(doc)}),
-              headers=['content-type: application/x-www-form-urlencoded'])
+    gate.lay(HOST, NAG_APP + '/' + name, doc, JAR)
 def nag_wake():
     curl('POST', API + '/nudge/wake')
 def nag_open(aid):
@@ -3287,13 +3281,11 @@ curl('DELETE', API + '/body/' + EB)
 # was search.json, search-last.json and sphere-trust.json, and ricsul's
 # 87 to 96 update lost its owner's Brave key that way. Last in the gate,
 # since the reload restarts every fiber.
-RELOAD_APP = '/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
+RELOAD_APP = APP
 #  world.json is not here: the nudge loop rewrites it whenever the day moves
 RELOAD_FILES = ['search.json', 'search-last.json', 'sphere-trust.json', 'browsing.json', 'browsing-last.json', 'nag-last.json', 'chat-lists-seen.json', 'model-down.json']
-#  through the file API: a ?raw=1 read answers a redirect, which came
-#  back as nothing and skipped every check below until version 110
 def reload_raw(name):
-    return gate.curl('GET', HOST + '/grubbery/api/file' + RELOAD_APP + '/' + name, jar=JAR)[1]
+    return raw(name)[1]
 code, reload_before = curl('GET', API + '/search')
 curl('PUT', API + '/search', {'api_key': 'reload-gate-key', 'enabled': dictish(reload_before).get('enabled') is True})
 held_before = {n: reload_raw(n) for n in RELOAD_FILES}
