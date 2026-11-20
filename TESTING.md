@@ -47,7 +47,7 @@ dialect is needed. `scripts/eval-tests.sh <suite>` is the older runner
 the release checklist names (its own stand-in for the test lib); both
 give the same counts. The ship run is the verdict.
 
-`code/lib/orrery-mcp.hoon` and `code/lib/tools/` name kernel types
+`code/lib/orrery-mcp.hoon` and `code/lib/tool-bundle/tools/` name kernel types
 (fibers, the nexus), so they have no offline suite; the MCP gate covers
 them on the ship.
 

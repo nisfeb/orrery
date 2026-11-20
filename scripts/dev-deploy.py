@@ -152,12 +152,21 @@ tree = peek_json(dest + '/?as=tree')
 held = marks(tree) if tree else {}
 
 
+#  under a directory named bundle or *-bundle: source the nexus imports
+#  as data (lib/tool-bundle, the tools nexus's seed), which the kernel
+#  keeps as mime when a desk syncs, and only a mime is found by the
+#  directory import
+def bundled(rel):
+    return any(d == 'bundle' or d.endswith('-bundle') for d in rel.split('/')[:-1])
+
+
 #  a .hoon or .json file is kept under its own mark; any other (the icon)
 #  as mime, which is what a /< import of it finds, as the forge lays it
 def put(rel, text):
     path = f'{dest}/{rel}'
     ext = rel.rsplit('.', 1)[-1]
     mark = ext if ext in ('hoon', 'json') and not (os.path.normpath(rel) in raw and ext != 'hoon') else 'mime'
+    if bundled(rel): mark = 'mime'
     args = [] if mark == 'mime' else [f'blot=/{mark}']
     have = held.get(rel)
     if have is not None and have != mark:

@@ -26,6 +26,7 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
+  ;<  ~  bind:m  settle:om
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
   =/  id=(unit @t)  (arg:om args.st 'id')
   ?^  id  (move u.id args.st)

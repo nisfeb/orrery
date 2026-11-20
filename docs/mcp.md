@@ -1,12 +1,13 @@
 # The MCP tools
 
-Orrery's eight tools give an analyst on the ship's MCP server the owner's views and writes over the HTTP API, apart from the routes under What stays on HTTP below. They live in `code/lib/tools` and run on the mcp nexus's tools child, reading the instance by absolute peek and writing through the one poke road to the writer.
+Orrery's nine tools give an analyst on the ship's MCP server the owner's views and writes over the HTTP API, apart from the routes under What stays on HTTP below. They live in `code/lib/tool-bundle/tools`. Since version 154 they run in orrery's own tools nexus, `/tools` under the instance, which the instance seeds on every load from `code/lib/tool-bundle`: the tools and copies of the three libs they import (`scripts/tool-bundle.py` keeps the copies equal). A tool reads the instance by a relative peek and writes through the one poke road to the writer.
 
 ## Calling them
 
-- Through `call_tool`, on every kernel: `tools/call` with the name `call_tool` and the arguments `{"tool_name": "orrery-state", "tool_args": {...}, "path": "/apps/shell.shell/desks/orrery.desk/desk"}` (and the file names `orrery-body`, `orrery-resolve`, `orrery-observe`, `orrery-retract`, `orrery-act`, `orrery-actions`, `orrery-schema`, `orrery-preferences`). The answer is the tool's own, errors included.
-- Not by path: a `tools/call` name that is a path (`/apps/shell.shell/desks/orrery.desk/desk/code/lib/tools/orrery-state`) worked on older kernels, and a newer kernel refuses it, since such a name ran any source it named.
-- By name, once the kernel discovery patch in `docs/kernel` is released: `list_tools` and the tools tree advertise them under `apps/orrery.desk`, and `call_tool` takes `orrery_state` and its siblings. `tools/list` itself stays the kernel's three-tool protocol allowlist by design.
+- Through `call_tool`: `tools/call` with the name `call_tool` and the arguments `{"tool_name": "orrery_state", "tool_args": {...}, "path": "/apps/shell/desks/orrery.desk/desk/data/orrery.orrery_app/tools"}`. The other names are `orrery_body`, `orrery_resolve`, `orrery_observe`, `orrery_retract`, `orrery_act`, `orrery_actions`, `orrery_schema` and `orrery_preferences`; the file names (`orrery-state`) work too. The answer is the tool's own, errors included. A name orrery does not have answers an error naming the tool.
+- The path is the instance's tools nexus. On an older kernel the shell is `/apps/shell.shell`, and the path follows it. The kernel's `call_tool` pokes `<path>/main.sig` and waits for the run it makes at `<path>/runs/<id>`, so the tool runs inside orrery, under orrery's weir.
+- Before version 154, `path` was the desk (`.../orrery.desk/desk`), and the kernel compiled the tool from `<path>/code/lib/tools` and ran it itself. The current kernel relays instead, and a desk has no tools nexus, so that path no longer answers.
+- The kernel's relay stops at the first change notice that finds the run done. A run that finishes in the event that made it leaves a second notice queued, and the request is never answered. So every tool first waits on a zero timer (`+settle` in `code/lib/orrery-mcp.hoon`). A name the tools nexus does not have fails in that same event, so that call still hangs until the client gives up; the kernel's own tools nexuses do the same.
 - `scripts/mcp-matrix.py` is the gate: the section 8 scenario through the tools, checked against the HTTP API.
 
 ## The tools
@@ -27,7 +28,7 @@ Orrery's eight tools give an analyst on the ship's MCP server the owner's views 
 
 A refusal is an MCP error carrying the text the HTTP route would answer, with four deltas. `orrery_body` says `id: expected <kind>/<slug>` where the route says `expected <kind>/<slug>`; `orrery_actions` with no status to move says `status: required to move an action`; `orrery_observe` refuses a non-array `bodies` or `observations` where the route reads an absent one as empty; `orrery_retract` and `orrery_actions` refuse a `by` over 64 bytes, where the owner's own routes take any length. Everything else refuses with the route's text.
 
-One refusal has no route counterpart. `orrery: peek refused` means the mcp tools child was not granted a peek into the instance, so a missing body could not be told from a vetoed read. On a dev ship whose mcp instance holds the whole ball it never appears.
+One refusal has no route counterpart. `orrery: peek refused` means the tools nexus could not peek into the instance, so a missing body could not be told from a vetoed read. The tools nexus sits inside the instance, so it should never appear.
 
 ## What stays on HTTP
 

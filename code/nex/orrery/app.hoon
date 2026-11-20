@@ -48,6 +48,7 @@
 ::    /feed.sig   the feed writer; /private.json  the rows the owner keeps to themselves (version 90)
 ::    /armillary.sig   follows this ship's Armillary: its offer laid over every setting the owner did not pick by hand (version 96)
 ::    /refining/<aid>                  the lock a refine request holds on its action
+::    /tools                           the tools nexus call_tool relays to: /code holds lib/tool-bundle, /main.sig and /runs/<id> are the kernel's (version 154)
 ::    the page and the manifests       laid fresh on every load, not %fall
 ::
 ::  ROADS ARE NEXUS-RELATIVE. A desk-installed app cannot learn its own
@@ -61,6 +62,8 @@
 ::
 /<  orr   /lib/orrery.hoon
 /<  om    /lib/orrery-mcp.hoon
+/<  nt    /lib/tools.hoon
+/&  bundle  /lib/tool-bundle/
 /&  icon  icon.svg
 /&  page-html  orrery.html
 /&  page-css   orrery.css
@@ -281,6 +284,10 @@
           [%fall %& [/ %'search.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'search-last.json'] [[/ %json] [%o ~]]]
           [%fall %& [/ %'sphere-trust.json'] [[/ %json] [%o ~]]]
+          ::  the tools nexus (version 154): call_tool with
+          ::  path=<instance>/tools pokes its main.sig, which runs the
+          ::  tool at /tools/runs/<id> (+tools-mount)
+          [%over %| /tools (tools-mount ball bundle)]
       ==
     ::
     ++  on-file
@@ -752,6 +759,19 @@
 ++  rv  |=([up=@ud p=path] ^-(road:tarball [%| up [%| p]]))
 ++  body-dir  |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]))
 ++  obs-dir   |=([kind=@tas slug=@ta] ^-(path /bodies/[kind]/[slug]/obs))
+::  +tools-mount: the /tools nexus, reseeded on every load the way the
+::  kernel's shell reseeds its own: the bundle (lib/tool-bundle: the
+::  tools and the three libs they import, kept as source by its name)
+::  laid over the live /tools, the bundle winning, so main.sig and /runs
+::  live on and a changed tool takes.
+::
+++  tools-mount
+  |=  [=ball:tarball bundle=(axal (map @ta mime))]
+  ^-  bole:tarball
+  =/  live=bole:tarball
+    =/  sub=(unit ball:tarball)  (~(dap ba:tarball ball) /tools)
+    ?~(sub *bole:tarball (ball-to-bole:tarball u.sub))
+  (merge-boles:nt live (seed-tools:nt bundle))
 ::  develop's http-res is a core, the dist kernel's a door whose road is
 ::  unused: taken bare, it builds on both (version 149)
 ++  srv  http-res:io
