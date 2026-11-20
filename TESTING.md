@@ -12,7 +12,7 @@ Orrery is tested on its own fleet set from
 | HTTP | http://localhost:8122 (loopback ames in `~/fleet/piers/wyl/.http.ports`) |
 | dojo | `tmux attach -t fleet`, window `wyl` |
 | grubbery | the dev platform's pin (hoon-development `platform/grubbery.ref`) |
-| orrery | a dev desk at `/apps/shell.shell/desks/orrery.desk`, the same path as on ricsul, following `/orrery-dev/code` in the ball |
+| orrery | a dev desk at `/apps/shell/desks/orrery.desk` (`/apps/shell.shell` on an older kernel), the same path as on ricsul, following `/orrery-dev/code` in the ball |
 | test desk | `%orrery-test`, mounted, set up for the kit |
 
 Below, `F=~/software/personal/hoon-development/fleet/fleet` and
@@ -96,22 +96,44 @@ python3 scripts/dev-deploy.py http://localhost:8122 /tmp/wyl.jar code
 ```
 
 It writes `code/` into `/orrery-dev/code` and stamps that tree's
-`version.json` with a dev time, which makes the desk pull. It refuses any
-ship that is not on localhost. A release that adds a road needs
-approving again: `--approve` posts the instance's own `weir.json` as
-`granted` to `/apps/grubbery/permits` (`approve-weir`), then reloads its
-permits. Without `granted` this kernel grants an empty weir.
+`version.json` with a dev time, which makes the desk pull. It goes
+through the kernel's API: `GET /grubbery/api/peek/<path>` reads a file,
+or lists a directory when the path ends in a slash, and `PUT
+/grubbery/api/make/<path>?blot=/hoon` writes one (`&force=1` over an old
+one). It refuses any ship that is not on localhost. A release that adds
+a road needs approving again: `--approve` posts the instance's own
+`weir.json` as `granted`, with the groups its `groups.json` names, to
+`/apps/grubbery/permits` (`approve-weir`), then reloads its permits.
+Without `granted` this kernel grants an empty weir.
 
-How `compiled` was made, from the golden: `dev-deploy.py ... code --add
---approve`, then the test desk.
+A current kernel boots a stock orrery desk that follows ~ricsul-bilwyt,
+which a fake ship cannot reach. `--add` replaces it with one that
+follows `/orrery-dev/code`, but only on a galaxy and only while its data
+is empty. `--desk calendar` (or `auspex`, `armillary`) with that repo's
+`code/` puts the other desks on the same way, which `api-matrix.py` and
+`armillary-key-matrix.py` need.
+
+How `compiled` was made, from the golden: `dev-deploy.py ... code --add`,
+then `dev-deploy.py ... code --approve` once the desk has built, then the
+test desk. The instance has built when `GET
+/grubbery/api/bang/apps/shell/desks/orrery.desk/` answers `"banged": 0`
+and `GET /apps/orrery/api/version` answers.
+
+A fleet clone runs in its own network namespace, so a stub model the
+gates start on this machine's loopback is out of its reach. Run those
+gates (`api-matrix.py`, `armillary-key-matrix.py`) inside the clone's
+namespace, where the ship's own port answers on localhost:
+`nsenter -t <vere pid> -U -n --preserve-credentials python3 -u
+scripts/api-matrix.py http://localhost:<port> <jar> ~bec`. The pid is in
+`~/fleet/run/<id>.pid`.
 
 ## Looking inside with u
 
 ```sh
 $U orrery our
 $U orrery kids /orrery-dev/code                     # files in a ball dir
-$U orrery file /apps/shell.shell/desks/orrery.desk/version.json
-$U orrery kids /apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app
+$U orrery file /apps/shell/desks/orrery.desk/version.json
+$U orrery kids /apps/shell/desks/orrery.desk/desk/data/orrery.orrery_app
 ```
 
 `u` guards its subcommands. A raw `.^` in an expression that misses kills

@@ -16,7 +16,6 @@ HOST, HJAR, PEER, PJAR = sys.argv[1:5]
 HOSTNAME, PEERNAME = (str(gate.curl('GET', b + '/~/host')[1]).strip() for b in (HOST, PEER))
 RUN = secrets.token_hex(3)
 NOW = datetime.now(timezone.utc)
-INSTANCE = '/grubbery/ball/apps/shell.shell/desks/orrery.desk/desk/data/orrery.orrery_app'
 
 
 def api(base, jar, method, path, body=None):
@@ -36,7 +35,7 @@ def observe(side, subject, name, value, bodies=()):
 def pushes(since):
     """the push notes in PEER's audit log at or after a time (the log is a
     ring of 500, so counting entries would not do)"""
-    code, log = gate.curl('GET', PEER + INSTANCE + '/tr/log?raw=1', jar=PJAR)
+    code, log = gate.peek(PEER, gate.app(PEER, PJAR) + '/tr/log', PJAR)
     log = log if isinstance(log, list) else []
     return [str(dictish(e).get('why')) for e in log if dictish(e).get('op') == 'push' and str(dictish(e).get('at')) >= since]
 
